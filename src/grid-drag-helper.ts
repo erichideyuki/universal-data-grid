@@ -1,4 +1,4 @@
-import { Interactable } from '@interactjs/core/Interactable';
+import type { Interactable } from '@interactjs/core/Interactable';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 

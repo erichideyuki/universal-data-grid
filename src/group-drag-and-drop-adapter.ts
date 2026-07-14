@@ -1,16 +1,18 @@
-import { DropEvent } from '@interactjs/actions/drop/DropEvent';
+import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
 import { calcCursorRelativePosition } from './calc-cursor-relative-position';
-import { UmDataGrid } from './grid';
+import { DataGrid } from './grid';
 import { GridDragHelper } from './grid-drag-helper';
 import { RelativePosition } from './relative-position';
 
 export class GroupDragAndDropAdapter {
   readonly #groups: HTMLElement[] = [];
+  readonly #grid: DataGrid;
 
-  constructor(private readonly _grid: UmDataGrid) {
+  constructor(grid: DataGrid) {
+    this.#grid = grid;
   }
 
   attachToGroupDropTarget(dropTarget: HTMLElement, indicatorOrder: number): void {
@@ -20,29 +22,29 @@ export class GroupDragAndDropAdapter {
       accept: '.move-container',
 
       ondragenter: () => {
-        this._grid._groupContainerRef.value!.classList.add('drop-target');
-        this._grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${indicatorOrder}`);
+        this.#grid._groupContainerRef.value!.classList.add('drop-target');
+        this.#grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${indicatorOrder}`);
       },
 
       ondragleave: () => {
-        this._grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
       },
 
       ondropdeactivate: () => {
-        this._grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
       },
 
       ondrop: (event: DropEvent) => {
 
-        const movingColumn = this._grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
+        const movingColumn = this.#grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
 
         if (!movingColumn) {
           return;
         }
 
-        const targetIndex = this._grid._groupColumns.length;
+        const targetIndex = this.#grid._groupColumns.length;
 
-        this._grid.groupColumn(movingColumn, targetIndex);
+        this.#grid.groupColumn(movingColumn, targetIndex);
       },
     });
   }
@@ -58,8 +60,6 @@ export class GroupDragAndDropAdapter {
       .on('move', (event: InteractEvent) => {
         const interaction = event.interaction;
 
-        // if the pointer was moved while being held down
-        // and an interaction hasn't started yet
         if (!(interaction.pointerIsDown && !interaction.interacting())) {
           return;
         }
@@ -78,7 +78,7 @@ export class GroupDragAndDropAdapter {
         moveContainer.classList.add('move-container');
         moveContainer.appendChild(draggable);
 
-        this._grid._containerRef.value!.appendChild(moveContainer);
+        this.#grid._containerRef.value!.appendChild(moveContainer);
         interaction.start({ name: 'drag' }, event.interactable, moveContainer);
       });
 
@@ -90,15 +90,15 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        this._grid._groupContainerRef.value!.classList.add('drop-target');
+        this.#grid._groupContainerRef.value!.classList.add('drop-target');
       },
 
       ondragleave: () => {
-        this._grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
       },
 
       ondropdeactivate: () => {
-        this._grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
       },
 
       ondropmove: (event: DropEvent) => {
@@ -108,20 +108,20 @@ export class GroupDragAndDropAdapter {
 
         const position = calcCursorRelativePosition(event);
 
-        const targetColumn = this._grid._nativeColumnMap.get(event.target as HTMLElement)!;
-        let targetIndex = this._grid._groupColumns.indexOf(targetColumn);
+        const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement)!;
+        let targetIndex = this.#grid._groupColumns.indexOf(targetColumn);
 
         if (position === RelativePosition.After) {
           targetIndex++;
         }
 
-        this._grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${targetIndex}`);
+        this.#grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${targetIndex}`);
       },
 
       ondrop: (event: DropEvent) => {
 
-        const targetColumn = this._grid._nativeColumnMap.get(event.target as HTMLElement);
-        const movingColumn = this._grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
+        const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement);
+        const movingColumn = this.#grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
 
         if (event.target === event.draggable.target || !targetColumn || !movingColumn) {
           return;
@@ -129,13 +129,13 @@ export class GroupDragAndDropAdapter {
 
         const position = calcCursorRelativePosition(event);
 
-        let targetIndex = this._grid._groupColumns.indexOf(targetColumn);
+        let targetIndex = this.#grid._groupColumns.indexOf(targetColumn);
 
         if (position === RelativePosition.After) {
           targetIndex++;
         }
 
-        this._grid.groupColumn(movingColumn, targetIndex);
+        this.#grid.groupColumn(movingColumn, targetIndex);
       },
     });
   }

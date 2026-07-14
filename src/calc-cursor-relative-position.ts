@@ -1,4 +1,4 @@
-import { DropEvent } from '@interactjs/actions/drop/DropEvent';
+import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
 
 import { RelativePosition } from './relative-position.js';
 

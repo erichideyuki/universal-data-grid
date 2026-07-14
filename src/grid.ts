@@ -1,27 +1,32 @@
-import { html, HTMLTemplateResult, LitElement, nothing } from 'lit';
-import { customElement, property, query, queryAll, state } from 'lit/decorators.js';
+import { ContextConsumer } from '@lit/context';
+
+import { html, type HTMLTemplateResult, LitElement, nothing } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { map } from 'lit/directives/map.js';
-import { Ref, createRef, ref } from 'lit/directives/ref.js';
+import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { repeat } from 'lit/directives/repeat.js';
+import { styleMap } from 'lit/directives/style-map.js';
 
 import { VirtualizerController } from '@tanstack/lit-virtual';
 
-import { styles as baseStyles } from '../shared/base.styles.js';
 import { ColumnDragAndDropAdapter } from './column-drag-and-drop-adapter.js';
-import { UmDataGridColumn } from './grid-column.js';
+import type { GridColumnDef } from './grid-column-def.ts';
+import { DEFAULT_GRID_LANGUAGE, type GridI18n, gridLanguageContext, resolveGridTranslation } from './grid-i18n.js';
 import { styles } from './grid.styles.js';
 import { GroupDragAndDropAdapter } from './group-drag-and-drop-adapter.js';
 
 import './grid-column.js';
 import './grid-custom-cell.js';
 
+export type { GridColumnDef } from './grid-column-def.ts';
+export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n } from './grid-i18n.js';
+
 interface GroupRow {
   isGroup: true;
   expanded: boolean;
   level: number;
   rawValue: string;
-  displayValue: string;
   groups: GroupRow[];
   items: any[];
 }
@@ -33,9 +38,31 @@ interface DataRow {
 
 type Row = GroupRow | DataRow;
 
+const getDocumentLanguage = (): string | undefined => {
+
+  if (typeof document === 'undefined') {
+    return undefined;
+  }
+
+  const htmlLang = document.documentElement.lang;
+
+  if (htmlLang) {
+    return htmlLang;
+  }
+
+  const meta = document.querySelector('meta[http-equiv="content-language" i]');
+
+  return meta?.getAttribute('content')?.split(',')[0].trim() || undefined;
+};
+
+const getBrowserLanguage = (): string | undefined =>
+  typeof navigator === 'undefined'
+    ? undefined
+    : navigator.language || undefined;
+
 @customElement('u-grid')
-export class UmDataGrid extends LitElement {
-  static override styles = [baseStyles, styles];
+export class DataGrid extends LitElement {
+  static override styles = [styles];
 
   #items: any[] = [];
 
@@ -53,26 +80,66 @@ export class UmDataGrid extends LitElement {
 
   readonly #groupsByLevel: GroupRow[][] = [];
   readonly #rows: Row[] = [];
-  readonly _nativeColumnMap = new WeakMap<HTMLElement, UmDataGridColumn>();
+  readonly _nativeColumnMap = new WeakMap<HTMLElement, GridColumnDef>();
   #sortedItems: any[] = [];
 
-  protected _columns: UmDataGridColumn[] = [];
-  @state() _groupColumns: UmDataGridColumn[] = [];
-  @state() _regularColumns: UmDataGridColumn[] = [];
+  protected _columns: GridColumnDef[] = [];
+  @state() _groupColumns: GridColumnDef[] = [];
+  @state() _regularColumns: GridColumnDef[] = [];
 
-  @queryAll('#header-columns-row .header-column') readonly _headerColumns!: HTMLElement[];
-  @query('.group-container') readonly _groupContainer!: HTMLElement;
+  @property({ attribute: false })
+  get columns(): GridColumnDef[] {
+    return this._columns;
+  }
+
+  set columns(value: GridColumnDef[]) {
+    this._columns = value;
+    this._resetGroupColumns();
+  }
 
   @property({ type: Number }) rowHeight = 48;
-  @property({ type: Number }) stripped = false;
+  @property({ type: Boolean }) stripped = false;
   @property({ type: Boolean }) showHeader = true;
   @property({ type: Boolean }) showRowLines = true;
   @property({ type: Boolean }) showColumnLines = false;
 
+  #explicitLanguage?: string;
+
+  readonly #languageConsumer = new ContextConsumer(this, {
+    context: gridLanguageContext,
+    subscribe: true,
+  });
+
+  /**
+   * Language used to resolve the built-in translations. When not set on the
+   * component it is resolved, in order, from the Lit context, the document
+   * (`<html lang>` / content-language meta) and finally the browser.
+   */
+  @property()
+  get language(): string {
+    return this.#effectiveLanguage ?? DEFAULT_GRID_LANGUAGE;
+  }
+
+  set language(value: string | null | undefined) {
+    this.#explicitLanguage = value || undefined;
+  }
+
+  get #effectiveLanguage(): string | undefined {
+    return this.#explicitLanguage
+      ?? this.#languageConsumer.value
+      ?? getDocumentLanguage()
+      ?? getBrowserLanguage();
+  }
+
+  get #translation(): GridI18n {
+    return resolveGridTranslation(this.#effectiveLanguage);
+  }
+
   readonly _containerRef: Ref<HTMLDivElement> = createRef();
+  readonly _scrollContainerRef: Ref<HTMLDivElement> = createRef();
   readonly _groupContainerRef: Ref<HTMLDivElement> = createRef();
   readonly #virtualizerController = new VirtualizerController(this, {
-    getScrollElement: () => this._containerRef.value!,
+    getScrollElement: () => this._scrollContainerRef.value!,
     count: 0,
     estimateSize: () => this.rowHeight,
     overscan: 5,
@@ -95,16 +162,18 @@ export class UmDataGrid extends LitElement {
 
     return html`
       <div
-        class="container ${classMap(classes)}" ${ref(this._containerRef)}
+        class="container ${classMap(classes)}"
+        ${ref(this._containerRef)}
         role="grid"
         aria-rowcount="${this.#rows.length}"
         aria-colcount="${this._regularColumns.length}">
-        <div>
+        <div class="scroll-container" ${ref(this._scrollContainerRef)}>
           ${this.#renderHeader()}
-          <table style="height: ${virtualizer.getTotalSize()}px;">
+          <table>
+            <colgroup>${this.#renderColGroups()}</colgroup>
             <thead role="rowgroup">
               <tr id="header-columns-row" aria-rowindex="1">
-                ${map(this._groupColumns, () => html`<th role="presentation" class="group-column"></th>`)}
+                ${map(this._groupColumns, () => html`<th role="presentation"></th>`)}
                 ${map(this._regularColumns, (column, index) =>
                   html`
                     <th
@@ -119,11 +188,11 @@ export class UmDataGrid extends LitElement {
                         this._nativeColumnMap.set(el as HTMLElement, column);
                         this.#columnDragAndDrop.attach(el as HTMLElement);
                       })}>
-                      ${column.textContent}
+                      ${column.label}
                     </th>`)}
               </tr>
             </thead>
-            <tbody role="rowgroup">
+            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize()}px;">
               ${this.#renderBody(virtualRows)}
               <tr></tr>
             </tbody>
@@ -134,6 +203,23 @@ export class UmDataGrid extends LitElement {
     `;
   }
 
+  #renderColGroups(): HTMLTemplateResult {
+    return html`
+      ${map(this._groupColumns, () => html`
+        <col class="group-column"/>`)}
+      ${map(this._regularColumns, column => {
+        const colStyles: Record<string, any> = {};
+
+        if (!!column.width || column.width === 0) {
+          colStyles.width = `${column.width}px`;
+        }
+
+        return html`
+          <col style="${styleMap(colStyles)}"/>`;
+      })}
+    `;
+  }
+
   #renderBody(virtualRows: any[]) {
 
     const columnCount = this._columns.length;
@@ -141,7 +227,7 @@ export class UmDataGrid extends LitElement {
     if (!virtualRows.length) {
       return html`
         <tr>
-          <td part="cell no-data" colspan="${columnCount}">No data</td>
+          <td part="cell no-data" colspan="${columnCount}">${this.#translation.noData}</td>
         </tr>
       `;
     }
@@ -183,15 +269,15 @@ export class UmDataGrid extends LitElement {
     this._regularColumns.length = 0;
   }
 
-  groupColumn(column: UmDataGridColumn, targetIndex: number): void {
+  groupColumn(column: GridColumnDef, targetIndex: number): void {
     this.#moveColumnTo(this._groupColumns, column, targetIndex);
   }
 
-  moveColumn(column: UmDataGridColumn, targetIndex: number): void {
+  moveColumn(column: GridColumnDef, targetIndex: number): void {
     this.#moveColumnTo(this._regularColumns, column, targetIndex);
   }
 
-  #moveColumnTo(targetList: UmDataGridColumn[], column: UmDataGridColumn, targetIndex: number): void {
+  #moveColumnTo(targetList: GridColumnDef[], column: GridColumnDef, targetIndex: number): void {
     const targetColumn = targetList[targetIndex];
 
     if (targetColumn === column) {
@@ -218,12 +304,16 @@ export class UmDataGrid extends LitElement {
       targetList.splice(targetIndex, 0, column);
     }
 
-    this._setRegularColumnsOrder();
+    this.#setColumnsOrder();
 
     if (sourceList === this._groupColumns || targetList === this._groupColumns) {
-      this.#rebuildGroupsFromLevel(sourceList === this._groupColumns
-        ? sourceIndex
-        : targetIndex);
+      const updateGroupingFromLevel = sourceList === this._groupColumns && targetList === this._groupColumns
+        ? Math.min(sourceIndex, targetIndex)
+        : sourceList === this._groupColumns
+          ? sourceIndex
+          : targetIndex;
+
+      this.#rebuildGroupsFromLevel(updateGroupingFromLevel);
     }
 
     this.requestUpdate();
@@ -267,6 +357,8 @@ export class UmDataGrid extends LitElement {
   #renderGroupRowCells(row: GroupRow): HTMLTemplateResult {
 
     const classes = { expanded: row.expanded };
+    const groupColumn = this._groupColumns[row.level];
+    const displayValue = `${groupColumn.label ?? ''}${this.#translation.groupLabelSeparator}${row.rawValue}`;
 
     return html`
       ${row.level
@@ -287,8 +379,8 @@ export class UmDataGrid extends LitElement {
         class="grouping-cell"
         role="gridcell"
         aria-colindex="2"
-        colspan="${this._columns.length - row.level + 1}">
-        ${row.displayValue}
+        colspan="${this._columns.length - (row.level + 1)}">
+        ${displayValue}
       </td>
     `;
   }
@@ -394,24 +486,22 @@ export class UmDataGrid extends LitElement {
 
         const column = this._groupColumns[i];
 
-        const value = this.#getValueByPath(item, column.path);
+        const value = this.#getValueByPath(item, column.path!);
 
         let group = currentGroups[i];
 
-        if (group?.rawValue === value) {
+        if (group?.rawValue.toString() === value.toString()) {
           group.items.push(item);
           continue;
         }
 
         currentGroups.length = i;
 
-        const rowValue = `${column.textContent}: ${value}`;
         group = {
           isGroup: true,
           expanded: this.autoExpandGroups,
           level: i,
           rawValue: value,
-          displayValue: rowValue,
           items: [item],
           groups: [],
         };
@@ -431,6 +521,7 @@ export class UmDataGrid extends LitElement {
     this.#rows.length = 0;
     this.#groupsByLevel.length = 0;
 
+    this.#updateSorting();
     this.#buildGroups();
     this.#resetRows();
   }
@@ -471,6 +562,7 @@ export class UmDataGrid extends LitElement {
       this.#buildGroups(level, group.items, groupHierarchy);
     }
 
+    this.#updateSorting();
     this.#resetRows();
   }
 
@@ -480,14 +572,31 @@ export class UmDataGrid extends LitElement {
 
   #setColumns() {
     this._columns = Array.from(this.querySelectorAll('u-grid-column'));
+
+    this._resetGroupColumns();
+  }
+
+  _resetGroupColumns() {
+    const previousGroupColumns = this._groupColumns;
+
     this._groupColumns = this._columns
       .filter(c => !!c.groupIndex || c.groupIndex === 0)
       .sort((a, b) => a.groupIndex! - b.groupIndex!);
+
     this._regularColumns = this._columns
       .filter(c => !this._groupColumns.includes(c))
       .sort(c => (c._index ?? 0) - (c._index ?? 0));
-    this._setRegularColumnsOrder();
-    this.#setData();
+
+    let changedColumnIndex = 0;
+
+    for (changedColumnIndex; changedColumnIndex < previousGroupColumns.length; changedColumnIndex++) {
+      if (previousGroupColumns[changedColumnIndex] !== this._groupColumns[changedColumnIndex]) {
+        break;
+      }
+    }
+
+    this.#setColumnsOrder();
+    this.#setData(changedColumnIndex);
   }
 
   #updateSorting(): void {
@@ -504,8 +613,8 @@ export class UmDataGrid extends LitElement {
     this.#sortedItems = this.items.sort((a, b) => {
 
       for (const groupColumn of this._groupColumns) {
-        const aValue = this.#getValueByPath(a, groupColumn.path) ?? '';
-        const bValue = this.#getValueByPath(b, groupColumn.path) ?? '';
+        const aValue = this.#getValueByPath(a, groupColumn.path!) ?? '';
+        const bValue = this.#getValueByPath(b, groupColumn.path!) ?? '';
 
         const textComparison = aValue.toString().localeCompare(bValue.toString());
 
@@ -530,7 +639,7 @@ export class UmDataGrid extends LitElement {
     `;
   }
 
-  _setRegularColumnsOrder() {
+  #setColumnsOrder() {
     for (let i = 0; i < this._regularColumns.length; i++) {
       const column = this._regularColumns[i];
       column._index = i;
@@ -538,13 +647,13 @@ export class UmDataGrid extends LitElement {
 
     for (let i = 0; i < this._groupColumns.length; i++) {
       const column = this._groupColumns[i];
-      column.groupIndex = i;
+      column._groupIndex = i;
     }
   }
 
-  #setData() {
+  #setData(changedColumnIndex = 0) {
     this.#updateSorting();
-    this.#resetGroups();
+    this.#rebuildGroupsFromLevel(changedColumnIndex);
   }
 
   #renderGroupContainer() {
@@ -561,7 +670,7 @@ export class UmDataGrid extends LitElement {
                 }
 
                 this.#groupDragAndDropAdapter.attachToGroupDropTarget(el as HTMLElement, 0);
-              })}>Drag a column header here to group by it
+              })}>${this.#translation.dragToGroup}
             </div>`}
       </div>`;
   }
@@ -578,7 +687,7 @@ export class UmDataGrid extends LitElement {
 
             this._nativeColumnMap.set(group as HTMLElement, column);
             this.#groupDragAndDropAdapter.attach(group as HTMLElement);
-          })}>${column.textContent}
+          })}>${column.label}
           </div>`)}
       <div
         class="group-end-dropzone"
@@ -592,10 +701,10 @@ export class UmDataGrid extends LitElement {
     `;
   }
 
-  #renderCell(row: DataRow, column: UmDataGridColumn, index: number) {
+  #renderCell(row: DataRow, column: GridColumnDef, index: number) {
 
     if (!column.renderer) {
-      return html`${this.#getValueByPath(row.item, column.path)}`;
+      return html`${this.#getValueByPath(row.item, column.path!)}`;
     }
 
     const rowIndex = this.#rows.indexOf(row);
@@ -614,6 +723,6 @@ export class UmDataGrid extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'u-grid': UmDataGrid;
+    'u-grid': DataGrid;
   }
 }

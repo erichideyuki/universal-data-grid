@@ -1,15 +1,15 @@
 import { LitElement } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
-import { UmDataGrid } from './grid';
-import { UmDataGridColumn } from './grid-column';
+import { DataGrid } from './grid';
+import type { GridColumnDef } from './grid-column-def.ts';
 
 @customElement('u-grid-custom-cell')
 export class UmDataGridCustomCell extends LitElement {
-  @property() grid: UmDataGrid | null = null;
-  @property() column: UmDataGridColumn | null = null;
-  @property() item!: any;
-  @property() slotName: string | null = null;
+  @property({ attribute: false }) grid: DataGrid | null = null;
+  @property({ attribute: false }) column: GridColumnDef | null = null;
+  @property({ attribute: false }) item!: any;
+  @property({ attribute: false }) slotName: string | null = null;
 
   #cellContainer: HTMLElement | null = null;
 

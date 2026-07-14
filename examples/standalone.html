@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@universal-material/data-grid — standalone</title>
+
+    <!--
+      Alias the package name to the self-contained browser bundle.
+      Build it first with:  npm run bundle:browser  (outputs dist/grid.min.js)
+      With this import map, the code below is identical to what you'd write when
+      installing from npm — swap the import map for a bundler and it just works.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@universal-material/data-grid": "../dist/grid.min.js"
+        }
+      }
+    </script>
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        color: #1c1b1f;
+        font-family: system-ui, sans-serif;
+      }
+      /* The grid defaults to a light surface. It also reads @universal-material
+         design tokens (--u-color-*) when present — drop them in for full theming. */
+      u-grid {
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <u-grid auto-expand-groups></u-grid>
+
+    <script type="module">
+      // Importing the package registers <u-grid> (and its internal elements) and
+      // exposes the API — exactly the same import you'd use via npm.
+      import { setGridLanguage } from '@universal-material/data-grid';
+
+      // Optional: set a default language for every grid on the page.
+      // setGridLanguage('pt');
+
+      const grid = document.querySelector('u-grid');
+
+      grid.columns = [
+        { path: 'country', label: 'Country', groupIndex: 0, width: 240 },
+        { path: 'code', label: 'Code', width: 120 },
+        { path: 'year', label: 'Year', width: 120 },
+        { path: 'population', label: 'Population', width: 220 },
+      ];
+
+      grid.items = [
+        { country: 'Brazil', code: 'BRA', year: 2020, population: 212559409 },
+        { country: 'Brazil', code: 'BRA', year: 2021, population: 214326223 },
+        { country: 'Brazil', code: 'BRA', year: 2022, population: 215313498 },
+        { country: 'Germany', code: 'DEU', year: 2020, population: 83160871 },
+        { country: 'Germany', code: 'DEU', year: 2021, population: 83196078 },
+        { country: 'Germany', code: 'DEU', year: 2022, population: 83797985 },
+        { country: 'Japan', code: 'JPN', year: 2020, population: 126261000 },
+        { country: 'Japan', code: 'JPN', year: 2021, population: 125681593 },
+        { country: 'Japan', code: 'JPN', year: 2022, population: 124947000 },
+      ];
+    </script>
+  </body>
+</html>
