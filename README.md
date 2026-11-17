@@ -52,26 +52,13 @@ React, Vue, Svelte — or with no framework at all.
 
 ## Installation
 
-The package lives on a private privJS registry. Point the `@universal-material` scope at your
-registry and authenticate, then install as usual.
-
-Create or update an `.npmrc` in your project (or user home):
-
-```ini
-@universal-material:registry=https://r.privjs.com/
-//r.privjs.com/:_authToken=${PRIVJS_TOKEN}
-```
-
-> Adjust the registry URL and token to match your privJS setup. Keep the token out of version
-> control (e.g. read it from an environment variable as shown above).
-
-Then:
-
 ```bash
-npm install @universal-material/data-grid
+npm i @universal-material/data-grid
 ```
 
-The package is published as a modern **ESM** bundle. Importing it registers the custom elements as
+The package is published on npm as modern **ESM** with TypeScript declarations. `lit`,
+`@lit/context`, `@tanstack/lit-virtual` and `interactjs` are regular dependencies, so your bundler
+deduplicates them with the rest of your app. Importing the package registers the custom elements as
 a side effect.
 
 > Prefer no build step? See [Use in the browser (no build step)](#use-in-the-browser-no-build-step)
@@ -119,10 +106,17 @@ The grid also ships as a **single self-contained ESM bundle** — everything (th
 their dependencies, including Lit) inlined into one file. Drop it into any HTML page with a
 `<script type="module">`, no bundler required.
 
-After installing, this prebuilt bundle is available at `@universal-material/data-grid/grid.min.js`.
-Copy it into a folder your app serves (or host it wherever you like), then use an **import map** to
-alias the package name to that file. Your code stays identical to the npm version — swap the import
-map for a bundler later and nothing else changes.
+Load it straight from a CDN — [jsDelivr](https://www.jsdelivr.com/package/npm/@universal-material/data-grid)
+or [unpkg](https://unpkg.com/@universal-material/data-grid/) — and use an **import map** to alias the
+package name to that file. Your code stays identical to the npm version — swap the import map for a
+bundler later and nothing else changes.
+
+| CDN | URL |
+| --- | --- |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/@universal-material/data-grid@1/dist/grid.min.js` |
+| unpkg | `https://unpkg.com/@universal-material/data-grid@1/dist/grid.min.js` |
+
+Pin a version (`@1`, `@1.0.0`) in production so a new major can't change the page under you.
 
 ```html
 <!doctype html>
@@ -134,7 +128,7 @@ map for a bundler later and nothing else changes.
     <script type="importmap">
       {
         "imports": {
-          "@universal-material/data-grid": "/path/to/grid.min.js"
+          "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@1/dist/grid.min.js"
         }
       }
     </script>
@@ -171,9 +165,10 @@ Notes:
 - **Import map alias** — mapping `@universal-material/data-grid` → the bundle URL lets you write the
   exact same `import` statements as in a bundler/npm setup. If you only need the elements (no named
   exports), you can skip the import map and just load the bundle for its side effects:
-  `<script type="module" src="/path/to/grid.min.js"></script>`.
-- **Self-hosting** — because the package is private (privJS), serve `grid.min.js` from your own app
-  (copy it into your `public/`/static folder, or point the import map at wherever you host it).
+  `<script type="module" src="https://cdn.jsdelivr.net/npm/@universal-material/data-grid@1/dist/grid.min.js"></script>`.
+- **Self-hosting** — prefer not to depend on a CDN? After `npm i`, the same file is at
+  `@universal-material/data-grid/grid.min.js` (`node_modules/@universal-material/data-grid/dist/grid.min.js`);
+  copy it into your `public/`/static folder and point the import map at it.
 - **Serve over HTTP** — module scripts and import maps don't work from `file://`, so open the page
   through a web server.
 
@@ -625,4 +620,4 @@ import {
 
 ## License
 
-Proprietary. Licensed for paid use.
+[MIT](LICENSE) © Eric Kono

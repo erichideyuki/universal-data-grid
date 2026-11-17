@@ -6,9 +6,9 @@ frente **Fundação** (`01-foundation.md`), salvo indicação.
 
 **Estado (Fundação concluída):** B1–B22 e S1–S7 corrigidos, cada bug com
 teste de regressão em `src/grid.browser.test.ts` (B10: contador de registros;
-B13: sem `indexOf` por render; B15: conferido no demo em RTL). Em aberto:
-B23 (decisão de distribuição/licença) e o `picomatch` do S6 (sem versão
-corrigida; só ferramentas de dev).
+B13: sem `indexOf` por render; B15: conferido no demo em RTL). B23 resolvido
+(pacote MIT no npmjs). Em aberto: o `picomatch` do S6 (sem versão corrigida;
+só ferramentas de dev).
 
 Veredito: **REPRODUZIDO** = rodado no navegador com o resultado anotado;
 **CÓDIGO** = evidente pela leitura, sem reprodução.
@@ -39,7 +39,7 @@ Veredito: **REPRODUZIDO** = rodado no navegador com o resultado anotado;
 | B20 | Baixa | CÓDIGO | `grid-i18n.ts` | `setGridTranslation('__proto__', …)` troca o protótipo da tabela; `language="constructor"` devolve `Object` como tradução (textos `undefined`). Usar `Object.hasOwn`/objeto sem protótipo. | — |
 | B21 | Baixa | CÓDIGO | `grid-i18n.ts` | `ContextRoot` anexado ao `document.body` como efeito colateral do import; com duas cópias do pacote na página, dois `ContextRoot`. Mudança de `<html lang>` depois do 1º render não é observada. | — |
 | B22 | Baixa | CÓDIGO | build | `npm run build` (`tsc ./src/grid.ts`) ignora o `tsconfig`; `tsc -p src` falha (TS5097 em `grid-column.ts:5`, import `.ts`; TS4111 em `grid.ts:214`); `build:server` aponta para `src/entry-server.js`, que não existe; não há script de teste. | — |
-| B23 | Baixa | CÓDIGO | README/pacote | Mudança local (não commitada) tira o privJS do topo do README, mas a seção Installation continua ensinando o registro privJS; `license: "Paid"` não é SPDX. Decidir o canal de distribuição. | — |
+| B23 | Baixa | CÓDIGO | README/pacote | Mudança local (não commitada) tira o privJS do topo do README, mas a seção Installation continua ensinando o registro privJS; `license: "Paid"` não é SPDX. Decidir o canal de distribuição. | **Resolvido:** pacote público no npmjs, licença MIT (`LICENSE`); `package.json` com `exports`/`types`/`files`/`sideEffects`, `prepack` limpa o `dist/` e gera o build; README sem privJS (npm + CDN). |
 
 ## Segurança
 

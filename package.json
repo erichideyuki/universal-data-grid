@@ -1,27 +1,88 @@
 {
   "name": "@universal-material/data-grid",
-  "private": true,
   "version": "1.0.0",
+  "description": "A high-performance data grid Web Component (<u-grid>) built with Lit: row virtualization, drag-and-drop grouping, column reordering, custom cells, SSR and i18n.",
+  "keywords": [
+    "web-components",
+    "custom-elements",
+    "lit",
+    "data-grid",
+    "datagrid",
+    "grid",
+    "table",
+    "virtualization",
+    "universal-material",
+    "material-design"
+  ],
+  "homepage": "https://github.com/universal-material/data-grid#readme",
+  "bugs": {
+    "url": "https://github.com/universal-material/data-grid/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/universal-material/data-grid.git"
+  },
+  "license": "MIT",
+  "author": "Eric Kono",
   "type": "module",
-  "license": "Paid",
+  "main": "./dist/grid.js",
+  "module": "./dist/grid.js",
+  "types": "./dist/grid.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/grid.d.ts",
+      "default": "./dist/grid.js"
+    },
+    "./grid.min.js": "./dist/grid.min.js",
+    "./custom-elements.json": "./custom-elements.json",
+    "./package.json": "./package.json"
+  },
+  "unpkg": "./dist/grid.min.js",
+  "jsdelivr": "./dist/grid.min.js",
+  "files": [
+    "dist",
+    "!dist/**/*.d.ts.map",
+    "custom-elements.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/grid.js",
+    "./dist/grid-column.js",
+    "./dist/grid-custom-cell.js",
+    "./dist/grid-i18n.js",
+    "./dist/grid.min.js",
+    "./src/grid.ts",
+    "./src/grid-column.ts",
+    "./src/grid-custom-cell.ts",
+    "./src/grid-i18n.ts"
+  ],
+  "customElements": "custom-elements.json",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "node dev/server",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p src",
     "bundle": "rollup -c",
-    "bundle:browser": "esbuild src/grid.ts --bundle --format=esm --minify --define:process.env.NODE_ENV=\"production\" --outfile=dist/grid.min.js",
-    "build": "tsc -p src",
+    "bundle:browser": "esbuild src/grid.ts --bundle --format=esm --minify --outfile=dist/grid.min.js",
     "typecheck": "tsc --noEmit -p src && tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "analyze": "cem analyze --litelement --globs \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" \"src/test/**\"",
     "lint": "npm run lint:lit-analyzer && npm run lint:eslint ",
     "lint:eslint": "eslint src/**/*.ts",
-    "lint:lit-analyzer": "lit-analyzer --strict --rules.no-invalid-css off"
+    "lint:lit-analyzer": "lit-analyzer --strict --rules.no-invalid-css off",
+    "prepublishOnly": "npm run typecheck && npm test",
+    "prepack": "npm run build && npm run bundle:browser"
   },
   "dependencies": {
     "@lit/context": "^1.1.6",
     "@tanstack/lit-virtual": "^3.13.13",
     "interactjs": "^1.10.27",
-    "lit": "^3.3.1"
+    "lit": "^3.3.1",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@custom-elements-manifest/analyzer": "^0.11.0",
@@ -62,6 +123,5 @@
     "typescript": "~5.9.3",
     "vite": "^7.3.8",
     "vitest": "^4.1.12"
-  },
-  "customElements": "custom-elements.json"
+  }
 }
