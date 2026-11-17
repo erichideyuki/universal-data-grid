@@ -1,4 +1,4 @@
-import { ContextProvider, createContext } from '@lit/context';
+import { ContextProvider, ContextRoot, createContext } from '@lit/context';
 
 /**
  * Set of user facing strings rendered by the grid. Column labels are provided
@@ -16,8 +16,11 @@ export const DEFAULT_GRID_LANGUAGE = 'en';
  * Built-in translations keyed by lowercase language code. Region specific
  * entries (e.g. `pt-br`) can be added through {@link setGridTranslation} and
  * take precedence over their base language.
+ *
+ * Objeto sem protótipo: `language="constructor"` ou
+ * `setGridTranslation('__proto__', …)` não alcançam `Object.prototype`.
  */
-export const gridTranslations: Record<string, GridI18n> = {
+export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.create(null) as Record<string, GridI18n>, {
   en: { noData: 'No data', dragToGroup: 'Drag a column header here to group by it', groupLabelSeparator: ': ' },
   es: { noData: 'Sin datos', dragToGroup: 'Arrastre el encabezado de una columna aquí para agrupar', groupLabelSeparator: ': ' },
   pt: { noData: 'Sem dados', dragToGroup: 'Arraste o cabeçalho de uma coluna aqui para agrupar', groupLabelSeparator: ': ' },
@@ -32,7 +35,7 @@ export const gridTranslations: Record<string, GridI18n> = {
   ko: { noData: '데이터 없음', dragToGroup: '열 머리글을 여기로 끌어 그룹화하세요', groupLabelSeparator: ': ' },
   zh: { noData: '无数据', dragToGroup: '将列标题拖到此处进行分组', groupLabelSeparator: '：' },
   ar: { noData: 'لا توجد بيانات', dragToGroup: 'اسحب عنوان عمود إلى هنا للتجميع حسبه', groupLabelSeparator: ': ' },
-};
+});
 
 /**
  * Lit context carrying the default language for every grid in the subtree.
@@ -42,7 +45,7 @@ export const gridLanguageContext = createContext<string | undefined>(Symbol.for(
 
 const findTranslation = (language: string | undefined): GridI18n | undefined => {
 
-  if (!language) {
+  if (!language || typeof language !== 'string') {
     return undefined;
   }
 
@@ -70,6 +73,29 @@ export const setGridTranslation = (language: string, translation: Partial<GridI1
   gridTranslations[key] = { ...base, ...translation };
 };
 
+/*
+ * ContextRoot buffers unsatisfied context requests and re-dispatches them when
+ * a matching provider shows up later. Without it, {@link setGridLanguage}
+ * called after a grid is already connected would never reach that grid (its
+ * context request bubbled before any provider existed). Attached once at
+ * module load; guarded for SSR.
+ */
+const CONTEXT_ROOT_ATTACHED = Symbol.for('u-grid-context-root');
+
+// Uma só vez por página, mesmo com duas cópias do pacote carregadas.
+if (typeof document !== 'undefined' && !(window as unknown as Record<symbol, unknown>)[CONTEXT_ROOT_ATTACHED]) {
+
+  (window as unknown as Record<symbol, unknown>)[CONTEXT_ROOT_ATTACHED] = true;
+
+  const attach = (): void => new ContextRoot().attach(document.body);
+
+  if (document.body) {
+    attach();
+  } else {
+    document.addEventListener('DOMContentLoaded', attach, { once: true });
+  }
+}
+
 const languageProviders = new WeakMap<HTMLElement, ContextProvider<typeof gridLanguageContext>>();
 
 /**
@@ -89,4 +115,39 @@ export const setGridLanguage = (language: string, host: HTMLElement = document.b
 
   provider.hostConnected();
   languageProviders.set(host, provider);
+};
+
+const documentLanguageListeners = new Set<() => void>();
+let documentLanguageObserver: MutationObserver | undefined;
+
+/**
+ * Avisa quando o `lang` do `<html>` muda. Um único `MutationObserver` serve a
+ * todos os grids da página. Devolve a função que cancela a inscrição.
+ */
+export const observeDocumentLanguage = (listener: () => void): () => void => {
+
+  if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+    return () => undefined;
+  }
+
+  documentLanguageListeners.add(listener);
+
+  if (!documentLanguageObserver) {
+    documentLanguageObserver = new MutationObserver(() => {
+      for (const notify of documentLanguageListeners) {
+        notify();
+      }
+    });
+
+    documentLanguageObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  }
+
+  return () => {
+    documentLanguageListeners.delete(listener);
+
+    if (!documentLanguageListeners.size) {
+      documentLanguageObserver?.disconnect();
+      documentLanguageObserver = undefined;
+    }
+  };
 };

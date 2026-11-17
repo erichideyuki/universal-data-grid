@@ -63,8 +63,8 @@ async function createServer() {
         }
     })
 
-    console.log('http://localhost:5173')
-    app.listen(5173);
+    // Só na própria máquina: o middleware do Vite serve arquivos do projeto.
+    app.listen(5173, 'localhost', () => console.log('http://localhost:5173'));
 }
 
 createServer()

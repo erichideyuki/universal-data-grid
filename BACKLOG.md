@@ -1,0 +1,169 @@
+# Data Grid — backlog de funcionalidades
+
+Lacunas do `<u-grid>` em relação ao **DevExtreme DataGrid** (referência
+principal) e ao **AG Grid** (referência secundária), levantamento de
+2026-11-17, e o fluxo combinado para fechá-las. Modelo herdado do
+`write/BACKLOG.md` do Universal Office, adaptado a um componente só.
+
+## Fluxo de cada frente
+
+Uma **frente** é um recurso completo com API, interação, teclado, ARIA, i18n,
+testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
+`.specs/` e roda na própria sessão, no próprio worktree.
+
+0. **Worktree** — sessão nova com worktree a partir da `main` atualizada;
+   `npm ci`. Nunca apagar o worktree com `rm -rf` — usar
+   `git worktree remove`.
+1. **Escopo** — reler a spec da frente e confirmar com o usuário NA SESSÃO da
+   frente o que entra e o que fica de fora. Mudança de escopo atualiza a spec
+   no mesmo branch.
+2. **Medir a referência** — abrir a demo equivalente do DevExtreme (e do AG
+   Grid quando o DevExtreme não cobre) no navegador e anotar na seção
+   "Referência medida" da spec: interação (clique, Shift/Ctrl+clique), teclas,
+   padrões, ordem dos estados, textos (só o sentido; a tradução é nossa) e
+   ARIA. Sem copiar código, CSS ou ícones.
+3. **Row model** — a parte de dados entra como função pura em
+   `src/row-model/` (filtrar → ordenar → agrupar → resumir → achatar), com
+   teste unitário antes da UI.
+4. **API** — propriedades/atributos, métodos e eventos no `<u-grid>` e, quando
+   for por coluna, no `GridColumnDef` e no `<u-grid-column>`. Eventos são
+   `CustomEvent` com prefixo `u-grid-`, `bubbles` e `composed`, e os
+   cancelláveis disparam ANTES da mudança.
+5. **Interface** — render no `src/render/` ou num controller em
+   `src/features/`; textos novos na tabela de `grid-i18n.ts` (14 idiomas);
+   CSS por custom property `--u-grid-*` e `::part`.
+6. **Acessibilidade** — teclado completo (todo gesto de mouse tem
+   equivalente), ARIA conforme o padrão "grid" da APG, foco visível, RTL.
+7. **Testes** — unitários do row model, de componente no navegador (Vitest
+   browser), SSR (renderiza no `@lit-labs/ssr` sem erro) e conferência manual
+   no demo (`npm run dev`) em `en`, `pt` e `ar` (RTL). Suíte verde, lint e
+   `tsc` limpos.
+8. **Docs** — README (seção do recurso + API reference) e
+   `custom-elements.json` (`npm run analyze`).
+9. **Entrega** — commits no branch da frente, `git rebase main`, testes de
+   novo; avisar a coordenadora com resumo e print. Não editar este arquivo.
+
+**Sessão coordenadora** (a que abre as frentes): faz o merge fast-forward de
+cada frente na main quando testes, lint e `tsc` estão verdes; atualiza o
+estado aqui; remove o worktree e abre a próxima frente.
+
+Regras gerais:
+
+- A **Fase 0 é sequencial e vem antes de tudo**: sem ela todas as frentes
+  disputam o `grid.ts` (hoje 728 linhas com dados, render e eventos juntos) e
+  não há onde pôr teste.
+- Depois da Fase 0, até **3 frentes** ao mesmo tempo, escolhidas para mexer
+  em pastas diferentes (`row-model/<recurso>`, `features/<recurso>`). O
+  `grid.ts` e o `grid-i18n.ts` são pontos de encontro: conflito neles se
+  resolve no rebase de quem entrega.
+- Pedir decisão ao usuário só em escopo, comportamento que diverge da
+  referência, nome de API pública ou dependência nova.
+
+## Lacunas frente às referências
+
+Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
+
+| Área | Recurso | `<u-grid>` | DevExtreme | AG Grid |
+|---|---|---|---|---|
+| Dados | Array local | ✅ | ✅ | ✅ |
+| Dados | Fonte remota (sort/filter/group/paginação no servidor) | — | ✅ | ✅ (server-side row model) |
+| Dados | Chave de linha (`keyExpr`/`getRowId`) e atualização incremental | — | ✅ | ✅ |
+| Dados | Paginação / rolagem infinita | — | ✅ | ✅ |
+| Rolagem | Virtualização de linhas | ◐ (listras trocam ao rolar; `rowHeight` não remede) | ✅ | ✅ |
+| Rolagem | Virtualização de colunas | — | ✅ | ✅ |
+| Colunas | Definição por propriedade e por `<u-grid-column>` | ◐ (propriedade some ao conectar/reconectar) | ✅ | ✅ |
+| Colunas | Reordenar por arrasto | ◐ (sem teclado, sem RTL) | ✅ | ✅ |
+| Colunas | Redimensionar | — | ✅ | ✅ |
+| Colunas | Fixar à esquerda/direita | — | ✅ | ✅ |
+| Colunas | Ocultar / seletor de colunas | — | ✅ | ✅ |
+| Colunas | Cabeçalho em bandas (multinível) | — | ✅ | ✅ |
+| Colunas | Tipo de dado e formatação (número, data, moeda, booleano) | — | ✅ | ✅ |
+| Colunas | Alinhamento, quebra de texto, largura mín./auto | — | ✅ | ✅ |
+| Ordenação | Clique no cabeçalho, múltipla, comparador próprio | — | ✅ | ✅ |
+| Filtro | Linha de filtro | — | ✅ | ✅ (floating filter) |
+| Filtro | Filtro no cabeçalho (lista de valores) | — | ✅ | ✅ (set filter, Enterprise) |
+| Filtro | Painel de busca (texto em todas as colunas) | — | ✅ | ✅ (quick filter) |
+| Filtro | Construtor de filtro / painel de filtro | — | ✅ | ◐ |
+| Agrupamento | Painel de arrasto, multinível, auto-expandir | ◐ (ver auditoria: subgrupos duplicados, ordem numérica errada, crash) | ✅ | ✅ (Enterprise) |
+| Agrupamento | Expandir/recolher tudo, estado mantido ao trocar dados | — | ✅ | ✅ |
+| Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | — | ✅ | ✅ |
+| Resumos | Totais (rodapé) e por grupo; agregações próprias | — | ✅ | ✅ |
+| Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | — | ✅ | ✅ |
+| Seleção | Foco de célula/linha, intervalo de células | — | ◐ | ✅ (intervalo: Enterprise) |
+| Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | — | ✅ | ✅ |
+| Edição | Célula, linha, lote, formulário/popup | — | ✅ | ✅ |
+| Edição | Validação, inserir/excluir linha, desfazer | — | ✅ | ✅ |
+| Templates | Célula | ◐ (conteúdo de outra linha após expandir grupo) | ✅ | ✅ |
+| Templates | Cabeçalho, linha de grupo, linha inteira, vazio | — | ✅ | ✅ |
+| Detalhe | Master-detail (linha expansível) | — | ✅ | ✅ (Enterprise) |
+| Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
+| Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | — | ✅ | ✅ |
+| Exportação | CSV / Excel / PDF / área de transferência | — | ✅ | ✅ (Excel: Enterprise) |
+| UI | Barra de ferramentas, menu de contexto, painel de carregamento | — | ✅ | ✅ |
+| UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
+| A11y | Padrão grid ARIA completo, leitor de tela | ◐ (`aria-rowcount` errado, grupo sem `aria-expanded`, sem foco) | ✅ | ✅ |
+| i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
+| i18n | RTL | — (árabe embutido, mas arrasto calcula em LTR) | ✅ | ✅ |
+| SSR | Lit SSR + hidratação | ✅ | — | — |
+| Tema | CSS custom properties e `::part` | ✅ | ✅ | ✅ |
+
+Pontos fortes que a referência não tem e que precisam continuar: SSR,
+web component nativo sem framework, tema por tokens do Material 3.
+
+## Backlog
+
+Estado: `—` a fazer · `em curso` · `feito`.
+
+### Fase 0 — fundação (sequencial, antes de tudo)
+
+| Frente | Spec | Inclui | Estado |
+|---|---|---|---|
+| Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
+
+### Fase A — o dia a dia de qualquer grid
+
+| Frente | Spec | Inclui | Estado |
+|---|---|---|---|
+| Tipos e formatação | `02-column-types-format.md` | `dataType`, `format` (Intl), alinhamento, `calculateCellValue`, quebra de texto | — |
+| Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | — |
+| Filtro | `04-filtering.md` | linha de filtro, painel de busca, filtro no cabeçalho, API de expressão de filtro | — |
+| Seleção e teclado | `05-selection-keyboard-a11y.md` | foco de célula, navegação por teclado, seleção única/múltipla, caixa de seleção, ARIA completo, teclado para agrupar/reordenar | — |
+| Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | — |
+
+### Fase B — dados de verdade
+
+| Frente | Spec | Inclui | Estado |
+|---|---|---|---|
+| Resumos e grupos | `07-summaries-groups.md` | totais, resumos por grupo, contagem, expandir/recolher tudo, estado mantido | — |
+| Fonte de dados | `08-data-source-paging.md` | `keyExpr`, `DataSource` remota, paginação, rolagem infinita, painel de carregamento | — |
+| Edição | `09-editing.md` | célula/linha/lote, editores por tipo, validação, inserir/excluir, eventos | — |
+| Templates e detalhe | `10-templates-master-detail.md` | templates de cabeçalho, grupo, vazio; master-detail; refazer o renderer de célula | — |
+
+### Fase C — produtividade
+
+| Frente | Spec | Inclui | Estado |
+|---|---|---|---|
+| Estado | `11-state-persistence.md` | `getState`/`setState`, salvamento automático, evento de mudança | — |
+| Exportação | `12-export-clipboard.md` | CSV, área de transferência; Excel por adaptador opcional | — |
+| Bandas e virtualização de colunas | `13-bands-column-virtualization.md` | cabeçalho multinível, virtualizar colunas | — |
+
+### Fase D — avançado (escopo decidido quando chegar a vez)
+
+| Frente | Inclui | Estado |
+|---|---|---|
+| Barra e menus | barra de ferramentas configurável, menu de contexto, menu da coluna | — |
+| Responsivo | colunas ocultas por prioridade com linha adaptativa | — |
+| Árvore | dados hierárquicos (talvez um `<u-tree-grid>` à parte) | — |
+| Intervalo de células | seleção retangular, copiar/colar intervalo | — |
+| Linhas fixas | linhas fixadas no topo/rodapé | — |
+| Arrastar linhas | reordenar linhas e arrastar entre grids | — |
+
+### Pendências deixadas pelas frentes
+
+| Origem | Pendência |
+|---|---|
+| Fundação | B23: canal de distribuição (privJS ou não) e campo `license` do `package.json` — decisão do usuário |
+| Fundação | `picomatch` (ReDoS com padrões de glob não confiáveis) segue no `npm audit` sem versão corrigida; só ferramentas de dev com padrões fixos |
+| Fundação | Renderer de célula aceitar `TemplateResult` além de `HTMLElement` — decidir na frente 10 |
+| Fundação | Sem `keyExpr`, trocar `items` por objetos novos recria as linhas (a chave é a identidade do objeto) — frente 08 |
+| Fundação | Expansão de grupos ainda não tem API (`expandAll` etc.) — frente 07 |

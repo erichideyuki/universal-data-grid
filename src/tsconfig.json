@@ -38,7 +38,9 @@
   },
   "include": ["./**/*.ts"],
   "exclude": [
-    "./node_modules/lit/decorators.d.ts"
+    "./node_modules/lit/decorators.d.ts",
+    "./**/*.test.ts",
+    "./test/**"
   ],
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

@@ -5,11 +5,15 @@ import { PopulationService } from './population-service';
 
 import './dev-root.ts';
 
-const population = await PopulationService.get();
+const MAX_ROWS = 1_000_000;
 
 /**
- * @param {string} _url
+ * @param {string} url
  */
-export async function render(_url) {
+export async function render(url) {
+  const params = new URL(url, 'http://localhost').searchParams;
+  const rows = Math.min(Math.max(Number(params.get('rows')) || 1000, 0), MAX_ROWS);
+  const population = await PopulationService.get({ rows, remote: params.has('remote') });
+
   return await collectResult(renderLit(template(population)));
 }

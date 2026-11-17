@@ -190,6 +190,27 @@ export const styles = css`
     color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79)));
   }
 
+  .group-toggle {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    border-radius: var(--u-grid-toggle-shape, 50%);
+  }
+
+  .group-toggle:focus-visible {
+    outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+    outline-offset: -2px;
+  }
+
+  :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon {
+    transform: scaleX(-1);
+  }
+
   .toggle-icon {
     display: flex;
     align-items: center;
@@ -222,7 +243,7 @@ export const styles = css`
   .header {
     position: sticky;
     top: 0;
-    left: 0;
+    inset-inline-start: 0;
     background-color: var(--u-grid-header-background-color, var(--_background-color));
     display: flex;
     align-items: center;

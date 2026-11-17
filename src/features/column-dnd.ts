@@ -2,25 +2,31 @@ import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
-import { calcCursorRelativePosition } from './calc-cursor-relative-position';
-import { DataGrid } from './grid';
-import { GridDragHelper } from './grid-drag-helper';
-import { RelativePosition } from './relative-position';
+import type { DataGrid } from '../grid.js';
+import { GridDragHelper, InteractRegistry } from './drag-helper.js';
+import { calcCursorRelativePosition, dropIndicatorEdge, RelativePosition } from './drop-position.js';
 
 export class ColumnDragAndDropAdapter {
-  readonly #draggableHeaders: HTMLElement[] = [];
+  readonly #headers = new InteractRegistry();
   readonly #grid: DataGrid;
 
   constructor(grid: DataGrid) {
     this.#grid = grid;
   }
 
+  get size(): number {
+    return this.#headers.size;
+  }
+
+  prune(): void {
+    this.#headers.prune();
+  }
+
   attach(column: HTMLElement): void {
-    if (!column || this.#draggableHeaders.includes(column)) {
+    if (!column || !this.#headers.add(column)) {
       return;
     }
 
-    this.#draggableHeaders.push(column);
     GridDragHelper
       .set(column)
       .on('move', (event: InteractEvent) => {
@@ -55,15 +61,15 @@ export class ColumnDragAndDropAdapter {
           return;
         }
 
-        this.#grid._containerRef.value!.classList.add('drop-target');
+        this.#grid._containerRef.value?.classList.add('drop-target');
       },
 
       ondragleave: () => {
-        this.#grid._containerRef.value!.classList.remove('drop-target');
+        this.#grid._containerRef.value?.classList.remove('drop-target');
       },
 
       ondropdeactivate: () => {
-        this.#grid._containerRef.value!.classList.remove('drop-target');
+        this.#grid._containerRef.value?.classList.remove('drop-target');
       },
 
       ondropmove: (event: DropEvent) => {
@@ -73,17 +79,12 @@ export class ColumnDragAndDropAdapter {
 
         const container = this.#grid._containerRef.value!;
         const containerRect = container.getBoundingClientRect();
-
         const position = calcCursorRelativePosition(event);
-
-        const targetRect = event.target.getBoundingClientRect();
-
-        const left = position === RelativePosition.After
-          ? targetRect.right - containerRect.left
-          : targetRect.left - containerRect.left;
+        const left = dropIndicatorEdge(event.target as HTMLElement, position) - containerRect.left;
 
         container.style.setProperty('--_drop-indicator-left', `${Math.floor(left)}px`);
       },
+
       ondrop: (event: DropEvent) => {
 
         const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement);
@@ -107,10 +108,6 @@ export class ColumnDragAndDropAdapter {
   }
 
   detach(): void {
-    for (const draggableColumn of this.#draggableHeaders) {
-      interact(draggableColumn).unset();
-    }
-
-    this.#draggableHeaders.length = 0;
+    this.#headers.clear();
   }
 }

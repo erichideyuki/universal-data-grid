@@ -4,103 +4,6 @@
   "modules": [
     {
       "kind": "javascript-module",
-      "path": "src/calc-cursor-relative-position.ts",
-      "declarations": [
-        {
-          "kind": "function",
-          "name": "calcCursorRelativePosition",
-          "parameters": [
-            {
-              "name": "event",
-              "type": {
-                "text": "DropEvent"
-              }
-            }
-          ]
-        }
-      ],
-      "exports": [
-        {
-          "kind": "js",
-          "name": "calcCursorRelativePosition",
-          "declaration": {
-            "name": "calcCursorRelativePosition",
-            "module": "src/calc-cursor-relative-position.ts"
-          }
-        }
-      ]
-    },
-    {
-      "kind": "javascript-module",
-      "path": "src/column-drag-and-drop-adapter.ts",
-      "declarations": [
-        {
-          "kind": "class",
-          "description": "",
-          "name": "ColumnDragAndDropAdapter",
-          "members": [
-            {
-              "kind": "field",
-              "name": "#draggableHeaders",
-              "privacy": "private",
-              "type": {
-                "text": "HTMLElement[]"
-              },
-              "readonly": true,
-              "default": "[]"
-            },
-            {
-              "kind": "field",
-              "name": "#grid",
-              "privacy": "private",
-              "type": {
-                "text": "DataGrid"
-              },
-              "readonly": true,
-              "default": "grid"
-            },
-            {
-              "kind": "method",
-              "name": "attach",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "column",
-                  "type": {
-                    "text": "HTMLElement"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "detach",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              }
-            }
-          ]
-        }
-      ],
-      "exports": [
-        {
-          "kind": "js",
-          "name": "ColumnDragAndDropAdapter",
-          "declaration": {
-            "name": "ColumnDragAndDropAdapter",
-            "module": "src/column-drag-and-drop-adapter.ts"
-          }
-        }
-      ]
-    },
-    {
-      "kind": "javascript-module",
       "path": "src/grid-column-def.ts",
       "declarations": [],
       "exports": []
@@ -116,7 +19,8 @@
           "members": [
             {
               "kind": "field",
-              "name": "_width",
+              "name": "#width",
+              "privacy": "private",
               "type": {
                 "text": "number | null"
               },
@@ -124,7 +28,8 @@
             },
             {
               "kind": "field",
-              "name": "_groupIndex",
+              "name": "#groupIndex",
+              "privacy": "private",
               "type": {
                 "text": "number | null"
               },
@@ -161,8 +66,7 @@
               "type": {
                 "text": "((item: any) => HTMLElement) | null"
               },
-              "default": "null",
-              "attribute": "renderer"
+              "default": "null"
             },
             {
               "kind": "field",
@@ -173,21 +77,22 @@
               "readonly": true
             },
             {
-              "kind": "field",
-              "name": "#grid",
+              "kind": "method",
+              "name": "#notify",
               "privacy": "private",
-              "type": {
-                "text": "DataGrid | null"
+              "return": {
+                "type": {
+                  "text": "void"
+                }
               },
-              "readonly": true
-            },
-            {
-              "kind": "field",
-              "name": "_index",
-              "type": {
-                "text": "number | null"
-              },
-              "default": "null"
+              "parameters": [
+                {
+                  "name": "change",
+                  "type": {
+                    "text": "'width' | 'groupIndex'"
+                  }
+                }
+              ]
             }
           ],
           "attributes": [
@@ -212,14 +117,6 @@
               },
               "default": "''",
               "fieldName": "path"
-            },
-            {
-              "name": "renderer",
-              "type": {
-                "text": "((item: any) => HTMLElement) | null"
-              },
-              "default": "null",
-              "fieldName": "renderer"
             }
           ],
           "superclass": {
@@ -255,14 +152,14 @@
       "declarations": [
         {
           "kind": "class",
-          "description": "",
+          "description": "Ponte entre a célula (shadow DOM do grid) e o elemento devolvido pelo\n`renderer` do hospedeiro (light DOM do grid, projetado por slot).\nRe-executa o renderer sempre que a linha ou a coluna da célula mudam.",
           "name": "UmDataGridCustomCell",
           "members": [
             {
               "kind": "field",
               "name": "grid",
               "type": {
-                "text": "DataGrid | null"
+                "text": "HTMLElement | null"
               },
               "default": "null"
             },
@@ -279,7 +176,8 @@
               "name": "item",
               "type": {
                 "text": "any"
-              }
+              },
+              "default": "null"
             },
             {
               "kind": "field",
@@ -291,12 +189,40 @@
             },
             {
               "kind": "field",
-              "name": "#cellContainer",
+              "name": "#container",
               "privacy": "private",
               "type": {
                 "text": "HTMLElement | null"
               },
               "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#renderedColumn",
+              "privacy": "private",
+              "type": {
+                "text": "GridColumnDef | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#renderedItem",
+              "privacy": "private",
+              "type": {
+                "text": "unknown"
+              },
+              "default": "undefined"
+            },
+            {
+              "kind": "method",
+              "name": "#sync",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
             }
           ],
           "superclass": {
@@ -328,41 +254,171 @@
     },
     {
       "kind": "javascript-module",
-      "path": "src/grid-drag-helper.ts",
+      "path": "src/grid-i18n.ts",
       "declarations": [
         {
-          "kind": "class",
-          "description": "",
-          "name": "GridDragHelper",
-          "members": [
-            {
-              "kind": "method",
-              "name": "set",
-              "static": true,
-              "return": {
-                "type": {
-                  "text": "Interactable"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "element",
-                  "type": {
-                    "text": "HTMLElement"
-                  }
-                }
-              ]
+          "kind": "variable",
+          "name": "DEFAULT_GRID_LANGUAGE",
+          "type": {
+            "text": "string"
+          },
+          "default": "'en'"
+        },
+        {
+          "kind": "variable",
+          "name": "gridTranslations",
+          "type": {
+            "text": "Record<string, GridI18n>"
+          },
+          "description": "Built-in translations keyed by lowercase language code. Region specific\r\nentries (e.g. `pt-br`) can be added through setGridTranslation and\r\ntake precedence over their base language.\r\n\r\nObjeto sem protótipo: `language=\"constructor\"` ou\r\n`setGridTranslation('__proto__', …)` não alcançam `Object.prototype`."
+        },
+        {
+          "kind": "variable",
+          "name": "gridLanguageContext",
+          "description": "Lit context carrying the default language for every grid in the subtree.\r\nUses a shared symbol so duplicate module copies resolve to the same context."
+        },
+        {
+          "kind": "function",
+          "name": "resolveGridTranslation",
+          "return": {
+            "type": {
+              "text": "GridI18n"
             }
-          ]
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "optional": true,
+              "type": {
+                "text": "string"
+              }
+            }
+          ],
+          "description": "Resolves the translation for a language code, falling back to the base\r\nlanguage and finally to DEFAULT_GRID_LANGUAGE."
+        },
+        {
+          "kind": "function",
+          "name": "setGridTranslation",
+          "return": {
+            "type": {
+              "text": "void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "translation",
+              "type": {
+                "text": "Partial<GridI18n>"
+              }
+            }
+          ],
+          "description": "Overrides part (or all) of a built-in translation. Missing keys keep their\r\nprevious value, so a partial object is enough."
+        },
+        {
+          "kind": "function",
+          "name": "setGridLanguage",
+          "return": {
+            "type": {
+              "text": "void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "host",
+              "default": "document.body",
+              "type": {
+                "text": "HTMLElement"
+              }
+            }
+          ],
+          "description": "Provides a default language through Lit context on `host` (the document body\r\nby default). Every grid without an explicit `language` inherits this value."
+        },
+        {
+          "kind": "function",
+          "name": "observeDocumentLanguage",
+          "return": {
+            "type": {
+              "text": "() => void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "listener",
+              "type": {
+                "text": "() => void"
+              }
+            }
+          ],
+          "description": "Avisa quando o `lang` do `<html>` muda. Um único `MutationObserver` serve a\r\ntodos os grids da página. Devolve a função que cancela a inscrição."
         }
       ],
       "exports": [
         {
           "kind": "js",
-          "name": "GridDragHelper",
+          "name": "DEFAULT_GRID_LANGUAGE",
           "declaration": {
-            "name": "GridDragHelper",
-            "module": "src/grid-drag-helper.ts"
+            "name": "DEFAULT_GRID_LANGUAGE",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "gridTranslations",
+          "declaration": {
+            "name": "gridTranslations",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "gridLanguageContext",
+          "declaration": {
+            "name": "gridLanguageContext",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "resolveGridTranslation",
+          "declaration": {
+            "name": "resolveGridTranslation",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "setGridTranslation",
+          "declaration": {
+            "name": "setGridTranslation",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "setGridLanguage",
+          "declaration": {
+            "name": "setGridLanguage",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "observeDocumentLanguage",
+          "declaration": {
+            "name": "observeDocumentLanguage",
+            "module": "src/grid-i18n.ts"
           }
         }
       ]
@@ -374,7 +430,7 @@
         {
           "kind": "variable",
           "name": "styles",
-          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; left: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
+          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .group-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer; border-radius: var(--u-grid-toggle-shape, 50%); } .group-toggle:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon { transform: scaleX(-1); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; inset-inline-start: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
         }
       ],
       "exports": [
@@ -402,7 +458,7 @@
               "name": "#items",
               "privacy": "private",
               "type": {
-                "text": "any[]"
+                "text": "readonly any[]"
               },
               "default": "[]"
             },
@@ -421,16 +477,16 @@
               "type": {
                 "text": "any[]"
               },
+              "description": "Dados das linhas. O grid nunca altera este array nem os itens.",
               "attribute": "items"
             },
             {
               "kind": "field",
-              "name": "#groupsByLevel",
+              "name": "#groups",
               "privacy": "private",
               "type": {
-                "text": "GroupRow[][]"
+                "text": "GroupNode[]"
               },
-              "readonly": true,
               "default": "[]"
             },
             {
@@ -440,7 +496,58 @@
               "type": {
                 "text": "Row[]"
               },
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "#groupsDirty",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true"
+            },
+            {
+              "kind": "field",
+              "name": "#rowsDirty",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true"
+            },
+            {
+              "kind": "field",
+              "name": "#modelLanguage",
+              "privacy": "private",
+              "type": {
+                "text": "string | undefined"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "#expansion",
+              "privacy": "private",
               "readonly": true,
+              "default": "new Map<string, boolean>()",
+              "description": "Expansão escolhida pelo usuário, por chave de grupo (sobrevive a troca de dados)."
+            },
+            {
+              "kind": "field",
+              "name": "#columnsProperty",
+              "privacy": "private",
+              "type": {
+                "text": "GridColumnDef[] | undefined"
+              },
+              "description": "Colunas por propriedade; `undefined` = usar os `<u-grid-column>` filhos."
+            },
+            {
+              "kind": "field",
+              "name": "#declarativeColumns",
+              "privacy": "private",
+              "type": {
+                "text": "GridColumnDef[]"
+              },
               "default": "[]"
             },
             {
@@ -451,29 +558,12 @@
             },
             {
               "kind": "field",
-              "name": "#sortedItems",
-              "privacy": "private",
-              "type": {
-                "text": "any[]"
-              },
-              "default": "[]"
-            },
-            {
-              "kind": "field",
-              "name": "_columns",
-              "type": {
-                "text": "GridColumnDef[]"
-              },
-              "privacy": "protected",
-              "default": "[]"
-            },
-            {
-              "kind": "field",
               "name": "_groupColumns",
               "type": {
                 "text": "GridColumnDef[]"
               },
-              "default": "[]"
+              "default": "[]",
+              "description": "Ordem atual (do usuário) das colunas comuns e de grupo — estado do grid."
             },
             {
               "kind": "field",
@@ -488,7 +578,8 @@
               "name": "columns",
               "type": {
                 "text": "GridColumnDef[]"
-              }
+              },
+              "description": "Definições de coluna. Por propriedade têm precedência sobre os\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
             },
             {
               "kind": "field",
@@ -501,21 +592,30 @@
             },
             {
               "kind": "field",
-              "name": "stripped",
+              "name": "striped",
               "type": {
                 "text": "boolean"
               },
               "default": "false",
-              "attribute": "stripped"
+              "attribute": "striped"
             },
             {
               "kind": "field",
-              "name": "showHeader",
+              "name": "showGroupPanel",
               "type": {
                 "text": "boolean"
               },
               "default": "true",
-              "attribute": "showHeader"
+              "attribute": "show-group-panel"
+            },
+            {
+              "kind": "field",
+              "name": "showColumnHeaders",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "attribute": "show-column-headers"
             },
             {
               "kind": "field",
@@ -534,6 +634,105 @@
               },
               "default": "false",
               "attribute": "showColumnLines"
+            },
+            {
+              "kind": "field",
+              "name": "stripped",
+              "type": {
+                "text": "boolean"
+              },
+              "deprecated": "Use `striped`.",
+              "attribute": "stripped"
+            },
+            {
+              "kind": "field",
+              "name": "showHeader",
+              "type": {
+                "text": "boolean"
+              },
+              "deprecated": "Use `showGroupPanel` (o nome antigo só controlava o painel de grupos).",
+              "attribute": "showHeader"
+            },
+            {
+              "kind": "field",
+              "name": "#warnedDeprecations",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new Set<string>()"
+            },
+            {
+              "kind": "method",
+              "name": "#deprecated",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "name",
+                  "type": {
+                    "text": "string"
+                  }
+                },
+                {
+                  "name": "replacement",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "field",
+              "name": "#explicitLanguage",
+              "privacy": "private",
+              "type": {
+                "text": "string | undefined"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "#unobserveDocumentLanguage",
+              "privacy": "private",
+              "type": {
+                "text": "() => void | undefined"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "#languageConsumer",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new ContextConsumer(this, { context: gridLanguageContext, subscribe: true, })"
+            },
+            {
+              "kind": "field",
+              "name": "language",
+              "type": {
+                "text": "string"
+              },
+              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
+              "attribute": "language"
+            },
+            {
+              "kind": "field",
+              "name": "#effectiveLanguage",
+              "privacy": "private",
+              "type": {
+                "text": "string | undefined"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "#translation",
+              "privacy": "private",
+              "type": {
+                "text": "GridI18n"
+              },
+              "readonly": true
             },
             {
               "kind": "field",
@@ -564,7 +763,7 @@
               "name": "#virtualizerController",
               "privacy": "private",
               "readonly": true,
-              "default": "new VirtualizerController(this, { getScrollElement: () => this._scrollContainerRef.value!, count: 0, estimateSize: () => this.rowHeight, overscan: 5, })"
+              "default": "new VirtualizerController(this, { getScrollElement: () => this._scrollContainerRef.value ?? null, count: 0, estimateSize: () => this.rowHeight, getItemKey: index => this.#rows[index]?.key ?? index, overscan: 5, })"
             },
             {
               "kind": "field",
@@ -575,33 +774,28 @@
             },
             {
               "kind": "field",
-              "name": "#groupDragAndDropAdapter",
+              "name": "#groupDragAndDrop",
               "privacy": "private",
               "readonly": true,
               "default": "new GroupDragAndDropAdapter(this)"
             },
             {
-              "kind": "method",
-              "name": "#renderColGroups",
+              "kind": "field",
+              "name": "#dragAndDropDirty",
               "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "HTMLTemplateResult"
-                }
-              }
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true"
             },
             {
-              "kind": "method",
-              "name": "#renderBody",
-              "privacy": "private",
-              "parameters": [
-                {
-                  "name": "virtualRows",
-                  "type": {
-                    "text": "any[]"
-                  }
-                }
-              ]
+              "kind": "field",
+              "name": "_dragAndDropRegistrations",
+              "type": {
+                "text": "number"
+              },
+              "description": "Quantos elementos estão registrados no interactjs (diagnóstico/testes).",
+              "readonly": true
             },
             {
               "kind": "method",
@@ -651,6 +845,47 @@
             },
             {
               "kind": "method",
+              "name": "_columnChanged",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                },
+                {
+                  "name": "change",
+                  "type": {
+                    "text": "'width' | 'groupIndex'"
+                  }
+                }
+              ],
+              "description": "Chamado por `<u-grid-column>` quando `width`/`group-index` mudam."
+            },
+            {
+              "kind": "field",
+              "name": "#readDeclarativeColumns",
+              "privacy": "private",
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "#syncColumns",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Concilia as definições com a ordem atual: colunas já conhecidas mantêm a\nposição e o agrupamento escolhidos pelo usuário; novas entram pelo\n`groupIndex` (inicial) ou na posição da definição."
+            },
+            {
+              "kind": "method",
               "name": "#moveColumnTo",
               "privacy": "private",
               "return": {
@@ -660,9 +895,9 @@
               },
               "parameters": [
                 {
-                  "name": "targetList",
+                  "name": "toGroup",
                   "type": {
-                    "text": "GridColumnDef[]"
+                    "text": "boolean"
                   }
                 },
                 {
@@ -681,13 +916,93 @@
             },
             {
               "kind": "method",
-              "name": "#renderItem",
+              "name": "#setColumnState",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "regular",
+                  "type": {
+                    "text": "GridColumnDef[]"
+                  }
+                },
+                {
+                  "name": "group",
+                  "type": {
+                    "text": "GridColumnDef[]"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "field",
+              "name": "#isExpanded",
+              "privacy": "private",
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "#ensureRows",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "field",
+              "name": "#toggleGroup",
+              "privacy": "private",
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "#renderColGroups",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "HTMLTemplateResult"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "#renderColumnHeaders",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "#renderBody",
+              "privacy": "private",
+              "parameters": [
+                {
+                  "name": "virtualRows",
+                  "type": {
+                    "text": "VirtualItem[]"
+                  }
+                },
+                {
+                  "name": "headerRows",
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "#renderRow",
               "privacy": "private",
               "parameters": [
                 {
                   "name": "virtualRow",
                   "type": {
-                    "text": "any"
+                    "text": "VirtualItem"
                   }
                 },
                 {
@@ -703,13 +1018,7 @@
                   }
                 },
                 {
-                  "name": "oddEven",
-                  "type": {
-                    "text": "string"
-                  }
-                },
-                {
-                  "name": "groupingCount",
+                  "name": "headerRows",
                   "type": {
                     "text": "number"
                   }
@@ -726,302 +1035,24 @@
                   "type": {
                     "text": "DataRow"
                   }
-                },
-                {
-                  "name": "groupingCount",
-                  "type": {
-                    "text": "number"
-                  }
                 }
               ]
             },
             {
               "kind": "method",
-              "name": "#renderGroupRowCells",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "HTMLTemplateResult"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "row",
-                  "type": {
-                    "text": "GroupRow"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#toggleGroup",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "row",
-                  "type": {
-                    "text": "Row"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#collapseGroup",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "rowIndex",
-                  "type": {
-                    "text": "number"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#expandGroup",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "rowIndex",
-                  "type": {
-                    "text": "number"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#setGroupRows",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "group",
-                  "type": {
-                    "text": "GroupRow"
-                  }
-                },
-                {
-                  "name": "target",
-                  "type": {
-                    "text": "Row[]"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#buildGroups",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              }
-            },
-            {
-              "kind": "method",
-              "name": "#buildGroups",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "startingLevel",
-                  "type": {
-                    "text": "number"
-                  }
-                },
-                {
-                  "name": "items",
-                  "type": {
-                    "text": "any[]"
-                  }
-                },
-                {
-                  "name": "currentGroups",
-                  "type": {
-                    "text": "GroupRow[]"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#buildGroups",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "startingLevel",
-                  "default": "0"
-                },
-                {
-                  "name": "items",
-                  "default": "this.#sortedItems",
-                  "type": {
-                    "text": "any[]"
-                  }
-                },
-                {
-                  "name": "currentGroups",
-                  "default": "[]",
-                  "type": {
-                    "text": "GroupRow[]"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#resetGroups",
+              "name": "#renderGroupPanel",
               "privacy": "private"
             },
             {
               "kind": "method",
-              "name": "#resetRows",
+              "name": "#syncDragAndDrop",
               "privacy": "private",
               "return": {
                 "type": {
                   "text": "void"
                 }
-              }
-            },
-            {
-              "kind": "method",
-              "name": "#rebuildGroupsFromLevel",
-              "privacy": "private",
-              "parameters": [
-                {
-                  "name": "level",
-                  "type": {
-                    "text": "number"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#getValueByPath",
-              "privacy": "private",
-              "parameters": [
-                {
-                  "name": "item",
-                  "type": {
-                    "text": "any"
-                  }
-                },
-                {
-                  "name": "path",
-                  "type": {
-                    "text": "string"
-                  }
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#setColumns",
-              "privacy": "private"
-            },
-            {
-              "kind": "method",
-              "name": "_resetGroupColumns"
-            },
-            {
-              "kind": "method",
-              "name": "#updateSorting",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              }
-            },
-            {
-              "kind": "method",
-              "name": "#renderHeader",
-              "privacy": "private"
-            },
-            {
-              "kind": "method",
-              "name": "#setColumnsOrder",
-              "privacy": "private"
-            },
-            {
-              "kind": "method",
-              "name": "#setData",
-              "privacy": "private",
-              "parameters": [
-                {
-                  "name": "changedColumnIndex",
-                  "default": "0"
-                }
-              ]
-            },
-            {
-              "kind": "method",
-              "name": "#renderGroupContainer",
-              "privacy": "private"
-            },
-            {
-              "kind": "method",
-              "name": "#renderGroups",
-              "privacy": "private"
-            },
-            {
-              "kind": "method",
-              "name": "#renderCell",
-              "privacy": "private",
-              "parameters": [
-                {
-                  "name": "row",
-                  "type": {
-                    "text": "DataRow"
-                  }
-                },
-                {
-                  "name": "column",
-                  "type": {
-                    "text": "GridColumnDef"
-                  }
-                },
-                {
-                  "name": "index",
-                  "type": {
-                    "text": "number"
-                  }
-                }
-              ]
+              },
+              "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\nquando colunas/painéis mudam (não a cada render de rolagem) e é\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\nsaíram do DOM são soltos."
             }
           ],
           "attributes": [
@@ -1038,6 +1069,7 @@
               "type": {
                 "text": "any[]"
               },
+              "description": "Dados das linhas. O grid nunca altera este array nem os itens.",
               "fieldName": "items"
             },
             {
@@ -1049,20 +1081,28 @@
               "fieldName": "rowHeight"
             },
             {
-              "name": "stripped",
+              "name": "striped",
               "type": {
                 "text": "boolean"
               },
               "default": "false",
-              "fieldName": "stripped"
+              "fieldName": "striped"
             },
             {
-              "name": "showHeader",
+              "name": "show-group-panel",
               "type": {
                 "text": "boolean"
               },
               "default": "true",
-              "fieldName": "showHeader"
+              "fieldName": "showGroupPanel"
+            },
+            {
+              "name": "show-column-headers",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "fieldName": "showColumnHeaders"
             },
             {
               "name": "showRowLines",
@@ -1079,6 +1119,30 @@
               },
               "default": "false",
               "fieldName": "showColumnLines"
+            },
+            {
+              "name": "stripped",
+              "type": {
+                "text": "boolean"
+              },
+              "deprecated": "Use `striped`.",
+              "fieldName": "stripped"
+            },
+            {
+              "name": "showHeader",
+              "type": {
+                "text": "boolean"
+              },
+              "deprecated": "Use `showGroupPanel` (o nome antigo só controlava o painel de grupos).",
+              "fieldName": "showHeader"
+            },
+            {
+              "name": "language",
+              "type": {
+                "text": "string"
+              },
+              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
+              "fieldName": "language"
             }
           ],
           "superclass": {
@@ -1090,6 +1154,46 @@
         }
       ],
       "exports": [
+        {
+          "kind": "js",
+          "name": "GridColumnDef",
+          "declaration": {
+            "name": "GridColumnDef",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "setGridLanguage",
+          "declaration": {
+            "name": "setGridLanguage",
+            "module": "./grid-i18n.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "setGridTranslation",
+          "declaration": {
+            "name": "setGridTranslation",
+            "module": "./grid-i18n.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "gridLanguageContext",
+          "declaration": {
+            "name": "gridLanguageContext",
+            "module": "./grid-i18n.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridI18n",
+          "declaration": {
+            "name": "GridI18n",
+            "module": "./grid-i18n.js"
+          }
+        },
         {
           "kind": "js",
           "name": "DataGrid",
@@ -1110,22 +1214,19 @@
     },
     {
       "kind": "javascript-module",
-      "path": "src/group-drag-and-drop-adapter.ts",
+      "path": "src/features/column-dnd.ts",
       "declarations": [
         {
           "kind": "class",
           "description": "",
-          "name": "GroupDragAndDropAdapter",
+          "name": "ColumnDragAndDropAdapter",
           "members": [
             {
               "kind": "field",
-              "name": "#groups",
+              "name": "#headers",
               "privacy": "private",
-              "type": {
-                "text": "HTMLElement[]"
-              },
               "readonly": true,
-              "default": "[]"
+              "default": "new InteractRegistry()"
             },
             {
               "kind": "field",
@@ -1136,6 +1237,320 @@
               },
               "readonly": true,
               "default": "grid"
+            },
+            {
+              "kind": "field",
+              "name": "size",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "prune",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "attach",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "HTMLElement"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "detach",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "ColumnDragAndDropAdapter",
+          "declaration": {
+            "name": "ColumnDragAndDropAdapter",
+            "module": "src/features/column-dnd.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/features/drag-helper.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "GridDragHelper",
+          "members": [
+            {
+              "kind": "method",
+              "name": "set",
+              "static": true,
+              "return": {
+                "type": {
+                  "text": "Interactable"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "element",
+                  "type": {
+                    "text": "HTMLElement"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "description": "Conjunto de elementos registrados no interactjs. Registrar de novo o mesmo\nelemento não faz nada; elementos que saíram do DOM são soltos no `prune`.",
+          "name": "InteractRegistry",
+          "members": [
+            {
+              "kind": "field",
+              "name": "#elements",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new Set<HTMLElement>()"
+            },
+            {
+              "kind": "field",
+              "name": "size",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "add",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "element",
+                  "type": {
+                    "text": "HTMLElement"
+                  }
+                }
+              ],
+              "description": "Devolve `false` se o elemento já estava registrado."
+            },
+            {
+              "kind": "method",
+              "name": "prune",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "clear",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "GridDragHelper",
+          "declaration": {
+            "name": "GridDragHelper",
+            "module": "src/features/drag-helper.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "InteractRegistry",
+          "declaration": {
+            "name": "InteractRegistry",
+            "module": "src/features/drag-helper.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/features/drop-position.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "RelativePosition",
+          "type": {
+            "text": "{\n  Before: 0,\n  After: 1,\n}"
+          },
+          "default": "{ Before: 0, After: 1, }"
+        },
+        {
+          "kind": "function",
+          "name": "isRtl",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "element",
+              "type": {
+                "text": "Element"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "calcCursorRelativePosition",
+          "return": {
+            "type": {
+              "text": "DropSide"
+            }
+          },
+          "parameters": [
+            {
+              "name": "event",
+              "type": {
+                "text": "DropEvent"
+              }
+            }
+          ],
+          "description": "Posição LÓGICA do cursor em relação ao alvo: antes ou depois na ordem das\ncolunas. Em RTL a metade esquerda é \"depois\"."
+        },
+        {
+          "kind": "function",
+          "name": "dropIndicatorEdge",
+          "return": {
+            "type": {
+              "text": "number"
+            }
+          },
+          "parameters": [
+            {
+              "name": "target",
+              "type": {
+                "text": "Element"
+              }
+            },
+            {
+              "name": "position",
+              "type": {
+                "text": "DropSide"
+              }
+            }
+          ],
+          "description": "Borda física (px no viewport) onde o indicador de soltar deve aparecer."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "RelativePosition",
+          "declaration": {
+            "name": "RelativePosition",
+            "module": "src/features/drop-position.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isRtl",
+          "declaration": {
+            "name": "isRtl",
+            "module": "src/features/drop-position.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "calcCursorRelativePosition",
+          "declaration": {
+            "name": "calcCursorRelativePosition",
+            "module": "src/features/drop-position.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "dropIndicatorEdge",
+          "declaration": {
+            "name": "dropIndicatorEdge",
+            "module": "src/features/drop-position.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/features/group-dnd.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "GroupDragAndDropAdapter",
+          "members": [
+            {
+              "kind": "field",
+              "name": "#elements",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new InteractRegistry()"
+            },
+            {
+              "kind": "field",
+              "name": "#grid",
+              "privacy": "private",
+              "type": {
+                "text": "DataGrid"
+              },
+              "readonly": true,
+              "default": "grid"
+            },
+            {
+              "kind": "field",
+              "name": "size",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "prune",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
             },
             {
               "kind": "method",
@@ -1195,16 +1610,364 @@
           "name": "GroupDragAndDropAdapter",
           "declaration": {
             "name": "GroupDragAndDropAdapter",
-            "module": "src/group-drag-and-drop-adapter.ts"
+            "module": "src/features/group-dnd.ts"
           }
         }
       ]
     },
     {
       "kind": "javascript-module",
-      "path": "src/relative-position.ts",
+      "path": "src/row-model/compare.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "createComparer",
+          "return": {
+            "type": {
+              "text": "Comparer"
+            }
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "optional": true,
+              "type": {
+                "text": "string"
+              }
+            }
+          ],
+          "description": "Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;\no resto como texto com `Intl.Collator` numérico (\"item 2\" < \"item 10\") no\nidioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa\n(número < data < booleano < texto) para a ordenação ser total."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "createComparer",
+          "declaration": {
+            "name": "createComparer",
+            "module": "src/row-model/compare.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/flatten.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "flattenRows",
+          "return": {
+            "type": {
+              "text": "Row[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "items",
+              "type": {
+                "text": "readonly unknown[]"
+              }
+            },
+            {
+              "name": "groups",
+              "type": {
+                "text": "readonly GroupNode[]"
+              }
+            },
+            {
+              "name": "isExpanded",
+              "type": {
+                "text": "(key: string) => boolean"
+              }
+            },
+            {
+              "name": "keyOf",
+              "type": {
+                "text": "RowKeyOf"
+              }
+            }
+          ],
+          "description": "Lista de linhas visíveis: grupos e, nos expandidos, os subgrupos ou os\r\nitens. `isExpanded` decide por chave do grupo."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "flattenRows",
+          "declaration": {
+            "name": "flattenRows",
+            "module": "src/row-model/flatten.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/group.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "buildGroups",
+          "return": {
+            "type": {
+              "text": "GroupNode[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "items",
+              "type": {
+                "text": "readonly unknown[]"
+              }
+            },
+            {
+              "name": "groupColumns",
+              "type": {
+                "text": "readonly GridColumnDef[]"
+              }
+            },
+            {
+              "name": "compare",
+              "type": {
+                "text": "Comparer"
+              }
+            }
+          ],
+          "description": "Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da\nordem de entrada (usa mapa, não \"valores consecutivos\") e não muta nada.\nGrupos de cada nível em ordem de `compare`; itens na ordem original."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "buildGroups",
+          "declaration": {
+            "name": "buildGroups",
+            "module": "src/row-model/group.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/types.ts",
       "declarations": [],
       "exports": []
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/value.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "getValueByPath",
+          "return": {
+            "type": {
+              "text": "unknown"
+            }
+          },
+          "parameters": [
+            {
+              "name": "item",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "path",
+              "type": {
+                "text": "string | undefined"
+              }
+            }
+          ],
+          "description": "Lê `path` (com pontos: `address.city`) de um item. Sem `path` devolve\n`undefined` — colunas só com `renderer` não têm valor."
+        },
+        {
+          "kind": "function",
+          "name": "getCellValue",
+          "return": {
+            "type": {
+              "text": "unknown"
+            }
+          },
+          "parameters": [
+            {
+              "name": "item",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            }
+          ],
+          "description": "Único ponto que lê o valor de uma célula (base de ordenar/agrupar/exibir)."
+        },
+        {
+          "kind": "function",
+          "name": "toDisplayText",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              }
+            }
+          ],
+          "description": "Texto exibido para um valor bruto (formatação por tipo vem na frente 02)."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "getValueByPath",
+          "declaration": {
+            "name": "getValueByPath",
+            "module": "src/row-model/value.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "getCellValue",
+          "declaration": {
+            "name": "getCellValue",
+            "module": "src/row-model/value.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "toDisplayText",
+          "declaration": {
+            "name": "toDisplayText",
+            "module": "src/row-model/value.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/render/cell.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "renderDataCell",
+          "return": {
+            "type": {
+              "text": "TemplateResult | string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "grid",
+              "type": {
+                "text": "DataGrid"
+              }
+            },
+            {
+              "name": "row",
+              "type": {
+                "text": "DataRow"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "columnId",
+              "type": {
+                "text": "number"
+              }
+            }
+          ],
+          "description": "Conteúdo de uma célula de dados. Com `renderer`, o elemento do hospedeiro\nvai para o light DOM do grid e é projetado por um slot nomeado pela CHAVE\nda linha e pelo id da coluna — nunca por índices, que mudam ao expandir,\nordenar ou reordenar."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "renderDataCell",
+          "declaration": {
+            "name": "renderDataCell",
+            "module": "src/render/cell.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/render/group-row.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "groupRowLabel",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "row",
+              "type": {
+                "text": "GroupRow"
+              }
+            },
+            {
+              "name": "separator",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "renderGroupRowCells",
+          "return": {
+            "type": {
+              "text": "TemplateResult"
+            }
+          },
+          "parameters": [
+            {
+              "name": "{ row, totalColumns, separator, onToggle }",
+              "type": {
+                "text": "GroupRowContext"
+              }
+            }
+          ],
+          "description": "Células de uma linha de grupo: recuo, botão de expandir e o rótulo."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "groupRowLabel",
+          "declaration": {
+            "name": "groupRowLabel",
+            "module": "src/render/group-row.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "renderGroupRowCells",
+          "declaration": {
+            "name": "renderGroupRowCells",
+            "module": "src/render/group-row.ts"
+          }
+        }
+      ]
     }
   ]
 }

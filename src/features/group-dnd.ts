@@ -2,36 +2,46 @@ import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
-import { calcCursorRelativePosition } from './calc-cursor-relative-position';
-import { DataGrid } from './grid';
-import { GridDragHelper } from './grid-drag-helper';
-import { RelativePosition } from './relative-position';
+import type { DataGrid } from '../grid.js';
+import { GridDragHelper, InteractRegistry } from './drag-helper.js';
+import { calcCursorRelativePosition, RelativePosition } from './drop-position.js';
 
 export class GroupDragAndDropAdapter {
-  readonly #groups: HTMLElement[] = [];
+  readonly #elements = new InteractRegistry();
   readonly #grid: DataGrid;
 
   constructor(grid: DataGrid) {
     this.#grid = grid;
   }
 
+  get size(): number {
+    return this.#elements.size;
+  }
+
+  prune(): void {
+    this.#elements.prune();
+  }
+
   attachToGroupDropTarget(dropTarget: HTMLElement, indicatorOrder: number): void {
-    this.#groups.push(dropTarget);
+    if (!dropTarget || !this.#elements.add(dropTarget)) {
+      return;
+    }
 
     interact(dropTarget).dropzone({
       accept: '.move-container',
 
       ondragenter: () => {
-        this.#grid._groupContainerRef.value!.classList.add('drop-target');
-        this.#grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${indicatorOrder}`);
+        const container = this.#grid._groupContainerRef.value!;
+        container.classList.add('drop-target');
+        container.style.setProperty('--_drop-indicator-order', `${indicatorOrder}`);
       },
 
       ondragleave: () => {
-        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value?.classList.remove('drop-target');
       },
 
       ondropdeactivate: () => {
-        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value?.classList.remove('drop-target');
       },
 
       ondrop: (event: DropEvent) => {
@@ -42,19 +52,16 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        const targetIndex = this.#grid._groupColumns.length;
-
-        this.#grid.groupColumn(movingColumn, targetIndex);
+        this.#grid.groupColumn(movingColumn, this.#grid._groupColumns.length);
       },
     });
   }
 
   attach(group: HTMLElement): void {
-    if (!group || this.#groups.includes(group)) {
+    if (!group || !this.#elements.add(group)) {
       return;
     }
 
-    this.#groups.push(group);
     GridDragHelper
       .set(group)
       .on('move', (event: InteractEvent) => {
@@ -90,15 +97,15 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        this.#grid._groupContainerRef.value!.classList.add('drop-target');
+        this.#grid._groupContainerRef.value?.classList.add('drop-target');
       },
 
       ondragleave: () => {
-        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value?.classList.remove('drop-target');
       },
 
       ondropdeactivate: () => {
-        this.#grid._groupContainerRef.value!.classList.remove('drop-target');
+        this.#grid._groupContainerRef.value?.classList.remove('drop-target');
       },
 
       ondropmove: (event: DropEvent) => {
@@ -106,16 +113,20 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        const position = calcCursorRelativePosition(event);
+        const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement);
 
-        const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement)!;
+        if (!targetColumn) {
+          return;
+        }
+
         let targetIndex = this.#grid._groupColumns.indexOf(targetColumn);
 
-        if (position === RelativePosition.After) {
+        if (calcCursorRelativePosition(event) === RelativePosition.After) {
           targetIndex++;
         }
 
-        this.#grid._groupContainerRef.value!.style.setProperty('--_drop-indicator-order', `${targetIndex}`);
+        // `order` do flex: o navegador já espelha em RTL.
+        this.#grid._groupContainerRef.value?.style.setProperty('--_drop-indicator-order', `${targetIndex}`);
       },
 
       ondrop: (event: DropEvent) => {
@@ -127,11 +138,9 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        const position = calcCursorRelativePosition(event);
-
         let targetIndex = this.#grid._groupColumns.indexOf(targetColumn);
 
-        if (position === RelativePosition.After) {
+        if (calcCursorRelativePosition(event) === RelativePosition.After) {
           targetIndex++;
         }
 
@@ -141,10 +150,6 @@ export class GroupDragAndDropAdapter {
   }
 
   detach(): void {
-    for (const elements of this.#groups) {
-      interact(elements).unset();
-    }
-
-    this.#groups.length = 0;
+    this.#elements.clear();
   }
 }
