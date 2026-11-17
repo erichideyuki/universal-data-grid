@@ -39,6 +39,23 @@ describe('SSR', () => {
     expect(output).toContain('Sem dados');
   });
 
+  it('renderiza colunas fixas, ocultas e alças de redimensionar (ar/RTL)', async () => {
+    const wide: GridColumnDef[] = [
+      { path: 'country', label: 'Country', fixed: 'start', width: 120 },
+      { path: 'year', label: 'Year', visible: false },
+      { path: 'code', label: 'Code', fixed: 'end' },
+    ];
+
+    const output = await renderToString(html`
+      <u-grid dir="rtl" language="ar" column-resizing column-chooser .columns=${wide} .items=${items}></u-grid>`);
+
+    expect(output).toContain('role="separator"');
+    expect(output).toContain('fixed-start');
+    expect(output).toContain('fixed-end');
+    expect(output).toContain('منتقي الأعمدة');
+    expect(output.match(/role="columnheader"/g)).toHaveLength(2);
+  });
+
   it('não altera os dados do hospedeiro', async () => {
     const data = [{ country: 'b' }, { country: 'a' }];
     await renderToString(html`<u-grid .columns=${columns} .items=${data}></u-grid>`);

@@ -7,24 +7,31 @@ import type {
   GridColumnComparator,
   GridColumnDataType,
   GridColumnDef,
+  GridColumnFixed,
   GridColumnFormat,
   GridSortOrder,
 } from './grid-column-def.js';
 
-type ColumnChange = 'width' | 'groupIndex' | 'value' | 'display';
+/** `value`: muda o valor das células; `display`: só a exibição/layout. */
+export type GridColumnChange = 'width' | 'groupIndex' | 'value' | 'display';
 
-/** `sortable` sem atributo = automático; `sortable="false"` desliga. */
+/** Sem atributo = padrão (`null`); `"false"` desliga; outro valor liga. */
 const optionalBoolean = {
   fromAttribute: (value: string | null): boolean | null => value === null ? null : value !== 'false',
   toAttribute: (value: boolean | null): string | null => value === null ? null : String(value),
 };
 
 interface ColumnHost extends HTMLElement {
-  _columnChanged(column: GridColumnDef, change: ColumnChange): void;
+  _columnChanged(column: GridColumnDef, change: GridColumnChange): void;
 }
 
 const isColumnHost = (element: Element | null): element is ColumnHost =>
   !!element && typeof (element as Partial<ColumnHost>)._columnChanged === 'function';
+
+const fixedSide = {
+  fromAttribute: (value: string | null): GridColumnFixed =>
+    value === 'start' || value === 'end' ? value : null,
+};
 
 @customElement('u-grid-column')
 export class UmDataGridColumn extends LitElement implements GridColumnDef {
@@ -74,6 +81,11 @@ export class UmDataGridColumn extends LitElement implements GridColumnDef {
   @property({ type: Boolean }) wrap = false;
   @property({ type: Number, attribute: 'min-width' }) minWidth: number | null = null;
   @property({ attribute: 'empty-text' }) emptyText: string | null = null;
+  @property({ type: Number, attribute: 'max-width' }) maxWidth: number | null = null;
+  @property({ converter: optionalBoolean }) resizable: boolean | null = null;
+  @property({ converter: fixedSide }) fixed: GridColumnFixed = null;
+  @property({ converter: optionalBoolean }) visible: boolean | null = null;
+  @property({ converter: optionalBoolean, attribute: 'show-in-chooser' }) showInChooser: boolean | null = null;
 
   /** Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`. */
   @property({ converter: optionalBoolean }) sortable: boolean | null = null;
@@ -104,7 +116,7 @@ export class UmDataGridColumn extends LitElement implements GridColumnDef {
     return (this.textContent ?? '').trim();
   }
 
-  #notify(change: ColumnChange): void {
+  #notify(change: GridColumnChange): void {
     const grid = this.parentElement;
 
     if (isColumnHost(grid)) {

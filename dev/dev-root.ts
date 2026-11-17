@@ -6,7 +6,7 @@ import { DataGrid } from '../src/grid';
 
 const languages = ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'ru', 'pl', 'tr', 'ja', 'ko', 'zh', 'ar'];
 
-const columns: GridColumnDef[] = [
+const baseColumns: GridColumnDef[] = [
   {
     path: 'country',
     label: 'Country',
@@ -40,10 +40,35 @@ const columns: GridColumnDef[] = [
   {
     path: 'official',
     label: 'Official',
-    width: 140,
+    minWidth: 120,
     dataType: 'boolean',
   },
 ];
+
+/** Demo largo: 2 colunas fixas no início, 1 no fim e métricas sintéticas. */
+const wideColumns = (count: number): GridColumnDef[] => [
+  { path: 'country', label: 'Country', width: 180, fixed: 'start' },
+  { path: 'code', label: 'Code', width: 90, fixed: 'start' },
+  { path: 'year', label: 'Year', width: 100 },
+  ...Array.from({ length: count - 4 }, (_, i): GridColumnDef => ({
+    path: `m${i + 1}`,
+    label: `Metric ${i + 1}`,
+    width: 120,
+    minWidth: 60,
+  })),
+  { path: 'population', label: 'Population', width: 150, fixed: 'end' },
+];
+
+const withMetrics = (rows: any[], count: number): any[] =>
+  rows.map(row => {
+    const extra: Record<string, number> = {};
+
+    for (let i = 1; i <= count - 4; i++) {
+      extra[`m${i}`] = (row.population * (i + 7) + row.year * i) % 100_000;
+    }
+
+    return { ...row, ...extra };
+  });
 
 @customElement('dev-root')
 export class DevRoot extends LitElement {
@@ -63,6 +88,7 @@ export class DevRoot extends LitElement {
       top: 0;
       display: flex;
       padding: 16px;
+      gap: 24px;
       align-items: center;
       box-sizing: border-box;
       background: #002a34;
@@ -70,6 +96,7 @@ export class DevRoot extends LitElement {
     }
     
     .container {
+      box-sizing: border-box;
       padding: 16px;
       max-width: 100%;
       width: 1600px;
@@ -82,6 +109,12 @@ export class DevRoot extends LitElement {
   @property()
   initialData: any[] = [];
 
+  @property({ type: Number, attribute: 'columns-count' })
+  columnsCount = 4;
+
+  #columns?: GridColumnDef[];
+  #items?: any[];
+
   @query('u-grid')
   grid!: DataGrid;
 
@@ -90,6 +123,12 @@ export class DevRoot extends LitElement {
       this.initialData = JSON.parse(this.initialData);
     } else {
       this.initialData ??= [];
+    }
+
+    if (!this.#columns) {
+      const wide = this.columnsCount > 4;
+      this.#columns = wide ? wideColumns(this.columnsCount) : baseColumns;
+      this.#items = wide ? withMetrics(this.initialData, this.columnsCount) : this.initialData;
     }
 
     // Sets language imperatively so switching it does NOT re-render (and thus
@@ -104,6 +143,21 @@ export class DevRoot extends LitElement {
             ${languages.map(lang => html`<option value=${lang}>${lang}</option>`)}
           </select>
         </label>
+        <label>
+          Direction:
+          <select @change=${(e: Event) => this.grid.dir = (e.target as HTMLSelectElement).value}>
+            <option value="">(auto)</option>
+            <option value="ltr">ltr</option>
+            <option value="rtl">rtl</option>
+          </select>
+        </label>
+        <label>
+          Resize mode:
+          <select @change=${(e: Event) => this.grid.resizeMode = (e.target as HTMLSelectElement).value as DataGrid['resizeMode']}>
+            <option value="widget">widget</option>
+            <option value="next-column">next-column</option>
+          </select>
+        </label>
       </div>
 
       <div class="container">
@@ -111,8 +165,10 @@ export class DevRoot extends LitElement {
           slot="before-content"
           auto-expand-groups
           sorting="multiple"
-          .columns=${columns}
-          .items=${this.initialData}>
+          column-resizing
+          column-chooser
+          .columns=${this.#columns}
+          .items=${this.#items}>
         </u-grid>
       </div>
       `

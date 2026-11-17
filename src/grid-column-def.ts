@@ -25,8 +25,12 @@ export type GridColumnFormatter = (value: unknown, item: any) => string;
 
 export type GridColumnFormat = Intl.NumberFormatOptions | Intl.DateTimeFormatOptions | GridColumnFormatter;
 
+/** Lado em que uma coluna fica fixa (lógico: espelha em RTL). */
+export type GridColumnFixed = 'start' | 'end' | null;
+
 export interface GridColumnDef {
   width?: number | null;
+  /** Largura mínima em px (também ao redimensionar/auto-ajustar). */
   minWidth?: number | null;
   /** Nível de agrupamento INICIAL; depois o usuário reagrupa por arrasto. */
   groupIndex?: number | null;
@@ -53,6 +57,16 @@ export interface GridColumnDef {
   /** Prioridade da ordenação inicial entre colunas (menor primeiro). */
   sortIndex?: number | null;
   comparator?: GridColumnComparator | null;
+  /** `false` impede redimensionar esta coluna mesmo com `column-resizing`. */
+  resizable?: boolean | null;
+  /** Largura máxima em px ao redimensionar/auto-ajustar. */
+  maxWidth?: number | null;
+  /** Fixa a coluna no início ou no fim da área rolável. */
+  fixed?: GridColumnFixed;
+  /** Visibilidade INICIAL (padrão `true`); depois o usuário muda no seletor. */
+  visible?: boolean | null;
+  /** `false` tira a coluna do seletor (o usuário não consegue ocultá-la). */
+  showInChooser?: boolean | null;
 }
 
 /** A coluna pode ser ordenada pelo usuário? */

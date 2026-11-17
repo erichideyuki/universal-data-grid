@@ -22,9 +22,12 @@ export const renderGroupRowCells = ({ row, totalColumns, separator, valueText, o
 
   return html`
     ${row.level
-      ? html`<td class="group-column" role="presentation" colspan=${row.level}></td>`
+      ? html`<td class="group-column sticky-cell" style="inset-inline-start: 0" role="presentation" colspan=${row.level}></td>`
       : nothing}
-    <td class="group-column group-column-toggle ${classMap({ expanded: row.expanded })}" role="presentation">
+    <td
+      class="group-column group-column-toggle sticky-cell ${classMap({ expanded: row.expanded })}"
+      style="inset-inline-start: calc(${row.level} * var(--_group-column-width))"
+      role="presentation">
       <button
         class="group-toggle"
         type="button"
@@ -42,6 +45,8 @@ export const renderGroupRowCells = ({ row, totalColumns, separator, valueText, o
       class="grouping-cell"
       role="gridcell"
       aria-colindex="1"
-      colspan=${Math.max(totalColumns - (row.level + 1), 1)}>${label}</td>
+      colspan=${Math.max(totalColumns - (row.level + 1), 1)}><span
+        class="grouping-label"
+        style="inset-inline-start: calc(${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${label}</span></td>
   `;
 };

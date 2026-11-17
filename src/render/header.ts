@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
-import { styleMap } from 'lit/directives/style-map.js';
+import { type StyleInfo, styleMap } from 'lit/directives/style-map.js';
 
 import type { GridColumnDef, GridSortOrder } from '../grid-column-def.js';
 
@@ -9,9 +9,10 @@ export type SortActivation = (column: GridColumnDef, event: MouseEvent | Keyboar
 
 export interface HeaderCellContext {
   column: GridColumnDef;
-  /** Classes de alinhamento/quebra da coluna (as mesmas das células). */
+  /** Classes de alinhamento/quebra/fixação da coluna (as mesmas das células). */
   classes: Record<string, boolean>;
-  minWidth: string | undefined;
+  /** `min-width` e o deslocamento `sticky` das colunas fixas. */
+  styles: StyleInfo;
   /** `aria-colindex` (1-based). */
   colIndex: number;
   /** O usuário pode ordenar por esta coluna (modo ≠ `none` e coluna ordenável). */
@@ -21,6 +22,10 @@ export interface HeaderCellContext {
   sortIndex: number | undefined;
   onActivate: SortActivation;
   onPointerDown: () => void;
+  /** Teclas além da ativação (Alt+←/→ redimensiona). */
+  onKeyDown?: (event: KeyboardEvent) => void;
+  /** Conteúdo depois do rótulo (alça de redimensionar). */
+  trailing?: TemplateResult | typeof nothing;
 }
 
 const ariaSort = (order: GridSortOrder | undefined): 'ascending' | 'descending' | 'none' =>
@@ -52,17 +57,19 @@ export const renderSortIndicator = (order: GridSortOrder | undefined, sortIndex?
 export const renderHeaderCell = ({
   column,
   classes,
-  minWidth,
+  styles,
   colIndex,
   sortable,
   order,
   sortIndex,
   onActivate,
   onPointerDown,
+  onKeyDown,
+  trailing = nothing,
 }: HeaderCellContext): TemplateResult => html`
   <th
     class="header-column ${classMap({ ...classes, sortable, sorted: !!order })}"
-    style=${styleMap({ minWidth })}
+    style=${styleMap(styles)}
     part="header-cell"
     role="columnheader"
     aria-colindex="${colIndex}"
@@ -70,13 +77,15 @@ export const renderHeaderCell = ({
     tabindex=${ifDefined(sortable ? 0 : undefined)}
     @pointerdown=${sortable ? onPointerDown : nothing}
     @click=${sortable ? (event: MouseEvent) => onActivate(column, event) : nothing}
-    @keydown=${sortable
+    @keydown=${sortable || onKeyDown
       ? (event: KeyboardEvent) => {
-        if (isActivationKey(event) && !event.repeat) {
+        onKeyDown?.(event);
+
+        if (sortable && !event.defaultPrevented && isActivationKey(event) && !event.repeat) {
           event.preventDefault();
           onActivate(column, event);
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text">${column.label}</span>${renderSortIndicator(order, sortIndex)}</span>
+    <span class="header-content"><span class="header-text">${column.label}</span>${renderSortIndicator(order, sortIndex)}</span>${trailing}
   </th>`;

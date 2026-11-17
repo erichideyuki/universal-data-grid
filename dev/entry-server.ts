@@ -14,6 +14,8 @@ export async function render(url) {
   const params = new URL(url, 'http://localhost').searchParams;
   const rows = Math.min(Math.max(Number(params.get('rows')) || 1000, 0), MAX_ROWS);
   const population = await PopulationService.get({ rows, remote: params.has('remote') });
+  // `?columns=30`: demo largo (colunas fixas, rolagem horizontal).
+  const columns = Math.min(Math.max(Number(params.get('columns')) || 4, 4), 60);
 
-  return await collectResult(renderLit(template(population)));
+  return await collectResult(renderLit(template(population, columns)));
 }

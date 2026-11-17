@@ -20,6 +20,15 @@ export const styles = css`
     --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px);
     --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width));
     --_header-height: var(--u-grid-header-height, 56px);
+    --_group-column-width: 32px;
+    --_dir: 1;
+    --_resize-handle-width: var(--u-grid-resize-handle-width, 8px);
+    --_fixed-shadow-color: var(--u-grid-fixed-shadow-color, color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 22%, transparent));
+    --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+  }
+
+  :host(:dir(rtl)) {
+    --_dir: -1;
   }
 
   .container {
@@ -81,15 +90,20 @@ export const styles = css`
     touch-action: none;
   }
 
+  tr {
+    --_row-tint: transparent;
+  }
+
   .stripped .even {
-    background-color: var(--_stripped-background-color);
+    --_row-tint: var(--_stripped-background-color);
+    background-color: var(--_row-tint);
   }
 
   thead {
     position: sticky;
     top: 0;
     background-color: var(--u-grid-header-background-color, var(--_background-color));
-    z-index: 1;
+    z-index: 2;
   }
 
   :root {
@@ -104,11 +118,20 @@ export const styles = css`
     table-layout: fixed;
   }
 
+  /* Todas as larguras definidas: a tabela tem a soma exata e não estica. */
+  table.fit {
+    min-width: 0;
+  }
+
   td, th {
     max-width: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
+    --_col-line: 0 0 transparent;
+    --_row-line: 0 0 transparent;
+    --_edge-line: 0 0 transparent;
+    --_edge-shadow: 0 0 transparent;
   }
 
   td {
@@ -153,7 +176,8 @@ export const styles = css`
 
   .column-lines td:not(.group-column):not(:last-child),
   .column-lines th:not(.group-column):not(:last-child) {
-    box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color);
+    --_col-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
+    box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
   .column-lines .header,
@@ -165,12 +189,59 @@ export const styles = css`
   }
 
   .hover tr:hover {
-    background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent);
+    --_row-tint: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent);
+    background-color: var(--_row-tint);
   }
 
   .group-column {
-    width: 32px;
-    min-width: 32px;
+    width: var(--_group-column-width);
+    min-width: var(--_group-column-width);
+  }
+
+  /*
+   * Colunas fixas e recuos de grupo: sticky na rolagem horizontal. Precisam de
+   * fundo opaco (a cor da linha por cima do fundo do grid) e desenham as
+   * próprias linhas, que o fundo cobriria.
+   */
+  .fixed,
+  .sticky-cell {
+    position: sticky;
+    z-index: 1;
+    box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
+  }
+
+  td.fixed,
+  td.sticky-cell {
+    background: linear-gradient(var(--_row-tint), var(--_row-tint)) var(--_background-color);
+  }
+
+  th.fixed,
+  th.sticky-cell {
+    background-color: var(--u-grid-header-background-color, var(--_background-color));
+  }
+
+  .row-lines tr:not(.last):not(:last-child) > :is(.fixed, .sticky-cell),
+  tr:has(+ .group-row) > :is(.fixed, .sticky-cell),
+  .group-row > .sticky-cell,
+  thead :is(.fixed, .sticky-cell) {
+    --_row-line: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
+  }
+
+  /* Borda do bloco fixo: linha sempre; sombra só com conteúdo rolado por baixo. */
+  .fixed-start-edge {
+    --_edge-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
+  }
+
+  .fixed-end-edge {
+    --_edge-line: inset calc(var(--_column-lines-width) * var(--_dir)) 0 0 0 var(--_border-color);
+  }
+
+  .scroll-start .fixed-start-edge {
+    --_edge-shadow: calc(6px * var(--_dir)) 0 6px -4px var(--_fixed-shadow-color);
+  }
+
+  .scroll-end .fixed-end-edge {
+    --_edge-shadow: calc(-6px * var(--_dir)) 0 6px -4px var(--_fixed-shadow-color);
   }
 
   .sortable-ghost ~ .swap-target::after {
@@ -226,7 +297,7 @@ export const styles = css`
   }
 
   .group-toggle:focus-visible {
-    outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+    outline: var(--_focus-ring);
     outline-offset: -2px;
   }
 
@@ -246,10 +317,55 @@ export const styles = css`
   }
 
   .header-column {
+    position: relative;
     white-space: nowrap;
     overflow: hidden;
     user-select: none;
     touch-action: none;
+  }
+
+  .header-column.fixed {
+    position: sticky;
+  }
+
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-end: 0;
+    width: var(--_resize-handle-width);
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 1;
+  }
+
+  .resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 25%;
+    bottom: 25%;
+    inset-inline-end: calc(var(--_resize-handle-width) / 2 - 1px);
+    width: 2px;
+    border-radius: 1px;
+    background-color: currentColor;
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+
+  .header-column:hover .resize-handle::after,
+  .resize-handle:focus-visible::after,
+  .resizing .resize-handle:active::after {
+    opacity: 0.5;
+  }
+
+  .resize-handle:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .container.resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 
   .header-text {
@@ -319,6 +435,17 @@ export const styles = css`
 
   .grouping-cell {
     color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent);
+    /* clip (não hidden): não vira contêiner de rolagem e o rótulo fica sticky. */
+    overflow: clip;
+  }
+
+  .grouping-label {
+    position: sticky;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: top;
   }
 
   .header {
@@ -355,5 +482,142 @@ export const styles = css`
 
   .header + table thead {
     top: var(--_header-height);
+  }
+
+  .column-chooser-button {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-inline-start: auto;
+    border-radius: 50%;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79)));
+  }
+
+  .column-chooser-button:hover,
+  .column-chooser-button[aria-expanded="true"] {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .column-chooser-button:focus-visible,
+  .column-chooser-pin:focus-visible,
+  .column-chooser-check input:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: 2px;
+  }
+
+  .column-chooser {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    box-sizing: border-box;
+    min-width: 240px;
+    max-width: min(320px, calc(100vw - 16px));
+    max-height: min(420px, calc(100vh - 16px));
+    overflow: auto;
+    padding: 4px 0 8px;
+    border: none;
+    border-radius: var(--u-grid-column-chooser-shape, var(--u-shape-corner-medium, 12px));
+    background-color: var(--u-grid-column-chooser-background-color, var(--u-color-surface-container, rgb(243, 237, 247)));
+    color: var(--u-color-on-surface, rgb(29, 27, 32));
+    box-shadow: 0 2px 6px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 15%, transparent), 0 1px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 30%, transparent);
+    font: inherit;
+    z-index: 2100;
+  }
+
+  .column-chooser-title {
+    padding: 12px 16px 8px;
+    font-size: var(--u-title-s-font-size, 0.875rem);
+    font-weight: var(--u-title-s-font-weight, var(--u-font-weight-medium, 500));
+  }
+
+  .column-chooser-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .column-chooser-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 40px;
+    padding-inline: 16px 8px;
+  }
+
+  .column-chooser-check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+
+  .column-chooser-check span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .column-chooser-check input {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  .column-chooser-pin {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    opacity: 0.55;
+  }
+
+  .column-chooser-pin:hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .column-chooser-pin[aria-pressed="true"] {
+    opacity: 1;
+    color: var(--u-color-primary, rgb(103, 80, 164));
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+  }
+
+  :host(:dir(rtl)) .column-chooser-pin svg {
+    transform: scaleX(-1);
+  }
+
+  .column-chooser-drop-hint {
+    display: none;
+  }
+
+  .column-chooser.drop-target .column-chooser-drop-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed var(--u-color-primary, rgb(103, 80, 164));
+    border-radius: inherit;
+    background-color: color-mix(in srgb, var(--u-grid-column-chooser-background-color, var(--u-color-surface-container, rgb(243, 237, 247))) 85%, transparent);
+    font-weight: var(--u-font-weight-medium, 500);
   }
 `;

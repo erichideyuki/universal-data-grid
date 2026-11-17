@@ -1,0 +1,264 @@
+import { html, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
+import { live } from 'lit/directives/live.js';
+import { repeat } from 'lit/directives/repeat.js';
+
+import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
+import interact from 'interactjs';
+
+import type { GridColumnDef, GridColumnFixed } from '../grid-column-def.js';
+import type { GridI18n } from '../grid-i18n.js';
+import { InteractRegistry } from './drag-helper.js';
+
+export interface ColumnChooserHost extends ReactiveControllerHost {
+  readonly renderRoot: HTMLElement | DocumentFragment;
+  readonly _nativeColumnMap: WeakMap<HTMLElement, GridColumnDef>;
+  _isRtl(): boolean;
+  /** Oculta a coluna (se não for a última visível); devolve se ocultou. */
+  _userSetVisible(column: GridColumnDef, visible: boolean): boolean;
+  _isRegularColumn(column: GridColumnDef): boolean;
+}
+
+export interface ColumnChooserItem {
+  column: GridColumnDef;
+  id: number;
+  visible: boolean;
+  /** `false` na última coluna visível (não pode ser ocultada). */
+  canToggle: boolean;
+  fixed: GridColumnFixed;
+}
+
+export interface ColumnChooserContext {
+  items: ColumnChooserItem[];
+  translation: GridI18n;
+  onVisibleChange: (column: GridColumnDef, visible: boolean) => void;
+  onFixedChange: (column: GridColumnDef, fixed: GridColumnFixed) => void;
+  onKeyDown: (event: KeyboardEvent) => void;
+}
+
+const pinStartIcon = svg`<path d="M4 4h2v16H4zM20 11h-9.2l3.6-3.6L13 6l-6 6 6 6 1.4-1.4-3.6-3.6H20z"/>`;
+const pinEndIcon = svg`<path d="M18 4h2v16h-2zM4 11h9.2L9.6 7.4 11 6l6 6-6 6-1.4-1.4 3.6-3.6H4z"/>`;
+
+export const columnChooserIcon = html`
+  <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true">
+    <path d="M3 5h18v14H3zM5 7v10h3.5V7zm5.5 0v10h3V7zm5 0v10H19V7z"/>
+  </svg>`;
+
+const pinButton = (
+  item: ColumnChooserItem,
+  side: 'start' | 'end',
+  { translation, onFixedChange }: ColumnChooserContext,
+): TemplateResult => {
+  const pressed = item.fixed === side;
+  const label = side === 'start' ? translation.pinStart : translation.pinEnd;
+
+  return html`
+    <button
+      class="column-chooser-pin pin-${side}"
+      type="button"
+      aria-pressed=${pressed ? 'true' : 'false'}
+      aria-label=${label}
+      aria-describedby="column-chooser-label-${item.id}"
+      title=${pressed ? translation.unpin : label}
+      @click=${() => onFixedChange(item.column, pressed ? null : side)}>
+      <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        ${side === 'start' ? pinStartIcon : pinEndIcon}
+      </svg>
+    </button>`;
+};
+
+/** Painel do seletor de colunas (popover leve, sem dependência nova). */
+export const renderColumnChooser = (context: ColumnChooserContext): TemplateResult => {
+  const { items, translation, onVisibleChange, onKeyDown } = context;
+
+  return html`
+    <div
+      class="column-chooser"
+      part="column-chooser"
+      .popover=${'manual'}
+      role="dialog"
+      aria-label=${translation.columnChooser}
+      @keydown=${onKeyDown}>
+      <div class="column-chooser-title" aria-hidden="true">${translation.columnChooser}</div>
+      <ul class="column-chooser-list">
+        ${repeat(items, item => item.id, item => html`
+          <li class="column-chooser-item">
+            <label class="column-chooser-check">
+              <input
+                type="checkbox"
+                .checked=${live(item.visible)}
+                ?disabled=${!item.canToggle}
+                title=${item.visible ? translation.hideColumn : translation.showColumn}
+                @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
+              <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
+            </label>
+            ${pinButton(item, 'start', context)}
+            ${pinButton(item, 'end', context)}
+          </li>`)}
+      </ul>
+      <div class="column-chooser-drop-hint" aria-hidden="true">${translation.hideColumn}</div>
+    </div>`;
+};
+
+/**
+ * Abrir/fechar o seletor: posição junto ao botão (espelhada em RTL), foco no
+ * primeiro item, Esc e clique fora fecham. Com o painel aberto, soltar nele
+ * um cabeçalho arrastado oculta a coluna.
+ */
+export class ColumnChooserController implements ReactiveController {
+  readonly #host: ColumnChooserHost;
+  readonly #dropzones = new InteractRegistry();
+  #open = false;
+  #shown = false;
+  #restoreFocus = false;
+
+  constructor(host: ColumnChooserHost) {
+    this.#host = host;
+    host.addController(this);
+  }
+
+  get open(): boolean {
+    return this.#open;
+  }
+
+  show(): void {
+    if (this.#open) {
+      return;
+    }
+
+    this.#open = true;
+    this.#shown = false;
+    this.#host.requestUpdate();
+  }
+
+  hide(restoreFocus = false): void {
+    if (!this.#open) {
+      return;
+    }
+
+    this.#open = false;
+    this.#restoreFocus = restoreFocus;
+    this.#panel?.hidePopover?.();
+    document.removeEventListener('pointerdown', this.#outsidePointerDown, true);
+    this.#host.requestUpdate();
+  }
+
+  toggle(): void {
+    if (this.#open) {
+      this.hide(true);
+    } else {
+      this.show();
+    }
+  }
+
+  readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.hide(true);
+    }
+  };
+
+  get #panel(): HTMLElement | null {
+    return this.#host.renderRoot.querySelector<HTMLElement>('.column-chooser');
+  }
+
+  get #button(): HTMLElement | null {
+    return this.#host.renderRoot.querySelector<HTMLElement>('.column-chooser-button');
+  }
+
+  hostUpdated(): void {
+    this.#dropzones.prune();
+
+    if (!this.#open) {
+      if (this.#restoreFocus) {
+        this.#restoreFocus = false;
+        this.#button?.focus();
+      }
+
+      return;
+    }
+
+    const panel = this.#panel;
+
+    if (!panel || this.#shown) {
+      return;
+    }
+
+    this.#shown = true;
+
+    if (typeof panel.showPopover === 'function' && !panel.matches(':popover-open')) {
+      panel.showPopover();
+    }
+
+    this.#position(panel);
+    this.#attachDropzone(panel);
+    document.addEventListener('pointerdown', this.#outsidePointerDown, true);
+    panel.querySelector<HTMLElement>('input:not([disabled]), button')?.focus();
+  }
+
+  hostDisconnected(): void {
+    this.#dropzones.clear();
+    document.removeEventListener('pointerdown', this.#outsidePointerDown, true);
+    this.#open = false;
+    this.#shown = false;
+  }
+
+  #position(panel: HTMLElement): void {
+    const anchor = this.#button ?? (this.#host as unknown as HTMLElement);
+    const rect = anchor.getBoundingClientRect();
+    const width = panel.offsetWidth;
+    const margin = 8;
+    const viewport = document.documentElement.clientWidth;
+    // Alinha pela borda final do botão: direita em LTR, esquerda em RTL.
+    const left = this.#host._isRtl() ? rect.left : rect.right - width;
+
+    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+    panel.style.left = `${Math.round(Math.max(margin, Math.min(left, viewport - width - margin)))}px`;
+  }
+
+  readonly #outsidePointerDown = (event: PointerEvent): void => {
+    const path = event.composedPath();
+    const keep = path.some(target =>
+      target instanceof HTMLElement
+      && (target.classList.contains('column-chooser')
+        || target.classList.contains('column-chooser-button')
+        // Arrastar um cabeçalho até o painel não pode fechá-lo.
+        || (target.classList.contains('header-column') && this.#host.renderRoot.contains(target))));
+
+    if (!keep) {
+      this.hide();
+    }
+  };
+
+  #attachDropzone(panel: HTMLElement): void {
+    if (!this.#dropzones.add(panel)) {
+      return;
+    }
+
+    interact(panel).dropzone({
+      accept: '.move-container',
+
+      ondragenter: (event: DropEvent) => {
+        if (this.#draggedRegularColumn(event)) {
+          panel.classList.add('drop-target');
+        }
+      },
+
+      ondragleave: () => panel.classList.remove('drop-target'),
+      ondropdeactivate: () => panel.classList.remove('drop-target'),
+
+      ondrop: (event: DropEvent) => {
+        const column = this.#draggedRegularColumn(event);
+
+        if (column) {
+          this.#host._userSetVisible(column, false);
+        }
+      },
+    });
+  }
+
+  #draggedRegularColumn(event: DropEvent): GridColumnDef | undefined {
+    const column = this.#host._nativeColumnMap.get(event.draggable.target as HTMLElement);
+    return column && this.#host._isRegularColumn(column) ? column : undefined;
+  }
+}

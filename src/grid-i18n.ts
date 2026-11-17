@@ -20,6 +20,17 @@ export interface GridI18n {
   trueText: string;
   /** Text of `false` in `boolean` columns (cells and group rows). */
   falseText: string;
+  /** Botão e título do seletor de colunas. */
+  columnChooser: string;
+  /** Dica da caixa marcada (e do alvo de soltar no seletor). */
+  hideColumn: string;
+  /** Dica da caixa desmarcada. */
+  showColumn: string;
+  pinStart: string;
+  pinEnd: string;
+  unpin: string;
+  /** Dica da alça de redimensionar (duplo clique = auto-ajuste). */
+  autoSize: string;
 }
 
 export const DEFAULT_GRID_LANGUAGE = 'en';
@@ -43,6 +54,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Sorted by {column}, {order}',
     trueText: 'True',
     falseText: 'False',
+    columnChooser: 'Column chooser',
+    hideColumn: 'Hide column',
+    showColumn: 'Show column',
+    pinStart: 'Pin to start',
+    pinEnd: 'Pin to end',
+    unpin: 'Unpin',
+    autoSize: 'Double-click to auto-size',
   },
   es: {
     noData: 'Sin datos',
@@ -54,6 +72,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Ordenado por {column}, {order}',
     trueText: 'Verdadero',
     falseText: 'Falso',
+    columnChooser: 'Selector de columnas',
+    hideColumn: 'Ocultar columna',
+    showColumn: 'Mostrar columna',
+    pinStart: 'Fijar al inicio',
+    pinEnd: 'Fijar al final',
+    unpin: 'Desfijar',
+    autoSize: 'Doble clic para ajustar al contenido',
   },
   pt: {
     noData: 'Sem dados',
@@ -65,6 +90,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Ordenado por {column}, {order}',
     trueText: 'Verdadeiro',
     falseText: 'Falso',
+    columnChooser: 'Seletor de colunas',
+    hideColumn: 'Ocultar coluna',
+    showColumn: 'Mostrar coluna',
+    pinStart: 'Fixar no início',
+    pinEnd: 'Fixar no fim',
+    unpin: 'Desafixar',
+    autoSize: 'Clique duplo para ajustar ao conteúdo',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -76,6 +108,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Trié par {column}, {order}',
     trueText: 'Vrai',
     falseText: 'Faux',
+    columnChooser: 'Sélecteur de colonnes',
+    hideColumn: 'Masquer la colonne',
+    showColumn: 'Afficher la colonne',
+    pinStart: 'Épingler au début',
+    pinEnd: 'Épingler à la fin',
+    unpin: 'Désépingler',
+    autoSize: 'Double-cliquez pour ajuster au contenu',
   },
   de: {
     noData: 'Keine Daten',
@@ -87,6 +126,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Sortiert nach {column}, {order}',
     trueText: 'Wahr',
     falseText: 'Falsch',
+    columnChooser: 'Spaltenauswahl',
+    hideColumn: 'Spalte ausblenden',
+    showColumn: 'Spalte einblenden',
+    pinStart: 'Am Anfang fixieren',
+    pinEnd: 'Am Ende fixieren',
+    unpin: 'Fixierung aufheben',
+    autoSize: 'Doppelklicken, um die Breite anzupassen',
   },
   it: {
     noData: 'Nessun dato',
@@ -98,6 +144,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Ordinato per {column}, {order}',
     trueText: 'Vero',
     falseText: 'Falso',
+    columnChooser: 'Selettore colonne',
+    hideColumn: 'Nascondi colonna',
+    showColumn: 'Mostra colonna',
+    pinStart: 'Blocca all’inizio',
+    pinEnd: 'Blocca alla fine',
+    unpin: 'Sblocca',
+    autoSize: 'Doppio clic per adattare al contenuto',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -109,6 +162,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Gesorteerd op {column}, {order}',
     trueText: 'Waar',
     falseText: 'Onwaar',
+    columnChooser: 'Kolomkiezer',
+    hideColumn: 'Kolom verbergen',
+    showColumn: 'Kolom weergeven',
+    pinStart: 'Vastzetten aan het begin',
+    pinEnd: 'Vastzetten aan het einde',
+    unpin: 'Losmaken',
+    autoSize: 'Dubbelklik om aan de inhoud aan te passen',
   },
   ru: {
     noData: 'Нет данных',
@@ -120,6 +180,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Отсортировано по столбцу {column}, {order}',
     trueText: 'Истина',
     falseText: 'Ложь',
+    columnChooser: 'Выбор столбцов',
+    hideColumn: 'Скрыть столбец',
+    showColumn: 'Показать столбец',
+    pinStart: 'Закрепить в начале',
+    pinEnd: 'Закрепить в конце',
+    unpin: 'Открепить',
+    autoSize: 'Дважды щёлкните, чтобы подогнать ширину',
   },
   pl: {
     noData: 'Brak danych',
@@ -131,6 +198,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'Posortowano według {column}, {order}',
     trueText: 'Prawda',
     falseText: 'Fałsz',
+    columnChooser: 'Wybór kolumn',
+    hideColumn: 'Ukryj kolumnę',
+    showColumn: 'Pokaż kolumnę',
+    pinStart: 'Przypnij na początku',
+    pinEnd: 'Przypnij na końcu',
+    unpin: 'Odepnij',
+    autoSize: 'Kliknij dwukrotnie, aby dopasować szerokość',
   },
   tr: {
     noData: 'Veri yok',
@@ -142,6 +216,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: '{column} sütununa göre sıralandı, {order}',
     trueText: 'Doğru',
     falseText: 'Yanlış',
+    columnChooser: 'Sütun seçici',
+    hideColumn: 'Sütunu gizle',
+    showColumn: 'Sütunu göster',
+    pinStart: 'Başa sabitle',
+    pinEnd: 'Sona sabitle',
+    unpin: 'Sabitlemeyi kaldır',
+    autoSize: 'İçeriğe sığdırmak için çift tıklayın',
   },
   ja: {
     noData: 'データがありません',
@@ -153,6 +234,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: '{column} で並べ替えました（{order}）',
     trueText: '真',
     falseText: '偽',
+    columnChooser: '列の選択',
+    hideColumn: '列を非表示',
+    showColumn: '列を表示',
+    pinStart: '先頭に固定',
+    pinEnd: '末尾に固定',
+    unpin: '固定を解除',
+    autoSize: 'ダブルクリックで幅を自動調整',
   },
   ko: {
     noData: '데이터 없음',
@@ -164,6 +252,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: '{column} 기준 {order} 정렬됨',
     trueText: '참',
     falseText: '거짓',
+    columnChooser: '열 선택기',
+    hideColumn: '열 숨기기',
+    showColumn: '열 표시',
+    pinStart: '시작 부분에 고정',
+    pinEnd: '끝 부분에 고정',
+    unpin: '고정 해제',
+    autoSize: '두 번 클릭하여 너비 자동 맞춤',
   },
   zh: {
     noData: '无数据',
@@ -175,6 +270,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: '已按 {column} {order}排序',
     trueText: '是',
     falseText: '否',
+    columnChooser: '列选择器',
+    hideColumn: '隐藏列',
+    showColumn: '显示列',
+    pinStart: '固定到开头',
+    pinEnd: '固定到末尾',
+    unpin: '取消固定',
+    autoSize: '双击自动调整宽度',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -186,6 +288,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     sortedAnnouncement: 'تم الفرز حسب {column}، {order}',
     trueText: 'صحيح',
     falseText: 'خطأ',
+    columnChooser: 'منتقي الأعمدة',
+    hideColumn: 'إخفاء العمود',
+    showColumn: 'إظهار العمود',
+    pinStart: 'تثبيت في البداية',
+    pinEnd: 'تثبيت في النهاية',
+    unpin: 'إلغاء التثبيت',
+    autoSize: 'انقر نقرًا مزدوجًا لملاءمة العرض',
   },
 });
 

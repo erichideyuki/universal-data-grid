@@ -62,7 +62,7 @@ export class ColumnDragAndDropAdapter {
       accept: '.move-container',
 
       ondragenter: (event: DropEvent) => {
-        if (event.target === event.draggable.target) {
+        if (!this.#accepts(event)) {
           return;
         }
 
@@ -78,9 +78,12 @@ export class ColumnDragAndDropAdapter {
       },
 
       ondropmove: (event: DropEvent) => {
-        if (event.target === event.draggable.target) {
+        if (!this.#accepts(event)) {
+          this.#grid._containerRef.value?.classList.remove('drop-target');
           return;
         }
+
+        this.#grid._containerRef.value?.classList.add('drop-target');
 
         const container = this.#grid._containerRef.value!;
         const containerRect = container.getBoundingClientRect();
@@ -95,7 +98,7 @@ export class ColumnDragAndDropAdapter {
         const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement);
         const movingColumn = this.#grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
 
-        if (event.target === event.draggable.target || !targetColumn || !movingColumn) {
+        if (!this.#accepts(event) || !targetColumn || !movingColumn) {
           return;
         }
 
@@ -107,9 +110,28 @@ export class ColumnDragAndDropAdapter {
           targetIndex++;
         }
 
-        this.#grid.moveColumn(movingColumn, targetIndex);
+        this.#grid._userMoveColumn(movingColumn, targetIndex);
       },
     });
+  }
+
+  /**
+   * Soltar em outro cabeçalho do MESMO bloco (fixas no início, livres, fixas
+   * no fim). Chip de grupo pode cair em qualquer lugar (desagrupa).
+   */
+  #accepts(event: DropEvent): boolean {
+    if (event.target === event.draggable.target) {
+      return false;
+    }
+
+    const targetColumn = this.#grid._nativeColumnMap.get(event.target as HTMLElement);
+    const movingColumn = this.#grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
+
+    if (!targetColumn || !movingColumn || !this.#grid._isRegularColumn(movingColumn)) {
+      return true;
+    }
+
+    return this.#grid._sameBlock(targetColumn, movingColumn);
   }
 
   detach(): void {
