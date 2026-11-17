@@ -21,6 +21,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Data types & formatting](#data-types--formatting)
 - [Sorting](#sorting)
 - [Grouping](#grouping)
+- [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Custom cell rendering](#custom-cell-rendering)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Appearance & behavior](#appearance--behavior)
@@ -44,6 +45,8 @@ React, Vue, Svelte — or with no framework at all.
   in the grid's language, with per-column `format`, `alignment`, computed values and empty text.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
   area.
+- **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
+  columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
 - **Custom cell renderers** — return any `HTMLElement` per column to fully control a cell.
 - **Internationalization** — a `language` property with built-in translations for 14 languages,
   automatic language detection, and hooks to override strings or set a global default.
@@ -247,8 +250,21 @@ interface GridColumnDef {
   sortIndex?: number | null;
   /** Custom ascending comparator: (valueA, valueB, itemA, itemB) => number. */
   comparator?: ((a: any, b: any, itemA: any, itemB: any) => number) | null;
+  /** `false` disables resizing for this column (when `column-resizing` is on). Default `true`. */
+  resizable?: boolean | null;
+  /** Maximum width in pixels for resizing and auto-sizing. */
+  maxWidth?: number | null;
+  /** Keep the column at the start or end while scrolling horizontally (mirrored in RTL). */
+  fixed?: 'start' | 'end' | null;
+  /** Initial visibility. Default `true`. */
+  visible?: boolean | null;
+  /** `false` hides the column from the column chooser. Default `true`. */
+  showInChooser?: boolean | null;
 }
 ```
+
+With `<u-grid-column>` the column-feature options are attributes: `max-width`, `fixed="start|end"`,
+`visible="false"`, `resizable="false"` and `show-in-chooser="false"`.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -436,6 +452,85 @@ Both accept a `GridColumnDef` (or a `<u-grid-column>` element) already known to 
 
 ---
 
+## Column features
+
+```html
+<u-grid column-resizing resize-mode="next-column" column-chooser column-auto-width></u-grid>
+```
+
+The user's choices (widths, visibility, fixed side, order) are kept in the grid's own state: the
+column objects you pass are never modified. Re-assigning the same column objects keeps the user's
+choices; changing an option on a column definition (e.g. a new `width` or `visible`) wins over what
+the user picked for that option.
+
+### Resizing
+
+With `column-resizing`, every header gets an 8 px handle on its end edge (`resizable: false` opts a
+column out).
+
+- **Drag** the handle to resize. `minWidth` (default 40 px) and `maxWidth` are respected.
+- **Modes** (`resize-mode`): `widget` (default) changes only that column, so the total width grows or
+  shrinks; `next-column` gives/takes the same amount from the next column, keeping the total width
+  (the last column has no handle in this mode).
+- **Double-click** the handle to auto-size the column to its content (header + rendered rows).
+- **Keyboard** — `Alt+←/→` on a header cell, or `←/→` on the focused handle, resize by 16 px
+  (mirrored in RTL); `Enter` on the handle auto-sizes.
+- The handle is a focusable `role="separator"` with `aria-valuenow` set to the column width.
+- Using the handle (drag, click, double-click, keys) never sorts the column; neither does dragging a
+  header to reorder it.
+
+When every visible column has a width (set by you or by the user), the table is exactly as wide as
+their sum and does not stretch; with at least one auto-width column, the table fills the grid.
+
+```ts
+grid.setColumnWidth(column, 180); // clamped to minWidth/maxWidth
+grid.autoSizeColumn(column);      // fit header + rendered rows
+grid.addEventListener('u-grid-column-resize', e => console.log(e.detail.column, e.detail.width));
+```
+
+### Auto width
+
+With `column-auto-width`, columns without a `width` are sized to their content (header + rendered
+rows), measured again when `items` change. Extra space is still distributed while the table is
+narrower than the grid.
+
+### Fixed columns
+
+`fixed: 'start'` / `'end'` keeps a column visible while scrolling horizontally (`position: sticky`
+on header, cells and group rows). Fixed columns are shown at the start/end regardless of their
+position in `columns`, a line marks the edge of each fixed block and a shadow appears while content
+scrolls under it. Reordering by drag and drop stays inside the column's block (start-fixed, regular,
+end-fixed). Give fixed columns a `width` so the scrollable area keeps a predictable size.
+
+```ts
+grid.columns = [
+  { path: 'name', label: 'Name', width: 200, fixed: 'start' },
+  { path: 'city', label: 'City', width: 160 },
+  // …
+  { path: 'total', label: 'Total', width: 120, fixed: 'end' },
+];
+```
+
+### Column chooser
+
+`column-chooser` adds a button at the end of the header bar that opens a small popover listing the
+columns (`showInChooser: false` leaves a column out). Each row has a labelled checkbox to show/hide
+the column and two toggle buttons to fix it to the start or the end. `showColumnChooser()` opens it
+from code. While it is open, dragging a column header onto it hides that column. `Esc` or a click
+outside closes it. The last visible column cannot be hidden.
+
+### Column events
+
+| Event | Detail | Fired when |
+| ----- | ------ | ---------- |
+| `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size). `nextColumn*` only in `next-column` mode. |
+| `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column in the chooser. |
+| `u-grid-column-reorder` | `{ column, fromIndex, toIndex }` | The user moves a column by drag and drop (indexes among regular columns, hidden ones included). |
+
+All events bubble and are `composed`. Changes made through the API do not fire them.
+
+---
+
 ## Custom cell rendering
 
 Provide a `renderer` that receives the row item and returns any `HTMLElement`. The grid slots the
@@ -548,6 +643,13 @@ interface GridI18n {
   sortDescending: string;      // "descending"
   clearSorting: string;        // announcement after removing a column: "Sorting removed from {column}"
   sortedAnnouncement: string;  // announcement after sorting: "Sorted by {column}, {order}"
+  columnChooser: string;       // column chooser button and title
+  hideColumn: string;          // checkbox hint / drop-to-hide hint in the chooser
+  showColumn: string;          // checkbox hint for a hidden column
+  pinStart: string;            // "fix to the start" toggle in the chooser
+  pinEnd: string;              // "fix to the end" toggle in the chooser
+  unpin: string;               // hint of a pressed pin toggle
+  autoSize: string;            // resize handle hint (double-click to auto-size)
 }
 ```
 
@@ -577,6 +679,10 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `showColumnHeaders`| `show-column-headers` | `boolean` | `true`  | Show the column header row. |
 | `showRowLines`     | `showrowlines`        | `boolean` | `true`  | Horizontal row separators. |
 | `showColumnLines`  | `showcolumnlines`     | `boolean` | `false` | Vertical column separators. |
+| `columnResizing`   | `column-resizing`     | `boolean` | `false` | Let the user resize columns. See [Column features](#column-features). |
+| `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
+| `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button. |
+| `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
 
 ```html
 <u-grid striped showcolumnlines rowheight="40" language="fr"></u-grid>
@@ -617,6 +723,10 @@ blends into that design system automatically when present.
 | `--u-grid-grouping-cell-emphasis` | `80%` | Emphasis of group row text. |
 | `--u-grid-drop-indicator-bg` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
+| `--u-grid-resize-handle-width` | `8px` | Width of the column resize handle. |
+| `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
+| `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
+| `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
 | `--u-td-font-size` / `--u-th-font-size` | `0.875rem` / `0.8125rem` | Body / header font size. |
 | `--u-group-height` | `32px` | Group chip height. |
 | `--u-group-outline-color` | outline token | Group chip border color. |
@@ -643,6 +753,7 @@ u-grid {
 | `header-cell` | Column header cells (`<th>`). |
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
 | `group-chip` | Group chips in the grouping bar. |
+| `column-chooser` | The column chooser popover. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -702,14 +813,17 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. |
-| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable` (`sortable="false"` disables), `sort-order`, `sort-index`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`; label = text content. |
+| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable` (`sortable="false"` disables), `sort-order`, `sort-index`, `max-width`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`; label = text content. |
 
 ### `<u-grid>` methods
 
 | Method | Description |
 | ------ | ----------- |
 | `groupColumn(column, targetIndex)` | Move/insert a column into the grouping area at `targetIndex`. |
-| `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex`. |
+| `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex` (kept inside its fixed/regular block). |
+| `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
+| `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
+| `showColumnChooser()` | Open the column chooser. |
 | `sortBy(column, order, { append })` | Sort by `column` (`'asc'`/`'desc'`; `null` removes it). `append: true` adds it to the current sort. |
 | `clearSorting()` | Remove all sorting. |
 | `getSorting()` | Current sort as `{ column, order }[]`, in priority order. |
@@ -720,6 +834,9 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
 | ----- | -------- | ----------- |
 | `u-grid-sorting` | `GridSortEventDetail` | Before the sort changes. Cancelable. |
 | `u-grid-sort-change` | `GridSortEventDetail` | After the sort changed. |
+| `u-grid-column-resize` | `GridColumnResizeEventDetail` | The user finished resizing a column. See [Column features › Events](#column-events). |
+| `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | The user showed/hid a column in the chooser. |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | The user moved a column by drag and drop. |
 
 ### Exports
 
@@ -740,6 +857,11 @@ import {
   type GridSortOrder,        // 'asc' | 'desc'
   type GridSortingMode,      // 'none' | 'single' | 'multiple'
   type GridSortEventDetail,  // { sorting: GridSort[]; previous: GridSort[] }
+  type GridColumnFixed,     // 'start' | 'end' | null
+  type GridResizeMode,      // 'widget' | 'next-column'
+  type GridColumnResizeEventDetail,
+  type GridColumnVisibilityChangeEventDetail,
+  type GridColumnReorderEventDetail,
   type GridI18n,
 } from '@universal-material/data-grid';
 ```
