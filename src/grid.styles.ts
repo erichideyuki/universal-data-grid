@@ -9,17 +9,21 @@ export const styles = css`
     display: block;
     height: 100%;
     --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255)));
-    --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent));
-    --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent);
-    --_borders-width: var(--u-grid-borders-width, 1px);
-    --_cell-block-padding: var(--u-table-cell-block-padding, 13px);
-    --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px);
+    /* Nomes antigos (antes da spec 15) seguem como fallback dos novos. */
+    --_striped-background-color: var(--u-grid-striped-background-color, var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)));
+    --_border-color: color-mix(in srgb, currentColor var(--u-grid-line-opacity, var(--u-grid-border-opacity, 20%)), transparent);
+    --_borders-width: var(--u-grid-line-width, var(--u-grid-borders-width, 1px));
+    --_cell-block-padding: var(--u-grid-cell-block-padding, var(--u-table-cell-block-padding, 13px));
+    --_cell-inline-padding: var(--u-grid-cell-inline-padding, var(--u-table-cell-inline-padding, 16px));
     --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding));
-    --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding)));
-    --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width));
+    --_header-padding: var(--u-grid-toolbar-padding, var(--u-table-header-padding, var(--u-grid-toolbar-block-padding, var(--u-table-header-block-padding, 8px)) var(--u-grid-toolbar-inline-padding, var(--u-table-header-inline-padding, var(--_cell-inline-padding)))));
+    --_column-lines-width: var(--u-grid-column-line-width, var(--u-grid-column-lines-width, var(--_borders-width)));
     --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px);
-    --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width));
-    --_header-height: var(--u-grid-header-height, 56px);
+    --_drop-indicator-color: var(--u-grid-drop-indicator-color, var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))));
+    --_row-lines-height: var(--u-grid-row-line-width, var(--u-grid-row-lines-height, var(--_borders-width)));
+    --_header-height: var(--u-grid-toolbar-height, var(--u-grid-header-height, 56px));
+    --_toggle-color: var(--u-grid-group-toggle-color, var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))));
+    --_row-hover-opacity: var(--u-grid-row-hover-opacity, var(--u-table-hover-opacity, var(--u-state-layer-hover-opacity, 8%)));
     --_group-column-width: 32px;
     --_dir: 1;
     --_resize-handle-width: var(--u-grid-resize-handle-width, 8px);
@@ -44,7 +48,7 @@ export const styles = css`
     top: 0;
     left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width));
     bottom: 0;
-    background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164)));
+    background-color: var(--_drop-indicator-color);
     width: var(--_drop-indicator-width);
     z-index: 20;
   }
@@ -70,21 +74,21 @@ export const styles = css`
     content: "";
     width: 3px;
     height: 100%;
-    background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164)));
+    background-color: var(--_drop-indicator-color);
     order: var(--_drop-indicator-order, 0);
   }
 
   .group {
-    line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem));
-    font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem));
-    letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem));
-    font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500)));
+    line-height: var(--u-grid-group-chip-line-height, var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)));
+    font-size: var(--u-grid-group-chip-font-size, var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)));
+    letter-spacing: var(--u-grid-group-chip-letter-spacing, var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)));
+    font-weight: var(--u-grid-group-chip-font-weight, var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))));
     display: flex;
     align-items: center;
-    height: var(--u-group-height, 32px);
-    border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126)));
-    border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px));
-    padding-inline: var(--u-group-padding, 16px);
+    height: var(--u-grid-group-chip-height, var(--u-group-height, 32px));
+    border: var(--u-grid-group-chip-outline-width, var(--u-group-outline-width, 1px)) solid var(--u-grid-group-chip-outline-color, var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))));
+    border-radius: var(--u-grid-group-chip-shape, var(--u-group-shape, var(--u-shape-corner-small, 8px)));
+    padding-inline: var(--u-grid-group-chip-padding, var(--u-group-padding, 16px));
     order: var(--_order);
     user-select: none;
     touch-action: none;
@@ -94,8 +98,8 @@ export const styles = css`
     --_row-tint: transparent;
   }
 
-  .stripped .even {
-    --_row-tint: var(--_stripped-background-color);
+  .striped .even {
+    --_row-tint: var(--_striped-background-color);
     background-color: var(--_row-tint);
   }
 
@@ -104,11 +108,6 @@ export const styles = css`
     top: 0;
     background-color: var(--u-grid-header-background-color, var(--_background-color));
     z-index: 2;
-  }
-
-  :root {
-    --u-table-hover-opacity: var(--u-state-layer-hover-opacity);
-    --u-table-cell-font-weight: var(--u-font-weight-medium, 500);
   }
 
   table {
@@ -136,17 +135,17 @@ export const styles = css`
 
   td {
     border-collapse: separate;
-    padding: var(--u-grid-data-cell-padding, var(--_cell-padding));
-    font-size: var(--u-td-font-size, 0.875rem);
-    font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight));
+    padding: var(--u-grid-cell-padding, var(--u-grid-data-cell-padding, var(--_cell-padding)));
+    font-size: var(--u-grid-cell-font-size, var(--u-td-font-size, 0.875rem));
+    font-weight: var(--u-grid-cell-font-weight, var(--u-td-font-weight));
     text-align: start;
   }
 
   th {
-    height: var(--u-grid-header-height, 46px);
+    height: var(--u-grid-header-cell-height, 46px);
     padding: var(--u-grid-header-cell-padding, var(--_cell-padding));
-    font-size: var(--u-th-font-size, 0.8125rem);
-    font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight));
+    font-size: var(--u-grid-header-cell-font-size, var(--u-th-font-size, 0.8125rem));
+    font-weight: var(--u-grid-header-cell-font-weight, var(--u-th-font-weight));
     color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent);
     text-align: start;
   }
@@ -188,8 +187,9 @@ export const styles = css`
     box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
   }
 
-  .hover tr:hover {
-    --_row-tint: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent);
+  /* Realce da linha de dados sob o ponteiro (\`--u-grid-row-hover-opacity: 0%\` desliga). */
+  tbody tr[role=row]:not(.group-row):hover {
+    --_row-tint: color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent);
     background-color: var(--_row-tint);
   }
 
@@ -281,7 +281,7 @@ export const styles = css`
     font-size: 24px;
     padding: 0;
     padding-inline-start: 8px;
-    color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79)));
+    color: var(--_toggle-color);
   }
 
   .group-toggle {
@@ -293,7 +293,7 @@ export const styles = css`
     width: 100%;
     height: 100%;
     cursor: pointer;
-    border-radius: var(--u-grid-toggle-shape, 50%);
+    border-radius: var(--u-grid-group-toggle-shape, var(--u-grid-toggle-shape, 50%));
   }
 
   .group-toggle:focus-visible {
@@ -434,7 +434,7 @@ export const styles = css`
   }
 
   .grouping-cell {
-    color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent);
+    color: color-mix(in srgb, currentColor var(--u-grid-group-row-emphasis, var(--u-grid-grouping-cell-emphasis, 80%)), transparent);
     /* clip (não hidden): não vira contêiner de rolagem e o rótulo fica sticky. */
     overflow: clip;
   }
@@ -497,7 +497,7 @@ export const styles = css`
     border-radius: 50%;
     font-size: 24px;
     cursor: pointer;
-    color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79)));
+    color: var(--_toggle-color);
   }
 
   .column-chooser-button:hover,

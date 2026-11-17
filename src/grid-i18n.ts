@@ -5,34 +5,89 @@ import { type Context, type ContextCallback, ContextEvent, ContextProvider, crea
  * by the consumer and are therefore not part of this contract.
  */
 export interface GridI18n {
+  /** Empty-state message. */
   noData: string;
+  /** Hint in the group panel while nothing is grouped. */
   dragToGroup: string;
+  /** Between the column label and the value in group rows (`": "`). */
   groupLabelSeparator: string;
   /** Ascending direction, used in `sortedAnnouncement` and in the group chip label. */
   sortAscending: string;
   /** Descending direction, used in `sortedAnnouncement` and in the group chip label. */
   sortDescending: string;
   /** Screen reader announcement after removing a column from the sorting. `{column}` = column label. */
-  clearSorting: string;
+  sortClearedAnnouncement: string;
   /** Screen reader announcement after sorting. `{column}` = column label, `{order}` = direction. */
   sortedAnnouncement: string;
   /** Text of `true` in `boolean` columns (cells and group rows). */
   trueText: string;
   /** Text of `false` in `boolean` columns (cells and group rows). */
   falseText: string;
-  /** Botão e título do seletor de colunas. */
+  /** Column chooser button label and popover title. */
   columnChooser: string;
-  /** Dica da caixa marcada (e do alvo de soltar no seletor). */
+  /** Tooltip of a checked column in the chooser (and of the chooser drop target). */
   hideColumn: string;
-  /** Dica da caixa desmarcada. */
+  /** Tooltip of an unchecked column in the chooser. */
   showColumn: string;
-  pinStart: string;
-  pinEnd: string;
-  unpin: string;
-  /** Dica da alça de redimensionar (duplo clique = auto-ajuste). */
+  /** Chooser button that fixes a column at the start. */
+  fixStart: string;
+  /** Chooser button that fixes a column at the end. */
+  fixEnd: string;
+  /** Tooltip of a pressed fix button (removes the fixing). */
+  unfix: string;
+  /** Tooltip of the column resize handle (double-click auto-sizes). */
   autoSize: string;
 }
 
+/** Keys renamed in 1.x: old name → new name (spec 15). */
+const LEGACY_I18N_KEYS: Readonly<Record<string, keyof GridI18n>> = {
+  clearSorting: 'sortClearedAnnouncement',
+  pinStart: 'fixStart',
+  pinEnd: 'fixEnd',
+  unpin: 'unfix',
+};
+
+const warnedLegacyKeys = new Set<string>();
+
+/** Translation that may still use the deprecated key names. */
+export type GridI18nInput = Partial<GridI18n> & {
+  /** @deprecated Use `sortClearedAnnouncement`. */
+  clearSorting?: string;
+  /** @deprecated Use `fixStart`. */
+  pinStart?: string;
+  /** @deprecated Use `fixEnd`. */
+  pinEnd?: string;
+  /** @deprecated Use `unfix`. */
+  unpin?: string;
+};
+
+/** Troca as chaves antigas pelas novas (aviso uma vez por chave). */
+const normalizeTranslation = (translation: GridI18nInput): Partial<GridI18n> => {
+  const result: Record<string, string | undefined> = {};
+
+  for (const [key, value] of Object.entries(translation)) {
+    const renamed = LEGACY_I18N_KEYS[key];
+
+    if (!renamed) {
+      result[key] = value;
+      continue;
+    }
+
+    if (!warnedLegacyKeys.has(key)) {
+      warnedLegacyKeys.add(key);
+      console.warn(`setGridTranslation: "${key}" is deprecated, use "${renamed}" instead.`);
+    }
+
+    // A chave nova, se vier junto, vence.
+    if (!(renamed in translation)) {
+      result[renamed] = value;
+    }
+  }
+
+  return result;
+};
+
+/** @internal */
 export const DEFAULT_GRID_LANGUAGE = 'en';
 
 /**
@@ -42,6 +97,7 @@ export const DEFAULT_GRID_LANGUAGE = 'en';
  *
  * Objeto sem protótipo: `language="constructor"` ou
  * `setGridTranslation('__proto__', …)` não alcançam `Object.prototype`.
+ * @internal
  */
 export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.create(null) as Record<string, GridI18n>, {
   en: {
@@ -50,16 +106,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'ascending',
     sortDescending: 'descending',
-    clearSorting: 'Sorting removed from {column}',
+    sortClearedAnnouncement: 'Sorting removed from {column}',
     sortedAnnouncement: 'Sorted by {column}, {order}',
     trueText: 'True',
     falseText: 'False',
     columnChooser: 'Column chooser',
     hideColumn: 'Hide column',
     showColumn: 'Show column',
-    pinStart: 'Pin to start',
-    pinEnd: 'Pin to end',
-    unpin: 'Unpin',
+    fixStart: 'Pin to start',
+    fixEnd: 'Pin to end',
+    unfix: 'Unpin',
     autoSize: 'Double-click to auto-size',
   },
   es: {
@@ -68,16 +124,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'ascendente',
     sortDescending: 'descendente',
-    clearSorting: 'Se quitó el orden de {column}',
+    sortClearedAnnouncement: 'Se quitó el orden de {column}',
     sortedAnnouncement: 'Ordenado por {column}, {order}',
     trueText: 'Verdadero',
     falseText: 'Falso',
     columnChooser: 'Selector de columnas',
     hideColumn: 'Ocultar columna',
     showColumn: 'Mostrar columna',
-    pinStart: 'Fijar al inicio',
-    pinEnd: 'Fijar al final',
-    unpin: 'Desfijar',
+    fixStart: 'Fijar al inicio',
+    fixEnd: 'Fijar al final',
+    unfix: 'Desfijar',
     autoSize: 'Doble clic para ajustar al contenido',
   },
   pt: {
@@ -86,16 +142,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
-    clearSorting: 'Ordenação removida de {column}',
+    sortClearedAnnouncement: 'Ordenação removida de {column}',
     sortedAnnouncement: 'Ordenado por {column}, {order}',
     trueText: 'Verdadeiro',
     falseText: 'Falso',
     columnChooser: 'Seletor de colunas',
     hideColumn: 'Ocultar coluna',
     showColumn: 'Mostrar coluna',
-    pinStart: 'Fixar no início',
-    pinEnd: 'Fixar no fim',
-    unpin: 'Desafixar',
+    fixStart: 'Fixar no início',
+    fixEnd: 'Fixar no fim',
+    unfix: 'Desafixar',
     autoSize: 'Clique duplo para ajustar ao conteúdo',
   },
   fr: {
@@ -104,16 +160,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ' : ',
     sortAscending: 'croissant',
     sortDescending: 'décroissant',
-    clearSorting: 'Tri retiré de {column}',
+    sortClearedAnnouncement: 'Tri retiré de {column}',
     sortedAnnouncement: 'Trié par {column}, {order}',
     trueText: 'Vrai',
     falseText: 'Faux',
     columnChooser: 'Sélecteur de colonnes',
     hideColumn: 'Masquer la colonne',
     showColumn: 'Afficher la colonne',
-    pinStart: 'Épingler au début',
-    pinEnd: 'Épingler à la fin',
-    unpin: 'Désépingler',
+    fixStart: 'Épingler au début',
+    fixEnd: 'Épingler à la fin',
+    unfix: 'Désépingler',
     autoSize: 'Double-cliquez pour ajuster au contenu',
   },
   de: {
@@ -122,16 +178,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'aufsteigend',
     sortDescending: 'absteigend',
-    clearSorting: 'Sortierung von {column} entfernt',
+    sortClearedAnnouncement: 'Sortierung von {column} entfernt',
     sortedAnnouncement: 'Sortiert nach {column}, {order}',
     trueText: 'Wahr',
     falseText: 'Falsch',
     columnChooser: 'Spaltenauswahl',
     hideColumn: 'Spalte ausblenden',
     showColumn: 'Spalte einblenden',
-    pinStart: 'Am Anfang fixieren',
-    pinEnd: 'Am Ende fixieren',
-    unpin: 'Fixierung aufheben',
+    fixStart: 'Am Anfang fixieren',
+    fixEnd: 'Am Ende fixieren',
+    unfix: 'Fixierung aufheben',
     autoSize: 'Doppelklicken, um die Breite anzupassen',
   },
   it: {
@@ -140,16 +196,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
-    clearSorting: 'Ordinamento rimosso da {column}',
+    sortClearedAnnouncement: 'Ordinamento rimosso da {column}',
     sortedAnnouncement: 'Ordinato per {column}, {order}',
     trueText: 'Vero',
     falseText: 'Falso',
     columnChooser: 'Selettore colonne',
     hideColumn: 'Nascondi colonna',
     showColumn: 'Mostra colonna',
-    pinStart: 'Blocca all’inizio',
-    pinEnd: 'Blocca alla fine',
-    unpin: 'Sblocca',
+    fixStart: 'Blocca all’inizio',
+    fixEnd: 'Blocca alla fine',
+    unfix: 'Sblocca',
     autoSize: 'Doppio clic per adattare al contenuto',
   },
   nl: {
@@ -158,16 +214,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'oplopend',
     sortDescending: 'aflopend',
-    clearSorting: 'Sortering verwijderd van {column}',
+    sortClearedAnnouncement: 'Sortering verwijderd van {column}',
     sortedAnnouncement: 'Gesorteerd op {column}, {order}',
     trueText: 'Waar',
     falseText: 'Onwaar',
     columnChooser: 'Kolomkiezer',
     hideColumn: 'Kolom verbergen',
     showColumn: 'Kolom weergeven',
-    pinStart: 'Vastzetten aan het begin',
-    pinEnd: 'Vastzetten aan het einde',
-    unpin: 'Losmaken',
+    fixStart: 'Vastzetten aan het begin',
+    fixEnd: 'Vastzetten aan het einde',
+    unfix: 'Losmaken',
     autoSize: 'Dubbelklik om aan de inhoud aan te passen',
   },
   ru: {
@@ -176,16 +232,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'по возрастанию',
     sortDescending: 'по убыванию',
-    clearSorting: 'Сортировка по столбцу {column} отменена',
+    sortClearedAnnouncement: 'Сортировка по столбцу {column} отменена',
     sortedAnnouncement: 'Отсортировано по столбцу {column}, {order}',
     trueText: 'Истина',
     falseText: 'Ложь',
     columnChooser: 'Выбор столбцов',
     hideColumn: 'Скрыть столбец',
     showColumn: 'Показать столбец',
-    pinStart: 'Закрепить в начале',
-    pinEnd: 'Закрепить в конце',
-    unpin: 'Открепить',
+    fixStart: 'Закрепить в начале',
+    fixEnd: 'Закрепить в конце',
+    unfix: 'Открепить',
     autoSize: 'Дважды щёлкните, чтобы подогнать ширину',
   },
   pl: {
@@ -194,16 +250,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'rosnąco',
     sortDescending: 'malejąco',
-    clearSorting: 'Usunięto sortowanie według {column}',
+    sortClearedAnnouncement: 'Usunięto sortowanie według {column}',
     sortedAnnouncement: 'Posortowano według {column}, {order}',
     trueText: 'Prawda',
     falseText: 'Fałsz',
     columnChooser: 'Wybór kolumn',
     hideColumn: 'Ukryj kolumnę',
     showColumn: 'Pokaż kolumnę',
-    pinStart: 'Przypnij na początku',
-    pinEnd: 'Przypnij na końcu',
-    unpin: 'Odepnij',
+    fixStart: 'Przypnij na początku',
+    fixEnd: 'Przypnij na końcu',
+    unfix: 'Odepnij',
     autoSize: 'Kliknij dwukrotnie, aby dopasować szerokość',
   },
   tr: {
@@ -212,16 +268,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'artan',
     sortDescending: 'azalan',
-    clearSorting: '{column} sıralaması kaldırıldı',
+    sortClearedAnnouncement: '{column} sıralaması kaldırıldı',
     sortedAnnouncement: '{column} sütununa göre sıralandı, {order}',
     trueText: 'Doğru',
     falseText: 'Yanlış',
     columnChooser: 'Sütun seçici',
     hideColumn: 'Sütunu gizle',
     showColumn: 'Sütunu göster',
-    pinStart: 'Başa sabitle',
-    pinEnd: 'Sona sabitle',
-    unpin: 'Sabitlemeyi kaldır',
+    fixStart: 'Başa sabitle',
+    fixEnd: 'Sona sabitle',
+    unfix: 'Sabitlemeyi kaldır',
     autoSize: 'İçeriğe sığdırmak için çift tıklayın',
   },
   ja: {
@@ -230,16 +286,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: '：',
     sortAscending: '昇順',
     sortDescending: '降順',
-    clearSorting: '{column} の並べ替えを解除しました',
+    sortClearedAnnouncement: '{column} の並べ替えを解除しました',
     sortedAnnouncement: '{column} で並べ替えました（{order}）',
     trueText: '真',
     falseText: '偽',
     columnChooser: '列の選択',
     hideColumn: '列を非表示',
     showColumn: '列を表示',
-    pinStart: '先頭に固定',
-    pinEnd: '末尾に固定',
-    unpin: '固定を解除',
+    fixStart: '先頭に固定',
+    fixEnd: '末尾に固定',
+    unfix: '固定を解除',
     autoSize: 'ダブルクリックで幅を自動調整',
   },
   ko: {
@@ -248,16 +304,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: '오름차순',
     sortDescending: '내림차순',
-    clearSorting: '{column} 정렬을 해제했습니다',
+    sortClearedAnnouncement: '{column} 정렬을 해제했습니다',
     sortedAnnouncement: '{column} 기준 {order} 정렬됨',
     trueText: '참',
     falseText: '거짓',
     columnChooser: '열 선택기',
     hideColumn: '열 숨기기',
     showColumn: '열 표시',
-    pinStart: '시작 부분에 고정',
-    pinEnd: '끝 부분에 고정',
-    unpin: '고정 해제',
+    fixStart: '시작 부분에 고정',
+    fixEnd: '끝 부분에 고정',
+    unfix: '고정 해제',
     autoSize: '두 번 클릭하여 너비 자동 맞춤',
   },
   zh: {
@@ -266,16 +322,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: '：',
     sortAscending: '升序',
     sortDescending: '降序',
-    clearSorting: '已取消按 {column} 排序',
+    sortClearedAnnouncement: '已取消按 {column} 排序',
     sortedAnnouncement: '已按 {column} {order}排序',
     trueText: '是',
     falseText: '否',
     columnChooser: '列选择器',
     hideColumn: '隐藏列',
     showColumn: '显示列',
-    pinStart: '固定到开头',
-    pinEnd: '固定到末尾',
-    unpin: '取消固定',
+    fixStart: '固定到开头',
+    fixEnd: '固定到末尾',
+    unfix: '取消固定',
     autoSize: '双击自动调整宽度',
   },
   ar: {
@@ -284,16 +340,16 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     groupLabelSeparator: ': ',
     sortAscending: 'تصاعدي',
     sortDescending: 'تنازلي',
-    clearSorting: 'تمت إزالة الفرز حسب {column}',
+    sortClearedAnnouncement: 'تمت إزالة الفرز حسب {column}',
     sortedAnnouncement: 'تم الفرز حسب {column}، {order}',
     trueText: 'صحيح',
     falseText: 'خطأ',
     columnChooser: 'منتقي الأعمدة',
     hideColumn: 'إخفاء العمود',
     showColumn: 'إظهار العمود',
-    pinStart: 'تثبيت في البداية',
-    pinEnd: 'تثبيت في النهاية',
-    unpin: 'إلغاء التثبيت',
+    fixStart: 'تثبيت في البداية',
+    fixEnd: 'تثبيت في النهاية',
+    unfix: 'إلغاء التثبيت',
     autoSize: 'انقر نقرًا مزدوجًا لملاءمة العرض',
   },
 });
@@ -318,20 +374,23 @@ const findTranslation = (language: string | undefined): GridI18n | undefined => 
 /**
  * Resolves the translation for a language code, falling back to the base
  * language and finally to {@link DEFAULT_GRID_LANGUAGE}.
+ * @internal
  */
 export const resolveGridTranslation = (language?: string): GridI18n =>
   findTranslation(language) ?? gridTranslations[DEFAULT_GRID_LANGUAGE];
 
 /**
  * Overrides part (or all) of a built-in translation. Missing keys keep their
- * previous value, so a partial object is enough.
+ * previous value, so a partial object is enough. The deprecated key names
+ * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`) are still accepted, with a
+ * console warning.
  */
-export const setGridTranslation = (language: string, translation: Partial<GridI18n>): void => {
+export const setGridTranslation = (language: string, translation: GridI18nInput): void => {
 
   const key = language.toLowerCase();
   const base = gridTranslations[key] ?? findTranslation(language) ?? gridTranslations[DEFAULT_GRID_LANGUAGE];
 
-  gridTranslations[key] = { ...base, ...translation };
+  gridTranslations[key] = { ...base, ...normalizeTranslation(translation) };
 };
 
 /**
@@ -431,7 +490,10 @@ if (typeof document !== 'undefined' && !(window as unknown as WindowWithRequests
   }
 }
 
-/** Quantos pedidos de idioma esperam provedor (diagnóstico/testes, spec 14). */
+/**
+ * Quantos pedidos de idioma esperam provedor (diagnóstico/testes, spec 14).
+ * @internal
+ */
 export const _pendingLanguageRequests = (): number =>
   typeof window === 'undefined' ? 0 : (window as unknown as WindowWithRequests)[PENDING_REQUESTS]?.size ?? 0;
 
@@ -462,6 +524,7 @@ let documentLanguageObserver: MutationObserver | undefined;
 /**
  * Avisa quando o `lang` do `<html>` muda. Um único `MutationObserver` serve a
  * todos os grids da página. Devolve a função que cancela a inscrição.
+ * @internal
  */
 export const observeDocumentLanguage = (listener: () => void): () => void => {
 

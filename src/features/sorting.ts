@@ -1,7 +1,11 @@
 import type { GridColumnDef, GridSortOrder } from '../grid-column-def.js';
 import type { SortSpec } from '../row-model/sort.js';
 
-export type GridSortingMode = 'none' | 'single' | 'multiple';
+/** How the user sorts from the headers: `none`, `single` (default) or `multiple` (Shift+click). */
+export type GridSortMode = 'none' | 'single' | 'multiple';
+
+/** @deprecated Use `GridSortMode`. */
+export type GridSortingMode = GridSortMode;
 
 /** Modificadores de um clique/tecla no cabeçalho, já interpretados. */
 export interface SortGesture {
@@ -20,7 +24,7 @@ export const toggleOrder = (order: GridSortOrder | undefined): GridSortOrder =>
   order === 'asc' ? 'desc' : 'asc';
 
 /**
- * Estado depois de `sortBy(column, order, { append })`. Sem `append`, a
+ * Estado depois de `sortColumn(column, order, { append })`. Sem `append`, a
  * coluna substitui as outras — menos as colunas agrupadas, cuja entrada é a
  * direção do grupo e sobrevive. Uma coluna agrupada (ou já presente, com
  * `append`) muda a direção no lugar, sem perder a prioridade.
@@ -61,7 +65,7 @@ export const sortingAfterGesture = (
   sorting: readonly SortSpec[],
   column: GridColumnDef,
   gesture: SortGesture,
-  mode: GridSortingMode,
+  mode: GridSortMode,
   isGrouped: (column: GridColumnDef) => boolean,
 ): SortSpec[] => {
 

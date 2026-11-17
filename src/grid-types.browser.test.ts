@@ -231,9 +231,9 @@ describe('<u-grid-column>', () => {
     return grid;
   };
 
-  it('atributos kebab-case: data-type, alignment, empty-text, wrap, min-width', async () => {
+  it('atributos kebab-case: type, alignment, empty-text, wrap, min-width', async () => {
     const grid = await declarative(`
-      <u-grid-column path="d" data-type="date" alignment="center" min-width="200">D</u-grid-column>
+      <u-grid-column path="d" type="date" alignment="center" min-width="200">D</u-grid-column>
       <u-grid-column path="e" empty-text="—" wrap>E</u-grid-column>`, [{ d: '2024-03-05', e: null }], 'pt');
 
     const [d, e] = grid.querySelectorAll('u-grid-column');

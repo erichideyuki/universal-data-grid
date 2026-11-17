@@ -236,7 +236,7 @@ describe('memória: recursos de coluna', () => {
     const replace = async (): Promise<Tracked> => {
       const old = grid.columns;
       grid.setColumnWidth(old[1], 200);
-      grid.showColumnChooser();
+      grid.openColumnChooser();
       await settle(grid);
       chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-end')[2].click();
       await settle(grid);

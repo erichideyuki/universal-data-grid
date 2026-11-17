@@ -376,7 +376,7 @@ describe('visibilidade e seletor', () => {
 
   it('não deixa ocultar a última coluna visível', async () => {
     const grid = await createGrid({ columns: [{ path: 'a', label: 'A' }, { path: 'b', label: 'B' }], items: [{}] });
-    grid.showColumnChooser();
+    grid.openColumnChooser();
     await settle(grid);
 
     checkboxes(grid)[0].click();
@@ -396,7 +396,7 @@ describe('visibilidade e seletor', () => {
   it('fixar pelo seletor move a coluna para o bloco e não altera o hospedeiro', async () => {
     const columns: GridColumnDef[] = [{ path: 'a', label: 'A' }, { path: 'b', label: 'B' }, { path: 'c', label: 'C' }];
     const grid = await createGrid({ columns, items: [{}] });
-    grid.showColumnChooser();
+    grid.openColumnChooser();
     await settle(grid);
 
     const pinEnd = chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-end')[0];
@@ -419,7 +419,7 @@ describe('visibilidade e seletor', () => {
 
   it('clique fora fecha o seletor', async () => {
     const grid = await createGrid({ columns: [{ path: 'a', label: 'A' }], items: [{}], configure: g => g.columnChooser = true });
-    grid.showColumnChooser();
+    grid.openColumnChooser();
     await settle(grid);
     expect(chooser(grid)).not.toBeNull();
 
@@ -440,7 +440,7 @@ describe('reordenar', () => {
     await settle(grid);
 
     expect(headerLabels(grid)).toEqual(['C', 'A', 'B']);
-    expect(events).toEqual([{ column: columns[2], fromIndex: 2, toIndex: 0 }]);
+    expect(events).toEqual([{ column: columns[2], index: 0, previousIndex: 2, fromIndex: 2, toIndex: 0 }]);
   });
 });
 
@@ -494,7 +494,7 @@ describe('desconectar solta o que foi registrado', () => {
 
   it('com o seletor aberto: tira o listener do document', async () => {
     const grid = await createGrid({ columns: [{ path: 'a', label: 'A' }], items: [{}] });
-    grid.showColumnChooser();
+    grid.openColumnChooser();
     await settle(grid);
 
     const remove = vi.spyOn(document, 'removeEventListener');
@@ -553,14 +553,14 @@ describe('com ordenação (frente 03)', () => {
     expect(headers(grid).at(-1)!.getAttribute('aria-sort')).toBe('ascending');
     expect(headers(grid).at(-1)!.classList.contains('fixed-end')).toBe(true);
 
-    grid.sortBy(columns[2], 'asc');
+    grid.sortColumn(columns[2], 'asc');
     await settle(grid);
     expect(names(grid)).toEqual(['Bruno', 'Carla', 'Ana']);
     expect(headerLabels(grid)).toEqual(['Name', 'City']);
 
     // Ocultar a coluna ordenada mantém a ordenação.
-    grid.sortBy(columns[0], 'desc');
-    grid.showColumnChooser();
+    grid.sortColumn(columns[0], 'desc');
+    grid.openColumnChooser();
     await settle(grid);
     root(grid).querySelector<HTMLInputElement>('.column-chooser input[type=checkbox]')!.click();
     await settle(grid);

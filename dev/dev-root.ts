@@ -164,7 +164,7 @@ export class DevRoot extends LitElement {
         <u-grid
           slot="before-content"
           auto-expand-groups
-          sorting="multiple"
+          sort-mode="multiple"
           column-resizing
           column-chooser
           .columns=${this.#columns}

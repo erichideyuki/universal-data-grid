@@ -91,7 +91,7 @@ const exerciseSorting = async (grid: DataGrid, columns: GridColumnDef[]): Promis
   expect(grid._regularColumns.map(c => c.label)).toEqual(['Amount', 'Name']);
   expect(grid.getSorting()).toHaveLength(before);
 
-  grid.sortBy(columns[1], 'desc', { append: true });
+  grid.sortColumn(columns[1], 'desc', { append: true });
   grid.getSorting();
   await settle(grid);
   grid.clearSorting();
@@ -105,7 +105,7 @@ describe('memória da ordenação', () => {
     const scenario = async (): Promise<Tracked> => {
       const items = makeItems(400);
       const columns = makeColumns();
-      const grid = await createGrid({ columns, items, height: '300px', configure: g => g.sorting = 'multiple' });
+      const grid = await createGrid({ columns, items, height: '300px', configure: g => g.sortMode = 'multiple' });
 
       await exerciseSorting(grid, columns);
       grid.remove();
@@ -118,13 +118,13 @@ describe('memória da ordenação', () => {
 
   it('grid de vida longa: items trocados e colunas removidas não ficam presos no estado/cache de ordenação', async () => {
     const columns = makeColumns();
-    const grid = await createGrid({ columns, items: makeItems(500), height: '300px', configure: g => g.sorting = 'multiple' });
+    const grid = await createGrid({ columns, items: makeItems(500), height: '300px', configure: g => g.sortMode = 'multiple' });
 
     const replaceItems = async (): Promise<Tracked> => {
       const items = makeItems(500, 17);
       grid.items = items;
-      grid.sortBy(columns[1], 'desc');
-      grid.sortBy(columns[2], 'asc', { append: true });
+      grid.sortColumn(columns[1], 'desc');
+      grid.sortColumn(columns[2], 'asc', { append: true });
       await settle(grid);
       grid.items = makeItems(500, 33);
       await settle(grid);
@@ -138,7 +138,7 @@ describe('memória da ordenação', () => {
       const extra: GridColumnDef = { path: 'name', label: 'Extra', sortOrder: 'desc' };
       grid.columns = [...columns, extra];
       await settle(grid);
-      grid.sortBy(extra, 'asc', { append: true });
+      grid.sortColumn(extra, 'asc', { append: true });
       await settle(grid);
       expect(grid.getSorting().some(s => s.column === extra)).toBe(true);
 
@@ -155,7 +155,7 @@ describe('memória da ordenação', () => {
 
   it('ordenar repetidamente num grid de vida longa não cresce heap, listeners nem cache de postos', async () => {
     const columns = makeColumns();
-    const grid = await createGrid({ columns, items: makeItems(2000), height: '300px', configure: g => g.sorting = 'multiple' });
+    const grid = await createGrid({ columns, items: makeItems(2000), height: '300px', configure: g => g.sortMode = 'multiple' });
 
     let firstItems: Tracked | undefined;
 

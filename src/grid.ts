@@ -11,6 +11,7 @@ import { styleMap } from 'lit/directives/style-map.js';
 import { VirtualizerController } from '@tanstack/lit-virtual';
 import type { VirtualItem } from '@tanstack/virtual-core';
 
+import { booleanAttribute, type LegacyAttributes } from './attribute-converters.js';
 import {
   ColumnChooserController,
   columnChooserIcon,
@@ -28,12 +29,11 @@ import {
   type GridColumnResizeEventDetail,
   type GridResizeMode,
   measureContentWidth,
-  type ResizeHost,
   type WidthBounds,
 } from './features/resize.js';
 import {
   formatMessage,
-  type GridSortingMode,
+  type GridSortMode,
   initialSorting,
   nextSorting,
   sameSorting,
@@ -49,7 +49,7 @@ import {
   type GridSortOrder,
   isColumnSortable,
 } from './grid-column-def.js';
-import type { GridColumnChange } from './grid-column.js';
+import { type DataGridColumn, type GridColumnChange } from './grid-column.js';
 import {
   DEFAULT_GRID_LANGUAGE,
   type GridI18n,
@@ -83,17 +83,36 @@ export type {
   GridSort,
   GridSortOrder,
 } from './grid-column-def.js';
-export type { GridSortingMode } from './features/sorting.js';
+export type { GridSortMode, GridSortingMode } from './features/sorting.js';
+export { DataGridColumn } from './grid-column.js';
 
-/** `detail` de `u-grid-sorting` e `u-grid-sort-change`. */
+/** @deprecated Use `DataGridColumn`. */
+export type UmDataGridColumn = DataGridColumn;
+
+/** Who changed the state: a user gesture or a method call. */
+export type GridChangeSource = 'user' | 'api';
+
+/** `detail` of `u-grid-sorting` and `u-grid-sort-change`. */
 export interface GridSortEventDetail {
-  /** Ordenação nova (cópia). */
+  /** New sorting (a copy). */
   sorting: GridSort[];
-  /** Ordenação anterior (cópia). */
+  /** Previous sorting (a copy). */
   previous: GridSort[];
+  /** `user` (header or group chip) or `api` (`sortColumn`, `clearSorting`). */
+  source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-group-change`. */
+export interface GridGroupEventDetail {
+  /** Grouped columns after the change, outermost first (a copy). */
+  grouping: GridColumnDef[];
+  /** Grouped columns before the change (a copy). */
+  previous: GridColumnDef[];
+  /** `user` (drag and drop) or `api` (`groupColumn`, `ungroupColumn`, `moveColumn`). */
+  source: GridChangeSource;
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
-export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n } from './grid-i18n.js';
+export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n, type GridI18nInput } from './grid-i18n.js';
 
 /** Linhas renderizadas antes de o virtualizador medir o contêiner (1º render, SSR). */
 const INITIAL_RENDER_ROWS = 30;
@@ -101,17 +120,44 @@ const INITIAL_RENDER_ROWS = 30;
 /** Largura (px) de cada coluna de recuo de grupo; igual ao `--_group-column-width`. */
 const GROUP_COLUMN_WIDTH = 32;
 
+/** `detail` of `u-grid-column-visibility-change`. */
 export interface GridColumnVisibilityChangeEventDetail {
+  /** The column shown or hidden. */
   column: GridColumnDef;
+  /** New visibility. */
   visible: boolean;
 }
 
-export interface GridColumnReorderEventDetail {
+/** `detail` of `u-grid-column-fixed-change`. */
+export interface GridColumnFixedChangeEventDetail {
+  /** The column fixed or unfixed. */
   column: GridColumnDef;
-  /** Posições entre as colunas comuns (as ocultas contam). */
+  /** New side (`null` = not fixed). */
+  fixed: GridColumnFixed;
+  /** Side before the change. */
+  previousFixed: GridColumnFixed;
+}
+
+/** `detail` of `u-grid-column-reorder`. Positions among the regular (non-grouped) columns; hidden ones count. */
+export interface GridColumnReorderEventDetail {
+  /** The moved column. */
+  column: GridColumnDef;
+  /** New position. */
+  index: number;
+  /** Position before the move. */
+  previousIndex: number;
+  /** @deprecated Use `previousIndex`. */
   fromIndex: number;
+  /** @deprecated Use `index`. */
   toIndex: number;
 }
+
+/** Atributos renomeados na revisão de API (spec 15): antigo → novo. */
+const LEGACY_ATTRIBUTES: LegacyAttributes = {
+  rowheight: 'row-height',
+  showrowlines: 'show-row-lines',
+  showcolumnlines: 'show-column-lines',
+};
 
 /** Opções do hospedeiro vistas por último — mudança nelas vence o estado do usuário. */
 interface HostColumnOptions {
@@ -206,27 +252,93 @@ const columnIdOf = (column: GridColumnDef): number => {
 };
 
 /**
- * @fires u-grid-sorting - Before the sorting changes (by the user or by the API). Cancelable; `detail: GridSortEventDetail`.
- * @fires u-grid-sort-change - After the sorting changed. `detail: GridSortEventDetail`.
- * @fires u-grid-column-resize - The user finished resizing a column (pointer
- * release, keyboard or double-click auto-size). Detail: `GridColumnResizeEventDetail`.
- * @fires u-grid-column-visibility-change - The user showed or hid a column in
- * the column chooser. Detail: `GridColumnVisibilityChangeEventDetail`.
- * @fires u-grid-column-reorder - The user moved a column by drag and drop.
- * Detail: `GridColumnReorderEventDetail`.
+ * Data grid with row virtualization, grouping, sorting, column resizing,
+ * fixing, hiding and reordering, i18n and SSR.
+ *
+ * @summary Data grid web component.
+ *
+ * @slot - `<u-grid-column>` elements (declarative columns).
+ *
+ * @fires {CustomEvent<GridSortEventDetail>} u-grid-sorting - Before the sorting changes (user or API). Cancelable.
+ * @fires {CustomEvent<GridSortEventDetail>} u-grid-sort-change - After the sorting changed (user or API).
+ * @fires {CustomEvent<GridGroupEventDetail>} u-grid-group-change - After the grouping changed (user or API).
+ * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard or double-click auto-size).
+ * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
+ * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
+ * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column by drag and drop.
+ *
+ * @cssprop --u-grid-background-color - Grid background.
+ * @cssprop --u-grid-striped-background-color - Background of even rows when `striped`.
+ * @cssprop --u-grid-header-background-color - Header and sticky cells background.
+ * @cssprop --u-grid-toolbar-height - Height of the bar above the table (group panel, chooser button). Default `56px`.
+ * @cssprop --u-grid-toolbar-padding - Padding of the bar. Default `8px 16px`.
+ * @cssprop --u-grid-toolbar-block-padding - Block padding of the bar. Default `8px`.
+ * @cssprop --u-grid-toolbar-inline-padding - Inline padding of the bar. Default: the cell inline padding.
+ * @cssprop --u-grid-header-cell-height - Height of the column header cells. Default `46px`.
+ * @cssprop --u-grid-header-cell-padding - Header cell padding.
+ * @cssprop --u-grid-header-cell-font-size - Header cell font size. Default `0.8125rem`.
+ * @cssprop --u-grid-header-cell-font-weight - Header cell font weight.
+ * @cssprop --u-grid-cell-padding - Data cell padding. Default `13px 16px`.
+ * @cssprop --u-grid-cell-block-padding - Block padding of data and header cells. Default `13px`.
+ * @cssprop --u-grid-cell-inline-padding - Inline padding of data and header cells. Default `16px`.
+ * @cssprop --u-grid-cell-font-size - Data cell font size. Default `0.875rem`.
+ * @cssprop --u-grid-cell-font-weight - Data cell font weight.
+ * @cssprop --u-grid-row-hover-opacity - Intensity of the row hover tint (`0%` disables it). Default: state-layer hover token or `8%`.
+ * @cssprop --u-grid-line-opacity - Opacity of the row/column lines (derived from the text color). Default `20%`.
+ * @cssprop --u-grid-line-width - Base line thickness. Default `1px`.
+ * @cssprop --u-grid-row-line-width - Row separator thickness.
+ * @cssprop --u-grid-column-line-width - Column separator thickness.
+ * @cssprop --u-grid-group-toggle-color - Group expand/collapse chevron (and chooser button) color.
+ * @cssprop --u-grid-group-toggle-shape - Corner radius of the chevron button. Default `50%`.
+ * @cssprop --u-grid-group-row-emphasis - Emphasis of the group row text. Default `80%`.
+ * @cssprop --u-grid-group-chip-height - Group chip height. Default `32px`.
+ * @cssprop --u-grid-group-chip-padding - Group chip inline padding. Default `16px`.
+ * @cssprop --u-grid-group-chip-shape - Group chip corner radius. Default `8px`.
+ * @cssprop --u-grid-group-chip-outline-color - Group chip border color.
+ * @cssprop --u-grid-group-chip-outline-width - Group chip border width. Default `1px`.
+ * @cssprop --u-grid-group-chip-font-size - Group chip font size.
+ * @cssprop --u-grid-group-chip-font-weight - Group chip font weight.
+ * @cssprop --u-grid-group-chip-line-height - Group chip line height.
+ * @cssprop --u-grid-group-chip-letter-spacing - Group chip letter spacing.
+ * @cssprop --u-grid-focus-ring-color - Keyboard focus ring color.
+ * @cssprop --u-grid-focus-ring-width - Keyboard focus ring width. Default `2px`.
+ * @cssprop --u-grid-sorted-header-color - Text color of sorted column headers.
+ * @cssprop --u-grid-sort-indicator-size - Size of the sort arrow. Default `1.125em`.
+ * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
+ * @cssprop --u-grid-drop-indicator-width - Drop indicator thickness. Default `3px`.
+ * @cssprop --u-grid-resize-handle-width - Width of the column resize handle. Default `8px`.
+ * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
+ * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
+ * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
+ *
+ * @csspart row - Every rendered row (`<tr>`).
+ * @csspart group-row - Group header rows.
+ * @csspart odd - Data rows in odd positions (the first data row is `odd`).
+ * @csspart even - Data rows in even positions.
+ * @csspart cell - Data cells (`<td>`).
+ * @csspart no-data - The cell rendered in the empty state.
+ * @csspart header-cell - Column header cells (`<th>`).
+ * @csspart sort-indicator - The sort arrow (and priority number) in headers and group chips.
+ * @csspart group-chip - Group chips in the group panel.
+ * @csspart column-chooser - The column chooser popover.
  */
 @customElement('u-grid')
-export class DataGrid extends LitElement implements ResizeHost {
+export class DataGrid extends LitElement {
   static override styles = [styles];
+
+  static override get observedAttributes(): string[] {
+    return [...super.observedAttributes, ...Object.keys(LEGACY_ATTRIBUTES)];
+  }
 
   // ---------------------------------------------------------------- dados
 
   #items: readonly any[] = [];
 
-  @property({ type: Boolean, attribute: 'auto-expand-groups' }) autoExpandGroups = false;
+  /** Groups start expanded. */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-groups' }) autoExpandGroups = false;
 
-  /** Dados das linhas. O grid nunca altera este array nem os itens. */
-  @property({ type: Array })
+  /** Row items (property only). The grid never mutates this array or its items. */
+  @property({ attribute: false })
   get items(): any[] {
     return this.#items as any[];
   }
@@ -265,16 +377,22 @@ export class DataGrid extends LitElement implements ResizeHost {
   #columnsProperty: GridColumnDef[] | undefined;
   #declarativeColumns: GridColumnDef[] = [];
 
+  /** @internal */
   readonly _nativeColumnMap = new WeakMap<HTMLElement, GridColumnDef>();
 
   /**
    * Ordem atual (do usuário) das colunas comuns e de grupo — estado do grid.
    * As comuns ficam sempre em blocos: fixas no início, livres, fixas no fim.
    */
+  /** @internal */
   @state() _groupColumns: GridColumnDef[] = [];
+  /** @internal */
   @state() _regularColumns: GridColumnDef[] = [];
 
-  /** Colunas comuns visíveis, na ordem de exibição (recalculado a cada update). */
+  /**
+   * Colunas comuns visíveis, na ordem de exibição (recalculado a cada update).
+   * @internal
+   */
   _visibleColumns: GridColumnDef[] = [];
 
   // Estado do usuário por coluna — nunca escrito nos objetos do hospedeiro.
@@ -290,8 +408,9 @@ export class DataGrid extends LitElement implements ResizeHost {
   #autoWidthDirty = true;
 
   /**
-   * Definições de coluna. Por propriedade têm precedência sobre os
-   * `<u-grid-column>` filhos. O grid não altera o array nem os objetos.
+   * Column definitions (property only). When set they take precedence over
+   * the `<u-grid-column>` children. The grid never mutates the array or the
+   * objects.
    */
   @property({ attribute: false })
   get columns(): GridColumnDef[] {
@@ -310,7 +429,18 @@ export class DataGrid extends LitElement implements ResizeHost {
    * keeps one sorted column, `multiple` adds columns with Shift+click and
    * `none` disables header sorting (the API still works).
    */
-  @property() sorting: GridSortingMode = 'single';
+  @property({ attribute: 'sort-mode' }) sortMode: GridSortMode = 'single';
+
+  /** @deprecated Use `sortMode` (attribute `sort-mode`). */
+  @property()
+  get sorting(): GridSortMode {
+    return this.sortMode;
+  }
+
+  set sorting(value: GridSortMode) {
+    this.#deprecated('sorting', 'sortMode');
+    this.sortMode = value;
+  }
 
   /** Ordenação atual, em ordem de prioridade. Inclui a direção das colunas agrupadas. */
   #sorting: GridSort[] = [];
@@ -319,40 +449,54 @@ export class DataGrid extends LitElement implements ResizeHost {
   /** Houve arrasto desde o último `pointerdown` no cabeçalho/chip. */
   #dragged = false;
 
-  get #sortingMode(): GridSortingMode {
-    return this.sorting === 'none' || this.sorting === 'multiple' ? this.sorting : 'single';
+  get #sortingMode(): GridSortMode {
+    return this.sortMode === 'none' || this.sortMode === 'multiple' ? this.sortMode : 'single';
   }
 
   readonly #isGrouped = (column: GridColumnDef): boolean => this._groupColumns.includes(column);
 
   // ------------------------------------------------------------ aparência
 
-  @property({ type: Number }) rowHeight = 48;
-  @property({ type: Boolean }) striped = false;
-  @property({ type: Boolean, attribute: 'show-group-panel' }) showGroupPanel = true;
-  @property({ type: Boolean, attribute: 'show-column-headers' }) showColumnHeaders = true;
-  @property({ type: Boolean }) showRowLines = true;
-  @property({ type: Boolean }) showColumnLines = false;
+  // Booleanos: `"false"` desliga (padrão `true` precisa disso — spec 15).
+
+  /** Row height in px (rows with `wrap` columns can grow). */
+  @property({ type: Number, attribute: 'row-height' }) rowHeight = 48;
+
+  /** Tints even rows. */
+  @property({ type: Boolean, converter: booleanAttribute(false) }) striped = false;
+
+  /** Shows the group panel (drop a header there to group). Default `true`; `show-group-panel="false"` hides it. */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-group-panel' }) showGroupPanel = true;
+
+  /** Shows the column headers. Default `true`; `show-column-headers="false"` hides them. */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-column-headers' }) showColumnHeaders = true;
+
+  /** Horizontal row separators. Default `true`; `show-row-lines="false"` hides them. */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-row-lines' }) showRowLines = true;
+
+  /** Vertical column separators. */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-column-lines' }) showColumnLines = false;
 
   // -------------------------------------------------------- recursos de coluna
 
-  /** Deixa o usuário redimensionar as colunas pela borda do cabeçalho. */
-  @property({ type: Boolean, attribute: 'column-resizing' }) columnResizing = false;
+  /** Lets the user resize columns from the header edge (pointer and keyboard). */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-resizing' }) columnResizing = false;
 
   /**
-   * `widget`: só a coluna muda e a largura total acompanha. `next-column`: a
-   * coluna seguinte cede ou ganha o mesmo tanto (a largura total se mantém).
+   * `widget`: only the column changes and the total width follows.
+   * `next-column`: the next column gives or takes the same amount (the
+   * total width is kept).
    */
   @property({ attribute: 'resize-mode' }) resizeMode: GridResizeMode = 'widget';
 
-  /** Mostra o botão do seletor de colunas na barra do cabeçalho. */
-  @property({ type: Boolean, attribute: 'column-chooser' }) columnChooser = false;
+  /** Shows the column chooser button in the bar above the table. */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-chooser' }) columnChooser = false;
 
-  /** Colunas sem `width` ganham a largura do conteúdo (cabeçalho + linhas visíveis). */
-  @property({ type: Boolean, attribute: 'column-auto-width' }) columnAutoWidth = false;
+  /** Columns without `width` take the width of their content (header and rendered rows). */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-auto-width' }) columnAutoWidth = false;
 
   /** @deprecated Use `striped`. */
-  @property({ type: Boolean })
+  @property({ type: Boolean, converter: booleanAttribute(false) })
   get stripped(): boolean {
     return this.striped;
   }
@@ -362,8 +506,8 @@ export class DataGrid extends LitElement implements ResizeHost {
     this.striped = value;
   }
 
-  /** @deprecated Use `showGroupPanel` (o nome antigo só controlava o painel de grupos). */
-  @property({ type: Boolean })
+  /** @deprecated Use `showGroupPanel` (attribute `show-group-panel`). */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'showheader' })
   get showHeader(): boolean {
     return this.showGroupPanel;
   }
@@ -382,6 +526,19 @@ export class DataGrid extends LitElement implements ResizeHost {
 
     this.#warnedDeprecations.add(name);
     console.warn(`<u-grid>: "${name}" is deprecated, use "${replacement}" instead.`);
+  }
+
+  override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
+    const renamed = LEGACY_ATTRIBUTES[name];
+
+    if (renamed) {
+      this.#deprecated(`${name} attribute`, `${renamed} attribute`);
+      // Conversor e propriedade são os do atributo novo.
+      super.attributeChangedCallback(renamed, old, value);
+      return;
+    }
+
+    super.attributeChangedCallback(name, old, value);
   }
 
   // ------------------------------------------------------------------ i18n
@@ -421,8 +578,11 @@ export class DataGrid extends LitElement implements ResizeHost {
 
   // ------------------------------------------------------- refs/controllers
 
+  /** @internal */
   readonly _containerRef: Ref<HTMLDivElement> = createRef();
+  /** @internal */
   readonly _scrollContainerRef: Ref<HTMLDivElement> = createRef();
+  /** @internal */
   readonly _groupContainerRef: Ref<HTMLDivElement> = createRef();
 
   readonly #virtualizerController = new VirtualizerController(this, {
@@ -441,7 +601,10 @@ export class DataGrid extends LitElement implements ResizeHost {
   readonly #chooser = new ColumnChooserController(this);
   #resizeObserver: ResizeObserver | undefined;
 
-  /** Quantos elementos estão registrados no interactjs (diagnóstico/testes). */
+  /**
+   * Quantos elementos estão registrados no interactjs (diagnóstico/testes).
+   * @internal
+   */
   get _dragAndDropRegistrations(): number {
     return this.#columnDragAndDrop.size + this.#groupDragAndDrop.size;
   }
@@ -450,6 +613,7 @@ export class DataGrid extends LitElement implements ResizeHost {
    * Tamanho dos registros internos que crescem com o uso (diagnóstico e
    * testes de vazamento, spec 14). Num grid de vida longa têm de ficar
    * estáveis.
+   * @internal
    */
   get _memoryStats(): Record<string, number> {
     const virtualizer = this.#virtualizerController.getVirtualizer();
@@ -598,38 +762,64 @@ export class DataGrid extends LitElement implements ResizeHost {
    * it, the column is added (or keeps its priority if already sorted). For a
    * grouped column it sets the direction of its groups.
    */
-  sortBy(column: GridColumnDef, order: GridSortOrder | null, { append = false }: { append?: boolean } = {}): void {
-    this.#changeSorting(nextSorting(this.#sorting, column, order, append, this.#isGrouped));
+  sortColumn(column: GridColumnDef, order: GridSortOrder | null, { append = false }: { append?: boolean } = {}): void {
+    this.#changeSorting(nextSorting(this.#sorting, column, order, append, this.#isGrouped), 'api');
+  }
+
+  /** @deprecated Use `sortColumn()`. */
+  sortBy(column: GridColumnDef, order: GridSortOrder | null, options: { append?: boolean } = {}): void {
+    this.#deprecated('sortBy()', 'sortColumn()');
+    this.sortColumn(column, order, options);
   }
 
   /** Removes the sorting of every column (grouped columns go back to ascending groups). */
   clearSorting(): void {
-    this.#changeSorting([]);
+    this.#changeSorting([], 'api');
   }
 
-  /** Current sorting, in priority order. */
+  /** Current sorting, in priority order (a copy). */
   getSorting(): GridSort[] {
     return this.#sorting.map(({ column, order }) => ({ column, order }));
   }
 
-  groupColumn(column: GridColumnDef, targetIndex: number): void {
-    this.#moveColumnTo(true, column, targetIndex);
+  /**
+   * Groups by `column` at grouping level `targetIndex` (default: the
+   * innermost level). An already grouped column moves to that level.
+   */
+  groupColumn(column: GridColumnDef, targetIndex?: number): void {
+    this.#moveColumnTo(true, column, targetIndex ?? this._groupColumns.length, 'api');
+  }
+
+  /** Removes `column` from the grouping; it goes back to the end of the regular columns. */
+  ungroupColumn(column: GridColumnDef): void {
+    if (this._groupColumns.includes(column)) {
+      this.#moveColumnTo(false, column, this._regularColumns.length, 'api');
+    }
+  }
+
+  /** Grouped columns, outermost first (a copy). */
+  getGrouping(): GridColumnDef[] {
+    return [...this._groupColumns];
   }
 
   /**
-   * Move uma coluna comum para `targetIndex` (posição entre as comuns). A
-   * coluna fica no próprio bloco: fixas no início, livres ou fixas no fim.
+   * Moves a column to `targetIndex` among the regular (non-grouped) columns.
+   * The column stays in its block: fixed at the start, free, or fixed at the
+   * end. A grouped column is ungrouped.
    */
   moveColumn(column: GridColumnDef, targetIndex: number): void {
-    this.#moveColumnTo(false, column, targetIndex);
+    this.#moveColumnTo(false, column, targetIndex, 'api');
   }
 
-  /** Chamado pelos adaptadores de arrasto quando um arrasto começa. */
+  /**
+   * Chamado pelos adaptadores de arrasto quando um arrasto começa.
+   * @internal
+   */
   _dragStarted(): void {
     this.#dragged = true;
   }
 
-  /** Define a largura (px) de uma coluna, respeitando `minWidth`/`maxWidth`. */
+  /** Sets the width (px) of a column, within its `minWidth`/`maxWidth`. */
   setColumnWidth(column: GridColumnDef, width: number): void {
     if (!this._regularColumns.includes(column) || !Number.isFinite(width)) {
       return;
@@ -639,7 +829,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     this._setUserWidths(new Map([[column, clampWidth(width, min, max)]]));
   }
 
-  /** Ajusta a largura ao conteúdo do cabeçalho e das linhas renderizadas. */
+  /** Fits the width of a column to its header and rendered cells. */
   autoSizeColumn(column: GridColumnDef): void {
     const width = this.#measureColumnContent(column);
 
@@ -648,15 +838,27 @@ export class DataGrid extends LitElement implements ResizeHost {
     }
   }
 
-  /** Abre o seletor de colunas (mesmo sem o botão de `column-chooser`). */
-  showColumnChooser(): void {
+  /** Opens the column chooser (also without the `column-chooser` button). */
+  openColumnChooser(): void {
     this.#chooser.show();
+  }
+
+  /** Closes the column chooser. */
+  closeColumnChooser(): void {
+    this.#chooser.hide();
+  }
+
+  /** @deprecated Use `openColumnChooser()`. */
+  showColumnChooser(): void {
+    this.#deprecated('showColumnChooser()', 'openColumnChooser()');
+    this.openColumnChooser();
   }
 
   /**
    * Chamado por `<u-grid-column>` quando uma propriedade muda: `value` =
    * muda o valor das células (`path`, `valueGetter`, `dataType`); `display`
    * = só a exibição (formato, largura, fixação, visibilidade…).
+   * @internal
    */
   _columnChanged(column: GridColumnDef, change: GridColumnChange): void {
 
@@ -667,14 +869,19 @@ export class DataGrid extends LitElement implements ResizeHost {
     }
 
     if (change === 'groupIndex') {
+      // `groupIndex` é inicial (spec 15); a reação a mudanças fica por
+      // compatibilidade, com aviso.
+      this.#deprecated('changing groupIndex after the column is rendered', 'groupColumn()/ungroupColumn()');
+
+      // Troca de definição: sem `u-grid-group-change` (como as demais opções).
       const groupIndex = column.groupIndex;
 
       if (groupIndex === null || groupIndex === undefined) {
         if (grouped) {
-          this.moveColumn(column, this._regularColumns.length);
+          this.#moveColumnTo(false, column, this._regularColumns.length, null);
         }
       } else {
-        this.groupColumn(column, groupIndex);
+        this.#moveColumnTo(true, column, groupIndex, null);
       }
     }
 
@@ -761,12 +968,14 @@ export class DataGrid extends LitElement implements ResizeHost {
     this.#setColumnState(regular, group);
   }
 
-  #moveColumnTo(toGroup: boolean, column: GridColumnDef, targetIndex: number): void {
+  /** `source` nulo: mudança vinda da definição da coluna, sem evento. */
+  #moveColumnTo(toGroup: boolean, column: GridColumnDef, targetIndex: number, source: GridChangeSource | null): void {
+    const previous = this.getGrouping();
     const regular = [...this._regularColumns];
     const group = [...this._groupColumns];
-    const source = regular.includes(column) ? regular : group.includes(column) ? group : null;
+    const from = regular.includes(column) ? regular : group.includes(column) ? group : null;
 
-    if (!source) {
+    if (!from) {
       return;
     }
 
@@ -777,12 +986,20 @@ export class DataGrid extends LitElement implements ResizeHost {
       return;
     }
 
-    source.splice(source.indexOf(column), 1);
+    from.splice(from.indexOf(column), 1);
 
     const insertAt = targetColumn ? target.indexOf(targetColumn) : target.length;
     target.splice(insertAt, 0, column);
 
     this.#setColumnState(regular, group);
+
+    if (source && !sameItems(previous, this._groupColumns)) {
+      this.dispatchEvent(new CustomEvent('u-grid-group-change', this.#eventInit<GridGroupEventDetail>({
+        grouping: this.getGrouping(),
+        previous,
+        source,
+      })));
+    }
   }
 
   #setColumnState(regular: GridColumnDef[], group: GridColumnDef[]): void {
@@ -862,21 +1079,27 @@ export class DataGrid extends LitElement implements ResizeHost {
     }
   }
 
+  /** @internal */
   _isColumnVisible(column: GridColumnDef): boolean {
     return this.#userVisible.get(column) ?? column.visible !== false;
   }
 
+  /** @internal */
   _fixedOf(column: GridColumnDef): GridColumnFixed {
     return this.#userFixed.has(column)
       ? this.#userFixed.get(column)!
       : normalizeFixed(column.fixed);
   }
 
+  /** @internal */
   _isRegularColumn(column: GridColumnDef): boolean {
     return this._regularColumns.includes(column);
   }
 
-  /** Reordenar só vale dentro do mesmo bloco (fixas no início, livres, fixas no fim). */
+  /**
+   * Reordenar só vale dentro do mesmo bloco (fixas no início, livres, fixas no fim).
+   * @internal
+   */
   _sameBlock(a: GridColumnDef, b: GridColumnDef): boolean {
     return this._fixedOf(a) === this._fixedOf(b);
   }
@@ -885,20 +1108,40 @@ export class DataGrid extends LitElement implements ResizeHost {
     return this._visibleColumns.some(column => this._fixedOf(column) !== null);
   }
 
-  /** Reordenação feita pelo usuário (arrasto): move e avisa. */
+  /**
+   * Reordenação feita pelo usuário (arrasto): move e avisa.
+   * @internal
+   */
   _userMoveColumn(column: GridColumnDef, targetIndex: number): void {
-    const fromIndex = this._regularColumns.indexOf(column);
+    const previousIndex = this._regularColumns.indexOf(column);
 
-    this.moveColumn(column, targetIndex);
+    this.#moveColumnTo(false, column, targetIndex, 'user');
 
-    const toIndex = this._regularColumns.indexOf(column);
+    const index = this._regularColumns.indexOf(column);
 
-    if (fromIndex >= 0 && toIndex !== fromIndex) {
-      this.dispatchEvent(new CustomEvent('u-grid-column-reorder', this.#eventInit<GridColumnReorderEventDetail>({ column, fromIndex, toIndex })));
+    if (previousIndex >= 0 && index !== previousIndex) {
+      this.dispatchEvent(new CustomEvent('u-grid-column-reorder', this.#eventInit<GridColumnReorderEventDetail>({
+        column,
+        index,
+        previousIndex,
+        fromIndex: previousIndex,
+        toIndex: index,
+      })));
     }
   }
 
-  /** Mostra/oculta pelo seletor. Recusa ocultar a última coluna visível. */
+  /**
+   * Agrupamento feito pelo usuário (arrasto para o painel de grupos).
+   * @internal
+   */
+  _userGroupColumn(column: GridColumnDef, targetIndex: number): void {
+    this.#moveColumnTo(true, column, targetIndex, 'user');
+  }
+
+  /**
+   * Mostra/oculta pelo seletor. Recusa ocultar a última coluna visível.
+   * @internal
+   */
   _userSetVisible(column: GridColumnDef, visible: boolean): boolean {
     if (!this._isRegularColumn(column) || this._isColumnVisible(column) === visible) {
       return false;
@@ -916,14 +1159,21 @@ export class DataGrid extends LitElement implements ResizeHost {
     return true;
   }
 
+  /**
+   * Fixa/solta pelo seletor e avisa.
+   * @internal
+   */
   _userSetFixed(column: GridColumnDef, fixed: GridColumnFixed): void {
-    if (!this._isRegularColumn(column) || this._fixedOf(column) === fixed) {
+    const previousFixed = this._fixedOf(column);
+
+    if (!this._isRegularColumn(column) || previousFixed === fixed) {
       return;
     }
 
     this.#userFixed.set(column, fixed);
     this.#layoutDirty = true;
     this.requestUpdate();
+    this.dispatchEvent(new CustomEvent('u-grid-column-fixed-change', this.#eventInit<GridColumnFixedChangeEventDetail>({ column, fixed, previousFixed })));
   }
 
   #eventInit<T>(detail: T): CustomEventInit<T> {
@@ -945,6 +1195,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     return clampWidth(width, column.minWidth ?? 0, column.maxWidth ?? Infinity);
   }
 
+  /** @internal */
   _boundsOf(column: GridColumnDef): WidthBounds {
     const min = Math.max(0, column.minWidth ?? DEFAULT_MIN_COLUMN_WIDTH);
     const max = column.maxWidth ?? Infinity;
@@ -953,6 +1204,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     return { width: Math.round(width), min, max };
   }
 
+  /** @internal */
   _resizeNeighbor(column: GridColumnDef): GridColumnDef | undefined {
     const next = this._visibleColumns[this._visibleColumns.indexOf(column) + 1];
     return next && this.#isResizable(next) ? next : undefined;
@@ -962,6 +1214,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     return this.columnResizing && column.resizable !== false;
   }
 
+  /** @internal */
   _freezeWidths(): void {
     this.#measureRenderedWidths();
 
@@ -978,6 +1231,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     }
   }
 
+  /** @internal */
   _setUserWidths(widths: ReadonlyMap<GridColumnDef, number>): void {
     for (const [column, width] of widths) {
       this.#userWidths.set(column, width);
@@ -987,14 +1241,17 @@ export class DataGrid extends LitElement implements ResizeHost {
     this.requestUpdate();
   }
 
+  /** @internal */
   _isRtl(): boolean {
     return isRtl(this);
   }
 
+  /** @internal */
   _setResizing(active: boolean): void {
     this._containerRef.value?.classList.toggle('resizing', active);
   }
 
+  /** @internal */
   _dispatchColumnResize(detail: GridColumnResizeEventDetail): void {
     this.dispatchEvent(new CustomEvent('u-grid-column-resize', this.#eventInit(detail)));
   }
@@ -1256,7 +1513,7 @@ export class DataGrid extends LitElement implements ResizeHost {
    * Único ponto que muda a ordenação: dispara `u-grid-sorting` (cancelável)
    * ANTES e `u-grid-sort-change` depois. Devolve `false` se não mudou.
    */
-  #changeSorting(next: GridSort[]): boolean {
+  #changeSorting(next: GridSort[], source: GridChangeSource): boolean {
     if (sameSorting(next, this.#sorting)) {
       return false;
     }
@@ -1264,7 +1521,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     const previous = this.getSorting();
     const copy = () => next.map(({ column, order }) => ({ column, order }));
     const sorting = new CustomEvent<GridSortEventDetail>('u-grid-sorting', {
-      detail: { sorting: copy(), previous },
+      detail: { sorting: copy(), previous, source },
       bubbles: true,
       composed: true,
       cancelable: true,
@@ -1279,7 +1536,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     this.requestUpdate();
 
     this.dispatchEvent(new CustomEvent<GridSortEventDetail>('u-grid-sort-change', {
-      detail: { sorting: this.getSorting(), previous },
+      detail: { sorting: this.getSorting(), previous, source },
       bubbles: true,
       composed: true,
     }));
@@ -1298,7 +1555,7 @@ export class DataGrid extends LitElement implements ResizeHost {
         ...params,
         order: order === 'asc' ? translation.sortAscending : translation.sortDescending,
       })
-      : formatMessage(translation.clearSorting, params);
+      : formatMessage(translation.sortClearedAnnouncement, params);
   }
 
   readonly #canSortByUser = (column: GridColumnDef): boolean =>
@@ -1316,7 +1573,7 @@ export class DataGrid extends LitElement implements ResizeHost {
 
     const next = sortingAfterGesture(this.#sorting, column, sortGestureOf(event), this.#sortingMode, this.#isGrouped);
 
-    if (this.#changeSorting(next)) {
+    if (this.#changeSorting(next, 'user')) {
       this.#announceSorting(column);
     }
   };
@@ -1329,7 +1586,7 @@ export class DataGrid extends LitElement implements ResizeHost {
 
     const next = nextSorting(this.#sorting, column, toggleOrder(this.#orderOf(column) ?? 'asc'), true, this.#isGrouped);
 
-    if (this.#changeSorting(next)) {
+    if (this.#changeSorting(next, 'user')) {
       this.#announceSorting(column);
     }
   };
@@ -1418,7 +1675,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     const layout = this.#columnLayout();
     const headerRows = this.showColumnHeaders ? 1 : 0;
     const classes = {
-      stripped: this.striped,
+      striped: this.striped,
       'row-lines': this.showRowLines,
       'column-lines': this.showColumnLines,
     };
@@ -1547,7 +1804,7 @@ export class DataGrid extends LitElement implements ResizeHost {
     if (!this.#rows.length) {
       return html`
         <tr>
-          <td part="cell no-data" colspan="${Math.max(this._groupColumns.length + layout.length, 1)}">${this.#translation.noData}</td>
+          <td part="no-data" colspan="${Math.max(this._groupColumns.length + layout.length, 1)}">${this.#translation.noData}</td>
         </tr>
       `;
     }
@@ -1608,6 +1865,7 @@ export class DataGrid extends LitElement implements ResizeHost {
           style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
       ${map(layout, (cell, index) => html`
         <td
+          part="cell"
           class=${cell.cellClassName}
           style=${cell.style}
           role="gridcell"
@@ -1761,5 +2019,7 @@ declare global {
     'u-grid-column-resize': CustomEvent<GridColumnResizeEventDetail>;
     'u-grid-column-visibility-change': CustomEvent<GridColumnVisibilityChangeEventDetail>;
     'u-grid-column-reorder': CustomEvent<GridColumnReorderEventDetail>;
+    'u-grid-column-fixed-change': CustomEvent<GridColumnFixedChangeEventDetail>;
+    'u-grid-group-change': CustomEvent<GridGroupEventDetail>;
   }
 }

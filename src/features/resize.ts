@@ -1,5 +1,9 @@
 import type { GridColumnDef } from '../grid-column-def.js';
 
+/**
+ * `widget`: only the column changes and the total width follows.
+ * `next-column`: the next column gives or takes the same amount (the total width is kept).
+ */
 export type GridResizeMode = 'next-column' | 'widget';
 
 /** Passo do Alt+←/→ (e das setas na alça), em px. */
@@ -97,12 +101,17 @@ export const measureContentWidth = (cell: HTMLElement, ignore = '.resize-handle'
   return Math.ceil(content + padding);
 };
 
+/** `detail` of `u-grid-column-resize`. */
 export interface GridColumnResizeEventDetail {
+  /** The resized column. */
   column: GridColumnDef;
+  /** New width in px. */
   width: number;
+  /** Width in px before the resize. */
   previousWidth: number;
-  /** Só no modo `next-column`: a vizinha que cedeu (ou ganhou) largura. */
+  /** Only in `next-column` mode: the neighbor that gave (or took) the width. */
   nextColumn?: GridColumnDef;
+  /** Only in `next-column` mode: the new width of `nextColumn`. */
   nextColumnWidth?: number;
 }
 

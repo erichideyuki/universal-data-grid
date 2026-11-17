@@ -66,7 +66,7 @@ describe('desempenho com 100 mil linhas', () => {
         { path: 'population', label: 'Population' },
       ],
       items,
-      configure: g => g.sorting = 'multiple',
+      configure: g => g.sortMode = 'multiple',
       height: '600px',
     });
 
@@ -106,7 +106,7 @@ const measureSorts = async (
   for (const [label, order, append] of steps) {
     const column = grid.columns.find(c => c.label === label)!;
     const start = performance.now();
-    grid.sortBy(column, order, { append });
+    grid.sortColumn(column, order, { append });
     await grid.updateComplete;
     timings[`${label} ${order}`] = performance.now() - start;
   }

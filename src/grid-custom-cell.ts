@@ -7,9 +7,11 @@ import type { GridColumnDef } from './grid-column-def.js';
  * Ponte entre a célula (shadow DOM do grid) e o elemento devolvido pelo
  * `renderer` do hospedeiro (light DOM do grid, projetado por slot).
  * Re-executa o renderer sempre que a linha ou a coluna da célula mudam.
+ * Elemento interno do grid (não é API pública; fica fora do CEM). Sem
+ * a marca de interno: o `HTMLElementTagNameMap` abaixo precisa da classe nas `.d.ts`.
  */
 @customElement('u-grid-custom-cell')
-export class UmDataGridCustomCell extends LitElement {
+export class DataGridCustomCell extends LitElement {
   @property({ attribute: false }) grid: HTMLElement | null = null;
   @property({ attribute: false }) column: GridColumnDef | null = null;
   @property({ attribute: false }) item: any = null;
@@ -73,6 +75,6 @@ export class UmDataGridCustomCell extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'u-grid-custom-cell': UmDataGridCustomCell;
+    'u-grid-custom-cell': DataGridCustomCell;
   }
 }

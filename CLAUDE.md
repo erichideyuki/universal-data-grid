@@ -21,7 +21,11 @@ reordenação por arrasto (`interactjs`), i18n por Lit context e SSR
   textos da interface e mensagens de commit em inglês.
 - ESM, imports com extensão `.js` dentro de `src/` (não `.ts`).
 - Estado interno com `#private`; o que os adaptadores precisam enxergar usa
-  prefixo `_` e não é API pública (não documentar no README).
+  prefixo `_` + `/** @internal */` (some das `.d.ts` e do
+  `custom-elements.json`) e não é API pública (não documentar no README).
+- JSDoc da API pública em inglês (vira o `custom-elements.json`): toda
+  propriedade, método, evento (`@fires`), custom property (`@cssprop`) e
+  part (`@csspart`).
 - Nada de mutar dados do consumidor: `items`, `columns` e os objetos de
   `GridColumnDef` são do hospedeiro. O grid copia antes de ordenar/agrupar e
   guarda o próprio estado (ordem, largura, agrupamento) fora deles.

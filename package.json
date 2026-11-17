@@ -70,7 +70,7 @@
     "typecheck": "tsc --noEmit -p src && tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "analyze": "cem analyze --litelement --globs \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" \"src/test/**\"",
+    "analyze": "cem analyze",
     "lint": "npm run lint:lit-analyzer && npm run lint:eslint ",
     "lint:eslint": "eslint src/**/*.ts",
     "lint:lit-analyzer": "lit-analyzer --strict --rules.no-invalid-css off",

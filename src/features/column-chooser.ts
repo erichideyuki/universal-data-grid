@@ -49,7 +49,7 @@ const pinButton = (
   { translation, onFixedChange }: ColumnChooserContext,
 ): TemplateResult => {
   const pressed = item.fixed === side;
-  const label = side === 'start' ? translation.pinStart : translation.pinEnd;
+  const label = side === 'start' ? translation.fixStart : translation.fixEnd;
 
   return html`
     <button
@@ -58,7 +58,7 @@ const pinButton = (
       aria-pressed=${pressed ? 'true' : 'false'}
       aria-label=${label}
       aria-describedby="column-chooser-label-${item.id}"
-      title=${pressed ? translation.unpin : label}
+      title=${pressed ? translation.unfix : label}
       @click=${() => onFixedChange(item.column, pressed ? null : side)}>
       <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         ${side === 'start' ? pinStartIcon : pinEndIcon}

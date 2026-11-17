@@ -46,10 +46,14 @@ chave — nunca pelo índice (causa do B1).
 ## Convenções obrigatórias
 
 - pt-BR em specs/comentários; inglês em identificadores, README e interface.
-- API pública nova: propriedade com atributo kebab-case quando for primitivo;
-  `attribute: false` para função/objeto. Eventos `u-grid-<ação>` (ex.:
-  `u-grid-sort-change`), `bubbles: true, composed: true`; os de "antes"
-  (`u-grid-sorting`, `u-grid-row-editing`) são `cancelable`.
+- API pública nova: propriedade com atributo kebab-case explícito quando for
+  primitivo; `attribute: false` para função/objeto/array. Booleano de
+  atributo pelo conversor `booleanAttribute` (`src/attribute-converters.ts`):
+  `"false"` desliga. Eventos `u-grid-<substantivo>-<verbo>` (ex.:
+  `u-grid-sort-change`), `bubbles: true, composed: true`; os de "antes" no
+  gerúndio e `cancelable` (`u-grid-sorting`). Regras completas de
+  nomenclatura (métodos, `detail`, custom properties, `@internal`) em
+  `15-api-review.md`; o subagente `webcomponent-api-reviewer` confere.
 - Nada de quebrar API existente sem alias e aviso de deprecação no console
   (uma vez por instância).
 - Cada spec tem: Objetivo · Referência · Escopo · API · Comportamento ·

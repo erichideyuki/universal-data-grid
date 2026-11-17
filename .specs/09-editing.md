@@ -21,9 +21,11 @@ DevExtreme: `editing.mode` (`cell|row|batch|form|popup`), `allowUpdating`,
   `setCellValue(newItem, value, currentItem)`.
 - Métodos: `editCell(key, column)`, `editRow(key)`, `addRow()`,
   `deleteRow(key)`, `saveEditData()`, `cancelEditData()`, `hasEditData()`.
-- Eventos: `u-grid-editing-start` (cancelável), `u-grid-row-validating`,
-  `u-grid-saving` (cancelável, com `changes` e `promise` para salvar no
-  servidor), `u-grid-saved`, `u-grid-edit-canceled`.
+- Eventos (nomes pela regra da spec 15): `u-grid-edit-starting`
+  (cancelável), `u-grid-row-validating` (cancelável: `preventDefault()`
+  marca a linha inválida), `u-grid-saving` (cancelável, com
+  `changes` e `promise` para salvar no servidor), `u-grid-save`,
+  `u-grid-edit-cancel`.
 
 ## Comportamento
 - Editores embutidos por tipo: texto, número (respeita o separador decimal

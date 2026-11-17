@@ -5,10 +5,11 @@ subagente `webcomponent-api-reviewer` (`.claude/agents/`), em 2026-11-17,
 sobre a `main` em `98f3fce` (Fundação, 02, 03, 06 e 14). Os achados
 principais foram conferidos no código.
 
-**Estado: propostas aguardando o aval do usuário.** Nada foi mudado na API
-ainda. Coluna "Aval" é preenchida com a decisão; só o aprovado é
-implementado, e o que quebra compatibilidade ganha alias com aviso de
-deprecação no console (uma vez por instância) e `@deprecated` no JSDoc/CEM.
+**Estado: todas as 33 propostas aprovadas pelo usuário ("Aprovo todas") e
+implementadas** no branch da revisão. O que quebra compatibilidade ganhou
+alias com aviso de deprecação no console (uma vez por instância; por página
+nas chaves de i18n) e `@deprecated` no JSDoc/CEM. A lista de nomes antigos →
+novos está no README ("Deprecated names").
 
 ## Regras de nomenclatura (valem para as próximas frentes)
 
@@ -27,46 +28,82 @@ deprecação no console (uma vez por instância) e `@deprecated` no JSDoc/CEM.
 - Eventos `u-grid-<substantivo>-<verbo>`: depois = presente
   (`u-grid-sort-change`, `u-grid-column-resize`, `u-grid-load`,
   `u-grid-edit-cancel`); antes = gerúndio e `cancelable`
-  (`u-grid-sorting`, `u-grid-saving`). No `detail`, o valor anterior é
-  `previous<Campo>` (`previousWidth`, `previousIndex`).
+  (`u-grid-sorting`, `u-grid-saving`) — todo gerúndio é cancelável. No
+  `detail`, o estado anterior inteiro (lista) é `previous` (`sorting` /
+  `previous`, `grouping` / `previous`); o valor anterior de um campo de uma
+  coluna é `previous<Campo>` (`previousWidth`, `previousIndex`,
+  `previousFixed`). Eventos que também disparam por API levam
+  `source: 'user' | 'api'`.
 
 ## Achados e propostas
 
 | # | Item | Problema | Proposta | Quebra? | Sev. | Aval |
 |---|---|---|---|---|---|---|
-| 1 | `rowHeight`, `showRowLines`, `showColumnLines` (`grid.ts:330-335`) | Atributos minúsculos colados (`rowheight`, `showrowlines`, `showcolumnlines`) vs. kebab no resto | `row-height`, `show-row-lines`, `show-column-lines`; os antigos lidos com aviso | sim (alias) | ALTA | |
-| 2 | `showGroupPanel`, `showColumnHeaders`, `showRowLines` (padrão `true`) | Não dá para desligar por HTML (`show-group-panel="false"` liga) | Conversor de booleano do `<u-grid-column>` em todos os booleanos do `<u-grid>`: `"false"` desliga | não | ALTA | |
-| 3 | `<u-grid-column data-type>` (`grid-column.ts:75`) | `data-*` é do autor da página (vai para `dataset`) | Atributo `type` (propriedade segue `dataType`); `data-type` lido com aviso | sim (alias) | ALTA | |
-| 4 | 25 membros `_` (`_groupColumns`, `_regularColumns`, `_columnChanged`, `_nativeColumnMap`, `_userSetFixed`…) | Aparecem nas `.d.ts` e no CEM como API | `/** @internal */` + `stripInternal`; tirar `implements ResizeHost` da declaração | não | ALTA | |
-| 5 | `--u-grid-header-height` | Dois sentidos: barra de grupos (56px) e `<th>` (46px) | `--u-grid-toolbar-height` e `--u-grid-header-cell-height`; antigo como fallback da barra | sim (alias) | ALTA | |
-| 6 | `--u-table-hover-opacity` | Documentado, mas sem efeito (classe `.hover` nunca aplicada; bloco `:root` morto no shadow) | Implementar hover de linha com `--u-grid-row-hover-opacity` (antigo como fallback) ou tirar do README | não | ALTA | |
-| 7 | `--u-table-*`, `--u-td-*`, `--u-th-*` | Fora do prefixo `--u-grid-` | `--u-grid-cell-padding` (+`-block`/`-inline`), `--u-grid-toolbar-padding` (+`-block`/`-inline`), `--u-grid-cell-font-size`/`-weight`, `--u-grid-header-cell-font-size`/`-weight`; antigos como fallback | sim (alias) | ALTA | |
-| 8 | `--u-group-*` (chip) | Fora do prefixo | `--u-grid-group-chip-{height,outline-color,outline-width,shape,padding,font-size,line-height,letter-spacing,font-weight}`; antigos como fallback | sim (alias) | ALTA | |
-| 9 | Propriedade `sorting` (modo) | Mesmo nome do estado (`getSorting()`, `detail.sorting`, `u-grid-sorting`); a frente 11 vai precisar dele | `sortMode` / `sort-mode` (irmão de `resizeMode`), tipo `GridSortMode`; `sorting` como alias | sim (alias) | ALTA | |
-| 10 | Classe `UmDataGridColumn` | Destoa de `DataGrid` e não é exportada | `DataGridColumn`, exportada; `UmDataGridColumn` como tipo `@deprecated` | não | MÉDIA | |
-| 11 | `npm run analyze` (glob `src/**/*.ts`) | CEM inclui módulos internos e `u-grid-custom-cell` | Globs só dos 4 arquivos públicos; `@internal` no custom-cell | não | MÉDIA | |
-| 12 | `items` com `type: Array` | Gera atributo JSON `items` no CEM; README diz "property only" | `attribute: false` | não | MÉDIA | |
-| 13 | `<u-grid-column wrap>` | `wrap="false"` liga, ao contrário de `sortable`/`visible` | Mesmo conversor do #2 | não | MÉDIA | |
-| 14 | `groupIndex` no `<u-grid-column>` | No elemento reagrupa ao mudar; no `GridColumnDef` é só inicial | Inicial nos dois; reagrupar por `groupColumn`/`ungroupColumn` (aviso ao detectar mudança) | sim (comportamento) | MÉDIA | |
-| 15 | Fixar e agrupar | Sem evento (visibilidade tem); sem getter do agrupamento | `u-grid-column-fixed-change` `{column, fixed, previousFixed}`; `u-grid-group-change` `{grouping, previous}`; `getGrouping()` | não | MÉDIA | |
-| 16 | Quando os eventos disparam | Ordenação dispara também por API; coluna só por gesto — não documentado | Documentar no README; `source: 'user' \| 'api'` no `GridSortEventDetail` | não | MÉDIA | |
-| 17 | `showColumnChooser()` | Prefixo `show*` é das props booleanas; não há fechar | `openColumnChooser()` + `closeColumnChooser()`; `showColumnChooser` como alias | sim (alias) | MÉDIA | |
-| 18 | JSDoc público | Em pt-BR (CEM sai em português); vários membros sem JSDoc | JSDoc em inglês em toda a superfície pública | não | MÉDIA | |
-| 19 | CEM | Sem `cssProperties`/`cssParts`; eventos sem tipo do `detail` | `@cssprop`, `@csspart`, `@fires u-grid-x {CustomEvent<Detail>}` | não | MÉDIA | |
-| 20 | `::part(cell)` | Só existe na célula de "sem dados" | `part="cell"` em toda célula de dados; vazio fica `no-data` | leve | MÉDIA | |
-| 21 | `--u-grid-stripped-background-color` | Erro de grafia (como `stripped` → `striped`) | `--u-grid-striped-background-color`; antigo como fallback | sim (alias) | MÉDIA | |
-| 22 | README | Diverge do código (padrão de `sortable`, exemplo com `rowheight`, custom properties faltando/mortas) | Atualizar junto com as mudanças aprovadas | não | MÉDIA | |
-| 23 | `renderer` | Cria `<div slot>` no light DOM do hospedeiro (conflita com React/Vue/Angular que geram os filhos) | Documentar em "Custom cell rendering" e "Using with frameworks" (a frente 10 refaz o renderer) | não | MÉDIA | |
-| 24 | `sortBy` | Destoa de "verbo + `Column`"; falta `ungroupColumn` | `sortColumn(column, order, {append})` com alias `sortBy`; `ungroupColumn(column)`; `groupColumn(column, targetIndex?)` | sim (alias) | BAIXA | |
-| 25 | `--u-grid-drop-indicator-bg` | Abreviação; README já chama de "color" | `--u-grid-drop-indicator-color`; antigo como fallback | sim (alias) | BAIXA | |
-| 26 | `--u-grid-borders-width`, `-row-lines-height`, `-column-lines-width`, `-border-opacity` | Plural/`height` para espessura, radicais misturados | `--u-grid-line-width`, `--u-grid-row-line-width`, `--u-grid-column-line-width`, `--u-grid-line-opacity`; antigos como fallback | sim (alias) | BAIXA | |
-| 27 | `--u-grid-grouping-cell-emphasis`, `--u-grid-toggle-*` | Vaza classe interna; "toggle" de quê | `--u-grid-group-row-emphasis`, `--u-grid-group-toggle-color`/`-shape`; antigos como fallback | sim (alias) | BAIXA | |
-| 28 | Chaves `GridI18n` `clearSorting`, `pinStart`/`pinEnd`/`unpin` | Anúncio com nome de método; `pin` vs. radical `fixed` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix`; `setGridTranslation` aceita as antigas com aviso | sim (alias) | BAIXA | |
-| 29 | `detail` de `u-grid-column-reorder` | `fromIndex`/`toIndex` vs. `previous*` dos irmãos | Acrescentar `index`/`previousIndex`; antigos `@deprecated` | não | BAIXA | |
-| 30 | `any` na superfície | `items: any[]`, callbacks `(item: any)` | `GridColumnDef<TItem = any>` genérico; `renderer` retorna `HTMLElement \| null` | não | BAIXA | |
-| 31 | `path` no CEM | Aponta `src/*.ts` (não publicados) | Reescrever para `dist/*.js` no analyzer | não | BAIXA | |
-| 32 | README "frameworks" | Sem exemplo de eventos; React 19 grava atributo se o elemento não estiver definido | Exemplos React/Angular/Vue de evento + nota de importar antes do 1º render | não | BAIXA | |
-| 33 | Eventos previstos nas specs 08/09 (`u-grid-loaded`, `u-grid-saved`, `u-grid-edit-canceled`, `u-grid-editing-start`) | Fogem da regra de eventos | `u-grid-load`, `u-grid-save`, `u-grid-edit-cancel`, `u-grid-edit-start` (ajustar as specs) | não | BAIXA | |
+| 1 | `rowHeight`, `showRowLines`, `showColumnLines` (`grid.ts:330-335`) | Atributos minúsculos colados (`rowheight`, `showrowlines`, `showcolumnlines`) vs. kebab no resto | `row-height`, `show-row-lines`, `show-column-lines`; os antigos lidos com aviso | sim (alias) | ALTA || aprovado |
+| 2 | `showGroupPanel`, `showColumnHeaders`, `showRowLines` (padrão `true`) | Não dá para desligar por HTML (`show-group-panel="false"` liga) | Conversor de booleano do `<u-grid-column>` em todos os booleanos do `<u-grid>`: `"false"` desliga | não | ALTA || aprovado |
+| 3 | `<u-grid-column data-type>` (`grid-column.ts:75`) | `data-*` é do autor da página (vai para `dataset`) | Atributo `type` (propriedade segue `dataType`); `data-type` lido com aviso | sim (alias) | ALTA || aprovado |
+| 4 | 25 membros `_` (`_groupColumns`, `_regularColumns`, `_columnChanged`, `_nativeColumnMap`, `_userSetFixed`…) | Aparecem nas `.d.ts` e no CEM como API | `/** @internal */` + `stripInternal`; tirar `implements ResizeHost` da declaração | não | ALTA || aprovado |
+| 5 | `--u-grid-header-height` | Dois sentidos: barra de grupos (56px) e `<th>` (46px) | `--u-grid-toolbar-height` e `--u-grid-header-cell-height`; antigo como fallback da barra | sim (alias) | ALTA || aprovado |
+| 6 | `--u-table-hover-opacity` | Documentado, mas sem efeito (classe `.hover` nunca aplicada; bloco `:root` morto no shadow) | Implementar hover de linha com `--u-grid-row-hover-opacity` (antigo como fallback) ou tirar do README | não | ALTA || aprovado |
+| 7 | `--u-table-*`, `--u-td-*`, `--u-th-*` | Fora do prefixo `--u-grid-` | `--u-grid-cell-padding` (+`-block`/`-inline`), `--u-grid-toolbar-padding` (+`-block`/`-inline`), `--u-grid-cell-font-size`/`-weight`, `--u-grid-header-cell-font-size`/`-weight`; antigos como fallback | sim (alias) | ALTA || aprovado |
+| 8 | `--u-group-*` (chip) | Fora do prefixo | `--u-grid-group-chip-{height,outline-color,outline-width,shape,padding,font-size,line-height,letter-spacing,font-weight}`; antigos como fallback | sim (alias) | ALTA || aprovado |
+| 9 | Propriedade `sorting` (modo) | Mesmo nome do estado (`getSorting()`, `detail.sorting`, `u-grid-sorting`); a frente 11 vai precisar dele | `sortMode` / `sort-mode` (irmão de `resizeMode`), tipo `GridSortMode`; `sorting` como alias | sim (alias) | ALTA || aprovado |
+| 10 | Classe `UmDataGridColumn` | Destoa de `DataGrid` e não é exportada | `DataGridColumn`, exportada; `UmDataGridColumn` como tipo `@deprecated` | não | MÉDIA || aprovado |
+| 11 | `npm run analyze` (glob `src/**/*.ts`) | CEM inclui módulos internos e `u-grid-custom-cell` | Globs só dos 4 arquivos públicos; `@internal` no custom-cell | não | MÉDIA || aprovado |
+| 12 | `items` com `type: Array` | Gera atributo JSON `items` no CEM; README diz "property only" | `attribute: false` | não | MÉDIA || aprovado |
+| 13 | `<u-grid-column wrap>` | `wrap="false"` liga, ao contrário de `sortable`/`visible` | Mesmo conversor do #2 | não | MÉDIA || aprovado |
+| 14 | `groupIndex` no `<u-grid-column>` | No elemento reagrupa ao mudar; no `GridColumnDef` é só inicial | Inicial nos dois; reagrupar por `groupColumn`/`ungroupColumn` (aviso ao detectar mudança) | sim (comportamento) | MÉDIA || aprovado |
+| 15 | Fixar e agrupar | Sem evento (visibilidade tem); sem getter do agrupamento | `u-grid-column-fixed-change` `{column, fixed, previousFixed}`; `u-grid-group-change` `{grouping, previous}`; `getGrouping()` | não | MÉDIA || aprovado |
+| 16 | Quando os eventos disparam | Ordenação dispara também por API; coluna só por gesto — não documentado | Documentar no README; `source: 'user' \| 'api'` no `GridSortEventDetail` | não | MÉDIA || aprovado |
+| 17 | `showColumnChooser()` | Prefixo `show*` é das props booleanas; não há fechar | `openColumnChooser()` + `closeColumnChooser()`; `showColumnChooser` como alias | sim (alias) | MÉDIA || aprovado |
+| 18 | JSDoc público | Em pt-BR (CEM sai em português); vários membros sem JSDoc | JSDoc em inglês em toda a superfície pública | não | MÉDIA || aprovado |
+| 19 | CEM | Sem `cssProperties`/`cssParts`; eventos sem tipo do `detail` | `@cssprop`, `@csspart`, `@fires u-grid-x {CustomEvent<Detail>}` | não | MÉDIA || aprovado |
+| 20 | `::part(cell)` | Só existe na célula de "sem dados" | `part="cell"` em toda célula de dados; vazio fica `no-data` | leve | MÉDIA || aprovado |
+| 21 | `--u-grid-stripped-background-color` | Erro de grafia (como `stripped` → `striped`) | `--u-grid-striped-background-color`; antigo como fallback | sim (alias) | MÉDIA || aprovado |
+| 22 | README | Diverge do código (padrão de `sortable`, exemplo com `rowheight`, custom properties faltando/mortas) | Atualizar junto com as mudanças aprovadas | não | MÉDIA || aprovado |
+| 23 | `renderer` | Cria `<div slot>` no light DOM do hospedeiro (conflita com React/Vue/Angular que geram os filhos) | Documentar em "Custom cell rendering" e "Using with frameworks" (a frente 10 refaz o renderer) | não | MÉDIA || aprovado |
+| 24 | `sortBy` | Destoa de "verbo + `Column`"; falta `ungroupColumn` | `sortColumn(column, order, {append})` com alias `sortBy`; `ungroupColumn(column)`; `groupColumn(column, targetIndex?)` | sim (alias) | BAIXA || aprovado |
+| 25 | `--u-grid-drop-indicator-bg` | Abreviação; README já chama de "color" | `--u-grid-drop-indicator-color`; antigo como fallback | sim (alias) | BAIXA || aprovado |
+| 26 | `--u-grid-borders-width`, `-row-lines-height`, `-column-lines-width`, `-border-opacity` | Plural/`height` para espessura, radicais misturados | `--u-grid-line-width`, `--u-grid-row-line-width`, `--u-grid-column-line-width`, `--u-grid-line-opacity`; antigos como fallback | sim (alias) | BAIXA || aprovado |
+| 27 | `--u-grid-grouping-cell-emphasis`, `--u-grid-toggle-*` | Vaza classe interna; "toggle" de quê | `--u-grid-group-row-emphasis`, `--u-grid-group-toggle-color`/`-shape`; antigos como fallback | sim (alias) | BAIXA || aprovado |
+| 28 | Chaves `GridI18n` `clearSorting`, `pinStart`/`pinEnd`/`unpin` | Anúncio com nome de método; `pin` vs. radical `fixed` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix`; `setGridTranslation` aceita as antigas com aviso | sim (alias) | BAIXA || aprovado |
+| 29 | `detail` de `u-grid-column-reorder` | `fromIndex`/`toIndex` vs. `previous*` dos irmãos | Acrescentar `index`/`previousIndex`; antigos `@deprecated` | não | BAIXA || aprovado |
+| 30 | `any` na superfície | `items: any[]`, callbacks `(item: any)` | `GridColumnDef<TItem = any>` genérico; `renderer` retorna `HTMLElement \| null` | não | BAIXA || aprovado |
+| 31 | `path` no CEM | Aponta `src/*.ts` (não publicados) | Reescrever para `dist/*.js` no analyzer | não | BAIXA || aprovado |
+| 32 | README "frameworks" | Sem exemplo de eventos; React 19 grava atributo se o elemento não estiver definido | Exemplos React/Angular/Vue de evento + nota de importar antes do 1º render | não | BAIXA || aprovado |
+| 33 | Eventos previstos nas specs 08/09 (`u-grid-loaded`, `u-grid-saved`, `u-grid-edit-canceled`, `u-grid-editing-start`) | Fogem da regra de eventos | `u-grid-load`, `u-grid-save`, `u-grid-edit-cancel`, `u-grid-edit-start` (ajustar as specs) | não | BAIXA || aprovado |
+
+## Decisões tomadas na implementação
+
+- #2/#13: conversor `booleanAttribute(padrão)` em `src/attribute-converters.ts`
+  — sem atributo = padrão, `"false"` = `false`, outro valor = `true`. O
+  tri-estado do `<u-grid-column>` (`optionalBooleanAttribute`) mudou-se para
+  o mesmo arquivo. Os aliases de atributo (#1, #3) são atributos observados
+  extras repassados ao atributo novo em `attributeChangedCallback`.
+- #4: `stripInternal` no `src/tsconfig.json`; o CEM é gerado por
+  `custom-elements-manifest.config.mjs` (só os 4 módulos públicos; tira
+  `@internal` e `#private`; caminhos em `dist/`, #11/#31).
+  `DataGridCustomCell` fica sem `@internal` (o `HTMLElementTagNameMap`
+  precisa dela nas `.d.ts`), mas fora do CEM.
+- #6: o realce de linha passou a existir (linhas de dados sob o ponteiro);
+  `--u-grid-row-hover-opacity: 0%` desliga. Era documentado e não
+  funcionava.
+- #7: `--u-grid-cell-padding` vale só para as células de dados;
+  `--u-grid-cell-block-padding`/`-inline-padding` valem para dados e
+  cabeçalho (como os `--u-table-*` antigos).
+- #14: o aviso sai uma vez por grid na primeira mudança de `groupIndex`
+  de uma coluna já renderizada; a reação continua.
+- #15/#16: `u-grid-group-change` dispara por gesto e por API (como a
+  ordenação), não por troca das definições (nem pelo `groupIndex` mudado
+  numa coluna renderizada); os de coluna seguem só por
+  gesto. `source` também no `detail` do agrupamento.
+- #24: `ungroupColumn` devolve a coluna ao fim das comuns.
+- Revisão da implementação (passo 10): aliases de atributo entram no CEM
+  como atributos `deprecated` (plugin do analyzer); descrições do CEM com
+  `\n` (fontes em CRLF); `exports` do CEM só com módulos do manifesto.
+- #33: `u-grid-loading` (08) e `u-grid-row-validating` (09) marcados
+  canceláveis pela regra do gerúndio. Na spec 09, `u-grid-editing-start` é cancelável, então pela regra
+  virou `u-grid-edit-starting` (não `u-grid-edit-start`).
 
 ## Inventário (antes da revisão)
 

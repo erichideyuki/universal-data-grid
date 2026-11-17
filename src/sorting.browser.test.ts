@@ -72,7 +72,7 @@ describe('ordenação pelo cabeçalho', () => {
   });
 
   it('modo multiple: Shift acrescenta, mostra a prioridade e Ctrl remove', async () => {
-    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.sorting = 'multiple' });
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.sortMode = 'multiple' });
 
     await click(grid, header(grid, 'Age'));
     expect(sortIndexes(grid)).toEqual([null, null, null]);
@@ -113,7 +113,7 @@ describe('ordenação pelo cabeçalho', () => {
     await click(grid, header(grid, 'Age'));
     expect(sortingOf(grid)).toEqual([]);
 
-    grid.sorting = 'none';
+    grid.sortMode = 'none';
     await settle(grid);
     await click(grid, header(grid, 'Name'));
     expect(sortingOf(grid)).toEqual([]);
@@ -121,7 +121,7 @@ describe('ordenação pelo cabeçalho', () => {
   });
 
   it('teclado: Enter e Espaço ordenam, com Shift como no mouse, e anunciam', async () => {
-    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.sorting = 'multiple' });
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.sortMode = 'multiple' });
 
     await press(grid, header(grid, 'City'), 'Enter');
     expect(sortingOf(grid)).toEqual(['City:asc']);
@@ -181,7 +181,7 @@ describe('eventos', () => {
     grid.addEventListener('u-grid-sorting', cancel);
 
     await click(grid, header(grid, 'Name'));
-    grid.sortBy(column(grid, 'Age'), 'desc');
+    grid.sortColumn(column(grid, 'Age'), 'desc');
     await settle(grid);
 
     expect(sortingOf(grid)).toEqual([]);
@@ -206,13 +206,13 @@ describe('eventos', () => {
 });
 
 describe('API', () => {
-  it('sortBy, append, clearSorting e getSorting (cópia)', async () => {
+  it('sortColumn, append, clearSorting e getSorting (cópia)', async () => {
     const grid = await createGrid({ columns: columns(), items: people() });
     const age = column(grid, 'Age');
     const name = column(grid, 'Name');
 
-    grid.sortBy(age, 'desc');
-    grid.sortBy(name, 'asc', { append: true });
+    grid.sortColumn(age, 'desc');
+    grid.sortColumn(name, 'asc', { append: true });
     await settle(grid);
     expect(sortingOf(grid)).toEqual(['Age:desc', 'Name:asc']);
     expect(names(grid)).toEqual(['Bob', 'Carol', 'alice', 'dave']);
@@ -220,7 +220,7 @@ describe('API', () => {
     grid.getSorting().pop();
     expect(grid.getSorting()).toHaveLength(2);
 
-    grid.sortBy(age, null);
+    grid.sortColumn(age, null);
     expect(sortingOf(grid)).toEqual(['Name:asc']);
 
     grid.clearSorting();
@@ -321,7 +321,7 @@ describe('ordenação com grupos', () => {
     await press(grid, chip(grid), 'Enter');
     expect(groupLabels(grid)).toEqual(['City: Lima', 'City: Rio']);
 
-    grid.sortBy(column(grid, 'City'), 'desc');
+    grid.sortColumn(column(grid, 'City'), 'desc');
     await settle(grid);
     expect(groupLabels(grid)).toEqual(['City: Rio', 'City: Lima']);
   });
@@ -329,7 +329,7 @@ describe('ordenação com grupos', () => {
   it('agrupar uma coluna ordenada usa a direção dela', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.autoExpandGroups = true });
 
-    grid.sortBy(column(grid, 'City'), 'desc');
+    grid.sortColumn(column(grid, 'City'), 'desc');
     grid.groupColumn(column(grid, 'City'), 0);
     await settle(grid);
 

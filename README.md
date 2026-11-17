@@ -213,7 +213,7 @@ The column **label is the element's text content**.
 Both approaches map to the same shape:
 
 ```ts
-interface GridColumnDef {
+interface GridColumnDef<TItem = any> {
   /** Dot-path into each item, e.g. `"user.address.city"`. */
   path?: string;
   /** Header text. With <u-grid-column>, this is the element's text content. */
@@ -222,34 +222,34 @@ interface GridColumnDef {
   width?: number | null;
   /** Minimum column width in pixels. */
   minWidth?: number | null;
-  /** When set, the column becomes a grouping column at this (0-based) order. */
+  /** INITIAL grouping level (0-based); afterwards use groupColumn()/ungroupColumn(). */
   groupIndex?: number | null;
   /** 'string' | 'number' | 'date' | 'datetime' | 'boolean'. Inferred when omitted. */
   dataType?: GridColumnDataType | null;
   /** Intl.NumberFormat / Intl.DateTimeFormat options, or (value, item) => string. */
-  format?: GridColumnFormat | null;
+  format?: GridColumnFormat<TItem> | null;
   /** 'start' | 'center' | 'end' (logical: follows the text direction). */
   alignment?: GridColumnAlignment | null;
-  /** Computes the cell value; used for display, grouping (and later sorting/filtering). */
-  valueGetter?: ((item: any) => unknown) | null;
+  /** Computes the cell value; used for display, grouping and sorting. */
+  valueGetter?: ((item: TItem) => unknown) | null;
   /** Display text for a value; takes precedence over `format`. Also used in group rows. */
-  displayValue?: ((value: unknown, item: any) => string) | null;
+  displayValue?: ((value: unknown, item: TItem) => string) | null;
   /** 'text' (default: trueText/falseText) or 'icon' (read-only check / cross). */
   booleanDisplay?: GridColumnBooleanDisplay | null;
   /** Wrap long text over several lines instead of truncating with an ellipsis. */
   wrap?: boolean;
   /** Text shown for `null`/`undefined` values. Default: empty. */
   emptyText?: string | null;
-  /** Custom cell renderer — see "Custom cell rendering". */
-  renderer?: ((item: any) => HTMLElement) | null;
-  /** Lets the user sort by this column. Default: true when it has a `path` or a `comparator`. */
+  /** Custom cell renderer — see "Custom cell rendering". `null` renders an empty cell. */
+  renderer?: ((item: TItem) => HTMLElement | null) | null;
+  /** Lets the user sort by this column. Default: true when it has a `path`, `valueGetter` or `comparator`. */
   sortable?: boolean | null;
   /** Initial sort direction — see "Sorting". */
   sortOrder?: 'asc' | 'desc' | null;
   /** Priority of the initial sort among columns (lower first). */
   sortIndex?: number | null;
   /** Custom ascending comparator: (valueA, valueB, itemA, itemB) => number. */
-  comparator?: ((a: any, b: any, itemA: any, itemB: any) => number) | null;
+  comparator?: ((a: any, b: any, itemA: TItem, itemB: TItem) => number) | null;
   /** `false` disables resizing for this column (when `column-resizing` is on). Default `true`. */
   resizable?: boolean | null;
   /** Maximum width in pixels for resizing and auto-sizing. */
@@ -263,8 +263,13 @@ interface GridColumnDef {
 }
 ```
 
-With `<u-grid-column>` the column-feature options are attributes: `max-width`, `fixed="start|end"`,
-`visible="false"`, `resizable="false"` and `show-in-chooser="false"`.
+`TItem` (default `any`) types the row item in the callbacks: `GridColumnDef<Order>[]`.
+
+`<u-grid-column>` (class `DataGridColumn`) has the same options with the same property names. The
+primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
+is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
+with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `show-in-chooser="false"`,
+`wrap="false"`.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -321,7 +326,7 @@ as a tooltip (`title`) when hovered.
 Declaratively, primitive options are kebab-case attributes; functions and `format` are properties:
 
 ```html
-<u-grid-column path="createdAt" data-type="datetime" empty-text="—" min-width="160">Created</u-grid-column>
+<u-grid-column path="createdAt" type="datetime" empty-text="—" min-width="160">Created</u-grid-column>
 <u-grid-column path="notes" alignment="center" wrap>Notes</u-grid-column>
 <u-grid-column path="active" boolean-display="icon">Active</u-grid-column>
 ```
@@ -333,19 +338,19 @@ Declaratively, primitive options are kebab-case attributes; functions and `forma
 Click a column header to sort by it. Clicking again toggles between ascending and descending; the
 grid never mutates your `items` array.
 
-| Gesture | `sorting="single"` (default) | `sorting="multiple"` |
+| Gesture | `sort-mode="single"` (default) | `sort-mode="multiple"` |
 | ------- | ---------------------------- | -------------------- |
 | Click | Sort by this column only (asc → desc → asc). | Same. |
 | Shift+click | Same as click. | Add this column to the sort (or toggle it, keeping its priority). |
 | Ctrl+click / Cmd+click | Remove this column from the sort. | Same. |
 
-With `sorting="none"` the headers are not clickable (the API below still works). Headers are
+With `sort-mode="none"` the headers are not clickable (the API below still works). Headers are
 focusable: `Enter` or `Space` behave like a click, with the same modifiers. Sorted headers show an
 arrow and — when more than one column is sorted — their priority number; `aria-sort` is set on
 them and a polite live region announces the change ("Sorted by Year, descending").
 
 ```html
-<u-grid sorting="multiple">
+<u-grid sort-mode="multiple">
   <u-grid-column path="country" sort-order="asc" sort-index="0">Country</u-grid-column>
   <u-grid-column path="year" sort-order="desc" sort-index="1">Year</u-grid-column>
   <u-grid-column path="notes" sortable="false">Notes</u-grid-column>
@@ -377,24 +382,25 @@ them and a polite live region announces the change ("Sorted by Year, descending"
 ### Sorting API
 
 ```ts
-grid.sortBy(column, 'desc');                   // sort by this column only
-grid.sortBy(column, 'asc', { append: true });  // add it to the current sort
-grid.sortBy(column, null);                     // remove it from the sort
+grid.sortColumn(column, 'desc');                   // sort by this column only
+grid.sortColumn(column, 'asc', { append: true });  // add it to the current sort
+grid.sortColumn(column, null);                     // remove it from the sort
 grid.clearSorting();
-grid.getSorting();                             // [{ column, order: 'asc' | 'desc' }, ...]
+grid.getSorting();                                 // [{ column, order: 'asc' | 'desc' }, ...]
 ```
 
-For a grouped column, `sortBy` sets the direction of its groups. The API works in every `sorting`
-mode.
+For a grouped column, `sortColumn` sets the direction of its groups. The API works in every
+`sortMode`.
 
 ### Sorting events
 
-Both events bubble and cross the shadow root (`composed`). `detail` is
-`{ sorting: GridSort[]; previous: GridSort[] }`, where `GridSort` is `{ column, order }`.
+Both events bubble and cross the shadow root (`composed`) and fire for user gestures **and** API
+calls. `detail` is `{ sorting: GridSort[]; previous: GridSort[]; source: 'user' | 'api' }`, where
+`GridSort` is `{ column, order }`. Initial sorting from the column definitions fires nothing.
 
 | Event | When |
 | ----- | ---- |
-| `u-grid-sorting` | **Before** the sort changes (user gesture or API). Cancelable: `event.preventDefault()` keeps the current sort. |
+| `u-grid-sorting` | **Before** the sort changes. Cancelable: `event.preventDefault()` keeps the current sort. |
 | `u-grid-sort-change` | After the sort changed. |
 
 ```ts
@@ -410,8 +416,10 @@ grid.addEventListener('u-grid-sorting', event => {
 ## Grouping
 
 Assign `groupIndex` to one or more columns to group by them. The index defines the nesting order
-(`0` is the outermost group). It is the *initial* grouping: after that the user regroups by drag and
-drop, and re-assigning the same column objects keeps the user's order and grouping.
+(`0` is the outermost group). It is the *initial* grouping: after that grouping is grid state — the
+user regroups by drag and drop, code uses `groupColumn()` / `ungroupColumn()` — and re-assigning the
+same column objects keeps it. (Changing `groupIndex` on a rendered `<u-grid-column>` still regroups,
+but is deprecated.)
 
 ```ts
 grid.columns = [
@@ -444,11 +452,18 @@ grid.columns = [
 ### Programmatic grouping / reordering
 
 ```ts
-grid.groupColumn(column, targetIndex); // move/insert a column into the grouping area
-grid.moveColumn(column, targetIndex);  // reorder a regular (non-group) column
+grid.groupColumn(column);              // group by this column (innermost level)
+grid.groupColumn(column, 0);           // …or at a given level (moves it if already grouped)
+grid.ungroupColumn(column);            // back to the end of the regular columns
+grid.getGrouping();                    // grouped columns, outermost first
+grid.moveColumn(column, targetIndex);  // reorder a regular column (ungroups a grouped one)
 ```
 
-Both accept a `GridColumnDef` (or a `<u-grid-column>` element) already known to the grid.
+All accept a `GridColumnDef` (or a `<u-grid-column>` element) already known to the grid.
+
+`u-grid-group-change` fires after the grouping changed, by drag and drop or by these methods:
+`detail` is `{ grouping: GridColumnDef[]; previous: GridColumnDef[]; source: 'user' | 'api' }`.
+Initial grouping (and changing `groupIndex` on a column) fires nothing.
 
 ---
 
@@ -515,8 +530,8 @@ grid.columns = [
 
 `column-chooser` adds a button at the end of the header bar that opens a small popover listing the
 columns (`showInChooser: false` leaves a column out). Each row has a labelled checkbox to show/hide
-the column and two toggle buttons to fix it to the start or the end. `showColumnChooser()` opens it
-from code. While it is open, dragging a column header onto it hides that column. `Esc` or a click
+the column and two toggle buttons to fix it to the start or the end. `openColumnChooser()` and
+`closeColumnChooser()` open and close it from code (also without the button). While it is open, dragging a column header onto it hides that column. `Esc` or a click
 outside closes it. The last visible column cannot be hidden.
 
 ### Column events
@@ -525,17 +540,27 @@ outside closes it. The last visible column cannot be hidden.
 | ----- | ------ | ---------- |
 | `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size). `nextColumn*` only in `next-column` mode. |
 | `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column in the chooser. |
-| `u-grid-column-reorder` | `{ column, fromIndex, toIndex }` | The user moves a column by drag and drop (indexes among regular columns, hidden ones included). |
+| `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user fixes/unfixes a column in the chooser. |
+| `u-grid-column-reorder` | `{ column, index, previousIndex }` | The user moves a column by drag and drop (positions among regular columns, hidden ones included). `fromIndex`/`toIndex` are deprecated aliases. |
 
-All events bubble and are `composed`. Changes made through the API do not fire them.
+All events bubble and are `composed`. Unlike sorting and grouping, these column events fire **only
+for user gestures**: changes made through the API (`setColumnWidth`, `moveColumn`, a new `width` or
+`visible` on the definition) do not fire them.
 
 ---
 
 ## Custom cell rendering
 
-Provide a `renderer` that receives the row item and returns any `HTMLElement`. The grid slots the
-returned element into the cell (light DOM), so your element keeps its own styles and event
-listeners. The renderer runs again whenever the cell shows a different row or column.
+Provide a `renderer` that receives the row item and returns any `HTMLElement` (or `null` for an empty
+cell). The grid slots the returned element into the cell, so your element keeps its own styles and
+event listeners. The renderer runs again whenever the cell shows a different row or column.
+
+> **Light DOM:** to be slotted, each rendered cell lives in a `<div slot="cell:…">` that the grid
+> appends as a **child of `<u-grid>`** (next to your `<u-grid-column>` elements). Don't remove or
+> reorder those nodes, and filter them out if you walk `grid.children`. Frameworks that render the
+> grid's children (React, Vue, Angular templates with `<u-grid-column>`) leave unknown nodes alone,
+> but don't let them re-create the whole children list on every render — prefer the `columns`
+> property when columns are data-driven.
 
 > **Security:** the grid does not sanitize what the renderer returns. Build the element with
 > `textContent` (as below) — never assign row data to `innerHTML`.
@@ -641,20 +666,21 @@ interface GridI18n {
   falseText: string;           // `false` in boolean columns
   sortAscending: string;       // "ascending" — used in announcements and the group chip label
   sortDescending: string;      // "descending"
-  clearSorting: string;        // announcement after removing a column: "Sorting removed from {column}"
+  sortClearedAnnouncement: string; // announcement after removing a column: "Sorting removed from {column}"
   sortedAnnouncement: string;  // announcement after sorting: "Sorted by {column}, {order}"
   columnChooser: string;       // column chooser button and title
   hideColumn: string;          // checkbox hint / drop-to-hide hint in the chooser
   showColumn: string;          // checkbox hint for a hidden column
-  pinStart: string;            // "fix to the start" toggle in the chooser
-  pinEnd: string;              // "fix to the end" toggle in the chooser
-  unpin: string;               // hint of a pressed pin toggle
+  fixStart: string;            // "fix to the start" toggle in the chooser
+  fixEnd: string;              // "fix to the end" toggle in the chooser
+  unfix: string;               // hint of a pressed fix toggle
   autoSize: string;            // resize handle hint (double-click to auto-size)
 }
 ```
 
 `{column}` and `{order}` are placeholders filled by the grid (`{order}` with `sortAscending` /
-`sortDescending`).
+`sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd` and `unpin` were renamed;
+`setGridTranslation` still accepts them (with a console warning).
 
 ### SSR note
 
@@ -668,31 +694,31 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 
 | Property           | Attribute             | Type      | Default | Description |
 | ------------------ | --------------------- | --------- | ------- | ----------- |
-| `items`            | *(property only)*     | `any[]`   | `[]`    | Row data. |
+| `items`            | *(property only)*     | `any[]`   | `[]`    | Row data (never mutated). |
 | `columns`          | *(property only)*     | `GridColumnDef[]` | `[]` | Column definitions (alternative to `<u-grid-column>`). |
 | `language`         | `language`            | `string`  | *auto*  | i18n language. See [i18n](#internationalization-i18n). |
 | `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default. |
-| `sorting`          | `sorting`             | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
-| `rowHeight`        | `rowheight`           | `number`  | `48`    | Row height in pixels. |
+| `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
+| `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
 | `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the grouping toolbar (where columns are dropped to group). |
 | `showColumnHeaders`| `show-column-headers` | `boolean` | `true`  | Show the column header row. |
-| `showRowLines`     | `showrowlines`        | `boolean` | `true`  | Horizontal row separators. |
-| `showColumnLines`  | `showcolumnlines`     | `boolean` | `false` | Vertical column separators. |
+| `showRowLines`     | `show-row-lines`      | `boolean` | `true`  | Horizontal row separators. |
+| `showColumnLines`  | `show-column-lines`   | `boolean` | `false` | Vertical column separators. |
 | `columnResizing`   | `column-resizing`     | `boolean` | `false` | Let the user resize columns. See [Column features](#column-features). |
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button. |
 | `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
 
 ```html
-<u-grid striped showcolumnlines rowheight="40" language="fr"></u-grid>
+<u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
 ```
 
-> Boolean attributes follow the HTML convention: presence = `true`, absence = `false`. For the
-> options that default to `true`, set the property (`grid.showGroupPanel = false`) to turn them off.
+> Boolean attributes: absent = the default, present = `true`, `"false"` = `false`. So the options
+> that default to `true` turn off with `show-group-panel="false"`, `show-row-lines="false"`, etc.
 
-**Deprecated** (still work, with a console warning once per grid): `stripped` → `striped`,
-`showHeader` → `showGroupPanel`.
+Deprecated names still work, with a console warning once per grid — see
+[Deprecated names](#deprecated-names).
 
 ---
 
@@ -707,40 +733,48 @@ blends into that design system automatically when present.
 | Property | Default | Description |
 | -------- | ------- | ----------- |
 | `--u-grid-background-color` | surface token | Grid background. |
-| `--u-grid-stripped-background-color` | surface token | Background of even rows when `striped`. |
+| `--u-grid-striped-background-color` | surface token | Background of even rows when `striped`. |
 | `--u-grid-header-background-color` | grid background | Header / sticky background. |
-| `--u-grid-header-height` | `56px` | Grouping toolbar height. |
-| `--u-grid-border-opacity` | `20%` | Opacity of row/column lines (derived from text color). |
-| `--u-grid-borders-width` | `1px` | Base line thickness. |
-| `--u-grid-row-lines-height` | borders width | Row separator thickness. |
-| `--u-grid-column-lines-width` | borders width | Column separator thickness. |
-| `--u-grid-data-cell-padding` | `13px 16px` | Data cell padding. |
+| `--u-grid-row-hover-opacity` | state-layer token / `8%` | Tint of the data row under the pointer (`0%` disables it). |
+| `--u-grid-toolbar-height` | `56px` | Height of the bar above the table (group panel, chooser button). |
+| `--u-grid-toolbar-padding` | `8px 16px` | Bar padding (or `--u-grid-toolbar-block-padding` / `--u-grid-toolbar-inline-padding`). |
+| `--u-grid-header-cell-height` | `46px` | Column header height. |
 | `--u-grid-header-cell-padding` | `13px 16px` | Header cell padding. |
-| `--u-grid-toggle-color` | on-surface token | Group expand/collapse chevron color. |
+| `--u-grid-header-cell-font-size` / `--u-grid-header-cell-font-weight` | `0.8125rem` / inherited | Header text. |
+| `--u-grid-cell-padding` | `13px 16px` | Data cell padding. `--u-grid-cell-block-padding` / `--u-grid-cell-inline-padding` set both data and header cells. |
+| `--u-grid-cell-font-size` / `--u-grid-cell-font-weight` | `0.875rem` / inherited | Data cell text. |
+| `--u-grid-line-opacity` | `20%` | Opacity of row/column lines (derived from the text color). |
+| `--u-grid-line-width` | `1px` | Base line thickness. |
+| `--u-grid-row-line-width` | line width | Row separator thickness. |
+| `--u-grid-column-line-width` | line width | Column separator thickness. |
+| `--u-grid-group-toggle-color` / `--u-grid-group-toggle-shape` | on-surface-variant token / `50%` | Group expand/collapse chevron (the color also applies to the chooser button). |
+| `--u-grid-group-row-emphasis` | `80%` | Emphasis of group row text. |
+| `--u-grid-group-chip-height` | `32px` | Group chip height. |
+| `--u-grid-group-chip-padding` | `16px` | Group chip inline padding. |
+| `--u-grid-group-chip-shape` | `8px` | Group chip corner radius. |
+| `--u-grid-group-chip-outline-color` / `--u-grid-group-chip-outline-width` | outline token / `1px` | Group chip border. |
+| `--u-grid-group-chip-font-size`, `-font-weight`, `-line-height`, `-letter-spacing` | label-large tokens | Group chip text. |
 | `--u-grid-focus-ring-color` / `--u-grid-focus-ring-width` | primary token / `2px` | Keyboard focus ring. |
 | `--u-grid-sorted-header-color` | text color | Text color of sorted column headers. |
 | `--u-grid-sort-indicator-size` | `1.125em` | Size of the sort arrow. |
-| `--u-grid-grouping-cell-emphasis` | `80%` | Emphasis of group row text. |
-| `--u-grid-drop-indicator-bg` | primary token | Drag-and-drop drop indicator color. |
+| `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
 | `--u-grid-resize-handle-width` | `8px` | Width of the column resize handle. |
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
-| `--u-td-font-size` / `--u-th-font-size` | `0.875rem` / `0.8125rem` | Body / header font size. |
-| `--u-group-height` | `32px` | Group chip height. |
-| `--u-group-outline-color` | outline token | Group chip border color. |
-| `--u-group-shape` | `8px` | Group chip corner radius. |
-| `--u-table-hover-opacity` | state-layer token | Row hover intensity. |
 
 ```css
 u-grid {
   height: 600px;
-  --u-grid-header-height: 48px;
-  --u-grid-drop-indicator-bg: #6750a4;
-  --u-td-font-size: 0.8125rem;
+  --u-grid-toolbar-height: 48px;
+  --u-grid-drop-indicator-color: #6750a4;
+  --u-grid-cell-font-size: 0.8125rem;
 }
 ```
+
+The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
+`--u-grid-header-height`, …) still work as fallbacks — see [Deprecated names](#deprecated-names).
 
 ### CSS `::part`s
 
@@ -748,8 +782,9 @@ u-grid {
 | ---- | ----------- |
 | `row` | Every rendered row (`<tr>`). |
 | `group-row` | Group header rows. |
-| `odd` / `even` | Data rows, by parity (useful with striping). |
-| `cell` / `no-data` | The cell rendered in the empty state. |
+| `odd` / `even` | Data rows, by parity (the first data row is `odd`; useful with striping). |
+| `cell` | Data cells (`<td>`). |
+| `no-data` | The cell rendered in the empty state. |
 | `header-cell` | Column header cells (`<th>`). |
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
 | `group-chip` | Group chips in the grouping bar. |
@@ -758,6 +793,7 @@ u-grid {
 ```css
 u-grid::part(group-row) { font-weight: 600; }
 u-grid::part(even) { background: #fafafa; }
+u-grid::part(cell) { font-variant-numeric: tabular-nums; }
 ```
 
 ---
@@ -780,29 +816,47 @@ See [the i18n SSR note](#ssr-note) about language resolution during SSR.
 ## Using with frameworks
 
 `<u-grid>` is a standard custom element. Set `items`, `columns` and `language` as **properties**
-(they carry arrays/objects), and toggle behavior with boolean **attributes**.
+(they carry arrays/objects), toggle behavior with **attributes**, and listen to the `u-grid-*`
+**events** (all `CustomEvent`s that bubble and are `composed`).
 
-**Angular** — add `CUSTOM_ELEMENTS_SCHEMA` and bind with property syntax:
+> **Import the package before the first render.** If a framework renders `<u-grid>` before the
+> element is defined, it can't tell properties from attributes and may set `columns`/`items` as
+> attributes (stringified). Import `@universal-material/data-grid` in your entry point.
+
+**Angular** — add `CUSTOM_ELEMENTS_SCHEMA` and bind with property and event syntax:
 
 ```html
-<u-grid [columns]="columns" [items]="items" [language]="lang" auto-expand-groups></u-grid>
+<u-grid [columns]="columns" [items]="items" [language]="lang" auto-expand-groups
+        (u-grid-sort-change)="onSort($event)"></u-grid>
 ```
 
-**React** (19+, which sets properties on custom elements):
+**React** (19+, which sets properties on custom elements and supports custom events):
 
 ```tsx
-<u-grid ref={ref} /* set .columns and .items on the ref, or: */ columns={columns} items={items} />
+<u-grid columns={columns} items={items} sort-mode="multiple"
+        onu-grid-sort-change={(e: CustomEvent<GridSortEventDetail>) => setSorting(e.detail.sorting)} />
 ```
 
-For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
+For React < 19, assign `ref.current.columns` / `ref.current.items` and call
+`ref.current.addEventListener('u-grid-sort-change', …)` in an effect.
 
 **Vue**:
 
 ```html
-<u-grid :columns.prop="columns" :items.prop="items" :language="lang"></u-grid>
+<u-grid :columns.prop="columns" :items.prop="items" :language="lang"
+        @u-grid-sort-change="onSort"></u-grid>
 ```
 
 (Register `u-grid` as a custom element with your bundler/compiler options as needed.)
+
+Columns with a `renderer` add nodes to the grid's light DOM — see the
+[light DOM note](#custom-cell-rendering) before letting a framework manage the grid's children.
+
+TypeScript users get typed events through `HTMLElementEventMap`
+(`grid.addEventListener('u-grid-sort-change', e => e.detail.sorting)`), and
+`document.querySelector('u-grid')` returns a `DataGrid`. The manifest at
+`@universal-material/data-grid/custom-elements.json` describes every attribute, property, event,
+CSS property and part for IDEs and tooling.
 
 ---
 
@@ -812,59 +866,113 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
 
 | Tag | Description |
 | --- | ----------- |
-| `<u-grid>` | The grid. Class: `DataGrid`. |
-| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable` (`sortable="false"` disables), `sort-order`, `sort-index`, `max-width`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`; label = text content. |
+| `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`; label = text content. |
 
 ### `<u-grid>` methods
 
 | Method | Description |
 | ------ | ----------- |
-| `groupColumn(column, targetIndex)` | Move/insert a column into the grouping area at `targetIndex`. |
-| `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex` (kept inside its fixed/regular block). |
-| `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
-| `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
-| `showColumnChooser()` | Open the column chooser. |
-| `sortBy(column, order, { append })` | Sort by `column` (`'asc'`/`'desc'`; `null` removes it). `append: true` adds it to the current sort. |
+| `sortColumn(column, order, { append })` | Sort by `column` (`'asc'`/`'desc'`; `null` removes it). `append: true` adds it to the current sort. |
 | `clearSorting()` | Remove all sorting. |
 | `getSorting()` | Current sort as `{ column, order }[]`, in priority order. |
+| `groupColumn(column, targetIndex?)` | Group by `column` at level `targetIndex` (default: innermost); moves an already grouped column. |
+| `ungroupColumn(column)` | Remove `column` from the grouping (it goes to the end of the regular columns). |
+| `getGrouping()` | Grouped columns, outermost first. |
+| `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex` (kept inside its fixed/regular block); ungroups a grouped column. |
+| `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
+| `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
+| `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
 
 ### `<u-grid>` events
 
-| Event | `detail` | Description |
-| ----- | -------- | ----------- |
-| `u-grid-sorting` | `GridSortEventDetail` | Before the sort changes. Cancelable. |
-| `u-grid-sort-change` | `GridSortEventDetail` | After the sort changed. |
-| `u-grid-column-resize` | `GridColumnResizeEventDetail` | The user finished resizing a column. See [Column features › Events](#column-events). |
-| `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | The user showed/hid a column in the chooser. |
-| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | The user moved a column by drag and drop. |
+All bubble and are `composed`.
+
+| Event | `detail` | Fired by API? | Description |
+| ----- | -------- | ------------- | ----------- |
+| `u-grid-sorting` | `GridSortEventDetail` | yes | Before the sort changes. Cancelable. |
+| `u-grid-sort-change` | `GridSortEventDetail` | yes | After the sort changed. |
+| `u-grid-group-change` | `GridGroupEventDetail` | yes | After the grouping changed. |
+| `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
+| `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
+| `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column by drag and drop. |
+
+The events that also fire for API calls carry `source: 'user' | 'api'` in `detail`.
 
 ### Exports
 
 ```ts
 import {
   DataGrid,            // the <u-grid> class
+  DataGridColumn,      // the <u-grid-column> class
   setGridLanguage,     // (language, host?) => void — default language via Lit context
-  setGridTranslation,  // (language, Partial<GridI18n>) => void — override/add strings
+  setGridTranslation,  // (language, GridI18nInput) => void — override/add strings
   gridLanguageContext, // Lit context key (advanced: custom providers)
-  type GridColumnDef,
+  type GridColumnDef,       // GridColumnDef<TItem = any>
   type GridColumnDataType,  // 'string' | 'number' | 'date' | 'datetime' | 'boolean'
   type GridColumnAlignment, // 'start' | 'center' | 'end'
   type GridColumnBooleanDisplay, // 'text' | 'icon'
   type GridColumnFormat,    // Intl options or (value, item) => string
   type GridColumnFormatter, // (value, item) => string
   type GridColumnComparator, // (a, b, itemA, itemB) => number
-  type GridSort,             // { column, order }
-  type GridSortOrder,        // 'asc' | 'desc'
-  type GridSortingMode,      // 'none' | 'single' | 'multiple'
-  type GridSortEventDetail,  // { sorting: GridSort[]; previous: GridSort[] }
   type GridColumnFixed,     // 'start' | 'end' | null
+  type GridSort,            // { column, order }
+  type GridSortOrder,       // 'asc' | 'desc'
+  type GridSortMode,        // 'none' | 'single' | 'multiple'
   type GridResizeMode,      // 'widget' | 'next-column'
+  type GridChangeSource,    // 'user' | 'api'
+  type GridSortEventDetail, // { sorting, previous, source }
+  type GridGroupEventDetail, // { grouping, previous, source }
   type GridColumnResizeEventDetail,
   type GridColumnVisibilityChangeEventDetail,
+  type GridColumnFixedChangeEventDetail,
   type GridColumnReorderEventDetail,
   type GridI18n,
+  type GridI18nInput,       // Partial<GridI18n> that still accepts the deprecated keys
 } from '@universal-material/data-grid';
 ```
+
+### Deprecated names
+
+They still work and warn once per grid (or once per page for translation keys) in the console.
+They will be removed in the next major version.
+
+| Deprecated | Use instead |
+| ---------- | ----------- |
+| attributes `rowheight`, `showrowlines`, `showcolumnlines` | `row-height`, `show-row-lines`, `show-column-lines` |
+| `sorting` / attribute `sorting`, type `GridSortingMode` | `sortMode` / `sort-mode`, `GridSortMode` |
+| `stripped`, `showHeader` | `striped`, `showGroupPanel` |
+| `sortBy()` | `sortColumn()` |
+| `showColumnChooser()` | `openColumnChooser()` |
+| `<u-grid-column data-type>` | `type` attribute |
+| changing `groupIndex` of a rendered `<u-grid-column>` | `groupColumn()` / `ungroupColumn()` |
+| `detail.fromIndex` / `detail.toIndex` of `u-grid-column-reorder` | `previousIndex` / `index` |
+| type `UmDataGridColumn` | `DataGridColumn` |
+| i18n keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix` |
+| `--u-grid-header-height` (bar) | `--u-grid-toolbar-height` (the header cells use `--u-grid-header-cell-height`) |
+| `--u-table-header-padding`, `-block-padding`, `-inline-padding` | `--u-grid-toolbar-padding`, `-block-padding`, `-inline-padding` |
+| `--u-table-cell-padding`, `--u-grid-data-cell-padding` | `--u-grid-cell-padding` |
+| `--u-table-cell-block-padding`, `--u-table-cell-inline-padding` | `--u-grid-cell-block-padding`, `--u-grid-cell-inline-padding` |
+| `--u-td-font-size`, `--u-td-font-weight` | `--u-grid-cell-font-size`, `--u-grid-cell-font-weight` |
+| `--u-th-font-size`, `--u-th-font-weight` | `--u-grid-header-cell-font-size`, `--u-grid-header-cell-font-weight` |
+| `--u-table-hover-opacity` | `--u-grid-row-hover-opacity` |
+| `--u-group-height`, `-outline-color`, `-outline-width`, `-shape`, `-padding` | `--u-grid-group-chip-height`, `-outline-color`, `-outline-width`, `-shape`, `-padding` |
+| `--u-group-label-font-size`, `-font-weight`, `-line-height`, `-letter-spacing` | `--u-grid-group-chip-font-size`, `-font-weight`, `-line-height`, `-letter-spacing` |
+| `--u-grid-stripped-background-color` | `--u-grid-striped-background-color` |
+| `--u-grid-drop-indicator-bg` | `--u-grid-drop-indicator-color` |
+| `--u-grid-borders-width`, `--u-grid-border-opacity` | `--u-grid-line-width`, `--u-grid-line-opacity` |
+| `--u-grid-row-lines-height`, `--u-grid-column-lines-width` | `--u-grid-row-line-width`, `--u-grid-column-line-width` |
+| `--u-grid-toggle-color`, `--u-grid-toggle-shape` | `--u-grid-group-toggle-color`, `--u-grid-group-toggle-shape` |
+| `--u-grid-grouping-cell-emphasis` | `--u-grid-group-row-emphasis` |
+
+When migrating CSS, remove the old names: an old **shorthand** (`--u-table-cell-padding`,
+`--u-table-header-padding`, `--u-grid-data-cell-padding`) still wins over the new block/inline
+longhands.
+
+Also changed (not deprecations): `::part(cell)` now matches every data cell (the empty-state cell
+is only `::part(no-data)`); data rows get a hover tint (`--u-grid-row-hover-opacity: 0%` turns it
+off); `items` is no longer read from an `items` attribute.
 
 ---
 

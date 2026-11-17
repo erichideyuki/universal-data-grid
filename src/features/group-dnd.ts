@@ -52,7 +52,7 @@ export class GroupDragAndDropAdapter {
           return;
         }
 
-        this.#grid.groupColumn(movingColumn, this.#grid._groupColumns.length);
+        this.#grid._userGroupColumn(movingColumn, this.#grid._groupColumns.length);
       },
     });
   }
@@ -149,7 +149,7 @@ export class GroupDragAndDropAdapter {
           targetIndex++;
         }
 
-        this.#grid.groupColumn(movingColumn, targetIndex);
+        this.#grid._userGroupColumn(movingColumn, targetIndex);
       },
     });
   }

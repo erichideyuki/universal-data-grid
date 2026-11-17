@@ -35,7 +35,8 @@ Model, transactions (`applyTransaction`).
   janelas sob demanda (linhas-esqueleto enquanto carrega).
 - `refresh()`, `applyChanges({ add, update, remove })` (por chave, sem
   reconstruir o modelo inteiro).
-- Eventos: `u-grid-loading`, `u-grid-loaded`, `u-grid-load-error`.
+- Eventos: `u-grid-loading` (cancelável: o hospedeiro pode impedir a
+  carga), `u-grid-load`, `u-grid-load-error` (nomes pela regra da spec 15).
 
 ## Comportamento
 - Requisição anterior abortada (`AbortController`) quando sort/filter mudam.
