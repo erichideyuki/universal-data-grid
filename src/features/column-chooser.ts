@@ -116,6 +116,11 @@ export class ColumnChooserController implements ReactiveController {
     host.addController(this);
   }
 
+  /** Painéis registrados no interactjs (diagnóstico de memória). */
+  get dropzones(): number {
+    return this.#dropzones.size;
+  }
+
   get open(): boolean {
     return this.#open;
   }

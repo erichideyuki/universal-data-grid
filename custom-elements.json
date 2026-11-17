@@ -2835,6 +2835,15 @@
             },
             {
               "kind": "field",
+              "name": "dropzones",
+              "type": {
+                "text": "number"
+              },
+              "description": "Painéis registrados no interactjs (diagnóstico de memória).",
+              "readonly": true
+            },
+            {
+              "kind": "field",
               "name": "open",
               "type": {
                 "text": "boolean"
@@ -3738,6 +3747,34 @@
               "name": "#pointerUp",
               "privacy": "private",
               "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "cancel",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Grid desconectado no meio de um arrasto: solta os listeners da alça e as\nreferências às colunas, mantendo a largura já aplicada (sem evento)."
+            },
+            {
+              "kind": "method",
+              "name": "#release",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "session",
+                  "type": {
+                    "text": "ResizeSession"
+                  }
+                }
+              ]
             }
           ]
         }

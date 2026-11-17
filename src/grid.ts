@@ -462,6 +462,10 @@ export class DataGrid extends LitElement implements ResizeHost {
       dataTypes: this.#dataTypes.size,
       expansion: this.#expansion.size,
       sortRanks: this.#rankCache.size,
+      // Estado por coluna (larguras, visibilidade, fixação, medições): só colunas definidas.
+      columnState: this.#userWidths.size + this.#userVisible.size + this.#userFixed.size
+        + this.#autoWidths.size + this.#renderedWidths.size + this.#hostOptions.size,
+      chooserDropzones: this.#chooser.dropzones,
     };
   }
 
