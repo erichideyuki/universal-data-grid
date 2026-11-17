@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 
 import { calcCursorRelativePosition, RelativePosition } from './features/drop-position.js';
 import type { GridColumnDef } from './grid-column-def.js';
@@ -501,5 +502,69 @@ describe('desconectar solta o que foi registrado', () => {
 
     expect(remove).toHaveBeenCalledWith('pointerdown', expect.any(Function), true);
     remove.mockRestore();
+  });
+});
+
+describe('com ordenação (frente 03)', () => {
+  const people = () => [
+    { name: 'Carla', city: 'Recife', rank: 2 },
+    { name: 'Ana', city: 'Belém', rank: 3 },
+    { name: 'Bruno', city: 'Natal', rank: 1 },
+  ];
+
+  const names = (grid: DataGrid) => dataRows(grid).map(row => row.cells[0].textContent.trim());
+
+  it('a alça (clique, duplo clique, Enter, Espaço, arrasto) nunca ordena', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name', width: 120 }, { path: 'city', label: 'City', width: 120 }],
+      items: people(),
+      configure: g => g.columnResizing = true,
+    });
+    const handle = handles(grid)[0];
+
+    await userEvent.click(handle);
+    await userEvent.dblClick(handle);
+    key(handle, 'Enter');
+    key(handle, ' ');
+    await settle(grid);
+    await dragHandle(grid, handles(grid)[0], 30);
+
+    expect(grid.getSorting()).toEqual([]);
+    expect(headers(grid)[0].getAttribute('aria-sort')).toBe('none');
+    expect(names(grid)).toEqual(['Carla', 'Ana', 'Bruno']);
+
+    // O cabeçalho em si continua ordenando.
+    await userEvent.click(headers(grid)[0].querySelector('.header-text')!);
+    await settle(grid);
+    expect(names(grid)).toEqual(['Ana', 'Bruno', 'Carla']);
+  });
+
+  it('colunas fixas e ocultas ordenam normalmente', async () => {
+    const columns: GridColumnDef[] = [
+      { path: 'name', label: 'Name', fixed: 'start' },
+      { path: 'city', label: 'City', fixed: 'end' },
+      { path: 'rank', label: 'Rank', visible: false },
+    ];
+    const grid = await createGrid({ columns, items: people() });
+
+    await userEvent.click(headers(grid).find(th => th.textContent.includes('City'))!);
+    await settle(grid);
+    expect(names(grid)).toEqual(['Ana', 'Bruno', 'Carla']);
+    expect(headers(grid).at(-1)!.getAttribute('aria-sort')).toBe('ascending');
+    expect(headers(grid).at(-1)!.classList.contains('fixed-end')).toBe(true);
+
+    grid.sortBy(columns[2], 'asc');
+    await settle(grid);
+    expect(names(grid)).toEqual(['Bruno', 'Carla', 'Ana']);
+    expect(headerLabels(grid)).toEqual(['Name', 'City']);
+
+    // Ocultar a coluna ordenada mantém a ordenação.
+    grid.sortBy(columns[0], 'desc');
+    grid.showColumnChooser();
+    await settle(grid);
+    root(grid).querySelector<HTMLInputElement>('.column-chooser input[type=checkbox]')!.click();
+    await settle(grid);
+    expect(headerLabels(grid)).toEqual(['City']);
+    expect(grid.getSorting().map(s => s.column.label)).toEqual(['Name']);
   });
 });
