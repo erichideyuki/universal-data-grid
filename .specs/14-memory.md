@@ -1,0 +1,136 @@
+# 14 — Memória: nenhum vazamento
+
+## Objetivo
+
+O `<u-grid>` tem de sumir da memória quando o hospedeiro solta a última
+referência a ele — junto com linhas, colunas e `items` — e um grid de vida
+longa não pode crescer com o uso (renders, rolagem, reagrupar, trocar
+`items`). Requisito do usuário, de extrema importância: planejado, medido e
+testado.
+
+## Referência
+
+Não há comportamento de referência (DevExtreme/AG Grid) a copiar. A régua é
+o heap do Chromium: `WeakRef` dos objetos + coleta forçada pelo CDP.
+
+## Escopo
+
+1. Inventário de tudo que pode reter o grid ou dados do hospedeiro (abaixo).
+2. Helper reutilizável `src/test/leak.ts` para os testes de navegador.
+3. Testes `src/grid.memory.browser.test.ts` (falhavam antes de cada
+   correção), `src/render/keyed-rows.browser.test.ts` e
+   `src/row-model/cache.test.ts`.
+4. Correções, sem API pública nova.
+5. Regra permanente no `CLAUDE.md` e no passo 7 do fluxo (`BACKLOG.md`).
+
+## API
+
+Nenhuma pública. Diagnóstico interno (prefixo `_`, fora do README):
+`DataGrid._memoryStats`, `_pendingLanguageRequests()` (`grid-i18n.ts`),
+`_formatterCacheSize()` (`row-model/format.ts`), `_collatorCacheSize()`
+(`row-model/compare.ts`).
+
+## Inventário
+
+Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
+**OK** = liberado pelo próprio ciclo de vida.
+
+| # | O quê | Onde | Risco | Como é liberado |
+|---|---|---|---|---|
+| 1 | Interações do interactjs (`scope.interactions.list`, array global) guardam o último `pointerdown` de cada ponteiro (`downPointer.target` = o grid) até o próximo `pointerdown` na página. Bastava um clique ou arrasto no grid para ele ficar vivo depois de removido; removido no meio de um arrasto, a interação parada também ficava. | `features/drag-helper.ts` | **V** | `releaseInteractions(grid)` no `disconnectedCallback`, depois do `unset`: descarta (`interactions:destroy` + `destroy()` + remove da lista) as interações paradas que apontam para o grid; o interactjs cria outra quando precisa. |
+| 2 | Elementos registrados no interactjs (`interact(el)` vai para `scope.interactables.list`) | `features/*-dnd.ts` | OK | `InteractRegistry.prune()` a cada sincronização (solta os que saíram do DOM) e `clear()` no `disconnectedCallback`. |
+| 3 | `.move-container` (fantasma do arrasto) dentro do contêiner | `features/*-dnd.ts` | **V** (menor) | Removido no `end`; arrasto interrompido pela remoção do grid não tem `end` → o `disconnectedCallback` remove os que sobraram (senão reapareceria ao reconectar). |
+| 4 | `repeat` do lit-html 3.3 (até 3.3.3): `removePart` apaga o conteúdo e o marcador de início da parte, mas deixa o marcador de fim (`<!---->`) no DOM. Cada linha que saía da janela virtual deixava um comentário no `<tbody>`, para sempre (~80 por rodada de rolagem; 6 mil+ num grid de vida longa). | `grid.ts` | **V** | Linhas renderizadas por `keyedRows` (`render/keyed-rows.ts`): lista com chave sobre os helpers públicos de `lit/directive-helpers.js`, que remove também o marcador de fim (e limpa a parte se ela mostrava outra coisa, ex. "sem dados"). |
+| 5 | `elementsCache` do virtualizador (`<tr>` medidas com `wrap`) só solta elementos desconectados quando `measureElement` é chamado sem elemento. Com `wrap`, rolar retinha toda linha já vista e os itens dela (351 → 4.640 `<tr>` no teste). | `grid.ts` `updated()` | **V** | `virtualizer.measureElement(null)` a cada `updated()` (percorre só o cache, que fica do tamanho das linhas visíveis). |
+| 6 | `itemSizeCache` do virtualizador (altura medida por chave de linha). Sem `keyExpr` a chave é o objeto: cada troca de `items` deixava as chaves antigas para sempre. | `grid.ts` `updated()` | **V** | Ao trocar `items` com coluna `wrap`, `virtualizer.measure()` zera o mapa; as visíveis são remedidas no mesmo `updated()`. |
+| 7 | Observers/listeners do virtualizador (`ResizeObserver`, `scroll`/`scrollend` no contêiner) | `@tanstack/lit-virtual` | OK | O controller é registrado no host (`addController`): `hostDisconnected` → `cleanup()`. (As chamadas manuais a `hostConnected/hostDisconnected` em `grid.ts` eram duplicadas e saíram.) O timer de `isScrolling` (150 ms) é transitório. |
+| 8 | `ContextRoot` do @lit/context no `body`: empilha cada pedido de context sem provedor (objeto + 2 `WeakRef`) e só esvazia quando surge um provedor. Página que cria/destrói grids sem `setGridLanguage` → cresce para sempre (103 entradas após 100 grids). | `grid-i18n.ts` | **V** | Substituído por `PendingLanguageRequests`: só o context do grid; descarta pedidos de elementos coletados ou desconectados (limpeza amortizada ao dobrar de tamanho, mínimo 16); provedor tardio redespacha os pedidos dos conectados. Continua uma instância por página (`Symbol.for`). |
+| 9 | Provedor de `setGridLanguage(lang, host)` (`subscriptions` guarda o consumidor) | `grid-i18n.ts` | OK | `WeakMap` por host; o `ContextConsumer` do grid cancela a inscrição no `hostDisconnected`. Testado com provedor num host que continua na página. |
+| 10 | `observeDocumentLanguage` (um `MutationObserver` + `Set` de listeners) | `grid-i18n.ts` | OK | Inscrição no `connectedCallback`, cancelada no `disconnectedCallback`; o observer desconecta quando o `Set` esvazia. |
+| 11 | Cache de formatadores `Intl` (chave = tipo + idioma + opções do hospedeiro) | `row-model/format.ts` | **V** → **L** | `LruCache` de 128 entradas (`FORMATTER_CACHE_LIMIT`). |
+| 12 | `Map` de collators por idioma | `row-model/compare.ts` | **V** → **L** | `LruCache` de 32 entradas (`COLLATOR_CACHE_LIMIT`). |
+| 13 | `WeakMap`s de módulo: chave de linha por objeto (`objectKeys`) e id de coluna (`columnIds`); `_nativeColumnMap` por instância | `grid.ts` | OK | Fracas: somem com o item/coluna/elemento. Os contadores (`nextObjectKey`, `nextColumnId`) são números. |
+| 14 | `div`s das células customizadas no light DOM do grid + `queueMicrotask` | `grid-custom-cell.ts` | OK | A célula que sai do DOM remove o próprio `div` no microtask seguinte (se não foi reconectada pelo `repeat`/`keyedRows`). O microtask é transitório. |
+| 15 | `#groups`/`#rows`/`#dataTypes`/`#columnViews` (seguram `items` e colunas) | `grid.ts` | OK | Refeitos no render seguinte à troca de `items`/`columns` (o Lit continua atualizando depois de desconectado); `#dataTypes` é limpo a cada troca. |
+| 16 | `#expansion` (estado de expansão por chave de grupo, sobrevive à troca de dados — B14) | `grid.ts` | L | Só cresce com cliques do usuário em grupos distintos; não cresce com dados. Some com o grid. |
+| 17 | `setGridTranslation` (tabela de traduções) | `grid-i18n.ts` | L | Só cresce quando o hospedeiro chama, com idiomas que ele escolhe. |
+| 18 | Closures de eventos (`@pointerover`, `@slotchange`, `onToggle`, listeners do interactjs que capturam o grid) | vários | OK | Ficam em elementos do próprio grid ou em `Interactable`s soltos no `unset`. |
+| 19 | Avisos de depreciação (`#warnedDeprecations`) | `grid.ts` | OK | Por instância. |
+| 20 | Chromium: cada `<thead>` em shadow root deixa um `MediaQuerySet` no `StyleEngine` do documento (~0,6 KiB por grid criado; reproduz com `attachShadow` + `innerHTML`, sem Lit). | Blink | Externo | Fora do alcance do JS. Contornar exigiria trocar o `<thead>` por outro `<tbody>` (muda seletores do fixture e o cabeçalho que as frentes 03/06 estão mexendo) — pendência. |
+
+## Medição (`src/test/leak.ts`)
+
+- `collectGarbage()`: duas passadas de `HeapProfiler.collectGarbage` pelo
+  `cdp()` do `vitest/browser`, cada uma numa tarefa nova (o `WeakRef`
+  criado na tarefa atual segura o alvo até o fim dela).
+- `track({...})` + `expectCollected(tracked)` / `aliveAfterGc(tracked)`:
+  `WeakRef` por nome; a falha lista o que não foi coletado.
+- `measureHeap()`: `Runtime.getHeapUsage` (heap JS do isolate, inclui o
+  orquestrador do Vitest) e `Performance.getMetrics` (`Nodes`,
+  `JSEventListeners`, `Documents`); `heapDelta(before, after)`.
+- Para achar o retentor: `HeapProfiler.takeHeapSnapshot` (chunks via
+  `cdp().on('HeapProfiler.addHeapSnapshotChunk')`), gravar com
+  `server.commands.writeFile` dentro do projeto e analisar em Node
+  (retentores a partir de `(GC roots)`). Foi assim que saíram os itens 4 e 20.
+
+Regras para escrever teste de vazamento: crie e use o grid dentro de uma
+função `async` que devolve só `WeakRef`s; nada de guardar o grid em
+variáveis do teste, `expect`, mocks ou closures que sobrevivam ao cenário.
+
+## Testes
+
+`src/grid.memory.browser.test.ts`:
+
+- grid usado (grupos em 2–3 níveis, renderer, coluna `wrap`, formato
+  `Intl`, rolagem, `language`, provedor de `setGridLanguage`, `<html lang>`,
+  reagrupar pela API e por arrasto real do interactjs) e removido → grid,
+  `items`, item, colunas, linha e `div` de célula customizada coletados;
+- grid nunca conectado → coletado;
+- trocar `items` → itens antigos coletados;
+- remover no meio de um arrasto → coletado, sem fantasma, e o próximo grid
+  arrasta normalmente;
+- 100 grids sem provedor de idioma → pedidos pendentes < 20; provedor
+  tardio ainda alcança o grid conectado;
+- 300 colunas com formatos diferentes → cache de formatadores ≤ 128;
+- 50 ciclos de criar/usar/destruir → nós e listeners voltam à linha de
+  base (< 30), heap < 512 KiB;
+- grid de vida longa (37 rodadas: troca de `items`, expandir, 5 rolagens,
+  reagrupar, 20 renders) → registros internos constantes, `<tr>` retidas ≤
+  linhas no DOM, alturas medidas não acumulam, sem comentários soltos no
+  `<tbody>`, nós/listeners na base, heap < 512 KiB, `items` da 1ª rodada
+  coletados.
+
+`src/render/keyed-rows.browser.test.ts`: janela deslizante sem sobra de
+marcadores, reaproveitamento por chave, chaves repetidas e troca com outro
+conteúdo. `src/row-model/cache.test.ts`: LRU e limites dos caches.
+
+Cada teste foi conferido falhando com a correção desligada (itens 1, 3, 4,
+5, 6, 8, 11, 12).
+
+## Critério de pronto
+
+`npm test`, `npm run typecheck`, `npm run lint` verdes; regra permanente no
+`CLAUDE.md` e no passo 7 do `BACKLOG.md`.
+
+## Referência medida (Chromium headless do Playwright, 2026-11-17)
+
+| Medida | Antes | Depois |
+|---|---|---|
+| Grid clicado/arrastado e removido | retido pelo interactjs | coletado |
+| Grid removido no meio de um arrasto | retido (grid, itens, cabeçalho, fantasma) | coletado |
+| Grid de vida longa, `<tr>` no `elementsCache` (`wrap`) | 351 → 4.640 | ≤ linhas no DOM (14) |
+| Grid de vida longa, alturas medidas após 37 trocas de `items` | 4.130 | ~110 (uma rodada) |
+| Comentários soltos no `<tbody>` | +80 por rodada de rolagem (6.817 no fim) | constante |
+| Nós DOM após 37 rodadas | +6.337 | 0 |
+| Pedidos de idioma pendentes após 100 grids | 103 | < 20 |
+| 50 ciclos criar/destruir: nós / listeners | — | 0 / 0 |
+| 50 ciclos criar/destruir: heap | — | +180–330 KiB (aquecimento; 150 ciclos ≈ +390 KiB) |
+| Grid de vida longa: heap | — | +180 KiB |
+
+## Fora de escopo / pendências
+
+- Item 20 (Chromium, `<thead>` em shadow root): reportar ao Chromium e,
+  depois das frentes 03/06, decidir se troca o `<thead>` por `<tbody>`.
+- Item 4: reportar ao Lit (`removePart` não remove `endNode`); quando
+  corrigido, `keyedRows` pode voltar a ser `repeat`.
+- `#expansion` sem `keyExpr` (frente 08) e API de expansão (frente 07).
