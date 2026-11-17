@@ -21,7 +21,7 @@ o heap do Chromium: `WeakRef` dos objetos + coleta forçada pelo CDP.
    correção), `src/render/keyed-rows.browser.test.ts` e
    `src/row-model/cache.test.ts`.
 4. Correções, sem API pública nova.
-5. Regra permanente no `CLAUDE.md` e no passo 7 do fluxo (`BACKLOG.md`).
+5. Regra permanente no `CLAUDE.md` e no passo 8 do fluxo (`BACKLOG.md`).
 
 ## API
 
@@ -117,7 +117,7 @@ Cada teste foi conferido falhando com a correção desligada (itens 1, 3, 4,
 ## Critério de pronto
 
 `npm test`, `npm run typecheck`, `npm run lint` verdes; regra permanente no
-`CLAUDE.md` e no passo 7 do `BACKLOG.md`.
+`CLAUDE.md` e no passo 8 do `BACKLOG.md`.
 
 ## Referência medida (Chromium headless do Playwright, 2026-11-17)
 

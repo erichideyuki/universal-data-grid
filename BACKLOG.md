@@ -29,21 +29,31 @@ testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
    for por coluna, no `GridColumnDef` e no `<u-grid-column>`. Eventos são
    `CustomEvent` com prefixo `u-grid-`, `bubbles` e `composed`, e os
    cancelláveis disparam ANTES da mudança.
-5. **Interface** — render no `src/render/` ou num controller em
+5. **Revisão da API proposta** — antes de mostrar a API ao usuário, rodar o
+   subagente `webcomponent-api-reviewer` (`.claude/agents/`) sobre a
+   proposta, aplicar os achados aceitos e levar ao usuário já a versão
+   revisada (com os achados recusados e o porquê, em uma linha cada). Nome
+   de API pública só entra com o aval do usuário.
+6. **Interface** — render no `src/render/` ou num controller em
    `src/features/`; textos novos na tabela de `grid-i18n.ts` (14 idiomas);
    CSS por custom property `--u-grid-*` e `::part`.
-6. **Acessibilidade** — teclado completo (todo gesto de mouse tem
+7. **Acessibilidade** — teclado completo (todo gesto de mouse tem
    equivalente), ARIA conforme o padrão "grid" da APG, foco visível, RTL.
-7. **Testes** — unitários do row model, de componente no navegador (Vitest
+8. **Testes** — unitários do row model, de componente no navegador (Vitest
    browser), SSR (renderiza no `@lit-labs/ssr` sem erro) e conferência manual
    no demo (`npm run dev`) em `en`, `pt` e `ar` (RTL). Suíte verde, lint e
    `tsc` limpos. Todo listener/observer/timer/cache global novo libera no
    `disconnectedCallback` (ou é limitado) e ganha teste de vazamento com
    `src/test/leak.ts` (spec 14).
-8. **Docs** — README (seção do recurso + API reference) e
+9. **Docs** — README (seção do recurso + API reference) e
    `custom-elements.json` (`npm run analyze`).
-9. **Entrega** — commits no branch da frente, `git rebase main`, testes de
-   novo; avisar a coordenadora com resumo e print. Não editar este arquivo.
+10. **Revisão da API implementada** — rodar de novo o
+    `webcomponent-api-reviewer` sobre o que foi implementado (código,
+    README, `custom-elements.json`); corrigir o que for ALTA/MÉDIA ou
+    justificar no relato de entrega. Divergência do que o usuário aprovou
+    volta para ele.
+11. **Entrega** — commits no branch da frente, `git rebase main`, testes de
+    novo; avisar a coordenadora com resumo e print. Não editar este arquivo.
 
 **Sessão coordenadora** (a que abre as frentes): faz o merge fast-forward de
 cada frente na main quando testes, lint e `tsc` estão verdes; atualiza o

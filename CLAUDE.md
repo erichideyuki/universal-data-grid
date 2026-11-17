@@ -32,6 +32,17 @@ reordenação por arrasto (`interactjs`), i18n por Lit context e SSR
 - Recurso visível precisa de: teclado, ARIA (padrão "grid" da WAI-ARIA APG),
   RTL (`dir="rtl"`, o árabe é idioma embutido) e SSR sem quebrar.
 
+## Revisão de API pública
+
+Toda API pública (propriedade/atributo, método, evento e `detail`, tipo
+exportado, custom property `--u-grid-*`, `::part`) passa pelo subagente
+`webcomponent-api-reviewer` (`.claude/agents/`) duas vezes: sobre a
+proposta, ANTES de levá-la ao usuário (que recebe a versão já revisada), e
+sobre a implementação, na entrega (passos 5 e 10 do fluxo no `BACKLOG.md`).
+Decisões de nomenclatura já tomadas ficam em `.specs/15-api-review.md`.
+Mudança de API pública só com aval do usuário; renomear exige alias com
+aviso de deprecação.
+
 ## Comportamento de referência
 
 O "oráculo" do projeto é o comportamento do **DevExtreme DataGrid** (demos
