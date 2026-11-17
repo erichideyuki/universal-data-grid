@@ -71,31 +71,31 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Dados | Fonte remota (sort/filter/group/paginação no servidor) | — | ✅ | ✅ (server-side row model) |
 | Dados | Chave de linha (`keyExpr`/`getRowId`) e atualização incremental | — | ✅ | ✅ |
 | Dados | Paginação / rolagem infinita | — | ✅ | ✅ |
-| Rolagem | Virtualização de linhas | ◐ (listras trocam ao rolar; `rowHeight` não remede) | ✅ | ✅ |
+| Rolagem | Virtualização de linhas | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de colunas | — | ✅ | ✅ |
-| Colunas | Definição por propriedade e por `<u-grid-column>` | ◐ (propriedade some ao conectar/reconectar) | ✅ | ✅ |
-| Colunas | Reordenar por arrasto | ◐ (sem teclado, sem RTL) | ✅ | ✅ |
-| Colunas | Redimensionar | — | ✅ | ✅ |
-| Colunas | Fixar à esquerda/direita | — | ✅ | ✅ |
-| Colunas | Ocultar / seletor de colunas | — | ✅ | ✅ |
+| Colunas | Definição por propriedade e por `<u-grid-column>` | ✅ | ✅ | ✅ |
+| Colunas | Reordenar por arrasto | ◐ (sem teclado — frente 05) | ✅ | ✅ |
+| Colunas | Redimensionar | ✅ | ✅ | ✅ |
+| Colunas | Fixar à esquerda/direita | ✅ | ✅ | ✅ |
+| Colunas | Ocultar / seletor de colunas | ✅ | ✅ | ✅ |
 | Colunas | Cabeçalho em bandas (multinível) | — | ✅ | ✅ |
-| Colunas | Tipo de dado e formatação (número, data, moeda, booleano) | — | ✅ | ✅ |
-| Colunas | Alinhamento, quebra de texto, largura mín./auto | — | ✅ | ✅ |
-| Ordenação | Clique no cabeçalho, múltipla, comparador próprio | — | ✅ | ✅ |
+| Colunas | Tipo de dado e formatação (número, data, moeda, booleano) | ✅ | ✅ | ✅ |
+| Colunas | Alinhamento, quebra de texto, largura mín./auto | ✅ | ✅ | ✅ |
+| Ordenação | Clique no cabeçalho, múltipla, comparador próprio | ✅ | ✅ | ✅ |
 | Filtro | Linha de filtro | — | ✅ | ✅ (floating filter) |
 | Filtro | Filtro no cabeçalho (lista de valores) | — | ✅ | ✅ (set filter, Enterprise) |
 | Filtro | Painel de busca (texto em todas as colunas) | — | ✅ | ✅ (quick filter) |
 | Filtro | Construtor de filtro / painel de filtro | — | ✅ | ◐ |
-| Agrupamento | Painel de arrasto, multinível, auto-expandir | ◐ (ver auditoria: subgrupos duplicados, ordem numérica errada, crash) | ✅ | ✅ (Enterprise) |
-| Agrupamento | Expandir/recolher tudo, estado mantido ao trocar dados | — | ✅ | ✅ |
-| Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | — | ✅ | ✅ |
+| Agrupamento | Painel de arrasto, multinível, auto-expandir | ✅ | ✅ | ✅ (Enterprise) |
+| Agrupamento | Expandir/recolher tudo, estado mantido ao trocar dados | ◐ (estado mantido; sem API — frente 07) | ✅ | ✅ |
+| Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | ◐ (ordenação feita; contagem e resumos — frente 07) | ✅ | ✅ |
 | Resumos | Totais (rodapé) e por grupo; agregações próprias | — | ✅ | ✅ |
 | Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | — | ✅ | ✅ |
 | Seleção | Foco de célula/linha, intervalo de células | — | ◐ | ✅ (intervalo: Enterprise) |
 | Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | — | ✅ | ✅ |
 | Edição | Célula, linha, lote, formulário/popup | — | ✅ | ✅ |
 | Edição | Validação, inserir/excluir linha, desfazer | — | ✅ | ✅ |
-| Templates | Célula | ◐ (conteúdo de outra linha após expandir grupo) | ✅ | ✅ |
+| Templates | Célula | ✅ (`HTMLElement`; `TemplateResult` na frente 10) | ✅ | ✅ |
 | Templates | Cabeçalho, linha de grupo, linha inteira, vazio | — | ✅ | ✅ |
 | Detalhe | Master-detail (linha expansível) | — | ✅ | ✅ (Enterprise) |
 | Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
@@ -103,9 +103,9 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Exportação | CSV / Excel / PDF / área de transferência | — | ✅ | ✅ (Excel: Enterprise) |
 | UI | Barra de ferramentas, menu de contexto, painel de carregamento | — | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
-| A11y | Padrão grid ARIA completo, leitor de tela | ◐ (`aria-rowcount` errado, grupo sem `aria-expanded`, sem foco) | ✅ | ✅ |
+| A11y | Padrão grid ARIA completo, leitor de tela | ◐ (ARIA básico e `aria-sort`; foco e navegação — frente 05) | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
-| i18n | RTL | — (árabe embutido, mas arrasto calcula em LTR) | ✅ | ✅ |
+| i18n | RTL | ✅ | ✅ | ✅ |
 | SSR | Lit SSR + hidratação | ✅ | — | — |
 | Tema | CSS custom properties e `::part` | ✅ | ✅ | ✅ |
 
@@ -121,17 +121,17 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
-| Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | em curso |
+| Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | feito |
 
 ### Fase A — o dia a dia de qualquer grid
 
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
 | Tipos e formatação | `02-column-types-format.md` | `dataType`, `format` (Intl), alinhamento, `calculateCellValue`, quebra de texto | feito |
-| Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | em curso |
+| Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | feito |
 | Filtro | `04-filtering.md` | linha de filtro, painel de busca, filtro no cabeçalho, API de expressão de filtro | — |
 | Seleção e teclado | `05-selection-keyboard-a11y.md` | foco de célula, navegação por teclado, seleção única/múltipla, caixa de seleção, ARIA completo, teclado para agrupar/reordenar | — |
-| Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | em curso |
+| Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | feito |
 
 ### Fase B — dados de verdade
 
@@ -165,8 +165,8 @@ Estado: `—` a fazer · `em curso` · `feito`.
 
 | Origem | Pendência |
 |---|---|
-| Fundação | B23: canal de distribuição (privJS ou não) e campo `license` do `package.json` — decisão do usuário |
 | Fundação | `picomatch` (ReDoS com padrões de glob não confiáveis) segue no `npm audit` sem versão corrigida; só ferramentas de dev com padrões fixos |
 | Fundação | Renderer de célula aceitar `TemplateResult` além de `HTMLElement` — decidir na frente 10 |
 | Fundação | Sem `keyExpr`, trocar `items` por objetos novos recria as linhas (a chave é a identidade do objeto) — frente 08 |
 | Fundação | Expansão de grupos ainda não tem API (`expandAll` etc.) — frente 07 |
+| Memória | Chromium retém ~0,6 KiB por grid criado (`<thead>` em shadow root, item 20 da spec 14); reportar ao Chromium e decidir se troca o `<thead>` |
