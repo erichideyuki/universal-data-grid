@@ -10,6 +10,7 @@ import {
   groupLabels,
   settle,
 } from './test/fixture.js';
+import { expectCollected, track, type Tracked } from './test/leak.js';
 
 afterEach(cleanup);
 
@@ -276,5 +277,95 @@ describe('<u-grid-column>', () => {
     await settle(grid);
     await settle(grid);
     expect(rowTexts(grid).at(-1)).toBe('1');
+  });
+});
+
+describe('booleanDisplay: icon', () => {
+  const icons = (grid: DataGrid) =>
+    dataRows(grid).map(tr => {
+      const icon = tr.cells[1].querySelector('[role=img]');
+      return icon ? icon.getAttribute('aria-label') : cellText(tr.cells[1]);
+    });
+
+  it('ícone com o texto traduzido como nome acessível; vazio e grupo em texto', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Name' },
+        { path: 'ok', label: 'OK', booleanDisplay: 'icon', emptyText: '—' },
+      ],
+      items: [{ name: 'a', ok: true }, { name: 'b', ok: false }, { name: 'c', ok: null }],
+      configure: g => g.language = 'pt',
+    });
+
+    expect(icons(grid)).toEqual(['Verdadeiro', 'Falso', '—']);
+    expect(dataRows(grid)[0].cells[1].querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(textSide(cell(grid, 0, 1))).toBe('center');
+
+    grid.language = 'ar';
+    grid.dir = 'rtl';
+    await settle(grid);
+    expect(icons(grid).slice(0, 2)).toEqual(['صحيح', 'خطأ']);
+    expect(textSide(cell(grid, 0, 1))).toBe('center');
+
+    grid.columns = [
+      { path: 'ok', label: 'OK', booleanDisplay: 'icon', groupIndex: 0 },
+      { path: 'name', label: 'Name' },
+    ];
+    await settle(grid);
+    expect(groupLabels(grid)).toEqual(['OK:', 'OK: خطأ', 'OK: صحيح']);
+  });
+
+  it('atributo boolean-display e troca ao vivo', async () => {
+    const grid = document.createElement('u-grid');
+    grid.style.cssText = 'display:block;height:300px';
+    grid.language = 'en';
+    grid.innerHTML = '<u-grid-column path="name">Name</u-grid-column><u-grid-column path="ok" boolean-display="icon">OK</u-grid-column>';
+    grid.items = [{ name: 'a', ok: true }];
+    document.body.append(grid);
+    await settle(grid);
+
+    const column = grid.querySelectorAll('u-grid-column')[1];
+    expect(column.booleanDisplay).toBe('icon');
+    expect(icons(grid)).toEqual(['True']);
+    expect(cell(grid, 0, 1).querySelector('[role=img]')).not.toBeNull();
+
+    column.booleanDisplay = 'text';
+    await settle(grid);
+    await settle(grid);
+    expect(cell(grid, 0, 1).querySelector('[role=img]')).toBeNull();
+    expect(cellText(cell(grid, 0, 1))).toBe('True');
+  });
+});
+
+describe('memória (spec 14)', () => {
+  it('grid com ícone booleano, trocas de idioma/direção/modo e removido é coletado', async () => {
+    const scenario = async (): Promise<Tracked> => {
+      const items = Array.from({ length: 200 }, (_, n) => ({ n, ok: n % 3 ? n % 2 === 0 : null, when: '2024-03-05' }));
+      const columns: GridColumnDef[] = [
+        { path: 'n', label: 'N', format: { minimumFractionDigits: 1 } },
+        { path: 'ok', label: 'OK', booleanDisplay: 'icon', emptyText: '—' },
+        { path: 'when', label: 'When', dataType: 'date', valueGetter: (item: any) => item.when },
+      ];
+      const grid = await createGrid({ columns, items });
+      const icon = cell(grid, 0, 1).querySelector('[role=img]') ?? cell(grid, 1, 1).querySelector('[role=img]');
+      expect(icon).not.toBeNull();
+
+      for (const language of ['pt', 'de', 'ar', 'en']) {
+        grid.language = language;
+        grid.dir = language === 'ar' ? 'rtl' : '';
+        await settle(grid);
+      }
+
+      grid.columns = columns.map(column => column.booleanDisplay ? { ...column, booleanDisplay: 'text' } : column);
+      await settle(grid);
+      grid.columns = columns;
+      await settle(grid);
+      grid.remove();
+      await settle(grid);
+
+      return track({ grid, items, item: items[0], columns, icon: icon! });
+    };
+
+    await expectCollected(await scenario());
   });
 });

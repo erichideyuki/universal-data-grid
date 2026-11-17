@@ -35,6 +35,7 @@ import './grid-column.js';
 
 export type {
   GridColumnAlignment,
+  GridColumnBooleanDisplay,
   GridColumnDataType,
   GridColumnDef,
   GridColumnFormat,
@@ -745,7 +746,7 @@ export class DataGrid extends LitElement {
       ${map(this._groupColumns, () => html`<td role="presentation" class="group-column"></td>`)}
       ${map(this.#columnViews, (view, index) => html`
         <td
-          class=${classMap({ ...view.classes, truncate: !view.column.wrap && !view.column.renderer })}
+          class=${classMap({ ...view.classes, truncate: !view.column.wrap && !view.column.renderer && view.column.booleanDisplay !== 'icon' })}
           role="gridcell"
           aria-colindex="${index + 1}">${renderDataCell(this, row, view.column, view.id, view.format)}</td>`)}
     `;

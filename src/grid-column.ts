@@ -3,6 +3,7 @@ import { customElement, property } from 'lit/decorators.js';
 
 import type {
   GridColumnAlignment,
+  GridColumnBooleanDisplay,
   GridColumnDataType,
   GridColumnDef,
   GridColumnFormat,
@@ -61,6 +62,7 @@ export class UmDataGridColumn extends LitElement implements GridColumnDef {
   @property() alignment: GridColumnAlignment | null = null;
   @property({ attribute: false }) valueGetter: ((item: any) => unknown) | null = null;
   @property({ attribute: false }) displayValue: ((value: unknown, item: any) => string) | null = null;
+  @property({ attribute: 'boolean-display' }) booleanDisplay: GridColumnBooleanDisplay | null = null;
   @property({ type: Boolean }) wrap = false;
   @property({ type: Number, attribute: 'min-width' }) minWidth: number | null = null;
   @property({ attribute: 'empty-text' }) emptyText: string | null = null;

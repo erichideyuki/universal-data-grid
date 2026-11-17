@@ -4,6 +4,9 @@ export type GridColumnDataType = 'string' | 'number' | 'date' | 'datetime' | 'bo
 /** Alinhamento lógico: `start`/`end` acompanham a direção (RTL). */
 export type GridColumnAlignment = 'start' | 'center' | 'end';
 
+/** Booleano como texto (`trueText`/`falseText`) ou ícone de check só leitura. */
+export type GridColumnBooleanDisplay = 'text' | 'icon';
+
 export type GridColumnFormatter = (value: unknown, item: any) => string;
 
 export type GridColumnFormat = Intl.NumberFormatOptions | Intl.DateTimeFormatOptions | GridColumnFormatter;
@@ -22,6 +25,8 @@ export interface GridColumnDef {
   valueGetter?: ((item: any) => unknown) | null;
   /** Texto exibido (célula e grupo); tem precedência sobre `format`. */
   displayValue?: ((value: unknown, item: any) => string) | null;
+  /** Booleano como texto (padrão) ou ícone; o ícone tem o texto como nome acessível. */
+  booleanDisplay?: GridColumnBooleanDisplay | null;
   /** Quebra o texto em várias linhas em vez de reticências. */
   wrap?: boolean;
   /** Texto para valor vazio (`null`/`undefined`). */

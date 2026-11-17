@@ -4,6 +4,7 @@ import type { GridColumnDataType, GridColumnDef } from '../grid-column-def.js';
 import { createComparer } from './compare.js';
 import { flattenRows } from './flatten.js';
 import {
+  booleanIconValue,
   type FormatContext,
   formatCell,
   formatCellValue,
@@ -241,5 +242,24 @@ describe('valueGetter e displayValue no agrupamento', () => {
 
   it('getCellValue prefere valueGetter a path', () => {
     expect(getCellValue({ a: 1 }, { path: 'a', valueGetter: () => 2 })).toBe(2);
+  });
+});
+
+describe('booleanIconValue', () => {
+  const icon: GridColumnDef = { booleanDisplay: 'icon' };
+
+  it('só em coluna boolean com booleanDisplay icon', () => {
+    expect(booleanIconValue(true, icon, ctx('en', 'boolean'))).toBe(true);
+    expect(booleanIconValue('false', icon, ctx('en', 'boolean'))).toBe(false);
+    expect(booleanIconValue(true, {}, ctx('en', 'boolean'))).toBeUndefined();
+    expect(booleanIconValue(true, { booleanDisplay: 'text' }, ctx('en', 'boolean'))).toBeUndefined();
+    expect(booleanIconValue(true, icon, ctx('en', 'string'))).toBeUndefined();
+  });
+
+  it('vazio, não booleano, displayValue e format função ficam em texto', () => {
+    expect(booleanIconValue(null, icon, ctx('en', 'boolean'))).toBeUndefined();
+    expect(booleanIconValue('maybe', icon, ctx('en', 'boolean'))).toBeUndefined();
+    expect(booleanIconValue(true, { ...icon, displayValue: () => 'x' }, ctx('en', 'boolean'))).toBeUndefined();
+    expect(booleanIconValue(true, { ...icon, format: () => 'x' }, ctx('en', 'boolean'))).toBeUndefined();
   });
 });

@@ -228,6 +228,8 @@ interface GridColumnDef {
   valueGetter?: ((item: any) => unknown) | null;
   /** Display text for a value; takes precedence over `format`. Also used in group rows. */
   displayValue?: ((value: unknown, item: any) => string) | null;
+  /** 'text' (default: trueText/falseText) or 'icon' (read-only check / cross). */
+  booleanDisplay?: GridColumnBooleanDisplay | null;
   /** Wrap long text over several lines instead of truncating with an ellipsis. */
   wrap?: boolean;
   /** Text shown for `null`/`undefined` values. Default: empty. */
@@ -278,7 +280,12 @@ grid.columns = [
 
 Display text is resolved in this order: `displayValue` → `emptyText` (for `null`/`undefined`) →
 `format` function → `format` options / type default. `Intl` formatters are cached per language and
-options. Invalid `format` options fall back to the type default instead of throwing.
+options (bounded LRU cache, so ever-changing options never grow memory). Invalid `format` options fall back to the type default instead of throwing.
+
+Boolean columns can show a read-only icon instead of text with `booleanDisplay: 'icon'` (a check for
+`true`, a cross for `false`). The icon's accessible name is the translated `trueText`/`falseText`, so
+screen readers announce the same text as in text mode. Empty values still use `emptyText`, group
+rows keep the text, and `displayValue` or a `format` function switch the column back to text.
 
 `alignment` is logical: `end` is the right edge in LTR and the left edge in RTL. The header follows
 the column alignment. Cells that do not wrap are truncated with an ellipsis and show the full text
@@ -289,6 +296,7 @@ Declaratively, primitive options are kebab-case attributes; functions and `forma
 ```html
 <u-grid-column path="createdAt" data-type="datetime" empty-text="—" min-width="160">Created</u-grid-column>
 <u-grid-column path="notes" alignment="center" wrap>Notes</u-grid-column>
+<u-grid-column path="active" boolean-display="icon">Active</u-grid-column>
 ```
 
 ---
@@ -590,7 +598,7 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. |
-| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `wrap`, `empty-text`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`; label = text content. |
+| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `boolean-display`, `wrap`, `empty-text`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -610,6 +618,7 @@ import {
   type GridColumnDef,
   type GridColumnDataType,  // 'string' | 'number' | 'date' | 'datetime' | 'boolean'
   type GridColumnAlignment, // 'start' | 'center' | 'end'
+  type GridColumnBooleanDisplay, // 'text' | 'icon'
   type GridColumnFormat,    // Intl options or (value, item) => string
   type GridColumnFormatter, // (value, item) => string
   type GridI18n,

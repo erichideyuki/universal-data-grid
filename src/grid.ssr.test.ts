@@ -60,4 +60,13 @@ describe('SSR', () => {
     expect(output).toContain('B: Wahr');
     expect(output).toContain('align-end');
   });
+
+  it('booleano como ícone renderiza no servidor com nome acessível', async () => {
+    const icon: GridColumnDef[] = [{ path: 'b', label: 'B', booleanDisplay: 'icon' }];
+    const output = await renderToString(html`
+      <u-grid language="de" .columns=${icon} .items=${[{ b: true }]}></u-grid>`);
+
+    expect(output).toContain('role="img"');
+    expect(output).toContain('aria-label="Wahr"');
+  });
 });

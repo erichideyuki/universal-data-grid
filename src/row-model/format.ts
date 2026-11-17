@@ -272,6 +272,22 @@ export const formatCellValue = (
   return toDisplayText(value);
 };
 
+/**
+ * Valor a desenhar como ícone (coluna `boolean` com `booleanDisplay:
+ * 'icon'`), ou `undefined` para exibir texto. `displayValue` e `format`
+ * função continuam mandando no texto; vazio segue `emptyText`.
+ */
+export const booleanIconValue = (value: unknown, column: GridColumnDef, context: FormatContext): boolean | undefined => {
+
+  if (column.booleanDisplay !== 'icon' || context.dataType !== 'boolean' || column.displayValue || typeof column.format === 'function') {
+    return undefined;
+  }
+
+  const coerced = coerceValue(value, 'boolean');
+
+  return typeof coerced === 'boolean' ? coerced : undefined;
+};
+
 /** Texto exibido da célula de `item` na coluna. */
 export const formatCell = (item: unknown, column: GridColumnDef, context: FormatContext): string =>
   formatCellValue(getCellValue(item, column), item, column, context);

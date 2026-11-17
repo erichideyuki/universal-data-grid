@@ -137,6 +137,15 @@ export const styles = css`
     text-align: end;
   }
 
+  .boolean-icon {
+    display: inline-flex;
+    vertical-align: middle;
+  }
+
+  .boolean-icon.false {
+    color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 60%), transparent);
+  }
+
   td.wrap {
     white-space: normal;
     overflow-wrap: anywhere;

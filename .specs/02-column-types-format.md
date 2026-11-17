@@ -20,6 +20,7 @@ AG Grid: `cellDataType`, `valueGetter`, `valueFormatter`.
 | `displayValue` | `(value, item) => string` | aplica `format` |
 | `wrap` | `boolean` | `false` (reticências com `title`) |
 | `minWidth` | `number` | — |
+| `booleanDisplay` | `'text' \| 'icon'` | `text` (aprovado pelo usuário depois da 1ª entrega) |
 
 - `format` usa `Intl.*` com o idioma efetivo do grid (o mesmo do i18n);
   formatadores em cache por `(language, options)`.
@@ -74,7 +75,8 @@ DevExtreme DataGrid 26.1.5 (grid criado na página da demo, 2026-11-17):
   RTL (decisão da spec).
 - Booleano: célula com checkbox só leitura (`null` = indeterminado); grupo
   mostra o texto (`G: true`/`G: false`). Nós: texto `trueText`/`falseText`
-  na célula e no grupo; o modo ícone fica pendente (precisa de API nova).
+  na célula e no grupo; com `booleanDisplay: 'icon'`, ícone check/x só
+  leitura na célula (nome acessível = `trueText`/`falseText`), grupo em texto.
 - Nulo: célula vazia.
 - Texto que não cabe: reticências e dica (`title`) só quando truncado
   (`cellHintEnabled`).
