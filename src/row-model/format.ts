@@ -1,4 +1,5 @@
 import type { GridColumnAlignment, GridColumnDataType, GridColumnDef } from '../grid-column-def.js';
+import { LruCache } from './lru.js';
 import { getCellValue, toDisplayText } from './value.js';
 
 // ------------------------------------------------------------------ valores
@@ -147,7 +148,16 @@ const DEFAULT_NUMBER: Intl.NumberFormatOptions = { useGrouping: false, maximumFr
 const DEFAULT_DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'numeric', day: 'numeric' };
 const DEFAULT_DATETIME: Intl.DateTimeFormatOptions = { ...DEFAULT_DATE, hour: 'numeric', minute: '2-digit' };
 
-const formatters = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>();
+/**
+ * Limite do cache de formatadores (spec 14): a chave inclui idioma e opções
+ * do hospedeiro, então sem limite cresceria com cada combinação nova.
+ */
+export const FORMATTER_CACHE_LIMIT = 128;
+
+const formatters = new LruCache<string, Intl.NumberFormat | Intl.DateTimeFormat>(FORMATTER_CACHE_LIMIT);
+
+/** Diagnóstico/testes de vazamento. */
+export const _formatterCacheSize = (): number => formatters.size;
 
 /**
  * Formatador `Intl` em cache por (idioma, opções). Idioma ou opções

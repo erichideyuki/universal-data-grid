@@ -5,13 +5,13 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
-import { repeat } from 'lit/directives/repeat.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { VirtualizerController } from '@tanstack/lit-virtual';
 import type { VirtualItem } from '@tanstack/virtual-core';
 
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
+import { releaseInteractions } from './features/drag-helper.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
 import type { GridColumnDataType, GridColumnDef } from './grid-column-def.js';
 import {
@@ -24,6 +24,7 @@ import {
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
 import { renderGroupRowCells } from './render/group-row.js';
+import { keyedRows } from './render/keyed-rows.js';
 import { createComparer } from './row-model/compare.js';
 import { flattenRows } from './row-model/flatten.js';
 import { type FormatContext, formatCellValue, resolveAlignment, resolveDataType } from './row-model/format.js';
@@ -132,6 +133,7 @@ export class DataGrid extends LitElement {
   set items(items: readonly any[] | null | undefined) {
     this.#items = items ?? [];
     this.#groupsDirty = true;
+    this.#itemsReplaced = true;
     this.#dataTypes.clear();
   }
 
@@ -139,6 +141,7 @@ export class DataGrid extends LitElement {
   #rows: Row[] = [];
   #groupsDirty = true;
   #rowsDirty = true;
+  #itemsReplaced = false;
   #modelLanguage: string | undefined;
   /** `dataType` efetivo (informado ou inferido dos itens) por coluna. */
   readonly #dataTypes = new Map<GridColumnDef, GridColumnDataType | undefined>();
@@ -274,23 +277,43 @@ export class DataGrid extends LitElement {
     return this.#columnDragAndDrop.size + this.#groupDragAndDrop.size;
   }
 
+  /**
+   * Tamanho dos registros internos que crescem com o uso (diagnóstico e
+   * testes de vazamento, spec 14). Num grid de vida longa têm de ficar
+   * estáveis.
+   */
+  get _memoryStats(): Record<string, number> {
+    const virtualizer = this.#virtualizerController.getVirtualizer();
+
+    return {
+      dragAndDrop: this._dragAndDropRegistrations,
+      measuredElements: virtualizer.elementsCache.size,
+      // privado no tipo do virtual-core; só leitura para diagnóstico
+      measuredSizes: (virtualizer as unknown as { itemSizeCache: Map<unknown, number> }).itemSizeCache.size,
+      dataTypes: this.#dataTypes.size,
+      expansion: this.#expansion.size,
+    };
+  }
+
   // ----------------------------------------------------------- ciclo de vida
 
   override connectedCallback() {
     super.connectedCallback();
     this.#readDeclarativeColumns();
-    this.#virtualizerController.hostConnected();
     this.#unobserveDocumentLanguage = observeDocumentLanguage(() => this.requestUpdate());
     this.#dragAndDropDirty = true;
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    this.#virtualizerController.hostDisconnected();
     this.#unobserveDocumentLanguage?.();
     this.#unobserveDocumentLanguage = undefined;
     this.#columnDragAndDrop.detach();
     this.#groupDragAndDrop.detach();
+    releaseInteractions(this);
+    // Arrasto interrompido (o `unset` para a interação sem o evento `end`):
+    // o fantasma não pode reaparecer se o grid for reconectado.
+    this.renderRoot?.querySelectorAll('.move-container').forEach(ghost => ghost.remove());
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -316,10 +339,26 @@ export class DataGrid extends LitElement {
       }
     }
 
+    // Alturas medidas são por chave de linha: com itens novos as chaves
+    // antigas nunca mais voltam (sem `keyExpr` a chave é o objeto) e o mapa
+    // cresceria a cada troca de `items`.
+    if (this.#itemsReplaced) {
+      this.#itemsReplaced = false;
+
+      if (this.#hasWrap) {
+        virtualizer.measure();
+      }
+    }
+
     if (this.#hasWrap) {
       this.renderRoot.querySelectorAll<HTMLElement>('tbody tr[data-index]')
         .forEach(row => virtualizer.measureElement(row));
     }
+
+    // O virtualizador guarda cada `<tr>` medida e só solta as que saíram do
+    // DOM quando chamado sem elemento: sem isso, rolar retém toda linha já
+    // vista (e os itens dela).
+    virtualizer.measureElement(null);
 
     if (
       this.#dragAndDropDirty
@@ -658,7 +697,7 @@ export class DataGrid extends LitElement {
     // início da 1ª linha virtual (vale também com alturas diferentes, `wrap`).
     const offset = virtualRows[0]?.start ?? 0;
 
-    return repeat(
+    return keyedRows(
       virtualRows,
       virtualRow => virtualRow.key,
       virtualRow => this.#renderRow(virtualRow, offset, this.#rows[virtualRow.index], headerRows),

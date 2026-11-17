@@ -1,9 +1,16 @@
 import type { GridColumnDataType } from '../grid-column-def.js';
 import { coerceValue } from './format.js';
+import { LruCache } from './lru.js';
 
 export type Comparer = (a: unknown, b: unknown) => number;
 
-const collators = new Map<string, Intl.Collator>();
+/** Limite do cache de collators por idioma (spec 14). */
+export const COLLATOR_CACHE_LIMIT = 32;
+
+const collators = new LruCache<string, Intl.Collator>(COLLATOR_CACHE_LIMIT);
+
+/** Diagnóstico/testes de vazamento. */
+export const _collatorCacheSize = (): number => collators.size;
 
 const getCollator = (language: string | undefined): Intl.Collator => {
   const key = language ?? '';

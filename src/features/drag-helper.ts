@@ -28,6 +28,68 @@ export class GridDragHelper {
   }
 }
 
+/** O que usamos das `Interaction`s internas do interactjs 1.10 (sem tipo público). */
+interface InteractionInternals {
+  interacting(): boolean;
+  destroy(): void;
+  element: unknown;
+  downEvent: { target?: unknown } | null;
+  downPointer: { target?: unknown } | null;
+  pointers: { downTarget?: unknown }[] | null;
+  _latestPointer: { eventTarget?: unknown } | null;
+}
+
+interface InteractScope {
+  interactions?: { list: InteractionInternals[] };
+  fire(name: string, arg: object): unknown;
+}
+
+const interactScope = (): InteractScope | undefined =>
+  (interact as unknown as { scope?: InteractScope }).scope;
+
+/** `node` está em `owner`, no light DOM ou dentro do shadow root dele. */
+const belongsTo = (node: unknown, owner: HTMLElement): boolean =>
+  node instanceof Node
+  && (owner.contains(node) || !!owner.shadowRoot?.contains(node));
+
+const referencesOwner = (interaction: InteractionInternals, owner: HTMLElement): boolean =>
+  [
+    interaction.element,
+    interaction.downEvent?.target,
+    interaction.downPointer?.target,
+    interaction._latestPointer?.eventTarget,
+    ...(interaction.pointers ?? []).map(pointer => pointer.downTarget),
+  ].some(node => belongsTo(node, owner));
+
+/**
+ * O interactjs guarda num array global (`scope.interactions.list`) a última
+ * `Interaction` de cada ponteiro, com o evento de `pointerdown` (alvo = o
+ * grid). Ela fica lá até o próximo `pointerdown` na página e segura o grid
+ * removido. Chamado no `disconnectedCallback`, depois do `unset` dos
+ * elementos: descarta as interações paradas que apontam para `owner` (o
+ * interactjs cria outra quando precisar).
+ */
+export const releaseInteractions = (owner: HTMLElement): void => {
+  const scope = interactScope();
+  const list = scope?.interactions?.list;
+
+  if (!scope || !list) {
+    return;
+  }
+
+  for (let i = list.length - 1; i >= 0; i--) {
+    const interaction = list[i];
+
+    if (interaction.interacting() || !referencesOwner(interaction, owner)) {
+      continue;
+    }
+
+    scope.fire('interactions:destroy', { interaction });
+    interaction.destroy();
+    list.splice(i, 1);
+  }
+};
+
 /**
  * Conjunto de elementos registrados no interactjs. Registrar de novo o mesmo
  * elemento não faz nada; elementos que saíram do DOM são soltos no `prune`.

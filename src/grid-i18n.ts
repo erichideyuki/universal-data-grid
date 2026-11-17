@@ -1,4 +1,4 @@
-import { ContextProvider, ContextRoot, createContext } from '@lit/context';
+import { type Context, type ContextCallback, ContextEvent, ContextProvider, createContext } from '@lit/context';
 
 /**
  * Set of user facing strings rendered by the grid. Column labels are provided
@@ -77,21 +77,95 @@ export const setGridTranslation = (language: string, translation: Partial<GridI1
   gridTranslations[key] = { ...base, ...translation };
 };
 
-/*
- * ContextRoot buffers unsatisfied context requests and re-dispatches them when
- * a matching provider shows up later. Without it, {@link setGridLanguage}
- * called after a grid is already connected would never reach that grid (its
- * context request bubbled before any provider existed). Attached once at
- * module load; guarded for SSR.
+/**
+ * Pedidos de context de idioma que ainda não têm provedor. Faz o papel do
+ * `ContextRoot` do @lit/context — sem ele, {@link setGridLanguage} chamado
+ * depois de o grid conectar nunca chegaria a esse grid — mas sem o
+ * vazamento dele: o `ContextRoot` empilha cada pedido sem provedor (um
+ * objeto e dois `WeakRef`s por grid conectado) e só esvazia quando aparece
+ * um provedor; numa página que cria e destrói grids sem `setGridLanguage`,
+ * cresce para sempre. Aqui só entra o context do grid, e pedidos de
+ * elementos coletados ou desconectados são descartados (o grid pede de novo
+ * ao reconectar). Spec 14.
  */
-const CONTEXT_ROOT_ATTACHED = Symbol.for('u-grid-context-root');
+class PendingLanguageRequests {
+  #requests: { element: WeakRef<Element>; callback: WeakRef<ContextCallback<unknown>> }[] = [];
+  #callbacks = new WeakSet<ContextCallback<unknown>>();
+  #pruneAt = PRUNE_MIN;
 
-// Uma só vez por página, mesmo com duas cópias do pacote carregadas.
-if (typeof document !== 'undefined' && !(window as unknown as Record<symbol, unknown>)[CONTEXT_ROOT_ATTACHED]) {
+  get size(): number {
+    return this.#requests.length;
+  }
 
-  (window as unknown as Record<symbol, unknown>)[CONTEXT_ROOT_ATTACHED] = true;
+  readonly onRequest = (event: ContextEvent<Context<unknown, unknown>>): void => {
+    if (event.context !== gridLanguageContext || event.subscribe !== true || this.#callbacks.has(event.callback)) {
+      return;
+    }
 
-  const attach = (): void => new ContextRoot().attach(document.body);
+    const element = event.contextTarget ?? event.composedPath()[0] as Element;
+
+    this.#callbacks.add(event.callback);
+    this.#requests.push({ element: new WeakRef(element), callback: new WeakRef(event.callback) });
+
+    if (this.#requests.length >= this.#pruneAt) {
+      this.#prune();
+      this.#pruneAt = Math.max(PRUNE_MIN, this.#requests.length * 2);
+    }
+  };
+
+  readonly onProvider = (event: Event): void => {
+    if ((event as Event & { context?: unknown }).context !== gridLanguageContext) {
+      return;
+    }
+
+    // Os que continuarem sem provedor voltam para a lista ao redespachar.
+    const requests = this.#requests;
+    this.#requests = [];
+    this.#callbacks = new WeakSet();
+    this.#pruneAt = PRUNE_MIN;
+
+    for (const request of requests) {
+      const element = request.element.deref();
+      const callback = request.callback.deref();
+
+      if (element?.isConnected && callback) {
+        element.dispatchEvent(new ContextEvent(gridLanguageContext, element, callback, true));
+      }
+    }
+  };
+
+  #prune(): void {
+    this.#requests = this.#requests.filter(request => {
+      const callback = request.callback.deref();
+      const keep = !!callback && !!request.element.deref()?.isConnected;
+
+      if (!keep && callback) {
+        this.#callbacks.delete(callback);
+      }
+
+      return keep;
+    });
+  }
+}
+
+/** Abaixo disso não vale limpar a lista. */
+const PRUNE_MIN = 16;
+
+const PENDING_REQUESTS = Symbol.for('u-grid-pending-language-requests');
+
+type WindowWithRequests = Record<symbol, PendingLanguageRequests | undefined>;
+
+// Uma só vez por página, mesmo com duas cópias do pacote carregadas (o
+// context usa `Symbol.for`, então uma lista serve às duas).
+if (typeof document !== 'undefined' && !(window as unknown as WindowWithRequests)[PENDING_REQUESTS]) {
+
+  const pending = new PendingLanguageRequests();
+  (window as unknown as WindowWithRequests)[PENDING_REQUESTS] = pending;
+
+  const attach = (): void => {
+    document.body.addEventListener('context-request', pending.onRequest);
+    document.body.addEventListener('context-provider', pending.onProvider);
+  };
 
   if (document.body) {
     attach();
@@ -99,6 +173,10 @@ if (typeof document !== 'undefined' && !(window as unknown as Record<symbol, unk
     document.addEventListener('DOMContentLoaded', attach, { once: true });
   }
 }
+
+/** Quantos pedidos de idioma esperam provedor (diagnóstico/testes, spec 14). */
+export const _pendingLanguageRequests = (): number =>
+  typeof window === 'undefined' ? 0 : (window as unknown as WindowWithRequests)[PENDING_REQUESTS]?.size ?? 0;
 
 const languageProviders = new WeakMap<HTMLElement, ContextProvider<typeof gridLanguageContext>>();
 

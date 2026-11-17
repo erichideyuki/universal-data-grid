@@ -379,12 +379,12 @@
           "type": {
             "text": "Record<string, GridI18n>"
           },
-          "description": "Built-in translations keyed by lowercase language code. Region specific\r\nentries (e.g. `pt-br`) can be added through setGridTranslation and\r\ntake precedence over their base language.\r\n\r\nObjeto sem protótipo: `language=\"constructor\"` ou\r\n`setGridTranslation('__proto__', …)` não alcançam `Object.prototype`."
+          "description": "Built-in translations keyed by lowercase language code. Region specific\nentries (e.g. `pt-br`) can be added through setGridTranslation and\ntake precedence over their base language.\n\nObjeto sem protótipo: `language=\"constructor\"` ou\n`setGridTranslation('__proto__', …)` não alcançam `Object.prototype`."
         },
         {
           "kind": "variable",
           "name": "gridLanguageContext",
-          "description": "Lit context carrying the default language for every grid in the subtree.\r\nUses a shared symbol so duplicate module copies resolve to the same context."
+          "description": "Lit context carrying the default language for every grid in the subtree.\nUses a shared symbol so duplicate module copies resolve to the same context."
         },
         {
           "kind": "function",
@@ -403,7 +403,7 @@
               }
             }
           ],
-          "description": "Resolves the translation for a language code, falling back to the base\r\nlanguage and finally to DEFAULT_GRID_LANGUAGE."
+          "description": "Resolves the translation for a language code, falling back to the base\nlanguage and finally to DEFAULT_GRID_LANGUAGE."
         },
         {
           "kind": "function",
@@ -427,7 +427,17 @@
               }
             }
           ],
-          "description": "Overrides part (or all) of a built-in translation. Missing keys keep their\r\nprevious value, so a partial object is enough."
+          "description": "Overrides part (or all) of a built-in translation. Missing keys keep their\nprevious value, so a partial object is enough."
+        },
+        {
+          "kind": "function",
+          "name": "_pendingLanguageRequests",
+          "return": {
+            "type": {
+              "text": "number"
+            }
+          },
+          "description": "Quantos pedidos de idioma esperam provedor (diagnóstico/testes, spec 14)."
         },
         {
           "kind": "function",
@@ -452,7 +462,7 @@
               }
             }
           ],
-          "description": "Provides a default language through Lit context on `host` (the document body\r\nby default). Every grid without an explicit `language` inherits this value."
+          "description": "Provides a default language through Lit context on `host` (the document body\nby default). Every grid without an explicit `language` inherits this value."
         },
         {
           "kind": "function",
@@ -470,7 +480,7 @@
               }
             }
           ],
-          "description": "Avisa quando o `lang` do `<html>` muda. Um único `MutationObserver` serve a\r\ntodos os grids da página. Devolve a função que cancela a inscrição."
+          "description": "Avisa quando o `lang` do `<html>` muda. Um único `MutationObserver` serve a\ntodos os grids da página. Devolve a função que cancela a inscrição."
         }
       ],
       "exports": [
@@ -511,6 +521,14 @@
           "name": "setGridTranslation",
           "declaration": {
             "name": "setGridTranslation",
+            "module": "src/grid-i18n.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "_pendingLanguageRequests",
+          "declaration": {
+            "name": "_pendingLanguageRequests",
             "module": "src/grid-i18n.ts"
           }
         },
@@ -627,6 +645,15 @@
             },
             {
               "kind": "field",
+              "name": "#itemsReplaced",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
               "name": "#modelLanguage",
               "privacy": "private",
               "type": {
@@ -723,7 +750,7 @@
               "type": {
                 "text": "GridColumnDef[]"
               },
-              "description": "Definições de coluna. Por propriedade têm precedência sobre os\r\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
+              "description": "Definições de coluna. Por propriedade têm precedência sobre os\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
             },
             {
               "kind": "field",
@@ -857,7 +884,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Language used to resolve the built-in translations. When not set on the\r\ncomponent it is resolved, in order, from the Lit context, the document\r\n(`<html lang>` / content-language meta) and finally the browser.",
+              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
               "attribute": "language"
             },
             {
@@ -942,6 +969,15 @@
               "readonly": true
             },
             {
+              "kind": "field",
+              "name": "_memoryStats",
+              "type": {
+                "text": "Record<string, number>"
+              },
+              "description": "Tamanho dos registros internos que crescem com o uso (diagnóstico e\ntestes de vazamento, spec 14). Num grid de vida longa têm de ficar\nestáveis.",
+              "readonly": true
+            },
+            {
               "kind": "method",
               "name": "groupColumn",
               "return": {
@@ -1009,7 +1045,7 @@
                   }
                 }
               ],
-              "description": "Chamado por `<u-grid-column>` quando uma propriedade muda: `value` =\r\nmuda o valor das células (`path`, `valueGetter`, `dataType`); `display`\r\n= só a exibição."
+              "description": "Chamado por `<u-grid-column>` quando uma propriedade muda: `value` =\nmuda o valor das células (`path`, `valueGetter`, `dataType`); `display`\n= só a exibição."
             },
             {
               "kind": "field",
@@ -1026,7 +1062,7 @@
                   "text": "void"
                 }
               },
-              "description": "Concilia as definições com a ordem atual: colunas já conhecidas mantêm a\r\nposição e o agrupamento escolhidos pelo usuário; novas entram pelo\r\n`groupIndex` (inicial) ou na posição da definição."
+              "description": "Concilia as definições com a ordem atual: colunas já conhecidas mantêm a\nposição e o agrupamento escolhidos pelo usuário; novas entram pelo\n`groupIndex` (inicial) ou na posição da definição."
             },
             {
               "kind": "method",
@@ -1175,7 +1211,7 @@
               "name": "#updateCellHint",
               "privacy": "private",
               "readonly": true,
-              "description": "Dica com o texto completo só na célula truncada (reticências), calculada\r\nao passar o mouse — medir todas as células a cada render custaria caro."
+              "description": "Dica com o texto completo só na célula truncada (reticências), calculada\nao passar o mouse — medir todas as células a cada render custaria caro."
             },
             {
               "kind": "field",
@@ -1275,7 +1311,7 @@
                   "text": "void"
                 }
               },
-              "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\r\nquando colunas/painéis mudam (não a cada render de rolagem) e é\r\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\r\nsaíram do DOM são soltos."
+              "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\nquando colunas/painéis mudam (não a cada render de rolagem) e é\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\nsaíram do DOM são soltos."
             }
           ],
           "attributes": [
@@ -1364,7 +1400,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Language used to resolve the built-in translations. When not set on the\r\ncomponent it is resolved, in order, from the Lit context, the document\r\n(`<html lang>` / content-language meta) and finally the browser.",
+              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
               "fieldName": "language"
             }
           ],
@@ -1580,6 +1616,24 @@
           ]
         },
         {
+          "kind": "function",
+          "name": "releaseInteractions",
+          "return": {
+            "type": {
+              "text": "void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "owner",
+              "type": {
+                "text": "HTMLElement"
+              }
+            }
+          ],
+          "description": "O interactjs guarda num array global (`scope.interactions.list`) a última\n`Interaction` de cada ponteiro, com o evento de `pointerdown` (alvo = o\ngrid). Ela fica lá até o próximo `pointerdown` na página e segura o grid\nremovido. Chamado no `disconnectedCallback`, depois do `unset` dos\nelementos: descarta as interações paradas que apontam para `owner` (o\ninteractjs cria outra quando precisar)."
+        },
+        {
           "kind": "class",
           "description": "Conjunto de elementos registrados no interactjs. Registrar de novo o mesmo\nelemento não faz nada; elementos que saíram do DOM são soltos no `prune`.",
           "name": "InteractRegistry",
@@ -1644,6 +1698,14 @@
           "name": "GridDragHelper",
           "declaration": {
             "name": "GridDragHelper",
+            "module": "src/features/drag-helper.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "releaseInteractions",
+          "declaration": {
+            "name": "releaseInteractions",
             "module": "src/features/drag-helper.ts"
           }
         },
@@ -2001,8 +2063,48 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/render/keyed-rows.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "keyedRows",
+          "default": "directive(KeyedRowsDirective)"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "keyedRows",
+          "declaration": {
+            "name": "keyedRows",
+            "module": "src/render/keyed-rows.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/row-model/compare.ts",
       "declarations": [
+        {
+          "kind": "variable",
+          "name": "COLLATOR_CACHE_LIMIT",
+          "type": {
+            "text": "number"
+          },
+          "default": "32",
+          "description": "Limite do cache de collators por idioma (spec 14)."
+        },
+        {
+          "kind": "function",
+          "name": "_collatorCacheSize",
+          "return": {
+            "type": {
+              "text": "number"
+            }
+          },
+          "description": "Diagnóstico/testes de vazamento."
+        },
         {
           "kind": "function",
           "name": "createComparer",
@@ -2031,6 +2133,22 @@
         }
       ],
       "exports": [
+        {
+          "kind": "js",
+          "name": "COLLATOR_CACHE_LIMIT",
+          "declaration": {
+            "name": "COLLATOR_CACHE_LIMIT",
+            "module": "src/row-model/compare.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "_collatorCacheSize",
+          "declaration": {
+            "name": "_collatorCacheSize",
+            "module": "src/row-model/compare.ts"
+          }
+        },
         {
           "kind": "js",
           "name": "createComparer",
@@ -2113,7 +2231,7 @@
               }
             }
           ],
-          "description": "Converte para `Date`: `Date` válida, número (epoch em ms) ou string ISO.\r\nData sem hora (`2024-03-05`) é meia-noite LOCAL — `new Date()` a leria\r\ncomo UTC e o dia \"andaria\" a oeste de Greenwich. Datas que transbordam\r\n(`2024-02-30`) são inválidas, não 1º de março."
+          "description": "Converte para `Date`: `Date` válida, número (epoch em ms) ou string ISO.\nData sem hora (`2024-03-05`) é meia-noite LOCAL — `new Date()` a leria\ncomo UTC e o dia \"andaria\" a oeste de Greenwich. Datas que transbordam\n(`2024-02-30`) são inválidas, não 1º de março."
         },
         {
           "kind": "function",
@@ -2179,7 +2297,7 @@
               }
             }
           ],
-          "description": "`dataType` da coluna: o informado ou o tipo do 1º valor não nulo (como o\r\nDevExtreme). String ISO não vira data por inferência — só com `dataType`."
+          "description": "`dataType` da coluna: o informado ou o tipo do 1º valor não nulo (como o\nDevExtreme). String ISO não vira data por inferência — só com `dataType`."
         },
         {
           "kind": "function",
@@ -2203,6 +2321,25 @@
               }
             }
           ]
+        },
+        {
+          "kind": "variable",
+          "name": "FORMATTER_CACHE_LIMIT",
+          "type": {
+            "text": "number"
+          },
+          "default": "128",
+          "description": "Limite do cache de formatadores (spec 14): a chave inclui idioma e opções\ndo hospedeiro, então sem limite cresceria com cada combinação nova."
+        },
+        {
+          "kind": "function",
+          "name": "_formatterCacheSize",
+          "return": {
+            "type": {
+              "text": "number"
+            }
+          },
+          "description": "Diagnóstico/testes de vazamento."
         },
         {
           "kind": "function",
@@ -2292,7 +2429,7 @@
               }
             }
           ],
-          "description": "Texto exibido de um valor, na ordem: `displayValue` → vazio (`emptyText`)\r\n→ `format` função → `format` `Intl` / padrão do tipo. Valor que não\r\nconverte no tipo (string que não é data) sai como texto bruto."
+          "description": "Texto exibido de um valor, na ordem: `displayValue` → vazio (`emptyText`)\n→ `format` função → `format` `Intl` / padrão do tipo. Valor que não\nconverte no tipo (string que não é data) sai como texto bruto."
         },
         {
           "kind": "function",
@@ -2363,6 +2500,22 @@
           "name": "resolveAlignment",
           "declaration": {
             "name": "resolveAlignment",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "FORMATTER_CACHE_LIMIT",
+          "declaration": {
+            "name": "FORMATTER_CACHE_LIMIT",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "_formatterCacheSize",
+          "declaration": {
+            "name": "_formatterCacheSize",
             "module": "src/row-model/format.ts"
           }
         },
@@ -2442,6 +2595,94 @@
           "declaration": {
             "name": "buildGroups",
             "module": "src/row-model/group.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/lru.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "Cache com limite de entradas (descarta a usada há mais tempo). Para caches\nde módulo cujas chaves vêm do hospedeiro (idioma, opções de formato): sem\nlimite, cresceriam a cada idioma/opção nova enquanto a página viver.",
+          "name": "LruCache",
+          "members": [
+            {
+              "kind": "field",
+              "name": "#entries",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new Map<K, V>()"
+            },
+            {
+              "kind": "field",
+              "name": "#limit",
+              "privacy": "private",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true,
+              "default": "limit"
+            },
+            {
+              "kind": "field",
+              "name": "size",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "method",
+              "name": "get",
+              "return": {
+                "type": {
+                  "text": "V | undefined"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "key",
+                  "type": {
+                    "text": "K"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "set",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "key",
+                  "type": {
+                    "text": "K"
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": {
+                    "text": "V"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "LruCache",
+          "declaration": {
+            "name": "LruCache",
+            "module": "src/row-model/lru.ts"
           }
         }
       ]
