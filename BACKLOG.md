@@ -37,7 +37,9 @@ testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
 7. **Testes** — unitários do row model, de componente no navegador (Vitest
    browser), SSR (renderiza no `@lit-labs/ssr` sem erro) e conferência manual
    no demo (`npm run dev`) em `en`, `pt` e `ar` (RTL). Suíte verde, lint e
-   `tsc` limpos.
+   `tsc` limpos. Todo listener/observer/timer/cache global novo libera no
+   `disconnectedCallback` (ou é limitado) e ganha teste de vazamento com
+   `src/test/leak.ts` (spec 14).
 8. **Docs** — README (seção do recurso + API reference) e
    `custom-elements.json` (`npm run analyze`).
 9. **Entrega** — commits no branch da frente, `git rebase main`, testes de
@@ -119,16 +121,17 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
+| Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | em curso |
 
 ### Fase A — o dia a dia de qualquer grid
 
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
-| Tipos e formatação | `02-column-types-format.md` | `dataType`, `format` (Intl), alinhamento, `calculateCellValue`, quebra de texto | — |
-| Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | — |
+| Tipos e formatação | `02-column-types-format.md` | `dataType`, `format` (Intl), alinhamento, `calculateCellValue`, quebra de texto | feito |
+| Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | em curso |
 | Filtro | `04-filtering.md` | linha de filtro, painel de busca, filtro no cabeçalho, API de expressão de filtro | — |
 | Seleção e teclado | `05-selection-keyboard-a11y.md` | foco de célula, navegação por teclado, seleção única/múltipla, caixa de seleção, ARIA completo, teclado para agrupar/reordenar | — |
-| Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | — |
+| Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | em curso |
 
 ### Fase B — dados de verdade
 

@@ -53,6 +53,14 @@ anota o que mediu na própria spec (seção "Referência medida").
 - Demo: `npm run dev` (dados sintéticos; `?rows=100000`, `?remote` para a API
   countriesnow.space).
 - Bug corrigido entra com teste que falhava antes.
+- **Memória (regra permanente, spec 14)**: todo recurso que registra
+  listener, observer, timer, registro em biblioteca (interactjs, context) ou
+  cache de módulo precisa liberar no `disconnectedCallback` — ou ser
+  limitado (`LruCache` em `src/row-model/lru.ts`) — e ter teste de vazamento
+  no navegador com `src/test/leak.ts` (`expectCollected`, `measureHeap`):
+  grid usado com o recurso e removido é coletado, e o uso repetido num grid
+  de vida longa não cresce. Inventário do que já existe em
+  `.specs/14-memory.md`.
 
 ## Segurança e dependências
 
