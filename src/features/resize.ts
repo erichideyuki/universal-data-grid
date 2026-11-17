@@ -271,19 +271,7 @@ export class ColumnResizeController {
       return;
     }
 
-    this.#session = undefined;
-
-    const { handle } = session;
-    handle.removeEventListener('pointermove', this.#pointerMove);
-    handle.removeEventListener('pointerup', this.#pointerUp);
-    handle.removeEventListener('pointercancel', this.#pointerUp);
-    handle.removeEventListener('lostpointercapture', this.#pointerUp);
-
-    if (handle.hasPointerCapture(event.pointerId)) {
-      handle.releasePointerCapture(event.pointerId);
-    }
-
-    this.#host._setResizing(false);
+    this.#release(session);
 
     if (event.type === 'pointercancel') {
       // Cancelado pelo navegador: volta às larguras do começo.
@@ -292,4 +280,30 @@ export class ColumnResizeController {
       this.#apply(session.column, session.start, session.delta, session.next, session.startNext, true);
     }
   };
+
+  /**
+   * Grid desconectado no meio de um arrasto: solta os listeners da alça e as
+   * referências às colunas, mantendo a largura já aplicada (sem evento).
+   */
+  cancel(): void {
+    if (this.#session) {
+      this.#release(this.#session);
+    }
+  }
+
+  #release(session: ResizeSession): void {
+    this.#session = undefined;
+
+    const { handle, pointerId } = session;
+    handle.removeEventListener('pointermove', this.#pointerMove);
+    handle.removeEventListener('pointerup', this.#pointerUp);
+    handle.removeEventListener('pointercancel', this.#pointerUp);
+    handle.removeEventListener('lostpointercapture', this.#pointerUp);
+
+    if (handle.hasPointerCapture(pointerId)) {
+      handle.releasePointerCapture(pointerId);
+    }
+
+    this.#host._setResizing(false);
+  }
 }

@@ -477,6 +477,8 @@ export class DataGrid extends LitElement implements ResizeHost {
   }
 
   override disconnectedCallback() {
+    // Antes do super: ele solta os refs (o contêiner) dos diretivos.
+    this.#resize.cancel();
     super.disconnectedCallback();
     this.#unobserveDocumentLanguage?.();
     this.#unobserveDocumentLanguage = undefined;

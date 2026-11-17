@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { calcCursorRelativePosition, RelativePosition } from './features/drop-position.js';
 import type { GridColumnDef } from './grid-column-def.js';
@@ -464,5 +464,42 @@ describe('<u-grid-column> declarativo', () => {
     c.visible = true;
     await settle(grid);
     expect(headerLabels(grid)).toEqual(['B', 'A', 'C', 'D']);
+  });
+});
+
+describe('desconectar solta o que foi registrado', () => {
+  it('no meio de um arrasto: alça sem listeners e grid sem estado de redimensionar', async () => {
+    const grid = await createGrid({ columns: columnsOf(2), items: [rowOf(2)], configure: g => g.columnResizing = true });
+    const handle = handles(grid)[0];
+    const rect = handle.getBoundingClientRect();
+    const init = { bubbles: true, composed: true, pointerId: 9, button: 0, clientY: rect.top + 2 };
+
+    handle.dispatchEvent(new PointerEvent('pointerdown', { ...init, clientX: rect.left }));
+    handle.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: rect.left + 30 }));
+    await settle(grid);
+    expect(root(grid).querySelector('.container')!.classList.contains('resizing')).toBe(true);
+
+    grid.remove();
+    document.body.append(grid);
+    await settle(grid);
+
+    const widthAfter = widths(grid)[0];
+    handle.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: rect.left + 200 }));
+    await settle(grid);
+
+    expect(widths(grid)[0]).toBe(widthAfter);
+    expect(root(grid).querySelector('.container')!.classList.contains('resizing')).toBe(false);
+  });
+
+  it('com o seletor aberto: tira o listener do document', async () => {
+    const grid = await createGrid({ columns: [{ path: 'a', label: 'A' }], items: [{}] });
+    grid.showColumnChooser();
+    await settle(grid);
+
+    const remove = vi.spyOn(document, 'removeEventListener');
+    grid.remove();
+
+    expect(remove).toHaveBeenCalledWith('pointerdown', expect.any(Function), true);
+    remove.mockRestore();
   });
 });
