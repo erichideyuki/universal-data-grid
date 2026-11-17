@@ -27,6 +27,21 @@ const columns: GridColumnDef[] = [
     path: 'population',
     label: 'Population',
     width: 220,
+    dataType: 'number',
+    format: { maximumFractionDigits: 0 },
+  },
+  {
+    path: 'updatedAt',
+    label: 'Updated',
+    width: 220,
+    dataType: 'datetime',
+    emptyText: '—',
+  },
+  {
+    path: 'official',
+    label: 'Official',
+    width: 140,
+    dataType: 'boolean',
   },
 ];
 

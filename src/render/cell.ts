@@ -2,8 +2,8 @@ import { html, type TemplateResult } from 'lit';
 
 import type { GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
+import { formatCell, type FormatContext } from '../row-model/format.js';
 import type { DataRow } from '../row-model/types.js';
-import { getCellValue, toDisplayText } from '../row-model/value.js';
 
 import '../grid-custom-cell.js';
 
@@ -18,10 +18,11 @@ export const renderDataCell = (
   row: DataRow,
   column: GridColumnDef,
   columnId: number,
+  format: FormatContext,
 ): TemplateResult | string => {
 
   if (!column.renderer) {
-    return toDisplayText(getCellValue(row.item, column));
+    return formatCell(row.item, column, format);
   }
 
   const slotName = `cell:${row.key}:${columnId}`;

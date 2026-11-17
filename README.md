@@ -18,6 +18,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Quick start](#quick-start)
 - [Use in the browser (no build step)](#use-in-the-browser-no-build-step)
 - [Defining columns](#defining-columns)
+- [Data types & formatting](#data-types--formatting)
 - [Grouping](#grouping)
 - [Custom cell rendering](#custom-cell-rendering)
 - [Internationalization (i18n)](#internationalization-i18n)
@@ -36,6 +37,8 @@ React, Vue, Svelte — or with no framework at all.
   the grid stays responsive with very large datasets.
 - **Grouping** — group by one or more columns, with expand/collapse, multi-level nesting and an
   optional auto-expand mode. Group interactively by dragging a column header into the header bar.
+- **Data types & formatting** — number, date, date-time and boolean columns formatted with `Intl`
+  in the grid's language, with per-column `format`, `alignment`, computed values and empty text.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
   area.
 - **Custom cell renderers** — return any `HTMLElement` per column to fully control a cell.
@@ -216,14 +219,82 @@ interface GridColumnDef {
   label?: string;
   /** Fixed column width in pixels. Omit for auto width. */
   width?: number | null;
+  /** Minimum column width in pixels. */
+  minWidth?: number | null;
   /** When set, the column becomes a grouping column at this (0-based) order. */
   groupIndex?: number | null;
+  /** 'string' | 'number' | 'date' | 'datetime' | 'boolean'. Inferred when omitted. */
+  dataType?: GridColumnDataType | null;
+  /** Intl.NumberFormat / Intl.DateTimeFormat options, or (value, item) => string. */
+  format?: GridColumnFormat | null;
+  /** 'start' | 'center' | 'end' (logical: follows the text direction). */
+  alignment?: GridColumnAlignment | null;
+  /** Computes the cell value; used for display, grouping (and later sorting/filtering). */
+  valueGetter?: ((item: any) => unknown) | null;
+  /** Display text for a value; takes precedence over `format`. Also used in group rows. */
+  displayValue?: ((value: unknown, item: any) => string) | null;
+  /** Wrap long text over several lines instead of truncating with an ellipsis. */
+  wrap?: boolean;
+  /** Text shown for `null`/`undefined` values. Default: empty. */
+  emptyText?: string | null;
   /** Custom cell renderer — see "Custom cell rendering". */
   renderer?: ((item: any) => HTMLElement) | null;
 }
 ```
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
+
+---
+
+## Data types & formatting
+
+Each column has a data type. Set it with `dataType`, or let the grid infer it from the first
+non-null value (`number`/`bigint` → `number`, `boolean` → `boolean`, `Date` → `date`, anything else
+→ `string`). ISO strings are **not** inferred as dates — declare `dataType: 'date'` for them.
+
+| `dataType` | Accepted values | Default display | Default `alignment` |
+| ---------- | --------------- | --------------- | ------------------- |
+| `string` | anything | the value as text | `start` |
+| `number` | `number`, `bigint`, numeric strings | `Intl.NumberFormat` without grouping (`1234.5`, `1234,5` in `de`) | `end` |
+| `date` | `Date`, epoch milliseconds, ISO strings | numeric date (`1/15/2024`, `15.1.2024`) | `start` |
+| `datetime` | same as `date` | numeric date + hours:minutes | `start` |
+| `boolean` | `true` / `false` | translated `trueText` / `falseText` | `center` |
+
+Formatting uses the grid's effective `language` (the same one used for the built-in strings), so
+switching `language` reformats every cell. Values that cannot be converted to the column type
+(for example `"not a date"` in a `date` column) are shown as-is. ISO dates without a time
+(`"2024-03-05"`) are read as local dates, so the day never shifts with the time zone.
+
+```ts
+grid.columns = [
+  { path: 'name', label: 'Name' },
+  // Intl.NumberFormat options (these replace the default, so grouping is back on).
+  { path: 'price', label: 'Price', format: { style: 'currency', currency: 'EUR' } },
+  { path: 'createdAt', label: 'Created', dataType: 'datetime', emptyText: '—' },
+  { path: 'birthday', label: 'Birthday', dataType: 'date', format: { day: 'numeric', month: 'long' } },
+  { path: 'active', label: 'Active' }, // inferred boolean → "True"/"False" (translated)
+  // Computed value: also what the grid groups by.
+  { label: 'Total', valueGetter: (o) => o.price * o.quantity, format: { maximumFractionDigits: 2 } },
+  // Full control over the text (cells and group rows).
+  { path: 'status', label: 'Status', displayValue: (value, item) => `${value} (${item.owner})` },
+  { path: 'notes', label: 'Notes', wrap: true, minWidth: 200 },
+];
+```
+
+Display text is resolved in this order: `displayValue` → `emptyText` (for `null`/`undefined`) →
+`format` function → `format` options / type default. `Intl` formatters are cached per language and
+options. Invalid `format` options fall back to the type default instead of throwing.
+
+`alignment` is logical: `end` is the right edge in LTR and the left edge in RTL. The header follows
+the column alignment. Cells that do not wrap are truncated with an ellipsis and show the full text
+as a tooltip (`title`) when hovered.
+
+Declaratively, primitive options are kebab-case attributes; functions and `format` are properties:
+
+```html
+<u-grid-column path="createdAt" data-type="datetime" empty-text="—" min-width="160">Created</u-grid-column>
+<u-grid-column path="notes" alignment="center" wrap>Notes</u-grid-column>
+```
 
 ---
 
@@ -377,6 +448,8 @@ interface GridI18n {
   noData: string;              // empty-state message
   dragToGroup: string;         // hint shown when nothing is grouped
   groupLabelSeparator: string; // between a group's column label and its value
+  trueText: string;            // `true` in boolean columns
+  falseText: string;           // `false` in boolean columns
 }
 ```
 
@@ -522,7 +595,7 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` in an effect.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. |
-| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `group-index`; property: `renderer`; label = text content. |
+| `<u-grid-column>` | Declarative column. Attributes: `path`, `width`, `min-width`, `group-index`, `data-type`, `alignment`, `wrap`, `empty-text`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -540,6 +613,10 @@ import {
   setGridTranslation,  // (language, Partial<GridI18n>) => void — override/add strings
   gridLanguageContext, // Lit context key (advanced: custom providers)
   type GridColumnDef,
+  type GridColumnDataType,  // 'string' | 'number' | 'date' | 'datetime' | 'boolean'
+  type GridColumnAlignment, // 'start' | 'center' | 'end'
+  type GridColumnFormat,    // Intl options or (value, item) => string
+  type GridColumnFormatter, // (value, item) => string
   type GridI18n,
 } from '@universal-material/data-grid';
 ```

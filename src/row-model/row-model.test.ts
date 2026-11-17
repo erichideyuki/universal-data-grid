@@ -7,6 +7,7 @@ import { buildGroups } from './group.js';
 import { getValueByPath } from './value.js';
 
 const compare = createComparer('en');
+const byColumn = () => compare;
 const col = (path?: string, label = path): GridColumnDef => ({ path, label });
 
 describe('getValueByPath', () => {
@@ -68,29 +69,29 @@ describe('buildGroups', () => {
       { a: 'x', b: 'p' },
     ]);
 
-    const groups = buildGroups(items, [col('a'), col('b')], compare);
+    const groups = buildGroups(items, [col('a'), col('b')], byColumn);
 
     expect(groups.map(g => g.value)).toEqual(['x', 'y']);
     expect(groups[0].children.map(g => [g.value, g.items.length])).toEqual([['p', 2], ['q', 1]]);
   });
 
   it('itens vazios ou sem colunas de grupo', () => {
-    expect(buildGroups([], [col('a')], compare)).toEqual([]);
-    expect(buildGroups([{ a: 1 }], [], compare)).toEqual([]);
+    expect(buildGroups([], [col('a')], byColumn)).toEqual([]);
+    expect(buildGroups([{ a: 1 }], [], byColumn)).toEqual([]);
   });
 
   it('coluna sem path agrupa tudo como vazio (B7)', () => {
-    const groups = buildGroups([{ a: 1 }, { a: 2 }], [col(undefined, 'Actions')], compare);
+    const groups = buildGroups([{ a: 1 }, { a: 2 }], [col(undefined, 'Actions')], byColumn);
     expect(groups).toHaveLength(1);
     expect(groups[0].value).toBeUndefined();
     expect(groups[0].items).toHaveLength(2);
   });
 
   it('1 e "1" são grupos diferentes; chaves estáveis e únicas', () => {
-    const groups = buildGroups([{ a: 1 }, { a: '1' }], [col('a')], compare);
+    const groups = buildGroups([{ a: 1 }, { a: '1' }], [col('a')], byColumn);
     expect(groups).toHaveLength(2);
     expect(new Set(groups.map(g => g.key)).size).toBe(2);
-    expect(buildGroups([{ a: 1 }], [col('a')], compare)[0].key).toBe(groups[0].key);
+    expect(buildGroups([{ a: 1 }], [col('a')], byColumn)[0].key).toBe(groups[0].key);
   });
 });
 
@@ -104,7 +105,7 @@ describe('flattenRows', () => {
 
   it('respeita a expansão por chave e reinicia o índice em cada grupo', () => {
     const items = [{ id: 1, g: 'a' }, { id: 2, g: 'b' }, { id: 3, g: 'b' }];
-    const groups = buildGroups(items, [col('g')], compare);
+    const groups = buildGroups(items, [col('g')], byColumn);
     const expanded = new Set([groups[1].key]);
 
     const rows = flattenRows(items, groups, key => expanded.has(key), keyOf);

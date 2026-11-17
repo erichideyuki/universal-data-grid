@@ -55,4 +55,26 @@ Demo com colunas de número, data e booleano formatadas trocando o idioma ao
 vivo.
 
 ## Referência medida
-(preencher)
+DevExtreme DataGrid 26.1.5 (grid criado na página da demo, 2026-11-17):
+- `dataType` inferido do 1º valor não nulo (coluna com `null` na 1ª linha e
+  número na 2ª vira `number`). `Date` → `date`; string ISO NÃO vira data
+  (fica `string`); `dataType: 'date'` explícito aceita string ISO.
+- String inválida numa coluna `date` aparece como texto bruto
+  (`"not a date"`); `"2024-02-30"` vira 1/3/2024 (nós: texto bruto — data
+  que "transborda" é inválida).
+- Número sem `format`: valor cru, sem separador de milhar (`1000000`,
+  `1234.5`, também em `de`). Nós: `Intl.NumberFormat` sem agrupamento —
+  mesmo visual, mas com o separador decimal do idioma (`1234,5` em `de`);
+  com `format` informado valem os padrões do `Intl` (com milhar).
+- `date`: dia/mês/ano numérico com ano de 4 dígitos (`1/15/2024`,
+  `15.1.2024`); `datetime`: + hora:minuto (`15.1.2024, 13:05`).
+- Alinhamento: número à direita, booleano ao centro, resto à esquerda; o
+  cabeçalho segue a coluna. Em RTL o DevExtreme deixa tudo à direita (inclusive
+  número); nós usamos `start`/`end` lógicos, então número vai à esquerda em
+  RTL (decisão da spec).
+- Booleano: célula com checkbox só leitura (`null` = indeterminado); grupo
+  mostra o texto (`G: true`/`G: false`). Nós: texto `trueText`/`falseText`
+  na célula e no grupo; o modo ícone fica pendente (precisa de API nova).
+- Nulo: célula vazia.
+- Texto que não cabe: reticências e dica (`title`) só quando truncado
+  (`cellHintEnabled`).

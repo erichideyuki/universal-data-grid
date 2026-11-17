@@ -128,6 +128,20 @@ export const styles = css`
     text-align: start;
   }
 
+  /* Alinhamento lógico: \`end\` vai para a esquerda em RTL. */
+  td.align-center, th.align-center {
+    text-align: center;
+  }
+
+  td.align-end, th.align-end {
+    text-align: end;
+  }
+
+  td.wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .column-lines td:not(.group-column):not(:last-child),
   .column-lines th:not(.group-column):not(:last-child) {
     box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color);

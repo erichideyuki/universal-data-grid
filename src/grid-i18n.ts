@@ -8,6 +8,10 @@ export interface GridI18n {
   noData: string;
   dragToGroup: string;
   groupLabelSeparator: string;
+  /** Text of `true` in `boolean` columns (cells and group rows). */
+  trueText: string;
+  /** Text of `false` in `boolean` columns (cells and group rows). */
+  falseText: string;
 }
 
 export const DEFAULT_GRID_LANGUAGE = 'en';
@@ -21,20 +25,20 @@ export const DEFAULT_GRID_LANGUAGE = 'en';
  * `setGridTranslation('__proto__', …)` não alcançam `Object.prototype`.
  */
 export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.create(null) as Record<string, GridI18n>, {
-  en: { noData: 'No data', dragToGroup: 'Drag a column header here to group by it', groupLabelSeparator: ': ' },
-  es: { noData: 'Sin datos', dragToGroup: 'Arrastre el encabezado de una columna aquí para agrupar', groupLabelSeparator: ': ' },
-  pt: { noData: 'Sem dados', dragToGroup: 'Arraste o cabeçalho de uma coluna aqui para agrupar', groupLabelSeparator: ': ' },
-  fr: { noData: 'Aucune donnée', dragToGroup: 'Faites glisser l’en-tête d’une colonne ici pour la regrouper', groupLabelSeparator: ' : ' },
-  de: { noData: 'Keine Daten', dragToGroup: 'Ziehen Sie eine Spaltenüberschrift hierher, um danach zu gruppieren', groupLabelSeparator: ': ' },
-  it: { noData: 'Nessun dato', dragToGroup: 'Trascina qui l’intestazione di una colonna per raggrupparla', groupLabelSeparator: ': ' },
-  nl: { noData: 'Geen gegevens', dragToGroup: 'Sleep een kolomkop hierheen om erop te groeperen', groupLabelSeparator: ': ' },
-  ru: { noData: 'Нет данных', dragToGroup: 'Перетащите сюда заголовок столбца для группировки', groupLabelSeparator: ': ' },
-  pl: { noData: 'Brak danych', dragToGroup: 'Przeciągnij tutaj nagłówek kolumny, aby pogrupować', groupLabelSeparator: ': ' },
-  tr: { noData: 'Veri yok', dragToGroup: 'Gruplamak için bir sütun başlığını buraya sürükleyin', groupLabelSeparator: ': ' },
-  ja: { noData: 'データがありません', dragToGroup: '列ヘッダーをここにドラッグしてグループ化します', groupLabelSeparator: '：' },
-  ko: { noData: '데이터 없음', dragToGroup: '열 머리글을 여기로 끌어 그룹화하세요', groupLabelSeparator: ': ' },
-  zh: { noData: '无数据', dragToGroup: '将列标题拖到此处进行分组', groupLabelSeparator: '：' },
-  ar: { noData: 'لا توجد بيانات', dragToGroup: 'اسحب عنوان عمود إلى هنا للتجميع حسبه', groupLabelSeparator: ': ' },
+  en: { noData: 'No data', dragToGroup: 'Drag a column header here to group by it', groupLabelSeparator: ': ', trueText: 'True', falseText: 'False' },
+  es: { noData: 'Sin datos', dragToGroup: 'Arrastre el encabezado de una columna aquí para agrupar', groupLabelSeparator: ': ', trueText: 'Verdadero', falseText: 'Falso' },
+  pt: { noData: 'Sem dados', dragToGroup: 'Arraste o cabeçalho de uma coluna aqui para agrupar', groupLabelSeparator: ': ', trueText: 'Verdadeiro', falseText: 'Falso' },
+  fr: { noData: 'Aucune donnée', dragToGroup: 'Faites glisser l’en-tête d’une colonne ici pour la regrouper', groupLabelSeparator: ' : ', trueText: 'Vrai', falseText: 'Faux' },
+  de: { noData: 'Keine Daten', dragToGroup: 'Ziehen Sie eine Spaltenüberschrift hierher, um danach zu gruppieren', groupLabelSeparator: ': ', trueText: 'Wahr', falseText: 'Falsch' },
+  it: { noData: 'Nessun dato', dragToGroup: 'Trascina qui l’intestazione di una colonna per raggrupparla', groupLabelSeparator: ': ', trueText: 'Vero', falseText: 'Falso' },
+  nl: { noData: 'Geen gegevens', dragToGroup: 'Sleep een kolomkop hierheen om erop te groeperen', groupLabelSeparator: ': ', trueText: 'Waar', falseText: 'Onwaar' },
+  ru: { noData: 'Нет данных', dragToGroup: 'Перетащите сюда заголовок столбца для группировки', groupLabelSeparator: ': ', trueText: 'Истина', falseText: 'Ложь' },
+  pl: { noData: 'Brak danych', dragToGroup: 'Przeciągnij tutaj nagłówek kolumny, aby pogrupować', groupLabelSeparator: ': ', trueText: 'Prawda', falseText: 'Fałsz' },
+  tr: { noData: 'Veri yok', dragToGroup: 'Gruplamak için bir sütun başlığını buraya sürükleyin', groupLabelSeparator: ': ', trueText: 'Doğru', falseText: 'Yanlış' },
+  ja: { noData: 'データがありません', dragToGroup: '列ヘッダーをここにドラッグしてグループ化します', groupLabelSeparator: '：', trueText: '真', falseText: '偽' },
+  ko: { noData: '데이터 없음', dragToGroup: '열 머리글을 여기로 끌어 그룹화하세요', groupLabelSeparator: ': ', trueText: '참', falseText: '거짓' },
+  zh: { noData: '无数据', dragToGroup: '将列标题拖到此处进行分组', groupLabelSeparator: '：', trueText: '是', falseText: '否' },
+  ar: { noData: 'لا توجد بيانات', dragToGroup: 'اسحب عنوان عمود إلى هنا للتجميع حسبه', groupLabelSeparator: ': ', trueText: 'صحيح', falseText: 'خطأ' },
 });
 
 /**

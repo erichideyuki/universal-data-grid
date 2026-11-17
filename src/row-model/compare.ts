@@ -1,3 +1,6 @@
+import type { GridColumnDataType } from '../grid-column-def.js';
+import { coerceValue } from './format.js';
+
 export type Comparer = (a: unknown, b: unknown) => number;
 
 const collators = new Map<string, Intl.Collator>();
@@ -41,16 +44,8 @@ const rank = (value: unknown): number => {
   return 3;
 };
 
-/**
- * Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;
- * o resto como texto com `Intl.Collator` numérico ("item 2" < "item 10") no
- * idioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa
- * (número < data < booleano < texto) para a ordenação ser total.
- */
-export const createComparer = (language?: string): Comparer => {
-  const collator = getCollator(language);
-
-  return (a, b) => {
+const createValueComparer = (collator: Intl.Collator): Comparer =>
+  (a, b) => {
     const aBlank = isBlank(a);
     const bBlank = isBlank(b);
 
@@ -88,4 +83,23 @@ export const createComparer = (language?: string): Comparer => {
     // podem se intercalar.
     return textA < textB ? -1 : textA > textB ? 1 : 0;
   };
+
+/**
+ * Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;
+ * o resto como texto com `Intl.Collator` numérico ("item 2" < "item 10") no
+ * idioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa
+ * (número < data < booleano < texto) para a ordenação ser total.
+ *
+ * Com `dataType` informado, os valores são convertidos antes: `"10"` vs `"9"`
+ * em coluna `number` compara como número; string ISO em coluna `date`, como
+ * data; em coluna `string`, tudo como texto. O que não converte (data
+ * inválida) fica como texto, depois dos convertidos.
+ */
+export const createComparer = (language?: string, dataType?: GridColumnDataType | null): Comparer => {
+  const collator = getCollator(language);
+  const compare = createValueComparer(collator);
+
+  return dataType
+    ? (a, b) => compare(coerceValue(a, dataType), coerceValue(b, dataType))
+    : compare;
 };

@@ -70,6 +70,75 @@
             },
             {
               "kind": "field",
+              "name": "dataType",
+              "type": {
+                "text": "GridColumnDataType | null"
+              },
+              "default": "null",
+              "attribute": "data-type"
+            },
+            {
+              "kind": "field",
+              "name": "format",
+              "type": {
+                "text": "GridColumnFormat | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "alignment",
+              "type": {
+                "text": "GridColumnAlignment | null"
+              },
+              "default": "null",
+              "attribute": "alignment"
+            },
+            {
+              "kind": "field",
+              "name": "valueGetter",
+              "type": {
+                "text": "((item: any) => unknown) | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "displayValue",
+              "type": {
+                "text": "((value: unknown, item: any) => string) | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "wrap",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "attribute": "wrap"
+            },
+            {
+              "kind": "field",
+              "name": "minWidth",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "attribute": "min-width"
+            },
+            {
+              "kind": "field",
+              "name": "emptyText",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "empty-text"
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
@@ -89,7 +158,7 @@
                 {
                   "name": "change",
                   "type": {
-                    "text": "'width' | 'groupIndex'"
+                    "text": "ColumnChange"
                   }
                 }
               ]
@@ -117,6 +186,46 @@
               },
               "default": "''",
               "fieldName": "path"
+            },
+            {
+              "name": "data-type",
+              "type": {
+                "text": "GridColumnDataType | null"
+              },
+              "default": "null",
+              "fieldName": "dataType"
+            },
+            {
+              "name": "alignment",
+              "type": {
+                "text": "GridColumnAlignment | null"
+              },
+              "default": "null",
+              "fieldName": "alignment"
+            },
+            {
+              "name": "wrap",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "fieldName": "wrap"
+            },
+            {
+              "name": "min-width",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "fieldName": "minWidth"
+            },
+            {
+              "name": "empty-text",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "emptyText"
             }
           ],
           "superclass": {
@@ -430,7 +539,7 @@
         {
           "kind": "variable",
           "name": "styles",
-          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .group-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer; border-radius: var(--u-grid-toggle-shape, 50%); } .group-toggle:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon { transform: scaleX(-1); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; inset-inline-start: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
+          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } /* Alinhamento lógico: \\`end\\` vai para a esquerda em RTL. */ td.align-center, th.align-center { text-align: center; } td.align-end, th.align-end { text-align: end; } td.wrap { white-space: normal; overflow-wrap: anywhere; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .group-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer; border-radius: var(--u-grid-toggle-shape, 50%); } .group-toggle:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon { transform: scaleX(-1); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; inset-inline-start: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
         }
       ],
       "exports": [
@@ -526,6 +635,41 @@
             },
             {
               "kind": "field",
+              "name": "#dataTypes",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new Map<GridColumnDef, GridColumnDataType | undefined>()",
+              "description": "`dataType` efetivo (informado ou inferido dos itens) por coluna."
+            },
+            {
+              "kind": "field",
+              "name": "#columnViews",
+              "privacy": "private",
+              "type": {
+                "text": "ColumnView[]"
+              },
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "#hasWrap",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "#measuredWrap",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
               "name": "#expansion",
               "privacy": "private",
               "readonly": true,
@@ -579,7 +723,7 @@
               "type": {
                 "text": "GridColumnDef[]"
               },
-              "description": "Definições de coluna. Por propriedade têm precedência sobre os\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
+              "description": "Definições de coluna. Por propriedade têm precedência sobre os\r\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
             },
             {
               "kind": "field",
@@ -713,7 +857,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
+              "description": "Language used to resolve the built-in translations. When not set on the\r\ncomponent it is resolved, in order, from the Lit context, the document\r\n(`<html lang>` / content-language meta) and finally the browser.",
               "attribute": "language"
             },
             {
@@ -861,11 +1005,11 @@
                 {
                   "name": "change",
                   "type": {
-                    "text": "'width' | 'groupIndex'"
+                    "text": "'width' | 'groupIndex' | 'value' | 'display'"
                   }
                 }
               ],
-              "description": "Chamado por `<u-grid-column>` quando `width`/`group-index` mudam."
+              "description": "Chamado por `<u-grid-column>` quando uma propriedade muda: `value` =\r\nmuda o valor das células (`path`, `valueGetter`, `dataType`); `display`\r\n= só a exibição."
             },
             {
               "kind": "field",
@@ -882,7 +1026,7 @@
                   "text": "void"
                 }
               },
-              "description": "Concilia as definições com a ordem atual: colunas já conhecidas mantêm a\nposição e o agrupamento escolhidos pelo usuário; novas entram pelo\n`groupIndex` (inicial) ou na posição da definição."
+              "description": "Concilia as definições com a ordem atual: colunas já conhecidas mantêm a\r\nposição e o agrupamento escolhidos pelo usuário; novas entram pelo\r\n`groupIndex` (inicial) ou na posição da definição."
             },
             {
               "kind": "method",
@@ -955,6 +1099,85 @@
               }
             },
             {
+              "kind": "method",
+              "name": "#dataTypeOf",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "GridColumnDataType | undefined"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "#formatContext",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "FormatContext"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "#columnView",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "ColumnView"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "#groupValueText",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "string"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "row",
+                  "type": {
+                    "text": "GroupRow"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "field",
+              "name": "#updateCellHint",
+              "privacy": "private",
+              "readonly": true,
+              "description": "Dica com o texto completo só na célula truncada (reticências), calculada\r\nao passar o mouse — medir todas as células a cada render custaria caro."
+            },
+            {
               "kind": "field",
               "name": "#toggleGroup",
               "privacy": "private",
@@ -1006,7 +1229,7 @@
                   }
                 },
                 {
-                  "name": "index",
+                  "name": "offset",
                   "type": {
                     "text": "number"
                   }
@@ -1052,7 +1275,7 @@
                   "text": "void"
                 }
               },
-              "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\nquando colunas/painéis mudam (não a cada render de rolagem) e é\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\nsaíram do DOM são soltos."
+              "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\r\nquando colunas/painéis mudam (não a cada render de rolagem) e é\r\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\r\nsaíram do DOM são soltos."
             }
           ],
           "attributes": [
@@ -1141,7 +1364,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
+              "description": "Language used to resolve the built-in translations. When not set on the\r\ncomponent it is resolved, in order, from the Lit context, the document\r\n(`<html lang>` / content-language meta) and finally the browser.",
               "fieldName": "language"
             }
           ],
@@ -1156,9 +1379,41 @@
       "exports": [
         {
           "kind": "js",
+          "name": "GridColumnAlignment",
+          "declaration": {
+            "name": "GridColumnAlignment",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridColumnDataType",
+          "declaration": {
+            "name": "GridColumnDataType",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
           "name": "GridColumnDef",
           "declaration": {
             "name": "GridColumnDef",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridColumnFormat",
+          "declaration": {
+            "name": "GridColumnFormat",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridColumnFormatter",
+          "declaration": {
+            "name": "GridColumnFormatter",
             "module": "./grid-column-def.js"
           }
         },
@@ -1617,6 +1872,135 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/render/cell.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "renderDataCell",
+          "return": {
+            "type": {
+              "text": "TemplateResult | string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "grid",
+              "type": {
+                "text": "DataGrid"
+              }
+            },
+            {
+              "name": "row",
+              "type": {
+                "text": "DataRow"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "columnId",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "name": "format",
+              "type": {
+                "text": "FormatContext"
+              }
+            }
+          ],
+          "description": "Conteúdo de uma célula de dados. Com `renderer`, o elemento do hospedeiro\r\nvai para o light DOM do grid e é projetado por um slot nomeado pela CHAVE\r\nda linha e pelo id da coluna — nunca por índices, que mudam ao expandir,\r\nordenar ou reordenar."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "renderDataCell",
+          "declaration": {
+            "name": "renderDataCell",
+            "module": "src/render/cell.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/render/group-row.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "groupRowLabel",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "row",
+              "type": {
+                "text": "GroupRow"
+              }
+            },
+            {
+              "name": "separator",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "valueText",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "renderGroupRowCells",
+          "return": {
+            "type": {
+              "text": "TemplateResult"
+            }
+          },
+          "parameters": [
+            {
+              "name": "{ row, totalColumns, separator, valueText, onToggle }",
+              "type": {
+                "text": "GroupRowContext"
+              }
+            }
+          ],
+          "description": "Células de uma linha de grupo: recuo, botão de expandir e o rótulo."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "groupRowLabel",
+          "declaration": {
+            "name": "groupRowLabel",
+            "module": "src/render/group-row.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "renderGroupRowCells",
+          "declaration": {
+            "name": "renderGroupRowCells",
+            "module": "src/render/group-row.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/row-model/compare.ts",
       "declarations": [
         {
@@ -1634,9 +2018,16 @@
               "type": {
                 "text": "string"
               }
+            },
+            {
+              "name": "dataType",
+              "optional": true,
+              "type": {
+                "text": "GridColumnDataType | null"
+              }
             }
           ],
-          "description": "Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;\no resto como texto com `Intl.Collator` numérico (\"item 2\" < \"item 10\") no\nidioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa\n(número < data < booleano < texto) para a ordenação ser total."
+          "description": "Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;\r\no resto como texto com `Intl.Collator` numérico (\"item 2\" < \"item 10\") no\r\nidioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa\r\n(número < data < booleano < texto) para a ordenação ser total.\r\n\r\nCom `dataType` informado, os valores são convertidos antes: `\"10\"` vs `\"9\"`\r\nem coluna `number` compara como número; string ISO em coluna `date`, como\r\ndata; em coluna `string`, tudo como texto. O que não converte (data\r\ninválida) fica como texto, depois dos convertidos."
         }
       ],
       "exports": [
@@ -1704,6 +2095,313 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/row-model/format.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "toDate",
+          "return": {
+            "type": {
+              "text": "Date | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              }
+            }
+          ],
+          "description": "Converte para `Date`: `Date` válida, número (epoch em ms) ou string ISO.\r\nData sem hora (`2024-03-05`) é meia-noite LOCAL — `new Date()` a leria\r\ncomo UTC e o dia \"andaria\" a oeste de Greenwich. Datas que transbordam\r\n(`2024-02-30`) são inválidas, não 1º de março."
+        },
+        {
+          "kind": "function",
+          "name": "toNumber",
+          "return": {
+            "type": {
+              "text": "number | bigint | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              }
+            }
+          ],
+          "description": "Número de `number`/`bigint` ou de string numérica; senão `undefined`."
+        },
+        {
+          "kind": "function",
+          "name": "coerceValue",
+          "return": {
+            "type": {
+              "text": "unknown"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "dataType",
+              "type": {
+                "text": "GridColumnDataType | null | undefined"
+              }
+            }
+          ],
+          "description": "Valor no tipo da coluna (para comparar); o original quando não converte."
+        },
+        {
+          "kind": "function",
+          "name": "resolveDataType",
+          "return": {
+            "type": {
+              "text": "GridColumnDataType | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "items",
+              "type": {
+                "text": "readonly unknown[]"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            }
+          ],
+          "description": "`dataType` da coluna: o informado ou o tipo do 1º valor não nulo (como o\r\nDevExtreme). String ISO não vira data por inferência — só com `dataType`."
+        },
+        {
+          "kind": "function",
+          "name": "resolveAlignment",
+          "return": {
+            "type": {
+              "text": "GridColumnAlignment"
+            }
+          },
+          "parameters": [
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "dataType",
+              "type": {
+                "text": "GridColumnDataType | undefined"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "getNumberFormat",
+          "return": {
+            "type": {
+              "text": "Intl.NumberFormat"
+            }
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "type": {
+                "text": "string | undefined"
+              }
+            },
+            {
+              "name": "options",
+              "default": "DEFAULT_NUMBER",
+              "type": {
+                "text": "Intl.NumberFormatOptions"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "getDateTimeFormat",
+          "return": {
+            "type": {
+              "text": "Intl.DateTimeFormat"
+            }
+          },
+          "parameters": [
+            {
+              "name": "language",
+              "type": {
+                "text": "string | undefined"
+              }
+            },
+            {
+              "name": "options",
+              "type": {
+                "text": "Intl.DateTimeFormatOptions"
+              }
+            },
+            {
+              "name": "fallback",
+              "default": "DEFAULT_DATE",
+              "type": {
+                "text": "Intl.DateTimeFormatOptions"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "formatCellValue",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "item",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "context",
+              "type": {
+                "text": "FormatContext"
+              }
+            }
+          ],
+          "description": "Texto exibido de um valor, na ordem: `displayValue` → vazio (`emptyText`)\r\n→ `format` função → `format` `Intl` / padrão do tipo. Valor que não\r\nconverte no tipo (string que não é data) sai como texto bruto."
+        },
+        {
+          "kind": "function",
+          "name": "formatCell",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "item",
+              "type": {
+                "text": "unknown"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "context",
+              "type": {
+                "text": "FormatContext"
+              }
+            }
+          ],
+          "description": "Texto exibido da célula de `item` na coluna."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "toDate",
+          "declaration": {
+            "name": "toDate",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "toNumber",
+          "declaration": {
+            "name": "toNumber",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "coerceValue",
+          "declaration": {
+            "name": "coerceValue",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "resolveDataType",
+          "declaration": {
+            "name": "resolveDataType",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "resolveAlignment",
+          "declaration": {
+            "name": "resolveAlignment",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "getNumberFormat",
+          "declaration": {
+            "name": "getNumberFormat",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "getDateTimeFormat",
+          "declaration": {
+            "name": "getDateTimeFormat",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "formatCellValue",
+          "declaration": {
+            "name": "formatCellValue",
+            "module": "src/row-model/format.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "formatCell",
+          "declaration": {
+            "name": "formatCell",
+            "module": "src/row-model/format.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/row-model/group.ts",
       "declarations": [
         {
@@ -1728,13 +2426,13 @@
               }
             },
             {
-              "name": "compare",
+              "name": "compareFor",
               "type": {
-                "text": "Comparer"
+                "text": "(column: GridColumnDef) => Comparer"
               }
             }
           ],
-          "description": "Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da\nordem de entrada (usa mapa, não \"valores consecutivos\") e não muta nada.\nGrupos de cada nível em ordem de `compare`; itens na ordem original."
+          "description": "Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da\r\nordem de entrada (usa mapa, não \"valores consecutivos\") e não muta nada.\r\nO valor é o de `getCellValue` (`valueGetter`/`path`); com `dataType`\r\ninformado, valores equivalentes no tipo (`10` e `\"10\"` numa coluna\r\n`number`) caem no mesmo grupo. Grupos de cada nível em ordem do\r\ncomparador da coluna (`compareFor`); itens na ordem original."
         }
       ],
       "exports": [
@@ -1780,7 +2478,7 @@
               }
             }
           ],
-          "description": "Lê `path` (com pontos: `address.city`) de um item. Sem `path` devolve\n`undefined` — colunas só com `renderer` não têm valor."
+          "description": "Lê `path` (com pontos: `address.city`) de um item. Sem `path` devolve\r\n`undefined` — colunas só com `renderer` não têm valor."
         },
         {
           "kind": "function",
@@ -1804,7 +2502,7 @@
               }
             }
           ],
-          "description": "Único ponto que lê o valor de uma célula (base de ordenar/agrupar/exibir)."
+          "description": "Único ponto que lê o valor de uma célula (base de ordenar/agrupar/exibir):\r\n`valueGetter` quando houver, senão `path`."
         },
         {
           "kind": "function",
@@ -1822,7 +2520,7 @@
               }
             }
           ],
-          "description": "Texto exibido para um valor bruto (formatação por tipo vem na frente 02)."
+          "description": "Texto cru de um valor, sem formatação (a formatada está em `format.ts`)."
         }
       ],
       "exports": [
@@ -1848,123 +2546,6 @@
           "declaration": {
             "name": "toDisplayText",
             "module": "src/row-model/value.ts"
-          }
-        }
-      ]
-    },
-    {
-      "kind": "javascript-module",
-      "path": "src/render/cell.ts",
-      "declarations": [
-        {
-          "kind": "function",
-          "name": "renderDataCell",
-          "return": {
-            "type": {
-              "text": "TemplateResult | string"
-            }
-          },
-          "parameters": [
-            {
-              "name": "grid",
-              "type": {
-                "text": "DataGrid"
-              }
-            },
-            {
-              "name": "row",
-              "type": {
-                "text": "DataRow"
-              }
-            },
-            {
-              "name": "column",
-              "type": {
-                "text": "GridColumnDef"
-              }
-            },
-            {
-              "name": "columnId",
-              "type": {
-                "text": "number"
-              }
-            }
-          ],
-          "description": "Conteúdo de uma célula de dados. Com `renderer`, o elemento do hospedeiro\nvai para o light DOM do grid e é projetado por um slot nomeado pela CHAVE\nda linha e pelo id da coluna — nunca por índices, que mudam ao expandir,\nordenar ou reordenar."
-        }
-      ],
-      "exports": [
-        {
-          "kind": "js",
-          "name": "renderDataCell",
-          "declaration": {
-            "name": "renderDataCell",
-            "module": "src/render/cell.ts"
-          }
-        }
-      ]
-    },
-    {
-      "kind": "javascript-module",
-      "path": "src/render/group-row.ts",
-      "declarations": [
-        {
-          "kind": "function",
-          "name": "groupRowLabel",
-          "return": {
-            "type": {
-              "text": "string"
-            }
-          },
-          "parameters": [
-            {
-              "name": "row",
-              "type": {
-                "text": "GroupRow"
-              }
-            },
-            {
-              "name": "separator",
-              "type": {
-                "text": "string"
-              }
-            }
-          ]
-        },
-        {
-          "kind": "function",
-          "name": "renderGroupRowCells",
-          "return": {
-            "type": {
-              "text": "TemplateResult"
-            }
-          },
-          "parameters": [
-            {
-              "name": "{ row, totalColumns, separator, onToggle }",
-              "type": {
-                "text": "GroupRowContext"
-              }
-            }
-          ],
-          "description": "Células de uma linha de grupo: recuo, botão de expandir e o rótulo."
-        }
-      ],
-      "exports": [
-        {
-          "kind": "js",
-          "name": "groupRowLabel",
-          "declaration": {
-            "name": "groupRowLabel",
-            "module": "src/render/group-row.ts"
-          }
-        },
-        {
-          "kind": "js",
-          "name": "renderGroupRowCells",
-          "declaration": {
-            "name": "renderGroupRowCells",
-            "module": "src/render/group-row.ts"
           }
         }
       ]

@@ -2,22 +2,23 @@ import { html, nothing, type TemplateResult } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 
 import type { GroupRow } from '../row-model/types.js';
-import { toDisplayText } from '../row-model/value.js';
 
 export interface GroupRowContext {
   row: GroupRow;
   /** Colunas de grupo + colunas comuns. */
   totalColumns: number;
   separator: string;
+  /** Valor do grupo já formatado (`displayValue`/`format` da coluna). */
+  valueText: string;
   onToggle: (row: GroupRow) => void;
 }
 
-export const groupRowLabel = (row: GroupRow, separator: string): string =>
-  `${row.column.label ?? ''}${separator}${toDisplayText(row.value)}`;
+export const groupRowLabel = (row: GroupRow, separator: string, valueText: string): string =>
+  `${row.column.label ?? ''}${separator}${valueText}`;
 
 /** Células de uma linha de grupo: recuo, botão de expandir e o rótulo. */
-export const renderGroupRowCells = ({ row, totalColumns, separator, onToggle }: GroupRowContext): TemplateResult => {
-  const label = groupRowLabel(row, separator);
+export const renderGroupRowCells = ({ row, totalColumns, separator, valueText, onToggle }: GroupRowContext): TemplateResult => {
+  const label = groupRowLabel(row, separator, valueText);
 
   return html`
     ${row.level

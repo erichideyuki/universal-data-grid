@@ -1,5 +1,6 @@
 import type { GridColumnDef } from '../grid-column-def.js';
 import type { Comparer } from './compare.js';
+import { coerceValue } from './format.js';
 import type { GroupNode } from './types.js';
 import { getCellValue } from './value.js';
 
@@ -22,21 +23,25 @@ const columnIdentity = (column: GridColumnDef, level: number): string =>
 /**
  * Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da
  * ordem de entrada (usa mapa, não "valores consecutivos") e não muta nada.
- * Grupos de cada nível em ordem de `compare`; itens na ordem original.
+ * O valor é o de `getCellValue` (`valueGetter`/`path`); com `dataType`
+ * informado, valores equivalentes no tipo (`10` e `"10"` numa coluna
+ * `number`) caem no mesmo grupo. Grupos de cada nível em ordem do
+ * comparador da coluna (`compareFor`); itens na ordem original.
  */
 export const buildGroups = (
   items: readonly unknown[],
   groupColumns: readonly GridColumnDef[],
-  compare: Comparer,
+  compareFor: (column: GridColumnDef) => Comparer,
 ): GroupNode[] => {
 
   const build = (levelItems: readonly unknown[], level: number, parentPath: unknown[]): GroupNode[] => {
     const column = groupColumns[level];
+    const compare = compareFor(column);
     const buckets = new Map<string, { value: unknown; items: unknown[] }>();
 
     for (const item of levelItems) {
       const value = getCellValue(item, column);
-      const identity = valueIdentity(value);
+      const identity = valueIdentity(coerceValue(value, column.dataType));
       let bucket = buckets.get(identity);
 
       if (!bucket) {

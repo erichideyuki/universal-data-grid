@@ -13,7 +13,7 @@ import type { VirtualItem } from '@tanstack/virtual-core';
 
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
-import type { GridColumnDef } from './grid-column-def.js';
+import type { GridColumnDataType, GridColumnDef } from './grid-column-def.js';
 import {
   DEFAULT_GRID_LANGUAGE,
   type GridI18n,
@@ -26,12 +26,19 @@ import { renderDataCell } from './render/cell.js';
 import { renderGroupRowCells } from './render/group-row.js';
 import { createComparer } from './row-model/compare.js';
 import { flattenRows } from './row-model/flatten.js';
+import { type FormatContext, formatCellValue, resolveAlignment, resolveDataType } from './row-model/format.js';
 import { buildGroups } from './row-model/group.js';
 import type { DataRow, GroupNode, GroupRow, Row } from './row-model/types.js';
 
 import './grid-column.js';
 
-export type { GridColumnDef } from './grid-column-def.js';
+export type {
+  GridColumnAlignment,
+  GridColumnDataType,
+  GridColumnDef,
+  GridColumnFormat,
+  GridColumnFormatter,
+} from './grid-column-def.js';
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n } from './grid-i18n.js';
 
 /** Linhas renderizadas antes de o virtualizador medir o contêiner (1º render, SSR). */
@@ -81,6 +88,17 @@ const rowKeyOf = (item: unknown): string => {
   return `${typeof item}:${String(item)}`;
 };
 
+/** O que o render de uma coluna comum precisa, calculado uma vez por render. */
+interface ColumnView {
+  column: GridColumnDef;
+  id: number;
+  format: FormatContext;
+  /** Classes da célula e do cabeçalho: alinhamento e quebra de linha. */
+  classes: Record<string, boolean>;
+  /** `min-width` das células (com `table-layout: fixed` só o cabeçalho conta). */
+  minWidth: string | undefined;
+}
+
 let nextColumnId = 0;
 const columnIds = new WeakMap<GridColumnDef, number>();
 
@@ -114,6 +132,7 @@ export class DataGrid extends LitElement {
   set items(items: readonly any[] | null | undefined) {
     this.#items = items ?? [];
     this.#groupsDirty = true;
+    this.#dataTypes.clear();
   }
 
   #groups: GroupNode[] = [];
@@ -121,6 +140,11 @@ export class DataGrid extends LitElement {
   #groupsDirty = true;
   #rowsDirty = true;
   #modelLanguage: string | undefined;
+  /** `dataType` efetivo (informado ou inferido dos itens) por coluna. */
+  readonly #dataTypes = new Map<GridColumnDef, GridColumnDataType | undefined>();
+  #columnViews: ColumnView[] = [];
+  #hasWrap = false;
+  #measuredWrap = false;
   /** Expansão escolhida pelo usuário, por chave de grupo (sobrevive a troca de dados). */
   readonly #expansion = new Map<string, boolean>();
 
@@ -276,8 +300,25 @@ export class DataGrid extends LitElement {
   }
 
   override updated(changed: PropertyValues<this>) {
+    const virtualizer = this.#virtualizerController.getVirtualizer();
+
     if (changed.has('rowHeight')) {
-      this.#virtualizerController.getVirtualizer().measure();
+      virtualizer.measure();
+    }
+
+    // Com `wrap` a linha pode crescer: mede as renderizadas (o virtualizador
+    // observa o tamanho delas daí em diante).
+    if (this.#hasWrap !== this.#measuredWrap) {
+      this.#measuredWrap = this.#hasWrap;
+
+      if (!this.#hasWrap) {
+        virtualizer.measure();
+      }
+    }
+
+    if (this.#hasWrap) {
+      this.renderRoot.querySelectorAll<HTMLElement>('tbody tr[data-index]')
+        .forEach(row => virtualizer.measureElement(row));
     }
 
     if (
@@ -302,8 +343,12 @@ export class DataGrid extends LitElement {
     this.#moveColumnTo(false, column, targetIndex);
   }
 
-  /** Chamado por `<u-grid-column>` quando `width`/`group-index` mudam. */
-  _columnChanged(column: GridColumnDef, change: 'width' | 'groupIndex'): void {
+  /**
+   * Chamado por `<u-grid-column>` quando uma propriedade muda: `value` =
+   * muda o valor das células (`path`, `valueGetter`, `dataType`); `display`
+   * = só a exibição.
+   */
+  _columnChanged(column: GridColumnDef, change: 'width' | 'groupIndex' | 'value' | 'display'): void {
 
     const grouped = this._groupColumns.includes(column);
 
@@ -321,6 +366,11 @@ export class DataGrid extends LitElement {
       } else {
         this.groupColumn(column, groupIndex);
       }
+    }
+
+    if (change === 'value') {
+      this.#dataTypes.delete(column);
+      this.#groupsDirty ||= grouped;
     }
 
     this.requestUpdate();
@@ -402,6 +452,8 @@ export class DataGrid extends LitElement {
   }
 
   #setColumnState(regular: GridColumnDef[], group: GridColumnDef[]): void {
+    this.#dataTypes.clear();
+
     if (!sameItems(group, this._groupColumns)) {
       this._groupColumns = group;
       this.#groupsDirty = true;
@@ -423,7 +475,7 @@ export class DataGrid extends LitElement {
     const language = this.#effectiveLanguage;
 
     if (this.#groupsDirty || (this._groupColumns.length && language !== this.#modelLanguage)) {
-      this.#groups = buildGroups(this.#items, this._groupColumns, createComparer(language));
+      this.#groups = buildGroups(this.#items, this._groupColumns, column => createComparer(language, column.dataType));
       this.#modelLanguage = language;
       this.#groupsDirty = false;
       this.#rowsDirty = true;
@@ -434,6 +486,60 @@ export class DataGrid extends LitElement {
       this.#rowsDirty = false;
     }
   }
+
+  #dataTypeOf(column: GridColumnDef): GridColumnDataType | undefined {
+    if (!this.#dataTypes.has(column)) {
+      this.#dataTypes.set(column, resolveDataType(this.#items, column));
+    }
+
+    return this.#dataTypes.get(column);
+  }
+
+  #formatContext(column: GridColumnDef): FormatContext {
+    const { trueText, falseText } = this.#translation;
+
+    return { language: this.language, dataType: this.#dataTypeOf(column), trueText, falseText };
+  }
+
+  #columnView(column: GridColumnDef): ColumnView {
+    const format = this.#formatContext(column);
+    const alignment = resolveAlignment(column, format.dataType);
+    const minWidth = column.minWidth ?? null;
+
+    return {
+      column,
+      id: columnIdOf(column),
+      format,
+      classes: {
+        'align-center': alignment === 'center',
+        'align-end': alignment === 'end',
+        wrap: !!column.wrap,
+      },
+      minWidth: minWidth === null ? undefined : `${minWidth}px`,
+    };
+  }
+
+  #groupValueText(row: GroupRow): string {
+    return formatCellValue(row.value, row.firstItem, row.column, this.#formatContext(row.column));
+  }
+
+  /**
+   * Dica com o texto completo só na célula truncada (reticências), calculada
+   * ao passar o mouse — medir todas as células a cada render custaria caro.
+   */
+  readonly #updateCellHint = (event: Event): void => {
+    const cell = (event.target as Element | null)?.closest?.('td.truncate');
+
+    if (!(cell instanceof HTMLElement)) {
+      return;
+    }
+
+    if (cell.scrollWidth > cell.clientWidth) {
+      cell.title = cell.textContent.trim();
+    } else {
+      cell.removeAttribute('title');
+    }
+  };
 
   readonly #toggleGroup = (row: GroupRow): void => {
     this.#expansion.set(row.groupKey, !row.expanded);
@@ -446,6 +552,8 @@ export class DataGrid extends LitElement {
   override render() {
 
     this.#ensureRows();
+    this.#columnViews = this._regularColumns.map(column => this.#columnView(column));
+    this.#hasWrap = this._regularColumns.some(column => column.wrap);
 
     const rows = this.#rows;
     const virtualizer = this.#virtualizerController.getVirtualizer();
@@ -485,7 +593,7 @@ export class DataGrid extends LitElement {
         aria-colcount="${this._regularColumns.length}">
         <div class="scroll-container" ${ref(this._scrollContainerRef)}>
           ${this.#renderGroupPanel()}
-          <table>
+          <table @pointerover=${this.#updateCellHint}>
             <colgroup>${this.#renderColGroups()}</colgroup>
             ${this.#renderColumnHeaders()}
             <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize() || virtualRows.length * this.rowHeight}px;">
@@ -507,7 +615,7 @@ export class DataGrid extends LitElement {
         const colStyles: { width?: string } = {};
 
         if (!!column.width || column.width === 0) {
-          colStyles.width = `${column.width}px`;
+          colStyles.width = `${Math.max(column.width, column.minWidth ?? 0)}px`;
         }
 
         return html`
@@ -525,11 +633,12 @@ export class DataGrid extends LitElement {
       <thead role="rowgroup">
         <tr id="header-columns-row" role="row" aria-rowindex="1">
           ${map(this._groupColumns, () => html`<th role="presentation"></th>`)}
-          ${map(this._regularColumns, (column, index) => html`
+          ${map(this.#columnViews, (view, index) => html`
             <th
-              class="header-column"
+              class="header-column ${classMap(view.classes)}"
+              style=${styleMap({ minWidth: view.minWidth })}
               role="columnheader"
-              aria-colindex="${index + 1}">${column.label}</th>`)}
+              aria-colindex="${index + 1}">${view.column.label}</th>`)}
         </tr>
       </thead>
     `;
@@ -545,14 +654,18 @@ export class DataGrid extends LitElement {
       `;
     }
 
+    // As linhas ficam no fluxo da tabela, uma após a outra: todas descem o
+    // início da 1ª linha virtual (vale também com alturas diferentes, `wrap`).
+    const offset = virtualRows[0]?.start ?? 0;
+
     return repeat(
       virtualRows,
       virtualRow => virtualRow.key,
-      (virtualRow, index) => this.#renderRow(virtualRow, index, this.#rows[virtualRow.index], headerRows),
+      virtualRow => this.#renderRow(virtualRow, offset, this.#rows[virtualRow.index], headerRows),
     );
   }
 
-  #renderRow(virtualRow: VirtualItem, index: number, row: Row, headerRows: number) {
+  #renderRow(virtualRow: VirtualItem, offset: number, row: Row, headerRows: number) {
     const parity = row.isGroup
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
@@ -568,7 +681,8 @@ export class DataGrid extends LitElement {
 
     return html`
       <tr
-        style="transform: translateY(${virtualRow.start - index * virtualRow.size}px); height: ${this.rowHeight}px;"
+        style="transform: translateY(${offset}px); height: ${this.rowHeight}px;"
+        data-index=${virtualRow.index}
         role="row"
         aria-rowindex="${virtualRow.index + 1 + headerRows}"
         aria-level=${row.isGroup ? row.level + 1 : nothing}
@@ -579,6 +693,7 @@ export class DataGrid extends LitElement {
             row,
             totalColumns: this._groupColumns.length + this._regularColumns.length,
             separator: this.#translation.groupLabelSeparator,
+            valueText: this.#groupValueText(row),
             onToggle: this.#toggleGroup,
           })
           : this.#renderDataRowCells(row)}
@@ -589,10 +704,11 @@ export class DataGrid extends LitElement {
   #renderDataRowCells(row: DataRow) {
     return html`
       ${map(this._groupColumns, () => html`<td role="presentation" class="group-column"></td>`)}
-      ${map(this._regularColumns, (column, index) => html`
+      ${map(this.#columnViews, (view, index) => html`
         <td
+          class=${classMap({ ...view.classes, truncate: !view.column.wrap && !view.column.renderer })}
           role="gridcell"
-          aria-colindex="${index + 1}">${renderDataCell(this, row, column, columnIdOf(column))}</td>`)}
+          aria-colindex="${index + 1}">${renderDataCell(this, row, view.column, view.id, view.format)}</td>`)}
     `;
   }
 

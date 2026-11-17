@@ -14,6 +14,9 @@ export interface PopulationRow {
   code: string;
   year: number;
   population: number;
+  /** ISO (o demo serializa os dados em JSON, então datas viajam como texto). */
+  updatedAt?: string;
+  official?: boolean;
 }
 
 export const createSampleData = (rows = 1000): PopulationRow[] => {
@@ -35,6 +38,8 @@ export const createSampleData = (rows = 1000): PopulationRow[] => {
       code,
       year: 1960 + Math.floor(i / COUNTRIES.length) % 65,
       population: Math.round(1_000_000 + random() * 300_000_000),
+      updatedAt: new Date(Date.UTC(2024, 0, 1) + Math.floor(random() * 365 * 24 * 60) * 60_000).toISOString(),
+      official: random() > 0.3,
     });
   }
 

@@ -23,6 +23,8 @@ export interface GroupRow {
   value: unknown;
   expanded: boolean;
   itemCount: number;
+  /** 1º item do grupo — passado a `displayValue` no texto do grupo. */
+  firstItem: unknown;
 }
 
 export interface DataRow {

@@ -45,4 +45,19 @@ describe('SSR', () => {
 
     expect(data.map(d => d.country)).toEqual(['b', 'a']);
   });
+
+  it('formata tipos no idioma pedido', async () => {
+    const typed: GridColumnDef[] = [
+      { path: 'n', label: 'N', format: { minimumFractionDigits: 2 } },
+      { path: 'd', label: 'D', dataType: 'date' },
+      { path: 'b', label: 'B', groupIndex: 0 },
+    ];
+    const output = await renderToString(html`
+      <u-grid language="de" auto-expand-groups .columns=${typed} .items=${[{ n: 1234.5, d: '2024-03-05', b: true }]}></u-grid>`);
+
+    expect(output).toContain('1.234,50');
+    expect(output).toContain('5.3.2024');
+    expect(output).toContain('B: Wahr');
+    expect(output).toContain('align-end');
+  });
 });

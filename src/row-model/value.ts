@@ -23,11 +23,16 @@ export const getValueByPath = (item: unknown, path: string | undefined): unknown
   return value;
 };
 
-/** Único ponto que lê o valor de uma célula (base de ordenar/agrupar/exibir). */
+/**
+ * Único ponto que lê o valor de uma célula (base de ordenar/agrupar/exibir):
+ * `valueGetter` quando houver, senão `path`.
+ */
 export const getCellValue = (item: unknown, column: GridColumnDef): unknown =>
-  getValueByPath(item, column.path);
+  column.valueGetter
+    ? column.valueGetter(item)
+    : getValueByPath(item, column.path);
 
-/** Texto exibido para um valor bruto (formatação por tipo vem na frente 02). */
+/** Texto cru de um valor, sem formatação (a formatada está em `format.ts`). */
 export const toDisplayText = (value: unknown): string =>
   value === null || value === undefined
     ? ''

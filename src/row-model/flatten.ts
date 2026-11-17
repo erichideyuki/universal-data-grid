@@ -51,6 +51,7 @@ export const flattenRows = (
         value: node.value,
         expanded,
         itemCount: node.items.length,
+        firstItem: node.items[0],
       });
 
       if (!expanded) {
