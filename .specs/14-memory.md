@@ -56,6 +56,8 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 17 | `setGridTranslation` (tabela de traduções) | `grid-i18n.ts` | L | Só cresce quando o hospedeiro chama, com idiomas que ele escolhe. |
 | 18 | Closures de eventos (`@pointerover`, `@slotchange`, `onToggle`, listeners do interactjs que capturam o grid) | vários | OK | Ficam em elementos do próprio grid ou em `Interactable`s soltos no `unset`. |
 | 19 | Avisos de depreciação (`#warnedDeprecations`) | `grid.ts` | OK | Por instância. |
+| 21 | Ordenação: `#sorting` (colunas) e `#rankCache` (`Int32Array` de postos por coluna, do tamanho de `items`) | `grid.ts` | L | Por instância; `#rankCache` é limpo ao trocar `items`, colunas ou idioma e só tem colunas ordenadas; colunas removidas saem de `#sorting` no `#syncColumns`. `_memoryStats.sortRanks`. Teste em `sorting.memory.browser.test.ts`. |
+| 22 | Listener `down` do limiar de arrasto (`trackDragThreshold`) | `features/drag-helper.ts` | OK | Registrado no mesmo `Interactable` do cabeçalho/chip; sai no `unset` (itens 1–2). |
 | 20 | Chromium: cada `<thead>` em shadow root deixa um `MediaQuerySet` no `StyleEngine` do documento (~0,6 KiB por grid criado; reproduz com `attachShadow` + `innerHTML`, sem Lit). | Blink | Externo | Fora do alcance do JS. Contornar exigiria trocar o `<thead>` por outro `<tbody>` (muda seletores do fixture e o cabeçalho que as frentes 03/06 estão mexendo) — pendência. |
 
 ## Medição (`src/test/leak.ts`)

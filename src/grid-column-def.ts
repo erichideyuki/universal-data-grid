@@ -1,3 +1,17 @@
+export type GridSortOrder = 'asc' | 'desc';
+
+/** Uma coluna da ordenação atual e a direção dela (`getSorting()`). */
+export interface GridSort {
+  column: GridColumnDef;
+  order: GridSortOrder;
+}
+
+/**
+ * Comparador próprio de uma coluna, em ordem crescente (a direção é aplicada
+ * pelo grid). Recebe os valores das células e os itens das linhas.
+ */
+export type GridColumnComparator = (a: any, b: any, itemA: any, itemB: any) => number;
+
 /** Tipo do dado da coluna; sem `dataType`, vem do 1º valor não nulo. */
 export type GridColumnDataType = 'string' | 'number' | 'date' | 'datetime' | 'boolean';
 
@@ -32,4 +46,15 @@ export interface GridColumnDef {
   /** Texto para valor vazio (`null`/`undefined`). */
   emptyText?: string | null;
   renderer?: ((item: any) => HTMLElement) | null;
+  /** Permite ordenar pelo cabeçalho. Padrão: `true` se a coluna tiver `path`, `valueGetter` ou `comparator`. */
+  sortable?: boolean | null;
+  /** Ordenação INICIAL; depois o estado é do grid (`sortBy`, `getSorting`). */
+  sortOrder?: GridSortOrder | null;
+  /** Prioridade da ordenação inicial entre colunas (menor primeiro). */
+  sortIndex?: number | null;
+  comparator?: GridColumnComparator | null;
 }
+
+/** A coluna pode ser ordenada pelo usuário? */
+export const isColumnSortable = (column: GridColumnDef): boolean =>
+  column.sortable ?? (!!column.path || !!column.valueGetter || !!column.comparator);

@@ -3,6 +3,7 @@ import { ContextConsumer } from '@lit/context';
 import { html, type HTMLTemplateResult, LitElement, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
@@ -13,7 +14,23 @@ import type { VirtualItem } from '@tanstack/virtual-core';
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
 import { releaseInteractions } from './features/drag-helper.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
-import type { GridColumnDataType, GridColumnDef } from './grid-column-def.js';
+import {
+  formatMessage,
+  type GridSortingMode,
+  initialSorting,
+  nextSorting,
+  sameSorting,
+  sortGestureOf,
+  sortingAfterGesture,
+  toggleOrder,
+} from './features/sorting.js';
+import {
+  type GridColumnDataType,
+  type GridColumnDef,
+  type GridSort,
+  type GridSortOrder,
+  isColumnSortable,
+} from './grid-column-def.js';
 import {
   DEFAULT_GRID_LANGUAGE,
   type GridI18n,
@@ -24,11 +41,13 @@ import {
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
 import { renderGroupRowCells } from './render/group-row.js';
+import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { createComparer } from './row-model/compare.js';
 import { flattenRows } from './row-model/flatten.js';
 import { type FormatContext, formatCellValue, resolveAlignment, resolveDataType } from './row-model/format.js';
 import { buildGroups } from './row-model/group.js';
+import { type RankCache, sortItems } from './row-model/sort.js';
 import type { DataRow, GroupNode, GroupRow, Row } from './row-model/types.js';
 
 import './grid-column.js';
@@ -36,11 +55,23 @@ import './grid-column.js';
 export type {
   GridColumnAlignment,
   GridColumnBooleanDisplay,
+  GridColumnComparator,
   GridColumnDataType,
   GridColumnDef,
   GridColumnFormat,
   GridColumnFormatter,
+  GridSort,
+  GridSortOrder,
 } from './grid-column-def.js';
+export type { GridSortingMode } from './features/sorting.js';
+
+/** `detail` de `u-grid-sorting` e `u-grid-sort-change`. */
+export interface GridSortEventDetail {
+  /** Ordenação nova (cópia). */
+  sorting: GridSort[];
+  /** Ordenação anterior (cópia). */
+  previous: GridSort[];
+}
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n } from './grid-i18n.js';
 
 /** Linhas renderizadas antes de o virtualizador medir o contêiner (1º render, SSR). */
@@ -115,6 +146,10 @@ const columnIdOf = (column: GridColumnDef): number => {
   return id;
 };
 
+/**
+ * @fires u-grid-sorting - Before the sorting changes (by the user or by the API). Cancelable; `detail: GridSortEventDetail`.
+ * @fires u-grid-sort-change - After the sorting changed. `detail: GridSortEventDetail`.
+ */
 @customElement('u-grid')
 export class DataGrid extends LitElement {
   static override styles = [styles];
@@ -133,13 +168,19 @@ export class DataGrid extends LitElement {
 
   set items(items: readonly any[] | null | undefined) {
     this.#items = items ?? [];
-    this.#groupsDirty = true;
+    this.#sortDirty = true;
     this.#itemsReplaced = true;
+    this.#rankCache.clear();
     this.#dataTypes.clear();
   }
 
+  /** `items` na ordem da ordenação atual (o próprio `items` sem ordenação). */
+  #sortedItems: readonly any[] = [];
+  /** Postos por coluna para os `items` e o idioma atuais (inverter a direção não reordena textos). */
+  readonly #rankCache: RankCache = new Map();
   #groups: GroupNode[] = [];
   #rows: Row[] = [];
+  #sortDirty = true;
   #groupsDirty = true;
   #rowsDirty = true;
   #itemsReplaced = false;
@@ -177,6 +218,28 @@ export class DataGrid extends LitElement {
     this.#columnsProperty = value ?? undefined;
     this.#syncColumns();
   }
+
+  // ------------------------------------------------------------ ordenação
+
+  /**
+   * How the user sorts by clicking the column headers: `single` (default)
+   * keeps one sorted column, `multiple` adds columns with Shift+click and
+   * `none` disables header sorting (the API still works).
+   */
+  @property() sorting: GridSortingMode = 'single';
+
+  /** Ordenação atual, em ordem de prioridade. Inclui a direção das colunas agrupadas. */
+  #sorting: GridSort[] = [];
+  /** Texto da região `aria-live` (último gesto de ordenação). */
+  #announcement = '';
+  /** Houve arrasto desde o último `pointerdown` no cabeçalho/chip. */
+  #dragged = false;
+
+  get #sortingMode(): GridSortingMode {
+    return this.sorting === 'none' || this.sorting === 'multiple' ? this.sorting : 'single';
+  }
+
+  readonly #isGrouped = (column: GridColumnDef): boolean => this._groupColumns.includes(column);
 
   // ------------------------------------------------------------ aparência
 
@@ -293,6 +356,7 @@ export class DataGrid extends LitElement {
       measuredSizes: (virtualizer as unknown as { itemSizeCache: Map<unknown, number> }).itemSizeCache.size,
       dataTypes: this.#dataTypes.size,
       expansion: this.#expansion.size,
+      sortRanks: this.#rankCache.size,
     };
   }
 
@@ -375,12 +439,37 @@ export class DataGrid extends LitElement {
 
   // ------------------------------------------------------------------ API
 
+  /**
+   * Sorts by `column` in `order` (`null` removes the column from the
+   * sorting). Without `append` the column replaces the current sorting; with
+   * it, the column is added (or keeps its priority if already sorted). For a
+   * grouped column it sets the direction of its groups.
+   */
+  sortBy(column: GridColumnDef, order: GridSortOrder | null, { append = false }: { append?: boolean } = {}): void {
+    this.#changeSorting(nextSorting(this.#sorting, column, order, append, this.#isGrouped));
+  }
+
+  /** Removes the sorting of every column (grouped columns go back to ascending groups). */
+  clearSorting(): void {
+    this.#changeSorting([]);
+  }
+
+  /** Current sorting, in priority order. */
+  getSorting(): GridSort[] {
+    return this.#sorting.map(({ column, order }) => ({ column, order }));
+  }
+
   groupColumn(column: GridColumnDef, targetIndex: number): void {
     this.#moveColumnTo(true, column, targetIndex);
   }
 
   moveColumn(column: GridColumnDef, targetIndex: number): void {
     this.#moveColumnTo(false, column, targetIndex);
+  }
+
+  /** Chamado pelos adaptadores de arrasto quando um arrasto começa. */
+  _dragStarted(): void {
+    this.#dragged = true;
   }
 
   /**
@@ -410,7 +499,8 @@ export class DataGrid extends LitElement {
 
     if (change === 'value') {
       this.#dataTypes.delete(column);
-      this.#groupsDirty ||= grouped;
+      this.#rankCache.delete(column);
+      this.#sortDirty ||= grouped || this.#sorting.some(spec => spec.column === column);
     }
 
     this.requestUpdate();
@@ -442,11 +532,25 @@ export class DataGrid extends LitElement {
   #syncColumns(): void {
     const definitions = this.columns;
     const defined = new Set(definitions);
+
+    // Colunas reatribuídas podem trazer outro `path` no mesmo objeto.
+    this.#rankCache.clear();
     const known = new Set([...this._regularColumns, ...this._groupColumns]);
 
     const regular = this._regularColumns.filter(c => defined.has(c));
     const group = this._groupColumns.filter(c => defined.has(c));
     const newGroupColumns: GridColumnDef[] = [];
+
+    // Ordenação: some a das colunas removidas; as novas trazem `sortOrder`.
+    const sorting = [
+      ...this.#sorting.filter(spec => defined.has(spec.column)),
+      ...initialSorting(definitions.filter(column => !known.has(column))),
+    ];
+
+    if (!sameSorting(sorting, this.#sorting)) {
+      this.#sorting = sorting;
+      this.#sortDirty = true;
+    }
 
     definitions.forEach((column, index) => {
       if (known.has(column)) {
@@ -496,7 +600,8 @@ export class DataGrid extends LitElement {
 
     if (!sameItems(group, this._groupColumns)) {
       this._groupColumns = group;
-      this.#groupsDirty = true;
+      // Muda quais chaves ordenam as linhas e quais dão a direção dos grupos.
+      this.#sortDirty = true;
     }
 
     if (!sameItems(regular, this._regularColumns)) {
@@ -511,20 +616,137 @@ export class DataGrid extends LitElement {
   readonly #isExpanded = (key: string): boolean =>
     this.#expansion.get(key) ?? this.autoExpandGroups;
 
+  /** items → ordenar → agrupar → achatar; cada etapa só refaz o que sujou. */
   #ensureRows(): void {
     const language = this.#effectiveLanguage;
+    const languageChanged = language !== this.#modelLanguage;
+    this.#modelLanguage = language;
 
-    if (this.#groupsDirty || (this._groupColumns.length && language !== this.#modelLanguage)) {
-      this.#groups = buildGroups(this.#items, this._groupColumns, column => createComparer(language, column.dataType));
-      this.#modelLanguage = language;
+    if (languageChanged) {
+      this.#rankCache.clear();
+    }
+
+    if (this.#sortDirty || (languageChanged && this.#sorting.length)) {
+      const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+      this.#sortedItems = sortItems(this.#items, rowSorting, language, this.#rankCache);
+      this.#sortDirty = false;
+      this.#groupsDirty = true;
+    }
+
+    if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
+      const orders = this._groupColumns.map(column => this.#orderOf(column));
+      this.#groups = buildGroups(
+        this.#sortedItems,
+        this._groupColumns,
+        column => createComparer(language, column.dataType),
+        orders,
+      );
       this.#groupsDirty = false;
       this.#rowsDirty = true;
     }
 
     if (this.#rowsDirty) {
-      this.#rows = flattenRows(this.#items, this.#groups, this.#isExpanded, rowKeyOf);
+      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf);
       this.#rowsDirty = false;
     }
+  }
+
+  // -------------------------------------------------------------- ordenação
+
+  #orderOf(column: GridColumnDef): GridSortOrder | undefined {
+    return this.#sorting.find(spec => spec.column === column)?.order;
+  }
+
+  /**
+   * Único ponto que muda a ordenação: dispara `u-grid-sorting` (cancelável)
+   * ANTES e `u-grid-sort-change` depois. Devolve `false` se não mudou.
+   */
+  #changeSorting(next: GridSort[]): boolean {
+    if (sameSorting(next, this.#sorting)) {
+      return false;
+    }
+
+    const previous = this.getSorting();
+    const copy = () => next.map(({ column, order }) => ({ column, order }));
+    const sorting = new CustomEvent<GridSortEventDetail>('u-grid-sorting', {
+      detail: { sorting: copy(), previous },
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
+
+    if (!this.dispatchEvent(sorting)) {
+      return false;
+    }
+
+    this.#sorting = copy();
+    this.#sortDirty = true;
+    this.requestUpdate();
+
+    this.dispatchEvent(new CustomEvent<GridSortEventDetail>('u-grid-sort-change', {
+      detail: { sorting: this.getSorting(), previous },
+      bubbles: true,
+      composed: true,
+    }));
+
+    return true;
+  }
+
+  /** Gesto do usuário que mudou a ordenação de `column`: avisa o leitor de tela. */
+  #announceSorting(column: GridColumnDef): void {
+    const translation = this.#translation;
+    const order = this.#orderOf(column);
+    const params = { column: column.label ?? '' };
+
+    this.#announcement = order
+      ? formatMessage(translation.sortedAnnouncement, {
+        ...params,
+        order: order === 'asc' ? translation.sortAscending : translation.sortDescending,
+      })
+      : formatMessage(translation.clearSorting, params);
+  }
+
+  readonly #canSortByUser = (column: GridColumnDef): boolean =>
+    this.#sortingMode !== 'none' && isColumnSortable(column);
+
+  readonly #onSortPointerDown = (): void => {
+    this.#dragged = false;
+  };
+
+  /** Clique/Enter/Espaço num cabeçalho. */
+  readonly #onHeaderActivate = (column: GridColumnDef, event: MouseEvent | KeyboardEvent): void => {
+    if (this.#consumeDrag(event) || !this.#canSortByUser(column)) {
+      return;
+    }
+
+    const next = sortingAfterGesture(this.#sorting, column, sortGestureOf(event), this.#sortingMode, this.#isGrouped);
+
+    if (this.#changeSorting(next)) {
+      this.#announceSorting(column);
+    }
+  };
+
+  /** Clique/Enter/Espaço no chip de uma coluna agrupada: alterna a direção dos grupos. */
+  readonly #onGroupChipActivate = (column: GridColumnDef, event: MouseEvent | KeyboardEvent): void => {
+    if (this.#consumeDrag(event) || !this.#canSortByUser(column)) {
+      return;
+    }
+
+    const next = nextSorting(this.#sorting, column, toggleOrder(this.#orderOf(column) ?? 'asc'), true, this.#isGrouped);
+
+    if (this.#changeSorting(next)) {
+      this.#announceSorting(column);
+    }
+  };
+
+  /** O clique que encerra um arrasto não ordena. */
+  #consumeDrag(event: MouseEvent | KeyboardEvent): boolean {
+    if (event.type !== 'click' || !this.#dragged) {
+      return false;
+    }
+
+    this.#dragged = false;
+    return true;
   }
 
   #dataTypeOf(column: GridColumnDef): GridColumnDataType | undefined {
@@ -643,6 +865,7 @@ export class DataGrid extends LitElement {
           </table>
         </div>
       </div>
+      <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">${this.#announcement}</div>
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
   }
@@ -669,16 +892,28 @@ export class DataGrid extends LitElement {
       return nothing;
     }
 
+    const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+    const showIndex = rowSorting.length > 1;
+
     return html`
       <thead role="rowgroup">
         <tr id="header-columns-row" role="row" aria-rowindex="1">
           ${map(this._groupColumns, () => html`<th role="presentation"></th>`)}
-          ${map(this.#columnViews, (view, index) => html`
-            <th
-              class="header-column ${classMap(view.classes)}"
-              style=${styleMap({ minWidth: view.minWidth })}
-              role="columnheader"
-              aria-colindex="${index + 1}">${view.column.label}</th>`)}
+          ${map(this.#columnViews, ({ column, classes, minWidth }, index) => {
+            const position = rowSorting.findIndex(spec => spec.column === column);
+
+            return renderHeaderCell({
+              column,
+              classes,
+              minWidth,
+              colIndex: index + 1,
+              sortable: this.#canSortByUser(column),
+              order: rowSorting[position]?.order,
+              sortIndex: showIndex && position >= 0 ? position + 1 : undefined,
+              onActivate: this.#onHeaderActivate,
+              onPointerDown: this.#onSortPointerDown,
+            });
+          })}
         </tr>
       </thead>
     `;
@@ -762,13 +997,40 @@ export class DataGrid extends LitElement {
         <div class="group-container" ${ref(this._groupContainerRef)}>
           ${this._groupColumns.length
             ? html`
-              ${map(this._groupColumns, (column, index) => html`
-                <div class="group" style="--_order: ${index}">${column.label}</div>`)}
+              ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index))}
               <div class="group-end-dropzone"></div>`
             : html`<div class="drag-here">${this.#translation.dragToGroup}</div>`}
         </div>
       </div>
     `;
+  }
+
+  /** Chip de uma coluna agrupada: arrastável e, se ordenável, alterna a direção dos grupos. */
+  #renderGroupChip(column: GridColumnDef, index: number) {
+    const sortable = this.#canSortByUser(column);
+    const order = this.#orderOf(column) ?? 'asc';
+    const translation = this.#translation;
+
+    return html`
+      <div
+        class="group ${classMap({ sortable })}"
+        part="group-chip"
+        style="--_order: ${index}"
+        role=${ifDefined(sortable ? 'button' : undefined)}
+        tabindex=${ifDefined(sortable ? 0 : undefined)}
+        aria-label=${ifDefined(sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : undefined)}
+        @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
+        @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
+        @keydown=${sortable
+          ? (event: KeyboardEvent) => {
+            if (isActivationKey(event) && !event.repeat) {
+              event.preventDefault();
+              this.#onGroupChipActivate(column, event);
+            }
+          }
+          : nothing}>
+        <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
+      </div>`;
   }
 
   /**
@@ -818,5 +1080,10 @@ export class DataGrid extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     'u-grid': DataGrid;
+  }
+
+  interface HTMLElementEventMap {
+    'u-grid-sorting': CustomEvent<GridSortEventDetail>;
+    'u-grid-sort-change': CustomEvent<GridSortEventDetail>;
   }
 }

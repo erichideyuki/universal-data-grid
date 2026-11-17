@@ -110,6 +110,7 @@ export class DevRoot extends LitElement {
         <u-grid
           slot="before-content"
           auto-expand-groups
+          sorting="multiple"
           .columns=${columns}
           .items=${this.initialData}>
         </u-grid>

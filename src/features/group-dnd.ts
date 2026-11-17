@@ -3,7 +3,7 @@ import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
 import type { DataGrid } from '../grid.js';
-import { GridDragHelper, InteractRegistry } from './drag-helper.js';
+import { GridDragHelper, InteractRegistry, trackDragThreshold } from './drag-helper.js';
 import { calcCursorRelativePosition, RelativePosition } from './drop-position.js';
 
 export class GroupDragAndDropAdapter {
@@ -62,14 +62,19 @@ export class GroupDragAndDropAdapter {
       return;
     }
 
-    GridDragHelper
-      .set(group)
+    const interactable = GridDragHelper.set(group);
+    const movedEnough = trackDragThreshold(interactable);
+
+    interactable
       .on('move', (event: InteractEvent) => {
         const interaction = event.interaction;
 
-        if (!(interaction.pointerIsDown && !interaction.interacting())) {
+        if (!(interaction.pointerIsDown && !interaction.interacting()) || !movedEnough(event)) {
           return;
         }
+
+        // O clique que termina este arrasto não pode ordenar.
+        this.#grid._dragStarted();
 
         const original = event.currentTarget;
         const rect = original.getBoundingClientRect();

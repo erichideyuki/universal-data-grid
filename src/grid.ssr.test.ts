@@ -46,6 +46,17 @@ describe('SSR', () => {
     expect(data.map(d => d.country)).toEqual(['b', 'a']);
   });
 
+  it('renderiza a ordenação inicial (grupo desc + coluna) com aria-sort', async () => {
+    const sorted: GridColumnDef[] = [
+      { path: 'country', label: 'Country', groupIndex: 0, sortOrder: 'desc' },
+      { path: 'year', label: 'Year', sortOrder: 'asc' },
+    ];
+    const output = await renderToString(html`<u-grid .columns=${sorted} .items=${items}></u-grid>`);
+
+    expect(output.indexOf('Country: Brazil')).toBeLessThan(output.indexOf('Country: Argentina'));
+    expect(output).toContain('aria-sort="ascending"');
+  });
+
   it('formata tipos no idioma pedido', async () => {
     const typed: GridColumnDef[] = [
       { path: 'n', label: 'N', format: { minimumFractionDigits: 2 } },

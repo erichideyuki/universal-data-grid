@@ -4,12 +4,20 @@ import { customElement, property } from 'lit/decorators.js';
 import type {
   GridColumnAlignment,
   GridColumnBooleanDisplay,
+  GridColumnComparator,
   GridColumnDataType,
   GridColumnDef,
   GridColumnFormat,
+  GridSortOrder,
 } from './grid-column-def.js';
 
 type ColumnChange = 'width' | 'groupIndex' | 'value' | 'display';
+
+/** `sortable` sem atributo = automático; `sortable="false"` desliga. */
+const optionalBoolean = {
+  fromAttribute: (value: string | null): boolean | null => value === null ? null : value !== 'false',
+  toAttribute: (value: boolean | null): string | null => value === null ? null : String(value),
+};
 
 interface ColumnHost extends HTMLElement {
   _columnChanged(column: GridColumnDef, change: ColumnChange): void;
@@ -67,13 +75,25 @@ export class UmDataGridColumn extends LitElement implements GridColumnDef {
   @property({ type: Number, attribute: 'min-width' }) minWidth: number | null = null;
   @property({ attribute: 'empty-text' }) emptyText: string | null = null;
 
+  /** Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`. */
+  @property({ converter: optionalBoolean }) sortable: boolean | null = null;
+
+  /** Initial sort direction. Afterwards the sorting is grid state. */
+  @property({ attribute: 'sort-order' }) sortOrder: GridSortOrder | null = null;
+
+  /** Priority of the initial sort among columns (lower first). */
+  @property({ type: Number, attribute: 'sort-index' }) sortIndex: number | null = null;
+
+  /** Custom ascending comparator: `(valueA, valueB, itemA, itemB) => number`. */
+  @property({ attribute: false }) comparator: GridColumnComparator | null = null;
+
   override willUpdate(changed: PropertyValues<this>): void {
     // Os valores iniciais o grid já lê ao montar as colunas.
     if (!this.hasUpdated) {
       return;
     }
 
-    if (changed.has('path') || changed.has('valueGetter') || changed.has('dataType')) {
+    if (changed.has('path') || changed.has('valueGetter') || changed.has('dataType') || changed.has('comparator')) {
       this.#notify('value');
     } else if (changed.size) {
       this.#notify('display');

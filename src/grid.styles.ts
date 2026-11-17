@@ -259,6 +259,64 @@ export const styles = css`
     min-width: 1px;
   }
 
+  /* inline: o \`text-align\` do <th> (alinhamento da coluna, RTL) posiciona o conteúdo. */
+  .header-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+
+  .header-column.sortable,
+  .group.sortable {
+    cursor: pointer;
+  }
+
+  .header-column.sorted {
+    color: var(--u-grid-sorted-header-color, currentColor);
+  }
+
+  .header-column:focus-visible,
+  .group:focus-visible {
+    outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+    outline-offset: -2px;
+  }
+
+  .sort-indicator {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    font-size: var(--u-grid-sort-indicator-size, 1.125em);
+  }
+
+  .sort-indicator.desc svg {
+    transform: rotate(180deg);
+  }
+
+  .sort-indicator[data-sort-index]::after {
+    content: attr(data-sort-index);
+    font-size: 0.6875rem;
+    line-height: 1;
+    margin-inline-start: 1px;
+  }
+
+  .group .sort-indicator {
+    margin-inline-start: 4px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .grouping-cell {
     color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent);
   }

@@ -55,4 +55,34 @@ direção; evento cancelado não ordena; clique após arrasto não ordena.
 100 mil linhas ordenando em < 200 ms no demo.
 
 ## Referência medida
-(preencher)
+DevExtreme DataGrid 26.1 (demos "Sorting"/MultipleSorting e "Record Grouping",
+17/11/2026):
+- Clique: asc → desc → asc, nunca volta a "nenhum". Clique simples numa
+  coluna já presente num multi a deixa sozinha e alterna a direção.
+- Shift+clique (multiple): coluna nova entra no fim com asc; coluna já
+  ordenada alterna a direção sem perder a prioridade.
+- Ctrl+clique: remove só a coluna; as restantes são renumeradas. Número da
+  prioridade só aparece com 2+ colunas.
+- Teclado: cabeçalhos com `tabindex=0`; Enter e Espaço ordenam (sem Shift,
+  substituem). `aria-sort="ascending|descending|none"` em todos os
+  `columnheader` ordenáveis.
+- Chip de grupo: `tabindex=0`, seta da direção; clique alterna asc/desc dos
+  grupos. Anúncio do DevExtreme é genérico ("Data grid with N rows…"); o
+  nosso anuncia a coluna e a direção (spec).
+
+## Decisões da implementação
+- Estado: lista única `{ column, order }[]` no grid; a entrada de uma coluna
+  agrupada é a direção dos grupos (substituir pelo clique a preserva) e não
+  numera nem ordena linhas.
+- `sortBy` e `clearSorting` também disparam `u-grid-sorting`/`-sort-change`;
+  a API funciona em qualquer `sorting`, inclusive `none`. `append` vale em
+  qualquer modo (o modo só restringe gestos).
+- Arrasto só começa depois de 4 px (`DRAG_START_DISTANCE`); o clique que
+  encerra um arrasto é ignorado.
+- Desempenho: postos por coluna (ordena só valores distintos) + radix LSD
+  estável; texto pelo collator não numérico com dígitos preenchidos (mesma
+  ordem do numérico, ~4× mais rápido). Postos em cache até trocar items,
+  colunas ou idioma. 100 mil linhas do demo: 25–45 ms; 100 mil textos
+  únicos: ~180 ms na 1ª vez, ~55 ms ao inverter.
+- i18n: `sortAscending`/`sortDescending` são as palavras da direção;
+  `sortedAnnouncement` e `clearSorting` são frases com `{column}`/`{order}`.

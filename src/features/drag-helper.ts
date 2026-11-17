@@ -2,6 +2,28 @@ import type { Interactable } from '@interactjs/core/Interactable';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
+/**
+ * Distância (px) que o ponteiro precisa andar para um cabeçalho/chip virar
+ * arrasto. Abaixo disso o gesto é clique (ordenar), não arrasto.
+ */
+export const DRAG_START_DISTANCE = 4;
+
+type DragThresholdTest = (event: InteractEvent) => boolean;
+
+/**
+ * Guarda onde o ponteiro desceu no elemento e devolve o teste "já andou o
+ * bastante para ser arrasto?" para o `move` do mesmo elemento.
+ */
+export const trackDragThreshold = (interactable: Interactable): DragThresholdTest => {
+  let start = { x: 0, y: 0 };
+
+  interactable.on('down', (event: InteractEvent) => {
+    start = { x: event.clientX, y: event.clientY };
+  });
+
+  return event => Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_START_DISTANCE;
+};
+
 export class GridDragHelper {
   static set(element: HTMLElement): Interactable {
     const position = { x: 0, y: 0 };

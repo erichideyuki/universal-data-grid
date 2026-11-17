@@ -5,8 +5,36 @@
     {
       "kind": "javascript-module",
       "path": "src/grid-column-def.ts",
-      "declarations": [],
-      "exports": []
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "isColumnSortable",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            }
+          ],
+          "description": "A coluna pode ser ordenada pelo usuário?"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "isColumnSortable",
+          "declaration": {
+            "name": "isColumnSortable",
+            "module": "src/grid-column-def.ts"
+          }
+        }
+      ]
     },
     {
       "kind": "javascript-module",
@@ -148,6 +176,45 @@
             },
             {
               "kind": "field",
+              "name": "sortable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`.",
+              "attribute": "sortable"
+            },
+            {
+              "kind": "field",
+              "name": "sortOrder",
+              "type": {
+                "text": "GridSortOrder | null"
+              },
+              "default": "null",
+              "description": "Initial sort direction. Afterwards the sorting is grid state.",
+              "attribute": "sort-order"
+            },
+            {
+              "kind": "field",
+              "name": "sortIndex",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "description": "Priority of the initial sort among columns (lower first).",
+              "attribute": "sort-index"
+            },
+            {
+              "kind": "field",
+              "name": "comparator",
+              "type": {
+                "text": "GridColumnComparator | null"
+              },
+              "default": "null",
+              "description": "Custom ascending comparator: `(valueA, valueB, itemA, itemB) => number`."
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
@@ -243,6 +310,33 @@
               },
               "default": "null",
               "fieldName": "emptyText"
+            },
+            {
+              "name": "sortable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`.",
+              "fieldName": "sortable"
+            },
+            {
+              "name": "sort-order",
+              "type": {
+                "text": "GridSortOrder | null"
+              },
+              "default": "null",
+              "description": "Initial sort direction. Afterwards the sorting is grid state.",
+              "fieldName": "sortOrder"
+            },
+            {
+              "name": "sort-index",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "description": "Priority of the initial sort among columns (lower first).",
+              "fieldName": "sortIndex"
             }
           ],
           "superclass": {
@@ -574,7 +668,7 @@
         {
           "kind": "variable",
           "name": "styles",
-          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } /* Alinhamento lógico: \\`end\\` vai para a esquerda em RTL. */ td.align-center, th.align-center { text-align: center; } td.align-end, th.align-end { text-align: end; } .boolean-icon { display: inline-flex; vertical-align: middle; } .boolean-icon.false { color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 60%), transparent); } td.wrap { white-space: normal; overflow-wrap: anywhere; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .group-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer; border-radius: var(--u-grid-toggle-shape, 50%); } .group-toggle:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon { transform: scaleX(-1); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; inset-inline-start: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
+          "default": "css` * { box-sizing: border-box; } :host { display: block; height: 100%; --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255))); --_stripped-background-color: var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)); --_border-color: color-mix(in srgb, currentColor var(--u-grid-border-opacity, 20%), transparent); --_borders-width: var(--u-grid-borders-width, 1px); --_cell-block-padding: var(--u-table-cell-block-padding, 13px); --_cell-inline-padding: var(--u-table-cell-inline-padding, 16px); --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)); --_header-padding: var(--u-table-header-padding, var(--u-table-header-block-padding, 8px) var(--u-table-header-inline-padding, var(--_cell-inline-padding))); --_column-lines-width: var(--u-grid-column-lines-width, var(--_borders-width)); --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px); --_row-lines-height: var(--u-grid-row-lines-height, var(--_borders-width)); --_header-height: var(--u-grid-header-height, 56px); } .container { position: relative; display: block; background-color: var(--_background-color); height: 100%; } .container.drop-target::after { content: \"\"; position: absolute; top: 0; left: min(var(--_drop-indicator-left), 100% - var(--_drop-indicator-width)); bottom: 0; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); width: var(--_drop-indicator-width); z-index: 20; } .container:has(.header).drop-target::after { top: var(--_header-height); } .scroll-container { height: 100%; overflow: auto; } .group-container { display: flex; align-items: center; flex: 1; gap: 8px; height: 100%; } .group-container.drop-target::before { content: \"\"; width: 3px; height: 100%; background-color: var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))); order: var(--_drop-indicator-order, 0); } .group { line-height: var(--u-group-label-line-height, var(--u-label-l-line-height, 1.25rem)); font-size: var(--u-group-label-font-size, var(--u-label-l-font-size, 0.875rem)); letter-spacing: var(--u-group-label-letter-spacing, var(--u-label-l-letter-spacing, 0.0071428571rem)); font-weight: var(--u-group-label-font-weight, var(--u-label-l-font-weight, var(--u-font-weight-medium, 500))); display: flex; align-items: center; height: var(--u-group-height, 32px); border: var(--u-group-outline-width, 1px) solid var(--u-group-outline-color, var(--u-color-outline, rgb(121, 116, 126))); border-radius: var(--u-group-shape, var(--u-shape-corner-small, 8px)); padding-inline: var(--u-group-padding, 16px); order: var(--_order); user-select: none; touch-action: none; } .stripped .even { background-color: var(--_stripped-background-color); } thead { position: sticky; top: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); z-index: 1; } :root { --u-table-hover-opacity: var(--u-state-layer-hover-opacity); --u-table-cell-font-weight: var(--u-font-weight-medium, 500); } table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; } td, th { max-width: 0; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; } td { border-collapse: separate; padding: var(--u-grid-data-cell-padding, var(--_cell-padding)); font-size: var(--u-td-font-size, 0.875rem); font-weight: var(--u-td-font-weight, var(--u-table-cell-font-weight)); text-align: start; } th { height: var(--u-grid-header-height, 46px); padding: var(--u-grid-header-cell-padding, var(--_cell-padding)); font-size: var(--u-th-font-size, 0.8125rem); font-weight: var(--u-th-font-weight, var(--u-table-cell-font-weight)); color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); text-align: start; } /* Alinhamento lógico: \\`end\\` vai para a esquerda em RTL. */ td.align-center, th.align-center { text-align: center; } td.align-end, th.align-end { text-align: end; } .boolean-icon { display: inline-flex; vertical-align: middle; } .boolean-icon.false { color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 60%), transparent); } td.wrap { white-space: normal; overflow-wrap: anywhere; } .column-lines td:not(.group-column):not(:last-child), .column-lines th:not(.group-column):not(:last-child) { box-shadow: inset calc(var(--_column-lines-width) * -1) 0 0 0 var(--_border-color); } .column-lines .header, .group-row, thead, .row-lines tr:not(.last):not(:last-child), tr:has(+ .group-row) { box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color); } .hover tr:hover { background-color: color-mix(in srgb, currentColor var(--u-table-hover-opacity), transparent); } .group-column { width: 32px; min-width: 32px; } .sortable-ghost ~ .swap-target::after { inset-inline-start: initial; inset-inline-end: 0; } .move-container { --u-elevation-level: 1; position: fixed; background-color: var(--u-color-surface-container); border-radius: 4px; z-index: 2000; --_level: 1; --_shadow-color: var(--u-color-shadow, rgb(0, 0, 0)); } .move-container::before, .move-container::after { content: \"\"; position: absolute; inset: 0; border-radius: inherit; transition: box-shadow 150ms ease-in-out; } .move-container::before { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 3, 1) + 2 * clamp(0, var(--_level) - 4, 1))) calc(1px * (2 * clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 2, 1) + clamp(0, var(--_level) - 4, 1))) 0 var(--_shadow-color); opacity: 0.3; } .move-container::after { box-shadow: 0 calc(1px * (clamp(0, var(--_level), 1) + clamp(0, var(--_level) - 1, 1) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (3 * clamp(0, var(--_level), 2) + 2 * clamp(0, var(--_level) - 2, 3))) calc(1px * (clamp(0, var(--_level), 4) + 2 * clamp(0, var(--_level) - 4, 1))) var(--_shadow-color); opacity: 0.15; } .group-column-toggle { font-size: 24px; padding: 0; padding-inline-start: 8px; color: var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))); } .group-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer; border-radius: var(--u-grid-toggle-shape, 50%); } .group-toggle:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } :host(:dir(rtl)) .group-column-toggle:not(.expanded) .toggle-icon { transform: scaleX(-1); } .toggle-icon { display: flex; align-items: center; justify-content: center; } .expanded .toggle-icon { transform: rotateZ(90deg); transform-origin: center; } .header-column { white-space: nowrap; overflow: hidden; user-select: none; touch-action: none; } .header-text { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; min-width: 1px; } /* inline: o \\`text-align\\` do <th> (alinhamento da coluna, RTL) posiciona o conteúdo. */ .header-content { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: middle; } .header-column.sortable, .group.sortable { cursor: pointer; } .header-column.sorted { color: var(--u-grid-sorted-header-color, currentColor); } .header-column:focus-visible, .group:focus-visible { outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164))); outline-offset: -2px; } .sort-indicator { display: inline-flex; align-items: center; flex: none; font-size: var(--u-grid-sort-indicator-size, 1.125em); } .sort-indicator.desc svg { transform: rotate(180deg); } .sort-indicator[data-sort-index]::after { content: attr(data-sort-index); font-size: 0.6875rem; line-height: 1; margin-inline-start: 1px; } .group .sort-indicator { margin-inline-start: 4px; } .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; } .grouping-cell { color: color-mix(in srgb, currentColor var(--u-grid-grouping-cell-emphasis, 80%), transparent); } .header { position: sticky; top: 0; inset-inline-start: 0; background-color: var(--u-grid-header-background-color, var(--_background-color)); display: flex; align-items: center; padding: var(--_header-padding); height: var(--_header-height); z-index: 1; } .drag-here { line-height: var(--u-title-s-line-height); font-size: var(--u-title-s-font-size); letter-spacing: var(--u-title-s-letter-spacing); font-weight: var(--u-title-s-font-weight); display: flex; align-items: center; height: 100%; flex: 1; color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent); } .group-end-dropzone { display: flex; align-items: center; height: 100%; flex: 1; order: 9999; } .header + table thead { top: var(--_header-height); } `"
         }
       ],
       "exports": [
@@ -626,6 +720,27 @@
             },
             {
               "kind": "field",
+              "name": "#sortedItems",
+              "privacy": "private",
+              "type": {
+                "text": "readonly any[]"
+              },
+              "default": "[]",
+              "description": "`items` na ordem da ordenação atual (o próprio `items` sem ordenação)."
+            },
+            {
+              "kind": "field",
+              "name": "#rankCache",
+              "privacy": "private",
+              "type": {
+                "text": "RankCache"
+              },
+              "readonly": true,
+              "default": "new Map()",
+              "description": "Postos por coluna para os `items` e o idioma atuais (inverter a direção não reordena textos)."
+            },
+            {
+              "kind": "field",
               "name": "#groups",
               "privacy": "private",
               "type": {
@@ -641,6 +756,15 @@
                 "text": "Row[]"
               },
               "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "#sortDirty",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true"
             },
             {
               "kind": "field",
@@ -768,6 +892,61 @@
                 "text": "GridColumnDef[]"
               },
               "description": "Definições de coluna. Por propriedade têm precedência sobre os\r\n`<u-grid-column>` filhos. O grid não altera o array nem os objetos."
+            },
+            {
+              "kind": "field",
+              "name": "sorting",
+              "type": {
+                "text": "GridSortingMode"
+              },
+              "default": "'single'",
+              "description": "How the user sorts by clicking the column headers: `single` (default)\r\nkeeps one sorted column, `multiple` adds columns with Shift+click and\r\n`none` disables header sorting (the API still works).",
+              "attribute": "sorting"
+            },
+            {
+              "kind": "field",
+              "name": "#sorting",
+              "privacy": "private",
+              "type": {
+                "text": "GridSort[]"
+              },
+              "default": "[]",
+              "description": "Ordenação atual, em ordem de prioridade. Inclui a direção das colunas agrupadas."
+            },
+            {
+              "kind": "field",
+              "name": "#announcement",
+              "privacy": "private",
+              "type": {
+                "text": "string"
+              },
+              "default": "''",
+              "description": "Texto da região `aria-live` (último gesto de ordenação)."
+            },
+            {
+              "kind": "field",
+              "name": "#dragged",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Houve arrasto desde o último `pointerdown` no cabeçalho/chip."
+            },
+            {
+              "kind": "field",
+              "name": "#sortingMode",
+              "privacy": "private",
+              "type": {
+                "text": "GridSortingMode"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "#isGrouped",
+              "privacy": "private",
+              "readonly": true
             },
             {
               "kind": "field",
@@ -996,6 +1175,57 @@
             },
             {
               "kind": "method",
+              "name": "sortBy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                },
+                {
+                  "name": "order",
+                  "type": {
+                    "text": "GridSortOrder | null"
+                  }
+                },
+                {
+                  "name": "{ append = false }",
+                  "default": "{}",
+                  "type": {
+                    "text": "{ append?: boolean }"
+                  }
+                }
+              ],
+              "description": "Sorts by `column` in `order` (`null` removes the column from the\r\nsorting). Without `append` the column replaces the current sorting; with\r\nit, the column is added (or keeps its priority if already sorted). For a\r\ngrouped column it sets the direction of its groups."
+            },
+            {
+              "kind": "method",
+              "name": "clearSorting",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Removes the sorting of every column (grouped columns go back to ascending groups)."
+            },
+            {
+              "kind": "method",
+              "name": "getSorting",
+              "return": {
+                "type": {
+                  "text": "GridSort[]"
+                }
+              },
+              "description": "Current sorting, in priority order."
+            },
+            {
+              "kind": "method",
               "name": "groupColumn",
               "return": {
                 "type": {
@@ -1039,6 +1269,16 @@
                   }
                 }
               ]
+            },
+            {
+              "kind": "method",
+              "name": "_dragStarted",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Chamado pelos adaptadores de arrasto quando um arrasto começa."
             },
             {
               "kind": "method",
@@ -1149,7 +1389,109 @@
                 "type": {
                   "text": "void"
                 }
-              }
+              },
+              "description": "items → ordenar → agrupar → achatar; cada etapa só refaz o que sujou."
+            },
+            {
+              "kind": "method",
+              "name": "#orderOf",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "GridSortOrder | undefined"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "#changeSorting",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "next",
+                  "type": {
+                    "text": "GridSort[]"
+                  }
+                }
+              ],
+              "description": "Único ponto que muda a ordenação: dispara `u-grid-sorting` (cancelável)\r\nANTES e `u-grid-sort-change` depois. Devolve `false` se não mudou."
+            },
+            {
+              "kind": "method",
+              "name": "#announceSorting",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ],
+              "description": "Gesto do usuário que mudou a ordenação de `column`: avisa o leitor de tela."
+            },
+            {
+              "kind": "field",
+              "name": "#canSortByUser",
+              "privacy": "private",
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "#onSortPointerDown",
+              "privacy": "private",
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "#onHeaderActivate",
+              "privacy": "private",
+              "readonly": true,
+              "description": "Clique/Enter/Espaço num cabeçalho."
+            },
+            {
+              "kind": "field",
+              "name": "#onGroupChipActivate",
+              "privacy": "private",
+              "readonly": true,
+              "description": "Clique/Enter/Espaço no chip de uma coluna agrupada: alterna a direção dos grupos."
+            },
+            {
+              "kind": "method",
+              "name": "#consumeDrag",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "MouseEvent | KeyboardEvent"
+                  }
+                }
+              ],
+              "description": "O clique que encerra um arrasto não ordena."
             },
             {
               "kind": "method",
@@ -1321,6 +1663,26 @@
             },
             {
               "kind": "method",
+              "name": "#renderGroupChip",
+              "privacy": "private",
+              "parameters": [
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                },
+                {
+                  "name": "index",
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ],
+              "description": "Chip de uma coluna agrupada: arrastável e, se ordenável, alterna a direção dos grupos."
+            },
+            {
+              "kind": "method",
               "name": "#syncDragAndDrop",
               "privacy": "private",
               "return": {
@@ -1329,6 +1691,19 @@
                 }
               },
               "description": "Liga os elementos do cabeçalho e do painel de grupos ao arrasto. Roda só\r\nquando colunas/painéis mudam (não a cada render de rolagem) e é\r\nidempotente: o mesmo elemento nunca é registrado duas vezes, e os que\r\nsaíram do DOM são soltos."
+            }
+          ],
+          "events": [
+            {
+              "name": "u-grid-sort-change",
+              "type": {
+                "text": "CustomEvent"
+              },
+              "description": "After the sorting changed. `detail: GridSortEventDetail`."
+            },
+            {
+              "description": "Before the sorting changes (by the user or by the API). Cancelable; `detail: GridSortEventDetail`.",
+              "name": "u-grid-sorting"
             }
           ],
           "attributes": [
@@ -1347,6 +1722,15 @@
               },
               "description": "Dados das linhas. O grid nunca altera este array nem os itens.",
               "fieldName": "items"
+            },
+            {
+              "name": "sorting",
+              "type": {
+                "text": "GridSortingMode"
+              },
+              "default": "'single'",
+              "description": "How the user sorts by clicking the column headers: `single` (default)\r\nkeeps one sorted column, `multiple` adds columns with Shift+click and\r\n`none` disables header sorting (the API still works).",
+              "fieldName": "sorting"
             },
             {
               "name": "rowHeight",
@@ -1448,6 +1832,14 @@
         },
         {
           "kind": "js",
+          "name": "GridColumnComparator",
+          "declaration": {
+            "name": "GridColumnComparator",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
           "name": "GridColumnDataType",
           "declaration": {
             "name": "GridColumnDataType",
@@ -1476,6 +1868,30 @@
           "declaration": {
             "name": "GridColumnFormatter",
             "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSort",
+          "declaration": {
+            "name": "GridSort",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSortOrder",
+          "declaration": {
+            "name": "GridSortOrder",
+            "module": "./grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSortingMode",
+          "declaration": {
+            "name": "GridSortingMode",
+            "module": "./features/sorting.js"
           }
         },
         {
@@ -1616,6 +2032,33 @@
       "path": "src/features/drag-helper.ts",
       "declarations": [
         {
+          "kind": "variable",
+          "name": "DRAG_START_DISTANCE",
+          "type": {
+            "text": "number"
+          },
+          "default": "4",
+          "description": "Distância (px) que o ponteiro precisa andar para um cabeçalho/chip virar\narrasto. Abaixo disso o gesto é clique (ordenar), não arrasto."
+        },
+        {
+          "kind": "function",
+          "name": "trackDragThreshold",
+          "return": {
+            "type": {
+              "text": "DragThresholdTest"
+            }
+          },
+          "parameters": [
+            {
+              "name": "interactable",
+              "type": {
+                "text": "Interactable"
+              }
+            }
+          ],
+          "description": "Guarda onde o ponteiro desceu no elemento e devolve o teste \"já andou o\nbastante para ser arrasto?\" para o `move` do mesmo elemento."
+        },
+        {
           "kind": "class",
           "description": "",
           "name": "GridDragHelper",
@@ -1718,6 +2161,22 @@
         }
       ],
       "exports": [
+        {
+          "kind": "js",
+          "name": "DRAG_START_DISTANCE",
+          "declaration": {
+            "name": "DRAG_START_DISTANCE",
+            "module": "src/features/drag-helper.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "trackDragThreshold",
+          "declaration": {
+            "name": "trackDragThreshold",
+            "module": "src/features/drag-helper.ts"
+          }
+        },
         {
           "kind": "js",
           "name": "GridDragHelper",
@@ -1959,6 +2418,253 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/features/sorting.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "sortGestureOf",
+          "return": {
+            "type": {
+              "text": "SortGesture"
+            }
+          },
+          "parameters": [
+            {
+              "name": "event",
+              "type": {
+                "text": "MouseEvent | KeyboardEvent"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "toggleOrder",
+          "return": {
+            "type": {
+              "text": "GridSortOrder"
+            }
+          },
+          "parameters": [
+            {
+              "name": "order",
+              "type": {
+                "text": "GridSortOrder | undefined"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "nextSorting",
+          "return": {
+            "type": {
+              "text": "SortSpec[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "sorting",
+              "type": {
+                "text": "readonly SortSpec[]"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "order",
+              "type": {
+                "text": "GridSortOrder | null"
+              }
+            },
+            {
+              "name": "append",
+              "type": {
+                "text": "boolean"
+              }
+            },
+            {
+              "name": "isGrouped",
+              "type": {
+                "text": "(column: GridColumnDef) => boolean"
+              }
+            }
+          ],
+          "description": "Estado depois de `sortBy(column, order, { append })`. Sem `append`, a\ncoluna substitui as outras — menos as colunas agrupadas, cuja entrada é a\ndireção do grupo e sobrevive. Uma coluna agrupada (ou já presente, com\n`append`) muda a direção no lugar, sem perder a prioridade."
+        },
+        {
+          "kind": "function",
+          "name": "sortingAfterGesture",
+          "return": {
+            "type": {
+              "text": "SortSpec[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "sorting",
+              "type": {
+                "text": "readonly SortSpec[]"
+              }
+            },
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            },
+            {
+              "name": "gesture",
+              "type": {
+                "text": "SortGesture"
+              }
+            },
+            {
+              "name": "mode",
+              "type": {
+                "text": "GridSortingMode"
+              }
+            },
+            {
+              "name": "isGrouped",
+              "type": {
+                "text": "(column: GridColumnDef) => boolean"
+              }
+            }
+          ],
+          "description": "Clique/tecla no cabeçalho (comportamento medido no DevExtreme): alterna\nasc → desc → asc; Ctrl/Cmd remove; Shift acrescenta no modo `multiple`\n(numa coluna já ordenada, alterna sem mudar a prioridade); sem Shift, a\ncoluna passa a ser a única."
+        },
+        {
+          "kind": "function",
+          "name": "sameSorting",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "a",
+              "type": {
+                "text": "readonly SortSpec[]"
+              }
+            },
+            {
+              "name": "b",
+              "type": {
+                "text": "readonly SortSpec[]"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "initialSorting",
+          "return": {
+            "type": {
+              "text": "SortSpec[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "columns",
+              "type": {
+                "text": "readonly GridColumnDef[]"
+              }
+            }
+          ],
+          "description": "Ordenação inicial declarada nas colunas (`sortOrder` + `sortIndex`):\nprimeiro as que têm `sortIndex`, por ele; depois as outras, na ordem da\ndefinição."
+        },
+        {
+          "kind": "function",
+          "name": "formatMessage",
+          "return": {
+            "type": {
+              "text": "string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "template",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "params",
+              "type": {
+                "text": "Record<string, string>"
+              }
+            }
+          ],
+          "description": "Troca `{nome}` pelos parâmetros (texto puro; o Lit renderiza como texto)."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "sortGestureOf",
+          "declaration": {
+            "name": "sortGestureOf",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "toggleOrder",
+          "declaration": {
+            "name": "toggleOrder",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "nextSorting",
+          "declaration": {
+            "name": "nextSorting",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "sortingAfterGesture",
+          "declaration": {
+            "name": "sortingAfterGesture",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "sameSorting",
+          "declaration": {
+            "name": "sameSorting",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "initialSorting",
+          "declaration": {
+            "name": "initialSorting",
+            "module": "src/features/sorting.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "formatMessage",
+          "declaration": {
+            "name": "formatMessage",
+            "module": "src/features/sorting.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/render/cell.ts",
       "declarations": [
         {
@@ -2088,6 +2794,98 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/render/header.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "isActivationKey",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "event",
+              "type": {
+                "text": "KeyboardEvent"
+              }
+            }
+          ],
+          "description": "Enter/Espaço ativam como o clique (com os mesmos modificadores)."
+        },
+        {
+          "kind": "function",
+          "name": "renderSortIndicator",
+          "return": {
+            "type": {
+              "text": "TemplateResult | typeof nothing"
+            }
+          },
+          "parameters": [
+            {
+              "name": "order",
+              "type": {
+                "text": "GridSortOrder | undefined"
+              }
+            },
+            {
+              "name": "sortIndex",
+              "optional": true,
+              "type": {
+                "text": "number"
+              }
+            }
+          ],
+          "description": "Seta da ordenação. O número da prioridade vem por CSS (`data-sort-index`)\npara não entrar no texto do cabeçalho nem ser lido duas vezes — o leitor de\ntela recebe a ordenação por `aria-sort`."
+        },
+        {
+          "kind": "function",
+          "name": "renderHeaderCell",
+          "return": {
+            "type": {
+              "text": "TemplateResult"
+            }
+          },
+          "parameters": [
+            {
+              "name": "{\n  column,\n  classes,\n  minWidth,\n  colIndex,\n  sortable,\n  order,\n  sortIndex,\n  onActivate,\n  onPointerDown,\n}",
+              "type": {
+                "text": "HeaderCellContext"
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "isActivationKey",
+          "declaration": {
+            "name": "isActivationKey",
+            "module": "src/render/header.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "renderSortIndicator",
+          "declaration": {
+            "name": "renderSortIndicator",
+            "module": "src/render/header.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "renderHeaderCell",
+          "declaration": {
+            "name": "renderHeaderCell",
+            "module": "src/render/header.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/render/keyed-rows.ts",
       "declarations": [
         {
@@ -2155,6 +2953,31 @@
             }
           ],
           "description": "Comparador por tipo: vazios primeiro; número, data e booleano pelo valor;\r\no resto como texto com `Intl.Collator` numérico (\"item 2\" < \"item 10\") no\r\nidioma do grid. Tipos diferentes na mesma coluna seguem uma ordem fixa\r\n(número < data < booleano < texto) para a ordenação ser total.\r\n\r\nCom `dataType` informado, os valores são convertidos antes: `\"10\"` vs `\"9\"`\r\nem coluna `number` compara como número; string ISO em coluna `date`, como\r\ndata; em coluna `string`, tudo como texto. O que não converte (data\r\ninválida) fica como texto, depois dos convertidos."
+        },
+        {
+          "kind": "function",
+          "name": "rankValues",
+          "return": {
+            "type": {
+              "text": "Int32Array"
+            }
+          },
+          "parameters": [
+            {
+              "name": "values",
+              "type": {
+                "text": "readonly unknown[]"
+              }
+            },
+            {
+              "name": "language",
+              "optional": true,
+              "type": {
+                "text": "string"
+              }
+            }
+          ],
+          "description": "Posto de cada valor na ordem de createComparer: ordena só os\r\nvalores DISTINTOS (colunas com repetição ficam baratas) e a ordenação\r\nprincipal passa a comparar inteiros. Valores que o comparador considera\r\niguais (duas `Date` com o mesmo tempo) recebem o mesmo posto."
         }
       ],
       "exports": [
@@ -2179,6 +3002,14 @@
           "name": "createComparer",
           "declaration": {
             "name": "createComparer",
+            "module": "src/row-model/compare.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "rankValues",
+          "declaration": {
+            "name": "rankValues",
             "module": "src/row-model/compare.ts"
           }
         }
@@ -2646,9 +3477,16 @@
               "type": {
                 "text": "(column: GridColumnDef) => Comparer"
               }
+            },
+            {
+              "name": "orders",
+              "default": "[]",
+              "type": {
+                "text": "readonly (GridSortOrder | undefined)[]"
+              }
             }
           ],
-          "description": "Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da\r\nordem de entrada (usa mapa, não \"valores consecutivos\") e não muta nada.\r\nO valor é o de `getCellValue` (`valueGetter`/`path`); com `dataType`\r\ninformado, valores equivalentes no tipo (`10` e `\"10\"` numa coluna\r\n`number`) caem no mesmo grupo. Grupos de cada nível em ordem do\r\ncomparador da coluna (`compareFor`); itens na ordem original."
+          "description": "Agrupa `items` pelas colunas de grupo, em todos os níveis. Não depende da\r\nordem de entrada (usa mapa, não \"valores consecutivos\") e não muta nada.\r\nO valor é o de `getCellValue` (`valueGetter`/`path`); com `dataType`\r\ninformado, valores equivalentes no tipo (`10` e `\"10\"` numa coluna\r\n`number`) caem no mesmo grupo. Grupos de cada nível em ordem do\r\ncomparador da coluna (`compareFor`, ou o `comparator` dela), na direção\r\nde `orders[nível]` (padrão `asc`); itens na ordem de entrada — por isso o\r\ngrid ordena os itens ANTES de agrupar."
         }
       ],
       "exports": [
@@ -2746,6 +3584,60 @@
           "declaration": {
             "name": "LruCache",
             "module": "src/row-model/lru.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/row-model/sort.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "sortItems",
+          "return": {
+            "type": {
+              "text": "readonly T[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "items",
+              "type": {
+                "text": "readonly T[]"
+              }
+            },
+            {
+              "name": "sorting",
+              "type": {
+                "text": "readonly SortSpec[]"
+              }
+            },
+            {
+              "name": "language",
+              "optional": true,
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "cache",
+              "optional": true,
+              "type": {
+                "text": "RankCache"
+              }
+            }
+          ],
+          "description": "Devolve os itens ordenados pelas chaves, na ordem de prioridade. Não muta\n`items` (sem chaves devolve o próprio array). Estável: empates mantêm a\nordem de entrada. Comparação padrão: a de `createComparer(language, dataType)`.\nVazios ficam no início em `asc` e no fim em `desc` (a direção inverte o\ncomparador inteiro, como no DevExtreme).\n\nSó com o comparador padrão, cada chave vira postos inteiros e a ordenação\né um radix LSD (counting sort estável da última chave para a primeira) —\nlinear no número de linhas. Com `comparator` próprio, ordenação por\ncomparação."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "sortItems",
+          "declaration": {
+            "name": "sortItems",
+            "module": "src/row-model/sort.ts"
           }
         }
       ]

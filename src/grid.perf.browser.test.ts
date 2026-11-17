@@ -56,4 +56,62 @@ describe('desempenho com 100 mil linhas', () => {
     expect(regroupMs).toBeLessThan(1000);
     expect(reloadMs).toBeLessThan(1000);
   });
+
+  it('ordena 100 mil linhas do demo em < 200 ms', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'country', label: 'Country' },
+        { path: 'code', label: 'Code' },
+        { path: 'year', label: 'Year' },
+        { path: 'population', label: 'Population' },
+      ],
+      items,
+      configure: g => g.sorting = 'multiple',
+      height: '600px',
+    });
+
+    const timings = await measureSorts(grid, [
+      ['Country', 'asc'],
+      ['Country', 'desc'],
+      ['Year', 'desc', true],
+      ['Population', 'desc'],
+    ]);
+
+    expect(grid.getSorting().map(s => s.column.label)).toEqual(['Population']);
+
+    for (const ms of Object.values(timings)) {
+      expect(ms).toBeLessThan(200);
+    }
+  });
+
+  it('pior caso: 100 mil textos únicos fora de ordem', async () => {
+    const rows = items.map((item, i) => ({ ...item, name: `Item ${(i * 7919) % ROWS}` }));
+    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name' }], items: rows, height: '600px' });
+
+    const timings = await measureSorts(grid, [['Name', 'asc'], ['Name', 'desc']]);
+
+    expect(grid.shadowRoot!.querySelector('tbody tr[role=row] td')!.textContent.trim()).toBe('Item 99999');
+    // 1ª ordenação calcula os postos (Intl.Collator); inverter reaproveita.
+    expect(timings['Name asc']).toBeLessThan(400);
+    expect(timings['Name desc']).toBeLessThan(200);
+  });
 });
+
+const measureSorts = async (
+  grid: Awaited<ReturnType<typeof createGrid>>,
+  steps: [label: string, order: 'asc' | 'desc', append?: boolean][],
+): Promise<Record<string, number>> => {
+  const timings: Record<string, number> = {};
+
+  for (const [label, order, append] of steps) {
+    const column = grid.columns.find(c => c.label === label)!;
+    const start = performance.now();
+    grid.sortBy(column, order, { append });
+    await grid.updateComplete;
+    timings[`${label} ${order}`] = performance.now() - start;
+  }
+
+  const summary = Object.entries(timings).map(([k, v]) => `${k} ${v.toFixed(0)} ms`);
+  console.log(`[perf] ordenar 100 mil: ${summary.join(', ')}`);
+  return timings;
+};

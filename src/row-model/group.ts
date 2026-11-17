@@ -1,4 +1,4 @@
-import type { GridColumnDef } from '../grid-column-def.js';
+import type { GridColumnDef, GridSortOrder } from '../grid-column-def.js';
 import type { Comparer } from './compare.js';
 import { coerceValue } from './format.js';
 import type { GroupNode } from './types.js';
@@ -26,12 +26,15 @@ const columnIdentity = (column: GridColumnDef, level: number): string =>
  * O valor é o de `getCellValue` (`valueGetter`/`path`); com `dataType`
  * informado, valores equivalentes no tipo (`10` e `"10"` numa coluna
  * `number`) caem no mesmo grupo. Grupos de cada nível em ordem do
- * comparador da coluna (`compareFor`); itens na ordem original.
+ * comparador da coluna (`compareFor`, ou o `comparator` dela), na direção
+ * de `orders[nível]` (padrão `asc`); itens na ordem de entrada — por isso o
+ * grid ordena os itens ANTES de agrupar.
  */
 export const buildGroups = (
   items: readonly unknown[],
   groupColumns: readonly GridColumnDef[],
   compareFor: (column: GridColumnDef) => Comparer,
+  orders: readonly (GridSortOrder | undefined)[] = [],
 ): GroupNode[] => {
 
   const build = (levelItems: readonly unknown[], level: number, parentPath: unknown[]): GroupNode[] => {
@@ -52,7 +55,11 @@ export const buildGroups = (
       bucket.items.push(item);
     }
 
-    const sorted = [...buckets.entries()].sort(([, a], [, b]) => compare(a.value, b.value));
+    const direction = orders[level] === 'desc' ? -1 : 1;
+    const comparator = column.comparator;
+    const sorted = [...buckets.entries()].sort(([, a], [, b]) => direction * (comparator
+      ? comparator(a.value, b.value, a.items[0], b.items[0]) || 0
+      : compare(a.value, b.value)));
 
     return sorted.map(([identity, bucket]) => {
       const path = [...parentPath, [columnIdentity(column, level), identity]];
