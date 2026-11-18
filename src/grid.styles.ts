@@ -336,6 +336,133 @@ export const styles = css`
     overflow: clip;
   }
 
+  /*
+   * Linha adaptativa (spec 21): os valores das colunas ocultas por falta de
+   * espaço, "Rótulo: valor"; o par quebra (valor sob o rótulo) quando não
+   * cabe e o valor quebra em qualquer ponto (URL, e-mail) — WCAG 1.4.10.
+   */
+  .adaptive-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding-block: 8px;
+  }
+
+  .adaptive-fields + * {
+    margin-block-start: 8px;
+  }
+
+  .adaptive-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 4px;
+    min-width: 0;
+  }
+
+  .adaptive-label {
+    flex: none;
+    max-width: 100%;
+    margin: 0;
+    color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    overflow-wrap: anywhere;
+  }
+
+  .adaptive-band {
+    font-size: 0.875em;
+  }
+
+  .adaptive-mark {
+    vertical-align: -0.125em;
+    margin-inline-start: 4px;
+  }
+
+  .adaptive-sort.desc {
+    transform: rotate(180deg);
+  }
+
+  .adaptive-value {
+    position: relative;
+    flex: 1 1 12em;
+    min-width: 0;
+    margin: 0;
+    padding: 2px 4px;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Anel por dentro: a \`.detail-cell\` corta o que passa da borda (\`overflow: clip\`). */
+  .adaptive-value:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .adaptive-value.modified {
+    background-color: var(--u-grid-modified-cell-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 10%, transparent));
+    box-shadow: inset calc(3px * var(--_dir)) 0 0 0 var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
+  }
+
+  .adaptive-value.invalid {
+    outline: 2px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    outline-offset: -2px;
+  }
+
+  .adaptive-value.invalid:focus-visible {
+    outline: var(--_focus-ring);
+    box-shadow: inset 0 0 0 4px var(--u-color-surface, #fff), inset 0 0 0 6px var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+  }
+
+  /* Mensagem de erro no fluxo (a linha adaptativa cresce; nada por cima de outra linha). */
+  .adaptive-value > .validation-message {
+    position: static;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin-block-start: 4px;
+  }
+
+  .adaptive-value.editing {
+    padding: 0;
+  }
+
+  /* Marca na célula de expansão: há valor alterado/inválido nas ocultas com a linha fechada. */
+  td:where(.grid-table > * > * > *).detail-toggle-cell.adaptive-invalid {
+    outline: 2px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    outline-offset: -2px;
+  }
+
+  td:where(.grid-table > * > * > *).detail-toggle-cell.adaptive-modified {
+    box-shadow: inset calc(3px * var(--_dir)) 0 0 0 var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
+  }
+
+  /* Total de coluna oculta levado à última coluna exibida: quebra linha (WCAG 1.4.10). */
+  td:where(.grid-table > * > * > *).summary-cell.adaptive-summaries {
+    white-space: normal;
+    text-overflow: clip;
+    height: auto;
+  }
+
+  @media (forced-colors: active) {
+    .adaptive-mark {
+      color: CanvasText;
+    }
+
+    .adaptive-value:focus-visible {
+      outline-color: Highlight;
+    }
+
+    .adaptive-value.invalid,
+    td.detail-toggle-cell.adaptive-invalid {
+      outline: 2px dashed CanvasText;
+    }
+
+    .adaptive-value.modified,
+    td.detail-toggle-cell.adaptive-modified {
+      border-inline-start: 3px solid CanvasText;
+    }
+  }
+
   .selection-checkbox {
     box-sizing: border-box;
     display: inline-flex;
@@ -879,6 +1006,24 @@ export const styles = css`
     min-width: 0;
     cursor: pointer;
     font-size: 0.875rem;
+  }
+
+  /* Coluna oculta por falta de espaço (spec 21): a dica numa linha própria, sob o rótulo. */
+  .column-chooser-adaptive {
+    flex-wrap: wrap;
+  }
+
+  .column-chooser-hint {
+    order: 1;
+    flex-basis: 100%;
+    padding-inline-start: 30px;
+    padding-block-end: 6px;
+    font-size: 0.75rem;
+    color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
+  }
+
+  .column-chooser-nested {
+    order: 2;
   }
 
   .column-chooser-check span {

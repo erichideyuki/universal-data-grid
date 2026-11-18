@@ -1,4 +1,5 @@
 import { html, nothing, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 
@@ -32,6 +33,8 @@ export interface ColumnChooserItem {
   fixed: GridColumnFixed | undefined;
   /** Colunas da banda, numa lista aninhada. */
   children?: ColumnChooserItem[];
+  /** Oculta por falta de espaço (spec 21; banda: todas as folhas visíveis): dica sob o rótulo. */
+  adaptive?: boolean;
 }
 
 export interface ColumnChooserContext {
@@ -85,7 +88,7 @@ const renderChooserItems = (items: ColumnChooserItem[], context: ColumnChooserCo
   const { translation, onVisibleChange } = context;
 
   return html`${repeat(items, item => item.id, item => html`
-    <li class="column-chooser-item ${item.children ? 'column-chooser-band' : ''}">
+    <li class="column-chooser-item ${item.children ? 'column-chooser-band' : ''} ${item.adaptive ? 'column-chooser-adaptive' : ''}">
       <label class="column-chooser-check">
         <input
           type="checkbox"
@@ -93,9 +96,13 @@ const renderChooserItems = (items: ColumnChooserItem[], context: ColumnChooserCo
           .indeterminate=${live(!!item.indeterminate)}
           ?disabled=${!item.canToggle}
           title=${item.visible ? translation.hideColumn : translation.showColumn}
+          aria-describedby=${ifDefined(item.adaptive ? `column-chooser-hint-${item.id}` : undefined)}
           @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
         <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
       </label>
+      ${item.adaptive
+        ? html`<span class="column-chooser-hint" id="column-chooser-hint-${item.id}">${translation.adaptiveColumnDescription}</span>`
+        : nothing}
       ${item.fixed === undefined ? nothing : pinButton(item, 'start', context)}
       ${item.fixed === undefined ? nothing : pinButton(item, 'end', context)}
       ${item.children

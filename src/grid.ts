@@ -6413,7 +6413,8 @@ export class DataGrid extends LitElement {
     const includeSummaries = options.includeSummaries !== false;
     const lazy = this.#lazy;
     // Sem linhas de grupo (lista plana ou fonte remota): a coluna agrupada vira coluna.
-    const columns = [...includeGroups && !lazy ? [] : this._groupColumns, ...this._visibleColumns]
+    // Com as ocultas por falta de espaço (spec 21): a exportação não depende da largura.
+    const columns = [...includeGroups && !lazy ? [] : this._groupColumns, ...this._shownColumns]
       .filter(isColumnExportable)
       .map(column => this.#exportColumn(column));
     // Fonte remota com paginação ou grupos no servidor: só as linhas JÁ
@@ -6624,7 +6625,7 @@ export class DataGrid extends LitElement {
     // Célula de largura total (frente 20): a linha inteira, nas colunas exportáveis.
     const fullWidth = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
     const navColumn = dataColumnOf(this.#currentNavColumns()[position.col]);
-    const columns = fullWidth ? this._visibleColumns.filter(isColumnExportable) : navColumn && isColumnExportable(navColumn) ? [navColumn] : [];
+    const columns = fullWidth ? this._shownColumns.filter(isColumnExportable) : navColumn && isColumnExportable(navColumn) ? [navColumn] : [];
 
     if (!columns.length) {
       return undefined;
@@ -10046,7 +10047,7 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _searchColumns(): GridColumnDef[] {
-    return [...this._groupColumns, ...this._visibleColumns].filter(isColumnFilterable);
+    return [...this._groupColumns, ...this._shownColumns].filter(isColumnFilterable);
   }
 
   /** @internal */
@@ -15190,7 +15191,7 @@ export class DataGrid extends LitElement {
     // Linha inteira (frente 20): "Copiar" copia a linha, como o Ctrl+C nela.
     const fullWidthCell = request.cellType === 'full-width';
 
-    if (copying && (fullWidthCell ? this._visibleColumns.some(isColumnExportable) : column && isColumnExportable(column))) {
+    if (copying && (fullWidthCell ? this._shownColumns.some(isColumnExportable) : column && isColumnExportable(column))) {
       items.push({ name: 'copyCell', text: translation.copyCell });
     }
 
@@ -15939,8 +15940,9 @@ export class DataGrid extends LitElement {
   }
 
   #renderColumnChooser() {
-    const visibleCount = this._visibleColumns.length;
+    const visibleCount = this._shownColumns.length;
     const tree = this.#columnTree;
+    const adaptive = this.#adaptiveColumns;
 
     // Árvore na ordem atual (frente 13); banda com `showInChooser: false` sai com as colunas.
     const itemsOf = (parent: GridColumnDef | null): ColumnChooserItem[] => orderedSiblings(this._regularColumns, tree, parent)
@@ -15950,7 +15952,7 @@ export class DataGrid extends LitElement {
         const fixed = parent ? undefined : this._fixedOf(column);
 
         if (!tree.childrenOf.has(column)) {
-          return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, fixed };
+          return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, fixed, adaptive: adaptive.includes(column) };
         }
 
         // Só as colunas listadas (`showInChooser: false` não conta para o misto).
@@ -15966,6 +15968,8 @@ export class DataGrid extends LitElement {
           canToggle: !visible || visibleCount > shown,
           fixed,
           children: itemsOf(column),
+          // Banda cujas folhas visíveis estão todas na linha adaptativa (spec 21).
+          adaptive: shown > 0 && leaves.every(leaf => !this._isColumnVisible(leaf) || adaptive.includes(leaf)),
         };
       });
 

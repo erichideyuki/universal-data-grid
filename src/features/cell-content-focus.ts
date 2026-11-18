@@ -43,8 +43,11 @@ export const demoteFocusables = (root: Element): void => {
   }
 };
 
+/** Paradas do próprio grid dentro da célula (valores da linha adaptativa, spec 21). */
+const OWN_TARGET = '.focus-target[tabindex]';
+
 const isFocusTarget = (element: Element): boolean =>
-  (element.matches(TABBABLE) || demoted.has(element)) && !element.closest('[aria-hidden="true"]');
+  (element.matches(TABBABLE) || demoted.has(element) || element.matches(OWN_TARGET)) && !element.closest('[aria-hidden="true"]');
 
 /**
  * Rebaixa agora e de novo depois que os custom elements do conteúdo
