@@ -63,10 +63,14 @@ números 2× diferentes e a linha de base não se reproduzia. Por isso:
 ## Como rodar
 
 ```
-npm run test:perf                         # mede, confere orçamentos e linha de base (~1,5 min)
-PERF_UPDATE_BASELINE=1 npm run test:perf  # regrava a linha de base (só com motivo, no mesmo commit)
-PERF_CPU_RATE=4 npm run test:perf         # modo CDP (inspeção)
+npm run test:perf                            # mede, confere orçamentos e linha de base (~1,5 min)
+PERF_UPDATE_BASELINE=1 npm run test:perf     # regrava os cenários medidos…
+PERF_UPDATE_BASELINE=max npm run test:perf   # …e fica com o maior de cada métrica (não grava uma execução de sorte)
+PERF_CPU_RATE=4 npm run test:perf            # modo CDP (inspeção)
 ```
+
+Regravar a linha de base só com motivo (melhora ou custo aceito de recurso
+novo), sempre nos dois passos acima e no mesmo commit da mudança.
 
 - `npm test` NÃO roda o perf (só os projetos `node` e `browser`).
 - Cada cenário imprime `[perf] cenário: métrica=valor …` e grava em
@@ -122,18 +126,20 @@ Acima de 100 mil linhas uma tarefa longa é inevitável sem trabalhador (Web
 Worker) — o orçamento a limita, não a proíbe. Ver pendências.
 
 **Linha de base**: além dos orçamentos, nenhuma métrica pode piorar além
-da tolerância sobre `.specs/16-performance.baseline.json`: tempos +50% (mín.
-+25 ms) — duas execuções seguidas com a máquina ocupada variam até ~40%;
-regressão algorítmica (o dobro ou mais) passa disso —; memória +15% (mín.
-+2 MiB); nós +10% (mín. +20). Métrica ou cenário novo sem linha de base não
-é comparado até ser gravado.
+da tolerância sobre `.specs/16-performance.baseline.json`: interações +50%
+(mín. +25 ms) — duas execuções seguidas com a máquina ocupada variam até
+~40%; regressão algorítmica (o dobro ou mais) passa disso —; p95 de rolagem
++100% (mín. +33 ms; layout oscila mais que script); pior passo de rolagem só
+tem orçamento; memória +15% (mín. +2 MiB); nós +10% (mín. +20). Métrica ou
+cenário novo sem linha de base não é comparado até ser gravado. A linha de
+base guarda o maior valor de 3 execuções.
 
 ## Linha de base: antes → depois
 
 Mesmo harness (modo normalizado, 4×), na mesma máquina: "antes" = `main` em
-af1ade9 (uma medida), "depois" = este branch (melhor de 3; o arquivo
-`.specs/16-performance.baseline.json` tem todas as métricas). Em negrito, o
-que estourava o orçamento.
+af1ade9 (uma medida), "depois" = este branch (uma execução, melhor de 3 por
+medida; a linha de base versionada guarda o maior de 3 execuções). Em
+negrito, o que estourava o orçamento.
 
 | Cenário / métrica | Antes | Depois |
 |---|---|---|

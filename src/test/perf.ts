@@ -229,18 +229,32 @@ export const TOLERANCE = {
    * (o dobro) passa disso.
    */
   time: { ratio: 0.5, floor: 25 },
+  /**
+   * Rolagem (trabalho por passo, poucos ms reais): layout oscila mais que
+   * script. +100% e no mínimo +33 ms (dois quadros); o pior passo
+   * (`…WorstMs`) só tem orçamento, não entra na comparação.
+   */
+  scroll: { ratio: 1, floor: 33 },
   /** Memória: +15% e no mínimo +2 MiB. */
   memory: { ratio: 0.15, floor: 2 },
   /** Nós do DOM: +10% e no mínimo +20. */
   count: { ratio: 0.1, floor: 20 },
 };
 
-const toleranceOf = (metric: string) =>
-  metric.endsWith('Ms')
+const toleranceOf = (metric: string) => {
+  if ((/(scroll|jump)P95Ms$/).test(metric)) {
+    return TOLERANCE.scroll;
+  }
+
+  return metric.endsWith('Ms')
     ? TOLERANCE.time
     : metric.endsWith('MiB')
       ? TOLERANCE.memory
       : TOLERANCE.count;
+};
+
+/** Métricas só com orçamento (ruidosas demais para comparar com a linha de base). */
+const comparable = (metric: string): boolean => !metric.endsWith('WorstMs');
 
 /** Limite permitido para `metric` dado o valor da linha de base. */
 export const allowedOver = (metric: string, baseline: number): number => {
@@ -320,7 +334,7 @@ export const startPerf = async (): Promise<PerfSession> => {
       }
 
       return Object.entries(rounded)
-        .filter(([key, value]) => key in baseline && value > allowedOver(key, baseline[key]))
+        .filter(([key, value]) => comparable(key) && key in baseline && value > allowedOver(key, baseline[key]))
         .map(([key, value]) => `${scenario}.${key}: ${value} > linha de base ${baseline[key]} (+tolerância = ${allowedOver(key, baseline[key]).toFixed(1)})`);
     },
     finish: async () => {

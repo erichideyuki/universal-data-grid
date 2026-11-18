@@ -36,22 +36,36 @@ const readJson = (path: string): PerfMetrics => {
 /** Linha de base + configuração do perfil (variáveis de ambiente, spec 16). */
 const perfSetup: BrowserCommand<[]> = () => ({
   baseline: readJson(PERF_BASELINE),
-  update: process.env.PERF_UPDATE_BASELINE === '1',
+  update: Boolean(process.env.PERF_UPDATE_BASELINE),
   cpuRate: process.env.PERF_CPU_RATE ? Number(process.env.PERF_CPU_RATE) : undefined,
 });
 
-/** Junta os resultados de um arquivo de teste em `perf-results.json` (e na linha de base com `PERF_UPDATE_BASELINE=1`). */
+/**
+ * Junta os resultados de um arquivo de teste em `perf-results.json` e, com
+ * `PERF_UPDATE_BASELINE`, na linha de base: `=1` substitui os cenários
+ * medidos; `=max` fica com o maior valor de cada métrica (rodar `=1` e depois
+ * `=max` grava uma linha de base que não depende de uma execução de sorte).
+ */
 const perfRecord: BrowserCommand<[results: PerfMetrics]> = (_, results) => {
-  const write = (path: string) => {
-    const merged = { ...readJson(path), ...results };
+  const write = (path: string, keepMax = false) => {
+    const previous = readJson(path);
+    const merged = { ...previous, ...results };
+
+    if (keepMax) {
+      for (const [scenario, metrics] of Object.entries(results)) {
+        merged[scenario] = Object.fromEntries(Object.entries(metrics)
+          .map(([metric, value]) => [metric, Math.max(value, previous[scenario]?.[metric] ?? value)]));
+      }
+    }
+
     const sorted = Object.fromEntries(Object.keys(merged).sort().map(key => [key, merged[key]]));
     writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`);
   };
 
   write(PERF_RESULTS);
 
-  if (process.env.PERF_UPDATE_BASELINE === '1') {
-    write(PERF_BASELINE);
+  if (process.env.PERF_UPDATE_BASELINE) {
+    write(PERF_BASELINE, process.env.PERF_UPDATE_BASELINE === 'max');
   }
 };
 
