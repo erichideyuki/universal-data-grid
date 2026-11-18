@@ -115,5 +115,13 @@
     "replaceItemsMs": 956.1,
     "domNodes": 619,
     "gridHeapMiB": 14.3
+  },
+  "selection-1m": {
+    "selectAllMs": 438.2,
+    "clearSelectionMs": 44.3,
+    "arrowDownMs": 2.3,
+    "pageDownMs": 2.1,
+    "gridEndMs": 2.4,
+    "domNodes": 259
   }
 }
