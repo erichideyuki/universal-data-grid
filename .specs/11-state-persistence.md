@@ -170,6 +170,12 @@ Sincronizar estado entre abas.
   declarativo antes do 1º update) e lê o storage no `firstUpdated`.
 - Expansão de grupos guarda o caminho de valores junto da chave interna;
   `getState` só exporta as entradas do agrupamento atual.
+- `GridRowExpansionState` exportado com nome (o aprovado tinha o tipo em
+  linha em `GridState.rowExpansion`), par de `GridGroupExpansionState`.
+  `GridChangeSource` foi para `src/change-source.ts` (reexportado de
+  `grid.ts`) e `GridStateChangeSource = GridChangeSource | 'storage'`.
+- Avisos de coluna sem id/repetida só quando o hospedeiro usa o estado
+  (storage, `getState`/`setState`/`resetState`).
 - Limites do que vem de fora em `STATE_LIMITS` (colunas, chaves, grupos,
   profundidade/tamanho do filtro, textos, página). Estado inválido é
   recusado inteiro.

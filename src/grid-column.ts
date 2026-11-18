@@ -104,7 +104,8 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /**
    * Stable id of the column in the grid state (`getState`, `stateStorage`)
    * and in string column references (`summary` items look it up before
-   * `path`). Default: `path`.
+   * `path`). Default: `path`. A column without `name` and `path` is left out
+   * of the state.
    */
   @property() name = '';
 

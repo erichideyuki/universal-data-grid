@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid, GridState, GridStateChangeEventDetail, GridStateStorage } from './grid.js';
+import { FakeSource, waitFor } from './test/fake-source.js';
 import { cleanup, createGrid, dataRows, groupLabels, headerLabels, settle } from './test/fixture.js';
 
 const KEY = 'u-grid-state-test';
@@ -585,6 +586,58 @@ describe('stateStorage próprio (assíncrono)', () => {
     await settle(grid);
     expect(dataRows(grid).length).toBeGreaterThan(0);
     expect(grid._memoryStats.loadTimers).toBe(0);
+    // Carga terminada: o "Carregando" não fica velho na região viva.
+    expect(liveRegion(grid).textContent).toBe('');
+  });
+
+  it('estado assíncrono + fonte de dados: um "Carregando" só para as duas cargas', async () => {
+    const load = deferred<GridState | null>();
+    const source = new FakeSource(items, 400);
+    const loadings: string[] = [];
+    const grid = await createGrid({
+      columns: columns(),
+      setBeforeConnect: true,
+      configure: g => {
+        g.keyExpr = 'id';
+        g.dataSource = source;
+        g.stateStorage = { load: () => load.promise, save: () => undefined };
+      },
+    });
+    const observer = new MutationObserver(() => {
+      const text = liveRegion(grid).textContent.replace(/\u00A0$/, '');
+
+      if (text) {
+        loadings.push(text);
+      }
+    });
+
+    observer.observe(liveRegion(grid), { childList: true, characterData: true, subtree: true });
+    await wait(250);
+    load.resolve({ version: 1, columns: [{ name: 'year', sortOrder: 'desc' }] });
+    await waitFor(() => dataRows(grid).length > 0);
+    await settle(grid);
+    observer.disconnect();
+
+    expect(loadings).toEqual(['Loading…']);
+    // Nenhuma consulta antes do estado: uma só, e já na ordem restaurada.
+    expect(source.calls).toHaveLength(1);
+    expect(dataRows(grid)[0].textContent).toContain('2004');
+    expect(liveRegion(grid).textContent).toBe('');
+  });
+
+  it('focus() durante a espera vai à célula quando o estado chega', async () => {
+    const load = deferred<GridState | null>();
+    const grid = await makeGrid(g => {
+      g.stateStorage = { load: () => load.promise, save: () => undefined };
+    });
+
+    grid.focus();
+    expect(grid.shadowRoot!.activeElement).toBeNull();
+
+    load.resolve(null);
+    await settle(grid);
+
+    expect(grid.shadowRoot!.activeElement?.closest('table')).not.toBeNull();
   });
 
   it('load() que rejeita ou lança: aviso, estado inicial, render normal', async () => {
@@ -685,6 +738,57 @@ describe('acessibilidade da restauração', () => {
 
     expect(grid.searchText).toBe('City 2');
     expect(liveRegion(grid).textContent).toBe('');
+  });
+
+  it('foco dentro do funil: setState que oculta a coluna devolve o foco à célula ativa', async () => {
+    const grid = await makeGrid(g => {
+      g.headerFilter = true;
+    });
+
+    root(grid).querySelectorAll<HTMLElement>('.header-filter-button')[2].click();
+    await settle(grid);
+    root(grid).querySelector<HTMLElement>('.header-filter input, .header-filter [tabindex], .header-filter button')!.focus();
+    expect(grid.shadowRoot!.activeElement!.closest('.header-filter')).not.toBeNull();
+
+    grid.setState({ version: 1, columns: [{ name: 'city', visible: false }] }, { partial: true });
+    await settle(grid);
+    await settle(grid);
+
+    expect(root(grid).querySelector('[part~="header-filter"]')).toBeNull();
+    expect(grid.shadowRoot!.activeElement?.closest('table')).not.toBeNull();
+  });
+
+  it('editor da linha de filtro focado: setState mantém foco e cursor', async () => {
+    const grid = await makeGrid(g => {
+      g.showFilterRow = true;
+      g.filterValue = [['city', 'contains', 'City 1']];
+    });
+    const editor = root(grid).querySelectorAll<HTMLInputElement>('tr.filter-row .filter-editor')[2];
+
+    editor.focus();
+    editor.setSelectionRange(3, 3);
+    grid.setState({ version: 1, searchText: 'x', filterValue: [['city', 'contains', 'City 1']] }, { partial: true });
+    await settle(grid);
+
+    expect(grid.shadowRoot!.activeElement).toBe(editor);
+    expect(editor.value).toBe('City 1');
+    expect(editor.selectionStart).toBe(3);
+  });
+
+  it('axe sem violações depois de restaurar agrupado (treegrid), com fixa e oculta', async () => {
+    const grid = await makeGrid(g => {
+      g.columnChooser = true;
+    });
+
+    grid.setState({
+      version: 1,
+      columns: [{ name: 'year', fixed: 'start' }, { name: 'id', visible: false }, { name: 'country', groupIndex: 0 }],
+      groupExpansion: { all: true, levels: [], expanded: [], collapsed: [['Chile']] },
+    });
+    await settle(grid);
+
+    expect(root(grid).querySelector('table')!.getAttribute('role')).toBe('treegrid');
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
   });
 
   it('popover do funil fecha quando o setState oculta a coluna dele', async () => {

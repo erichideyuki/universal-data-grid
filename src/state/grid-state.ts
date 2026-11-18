@@ -7,6 +7,7 @@
  * Só lê campos conhecidos (nunca espalha/copia o objeto recebido), então
  * chaves como `__proto__` não chegam a lugar nenhum.
  */
+import type { GridChangeSource } from '../change-source.js';
 import type { GridRowKey } from '../data/data-source.js';
 import type { GridColumnFixed, GridFilterExpression, GridSortOrder } from '../grid-column-def.js';
 
@@ -22,10 +23,13 @@ export interface GridColumnState {
   name: string;
   /** Width chosen by the user (px); `null` = the width of the definition. */
   width?: number | null;
+  /** Shown (`false` = hidden in the column chooser). */
   visible?: boolean;
+  /** Side the column is fixed to; `null` = not fixed. */
   fixed?: GridColumnFixed;
   /** Grouping level (0-based); `null` = not grouped. */
   groupIndex?: number | null;
+  /** Sort direction; `null` = not sorted (for a grouped column: the direction of its groups). */
   sortOrder?: GridSortOrder | null;
   /** Priority in the sorting (0 = first). */
   sortIndex?: number | null;
@@ -48,7 +52,9 @@ export interface GridGroupExpansionState {
 
 /** Detail rows (master-detail) whose expansion differs from `autoExpandRows`. */
 export interface GridRowExpansionState {
+  /** Keys of rows expanded although `autoExpandRows` is off. */
   expanded: GridRowKey[];
+  /** Keys of rows collapsed although `autoExpandRows` is on. */
   collapsed: GridRowKey[];
 }
 
@@ -58,6 +64,7 @@ export interface GridRowExpansionState {
  * refers to columns by `path`, like the `filterValue` property.
  */
 export interface GridState {
+  /** Format version; older versions are migrated by `setState`. */
   version: 1;
   /**
    * Columns in the order of `moveColumn` (the regular columns; hidden ones
@@ -65,14 +72,19 @@ export interface GridState {
    * gives it).
    */
   columns?: GridColumnState[];
+  /** Column filter (like the `filterValue` property: columns by `path`, dates as ISO text). */
   filterValue?: GridFilterExpression | null;
+  /** Text of the search panel. */
   searchText?: string;
+  /** Expanded and collapsed groups. */
   groupExpansion?: GridGroupExpansionState;
   /** Only with `keyExpr` and string/number keys. */
   selectedKeys?: GridRowKey[];
   /** Only with `keyExpr` and string/number keys. */
   rowExpansion?: GridRowExpansionState;
+  /** Current page (0-based). */
   pageIndex?: number;
+  /** Rows per page (restored only when offered by `pageSizeOptions` or equal to the initial `pageSize`). */
   pageSize?: number;
 }
 
@@ -85,7 +97,7 @@ export interface GridStateStorage {
 }
 
 /** Who changed the state: a user gesture, a method/property, or the restore from `stateStorage`. */
-export type GridStateChangeSource = 'user' | 'api' | 'storage';
+export type GridStateChangeSource = GridChangeSource | 'storage';
 
 /** `detail` of `u-grid-state-change`. */
 export interface GridStateChangeEventDetail {

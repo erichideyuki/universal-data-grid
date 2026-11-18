@@ -852,17 +852,18 @@
                 "text": "string"
               },
               "description": "Key of the state in `localStorage` / `sessionStorage` (required by `state-storage=\"local|session\"`).",
+              "default": "''",
               "attribute": "state-storage-key"
             },
             {
               "kind": "field",
               "name": "stateChangeDelay",
-              "default": "500",
-              "description": "Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`.",
-              "attribute": "state-change-delay",
               "type": {
                 "text": "number"
-              }
+              },
+              "default": "500",
+              "description": "Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`.",
+              "attribute": "state-change-delay"
             },
             {
               "kind": "method",
@@ -887,14 +888,16 @@
                   "name": "state",
                   "type": {
                     "text": "GridState"
-                  }
+                  },
+                  "description": "The state to apply."
                 },
                 {
                   "name": "options",
-                  "default": "{}",
+                  "optional": true,
                   "type": {
-                    "text": "{ partial?: boolean }"
-                  }
+                    "text": "{ partial?: boolean } | null"
+                  },
+                  "description": "`partial: true` changes only the keys present in `state`."
                 }
               ],
               "description": "Applies a state (from `getState`, your storage or built by hand). It is\nvalidated first: an invalid state is ignored with a console warning; an\nolder version is migrated, an unknown one ignored. Without `partial`,\nevery top-level key missing from `state` goes back to the initial value\n(the column definitions and the properties the host set before the grid\nconnected); with `partial: true` only the keys present change. A\n`columns` list sets the whole layout: columns missing from it go back to\ntheir definition, at the end in definition order; unknown names are\nignored. Fires none of the per-feature events (like the setters), only\n`u-grid-state-change`. Never moves the focus nor announces anything: when\na user gesture triggers it, announce the result yourself."
@@ -2017,7 +2020,7 @@
             {
               "name": "state-storage",
               "type": {
-                "text": "'local' | 'session' | GridStateStorage | null"
+                "text": "'local' | 'session'"
               },
               "description": "Saves and restores the user state (see `getState`): `local` / `session`\n(`localStorage` / `sessionStorage`, attribute `state-storage`, needs\n`state-storage-key`) or an object with `load()` and `save()` (property\nonly). Read when the grid connects (and again when this or the key\nchanges), before the first render of data; while an asynchronous `load()`\nruns the grid shows the load panel and no rows. Saved\n`state-change-delay` ms after each change, and on disconnect or\n`pagehide` when a save is pending. A `setState()` before connecting skips\nthe read. Unreadable or invalid saved states are ignored with a console\nwarning.",
               "default": "null",
@@ -2029,11 +2032,15 @@
                 "text": "string"
               },
               "description": "Key of the state in `localStorage` / `sessionStorage` (required by `state-storage=\"local|session\"`).",
+              "default": "''",
               "fieldName": "stateStorageKey"
             },
             {
               "name": "state-change-delay",
-              "default": "STATE_CHANGE_DELAY",
+              "type": {
+                "text": "number"
+              },
+              "default": "500",
               "description": "Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`.",
               "fieldName": "stateChangeDelay"
             },
@@ -2467,7 +2474,7 @@
                 "text": "string"
               },
               "default": "''",
-              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`.",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`. A column without `name` and `path` is left out\nof the state.",
               "attribute": "name"
             },
             {
@@ -2774,7 +2781,7 @@
                 "text": "string"
               },
               "default": "''",
-              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`.",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`. A column without `name` and `path` is left out\nof the state.",
               "fieldName": "name"
             },
             {

@@ -9,6 +9,7 @@ import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { booleanAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';
+import type { GridChangeSource } from './change-source.js';
 import {
   type GridDataChanges,
   type GridDataSource,
@@ -256,8 +257,7 @@ export { DataGridColumn } from './grid-column.js';
 /** @deprecated Use `DataGridColumn`. */
 export type UmDataGridColumn = DataGridColumn;
 
-/** Who changed the state: a user gesture or a method call. */
-export type GridChangeSource = 'user' | 'api';
+export type { GridChangeSource } from './change-source.js';
 
 /** `detail` of `u-grid-sorting` and `u-grid-sort-change`. */
 export interface GridSortEventDetail {
@@ -1671,7 +1671,10 @@ export class DataGrid extends LitElement {
     this.requestUpdate('stateStorage', old);
   }
 
-  /** Key of the state in `localStorage` / `sessionStorage` (required by `state-storage="local|session"`). */
+  /**
+   * Key of the state in `localStorage` / `sessionStorage` (required by `state-storage="local|session"`).
+   * @default ''
+   */
   @property({ attribute: 'state-storage-key' })
   get stateStorageKey(): string {
     return this.#stateStorageKey;
@@ -1685,7 +1688,7 @@ export class DataGrid extends LitElement {
   }
 
   /** Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`. */
-  @property({ type: Number, attribute: 'state-change-delay' }) stateChangeDelay = STATE_CHANGE_DELAY;
+  @property({ type: Number, attribute: 'state-change-delay' }) stateChangeDelay = 500;
 
   /** Estados a aplicar quando houver colunas (pedidos antes delas: `setState` cedo, storage). */
   #statesToApply: { state: GridState; partial: boolean; fromStorage: boolean }[] = [];
@@ -1711,6 +1714,8 @@ export class DataGrid extends LitElement {
   #lastStateJson: string | undefined;
   #pageHideListening = false;
   readonly #warnedState = new Set<string>();
+  /** O hospedeiro usa o estado (`getState`/`setState`/`resetState`). */
+  #stateInUse = false;
 
   /**
    * The user state (a new object, JSON serializable): column order, width,
@@ -1720,6 +1725,16 @@ export class DataGrid extends LitElement {
    * identified by `name` (or `path`); columns without either are left out.
    */
   getState(): GridState {
+    this.#stateInUse = true;
+    return this.#collectState();
+  }
+
+  /**
+   * O estado atual. Os avisos de coluna sem id só saem quando o hospedeiro
+   * usa o estado (storage, `getState`/`setState`): o acompanhamento interno
+   * roda em todo grid.
+   */
+  #collectState(): GridState {
     const state: GridState = { version: GRID_STATE_VERSION };
     const sortIndex = new Map(this.#sorting.map((spec, index) => [spec.column, index]));
     const columns: GridColumnState[] = [];
@@ -1770,8 +1785,11 @@ export class DataGrid extends LitElement {
    * ignored. Fires none of the per-feature events (like the setters), only
    * `u-grid-state-change`. Never moves the focus nor announces anything: when
    * a user gesture triggers it, announce the result yourself.
+   * @param state The state to apply.
+   * @param options `partial: true` changes only the keys present in `state`.
    */
-  setState(state: GridState, options: { partial?: boolean } = {}): void {
+  setState(state: GridState, options?: { partial?: boolean } | null): void {
+    this.#stateInUse = true;
     const parsed = parseGridState(state);
 
     if ('error' in parsed) {
@@ -1780,11 +1798,12 @@ export class DataGrid extends LitElement {
     }
 
     this.#explicitStateChange();
-    this.#requestState(parsed.state, options.partial === true, false);
+    this.#requestState(parsed.state, options?.partial === true, false);
   }
 
   /** Puts the state back to the initial one (`setState` with an empty state, without `partial`). */
   resetState(): void {
+    this.#stateInUse = true;
     this.#explicitStateChange();
     this.#requestState({ version: GRID_STATE_VERSION }, false, false);
   }
@@ -1828,10 +1847,16 @@ export class DataGrid extends LitElement {
     for (const column of columns) {
       const name = columnNameOf(column);
 
+      const warn = this.#stateInUse || !!this.#stateStorage;
+
       if (!name) {
-        this.#warnState(`a column without "name" or "path" (${JSON.stringify(column.label ?? '')}) is left out of the state.`);
+        if (warn) {
+          this.#warnState(`a column without "name" or "path" (${JSON.stringify(column.label ?? '')}) is left out of the state.`);
+        }
       } else if (named.has(name)) {
-        this.#warnState(`column name "${name}" is repeated; only the first column with it is in the state.`);
+        if (warn) {
+          this.#warnState(`column name "${name}" is repeated; only the first column with it is in the state.`);
+        }
       } else {
         named.set(name, column);
       }
@@ -1908,8 +1933,10 @@ export class DataGrid extends LitElement {
       this.#filtering.set(filterValue, searchText);
     }
 
-    // A contagem que um gesto anterior esperava não é anunciada (o estado não é gesto).
+    // A contagem que um gesto anterior esperava não é anunciada (o estado não é gesto),
+    // nem a largura de um Alt+←/→ em curso.
     this.#announceFilter = false;
+    this.#resizeAnnouncer.cancel('resize');
 
     if (state.groupExpansion || reset) {
       this.#restoreGroupExpansion(state.groupExpansion);
@@ -2087,6 +2114,18 @@ export class DataGrid extends LitElement {
   /** Popover/menu de uma coluna que saiu de vista fecha (o foco volta à célula ativa pela guarda da spec 17). */
   #closeHiddenPopovers(): void {
     const visible = new Set(this._regularColumns.filter(column => this._isColumnVisible(column)));
+    const focused = this.shadowRoot?.activeElement;
+
+    // `hidePopover()` (manual) não devolve o foco: vai à célula ativa no render seguinte.
+    if (focused?.closest('.header-filter, .filter-menu')) {
+      const headerColumn = this.#headerFilterPopover.column;
+      const menuColumn = this.#filterRow.menuColumn;
+
+      if ((headerColumn && !visible.has(headerColumn)) || (menuColumn && !visible.has(menuColumn))) {
+        this.#focusPending = true;
+      }
+    }
+
     this.#headerFilterPopover.closeIfRemoved(visible);
 
     const menuColumn = this.#filterRow.menuColumn;
@@ -2231,7 +2270,7 @@ export class DataGrid extends LitElement {
 
     if (!previous) {
       this.#recordedSources.clear();
-      this.#lastStateJson ??= JSON.stringify(this.getState());
+      this.#lastStateJson ??= JSON.stringify(this.#collectState());
       return;
     }
 
@@ -2270,7 +2309,7 @@ export class DataGrid extends LitElement {
     const sources = [...this.#burstSources];
     this.#burstSources.clear();
 
-    const state = this.getState();
+    const state = this.#collectState();
     const json = JSON.stringify(state);
     const restored = sources.includes('storage');
 
@@ -2542,6 +2581,7 @@ export class DataGrid extends LitElement {
     if (isServer) {
       this.#hostLabel.update();
     }
+
     // Estado pedido antes de haver colunas (`setState` cedo, storage).
     this.#applyPendingStates();
 
@@ -3645,6 +3685,12 @@ export class DataGrid extends LitElement {
 
   /** Moves the focus to the active cell of the grid (the one keyboard navigation starts from). */
   override focus(options?: FocusOptions): void {
+    // Esperando o estado a célula está oculta: o foco vai a ela quando o estado chegar.
+    if (this.#waitingForState) {
+      this.#focusPending = true;
+      return;
+    }
+
     const cell = this.#activeCellElement();
 
     if (cell) {
@@ -4859,6 +4905,16 @@ export class DataGrid extends LitElement {
     );
   }
 
+  /** Fim da carga: o "Carregando…" anunciado não fica na região viva (esvaziar não é lido). */
+  #clearLoadingAnnouncement(): void {
+    if (this.#loadingAnnounced && this.#announcement.replace(/\u00A0$/, '') === this.#translation.loading) {
+      this.#announcement = '';
+      this.requestUpdate();
+    }
+
+    this.#loadingAnnounced = false;
+  }
+
   /** Esperando o estado sem fonte de dados: "Carregando…" aos 300 ms, uma vez (com fonte, `#afterRenderLoad` cuida). */
   #announceStateLoading(): void {
     if (this.#dataSource) {
@@ -4868,7 +4924,7 @@ export class DataGrid extends LitElement {
     if (!this.#stateWaiting) {
       clearTimeout(this.#loadingTimer);
       this.#loadingTimer = undefined;
-      this.#loadingAnnounced = false;
+      this.#clearLoadingAnnouncement();
     } else if (!this.#loadingTimer && !this.#loadingAnnounced && this.isConnected) {
       this.#loadingTimer = setTimeout(() => {
         this.#loadingTimer = undefined;
@@ -4899,7 +4955,7 @@ export class DataGrid extends LitElement {
     if (!this.#isLoading && !this.#stateWaiting) {
       clearTimeout(this.#loadingTimer);
       this.#loadingTimer = undefined;
-      this.#loadingAnnounced = false;
+      this.#clearLoadingAnnouncement();
     } else if (!this.#loadingTimer && !this.#loadingAnnounced) {
       this.#loadingTimer = setTimeout(() => {
         this.#loadingTimer = undefined;
@@ -6489,7 +6545,7 @@ export class DataGrid extends LitElement {
       <div
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}>
-        <div class="scroll-container" style=${scrollPadding} ${ref(this._scrollContainerRef)}>
+        <div class="scroll-container" style=${scrollPadding} .inert=${waiting} ${ref(this._scrollContainerRef)}>
           ${this.#renderToolbar()}
           <table
             class=${fit ? 'grid-table fit' : 'grid-table'}
@@ -6883,7 +6939,7 @@ export class DataGrid extends LitElement {
 
     return html`
       ${waiting || this.#isLoading
-        ? html`<div class="load-panel" part="load-panel" aria-hidden="true">
+        ? html`<div class="load-panel" part="load-panel" aria-hidden=${ifDefined(waiting ? undefined : 'true')}>
           <span class="load-spinner" aria-hidden="true"></span><span>${translation.loading}</span>
         </div>`
         : nothing}
@@ -6963,7 +7019,7 @@ export class DataGrid extends LitElement {
       @click=${go(target)}><svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor" aria-hidden="true"><path d=${path}/></svg></button>`;
 
     return html`
-      <nav class="pager" part="pager" aria-label=${translation.paginationLabel}>
+      <nav class="pager" part="pager" aria-label=${translation.paginationLabel} .inert=${this.#waitingForState}>
         ${options.length
           ? html`<label class="page-size">
             <span>${translation.pageSizeLabel}</span>

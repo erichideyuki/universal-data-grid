@@ -116,7 +116,8 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   (`'user' | 'api' | 'storage'`) em vez de `source` — exceção registrada: o
   evento sai uma vez por rajada (debounce) e uma rajada mistura origens.
   Dispara também por setter e `setState` (só se o estado mudou de fato).
-  `GridColumnRef` (string) procura `name` antes de `path`.
+  `GridColumnRef` (string) procura `name` antes de `path`. Tipos com nome
+  `GridRowExpansionState` e `GridGroupExpansionState` (em vez de em linha).
 - #33: `u-grid-loading` (08) e `u-grid-row-validating` (09) marcados
   canceláveis pela regra do gerúndio. Na spec 09, `u-grid-editing-start` é cancelável, então pela regra
   virou `u-grid-edit-starting` (não `u-grid-edit-start`).

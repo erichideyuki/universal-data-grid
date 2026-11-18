@@ -1632,6 +1632,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Context menu of the group panel (ungroup, move, expand/collapse all). |
 | `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Context menu of the column headers (right-click, "⋮", Shift+F10): group, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
+| `stateStorage`     | `state-storage`       | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Save and restore the user state. See [State persistence](#state-persistence). |
+| `stateStorageKey`  | `state-storage-key`   | `string`  | `''`    | Key in `localStorage`/`sessionStorage`. |
+| `stateChangeDelay` | `state-change-delay`  | `number`  | `500`   | Delay (ms) of `u-grid-state-change` and of the save. |
 | `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
 | `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the grouping toolbar (where columns are dropped to group). |
