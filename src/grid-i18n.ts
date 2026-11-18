@@ -365,8 +365,6 @@ export interface GridI18n {
   paste: string;
   /** Announced when the cell menu "Paste" cannot read the clipboard (permission denied, no Clipboard API) or it is empty. */
   pasteFailedAnnouncement: string;
-  /** Announced when the cell menu "Copy selected cells" cannot write to the clipboard. */
-  copyFailedAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -614,7 +612,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copy selected cells',
     paste: 'Paste',
     pasteFailedAnnouncement: 'Could not read the clipboard. Paste with the keyboard.',
-    copyFailedAnnouncement: 'Could not copy to the clipboard.',
   },
   es: {
     noData: 'Sin datos',
@@ -797,7 +794,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copiar celdas seleccionadas',
     paste: 'Pegar',
     pasteFailedAnnouncement: 'No se pudo leer el portapapeles. Pegue con el teclado.',
-    copyFailedAnnouncement: 'No se pudo copiar al portapapeles.',
   },
   pt: {
     noData: 'Sem dados',
@@ -980,7 +976,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copiar células selecionadas',
     paste: 'Colar',
     pasteFailedAnnouncement: 'Não foi possível ler a área de transferência. Cole pelo teclado.',
-    copyFailedAnnouncement: 'Não foi possível copiar para a área de transferência.',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1163,7 +1158,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copier les cellules sélectionnées',
     paste: 'Coller',
     pasteFailedAnnouncement: 'Impossible de lire le presse-papiers. Collez avec le clavier.',
-    copyFailedAnnouncement: 'Impossible de copier dans le presse-papiers.',
   },
   de: {
     noData: 'Keine Daten',
@@ -1346,7 +1340,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Ausgewählte Zellen kopieren',
     paste: 'Einfügen',
     pasteFailedAnnouncement: 'Die Zwischenablage konnte nicht gelesen werden. Fügen Sie über die Tastatur ein.',
-    copyFailedAnnouncement: 'Konnte nicht in die Zwischenablage kopieren.',
   },
   it: {
     noData: 'Nessun dato',
@@ -1529,7 +1522,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copia le celle selezionate',
     paste: 'Incolla',
     pasteFailedAnnouncement: 'Impossibile leggere gli appunti. Incolla con la tastiera.',
-    copyFailedAnnouncement: 'Impossibile copiare negli appunti.',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1712,7 +1704,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Geselecteerde cellen kopiëren',
     paste: 'Plakken',
     pasteFailedAnnouncement: 'Het klembord kon niet worden gelezen. Plak met het toetsenbord.',
-    copyFailedAnnouncement: 'Kopiëren naar het klembord is mislukt.',
   },
   ru: {
     noData: 'Нет данных',
@@ -1895,7 +1886,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Копировать выделенные ячейки',
     paste: 'Вставить',
     pasteFailedAnnouncement: 'Не удалось прочитать буфер обмена. Вставьте с клавиатуры.',
-    copyFailedAnnouncement: 'Не удалось скопировать в буфер обмена.',
   },
   pl: {
     noData: 'Brak danych',
@@ -2078,7 +2068,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Kopiuj zaznaczone komórki',
     paste: 'Wklej',
     pasteFailedAnnouncement: 'Nie udało się odczytać schowka. Wklej za pomocą klawiatury.',
-    copyFailedAnnouncement: 'Nie udało się skopiować do schowka.',
   },
   tr: {
     noData: 'Veri yok',
@@ -2261,7 +2250,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Seçili hücreleri kopyala',
     paste: 'Yapıştır',
     pasteFailedAnnouncement: 'Pano okunamadı. Klavyeyle yapıştırın.',
-    copyFailedAnnouncement: 'Panoya kopyalanamadı.',
   },
   ja: {
     noData: 'データがありません',
@@ -2444,7 +2432,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '選択したセルをコピー',
     paste: '貼り付け',
     pasteFailedAnnouncement: 'クリップボードを読み取れませんでした。キーボードで貼り付けてください。',
-    copyFailedAnnouncement: 'クリップボードにコピーできませんでした。',
   },
   ko: {
     noData: '데이터 없음',
@@ -2627,7 +2614,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '선택한 셀 복사',
     paste: '붙여넣기',
     pasteFailedAnnouncement: '클립보드를 읽을 수 없습니다. 키보드로 붙여넣으세요.',
-    copyFailedAnnouncement: '클립보드에 복사할 수 없습니다.',
   },
   zh: {
     noData: '无数据',
@@ -2810,7 +2796,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '复制所选单元格',
     paste: '粘贴',
     pasteFailedAnnouncement: '无法读取剪贴板。请使用键盘粘贴。',
-    copyFailedAnnouncement: '无法复制到剪贴板。',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -2993,7 +2978,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'نسخ الخلايا المحددة',
     paste: 'لصق',
     pasteFailedAnnouncement: 'تعذّرت قراءة الحافظة. الصق باستخدام لوحة المفاتيح.',
-    copyFailedAnnouncement: 'تعذّر النسخ إلى الحافظة.',
   },
 });
 

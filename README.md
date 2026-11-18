@@ -2160,7 +2160,7 @@ interface GridI18n {
   // Toolbar and menus: toolbarLabel, toolbarMoreButtonLabel, exportButtonLabel, exportCsv,
   // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
   // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
-  // copySelectedCells, paste, pasteFailedAnnouncement, copyFailedAnnouncement (cell ranges),
+  // copySelectedCells, paste, pasteFailedAnnouncement (cell ranges),
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
 }
