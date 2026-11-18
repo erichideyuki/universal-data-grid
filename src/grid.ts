@@ -1185,6 +1185,9 @@ interface ColumnLayout {
   gapBefore: number;
 }
 
+/** Linha de uma seção fixa: a fixa ou, aberta, a de detalhe dela (spec 21). */
+type FixedSectionRow = DataRow | DetailRow;
+
 /** Valor (`<dd>`) da linha adaptativa (spec 21) num caminho de evento: a coluna e a linha mestre. */
 interface AdaptiveValueTarget {
   element: HTMLElement;
@@ -1440,7 +1443,7 @@ const isRenderResult = (value: unknown): value is GridRenderResult =>
   || (typeof value === 'object' && ('_$litType$' in value || typeof (value as Node).nodeType === 'number'));
 
 type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true }
-  | { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number };
+  | { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number; detail?: true };
 
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
@@ -1724,7 +1727,9 @@ export class DataGrid extends LitElement {
    * the host's own items, rendered with the grid columns (formatting, cell
    * `renderer`, `rowRenderer`). They stay out of sorting, filtering, the
    * search, grouping, paging (shown on every page), `getTotalCount()` and
-   * the summaries; they are not selectable, editable nor expandable. The
+   * the summaries; they are not selectable nor editable. They expand like
+   * body rows (`detailRenderer`, columns hidden by `autoHideColumns`), by
+   * row key: a key also in the body expands in both places. The
    * same object may also be in `items` (it shows in both places).
    * @default []
    */
@@ -1753,7 +1758,7 @@ export class DataGrid extends LitElement {
   #fixedTopItems: readonly unknown[] = [];
   #fixedBottomItems: readonly unknown[] = [];
   /** Linhas fixas (objetos `DataRow` com `fixed`), refeitas quando a lista muda. */
-  #fixedRowsCache: { top: readonly unknown[]; bottom: readonly unknown[]; rows: { top: DataRow[]; bottom: DataRow[] } } | undefined;
+  #fixedRowsCache: { top: readonly unknown[]; bottom: readonly unknown[]; expansion: string; rows: { top: FixedSectionRow[]; bottom: FixedSectionRow[] } } | undefined;
 
   /**
    * Full-width rows (property only): builds the content of ONE cell spanning
@@ -4477,7 +4482,8 @@ export class DataGrid extends LitElement {
 
   /** Mede as linhas de detalhe renderizadas e observa as que crescem depois. */
   #measureDetails(measure: boolean): void {
-    const rows = [...this.renderRoot.querySelectorAll<HTMLElement>('tbody > tr.detail-row:not(.pinned)')];
+    // Só as do corpo (as das linhas fixas não estão no virtualizador, spec 21).
+    const rows = [...this.renderRoot.querySelectorAll<HTMLElement>('tbody:not(.fixed-rows) > tr.detail-row:not(.pinned)')];
     const observed = this.#observedDetails;
 
     if (!rows.length && !observed.size) {
@@ -10971,21 +10977,46 @@ export class DataGrid extends LitElement {
   // ------------------------------------------------------------- linhas fixas (frente 20)
 
   /** Linhas fixas como `DataRow` (chave `f:t:N`/`f:b:N`), refeitas só quando a lista muda. */
-  #fixedRows(): { top: DataRow[]; bottom: DataRow[] } {
+  #fixedRows(): { top: FixedSectionRow[]; bottom: FixedSectionRow[] } {
     const cache = this.#fixedRowsCache;
     const top = this.#fixedTopItems;
     const bottom = this.#fixedBottomItems;
+    // Linhas de detalhe/adaptativa das fixas (spec 21) seguem a expansão.
+    const detail = this.#showDetailColumn;
+    const expansion = detail ? `${this.#rowExpansion.version}:${this.autoExpandRows}` : '';
 
-    if (cache?.top === top && cache.bottom === bottom) {
+    if (cache?.top === top && cache.bottom === bottom && cache.expansion === expansion) {
       return cache.rows;
     }
 
-    const build = (items: readonly unknown[], fixed: 'top' | 'bottom'): DataRow[] =>
-      items.map((item, index) => ({ isGroup: false, key: `f:${fixed === 'top' ? 't' : 'b'}:${index}`, item, index, fixed }));
+    const build = (items: readonly unknown[], fixed: 'top' | 'bottom'): FixedSectionRow[] => {
+      const side = fixed === 'top' ? 't' : 'b';
+      const rows: FixedSectionRow[] = [];
+
+      items.forEach((item, index) => {
+        const key = `f:${side}:${index}`;
+        rows.push({ isGroup: false, key, item, index, fixed });
+
+        if (detail && this.#isRowExpandedKey(this.#keyOf(item))) {
+          rows.push({ isGroup: false, isDetail: true, key: `${key}:d`, item, masterKey: key, fixed });
+        }
+      });
+
+      return rows;
+    };
     const rows = { top: build(top, 'top'), bottom: build(bottom, 'bottom') };
 
-    this.#fixedRowsCache = { top, bottom, rows };
+    this.#fixedRowsCache = { top, bottom, expansion, rows };
     return rows;
+  }
+
+  /** Linhas das seções fixas (com as de detalhe abertas, spec 21) no índice interno. */
+  get #fixedTopCount(): number {
+    return this.#fixedRows().top.length;
+  }
+
+  get #fixedBottomCount(): number {
+    return this.#fixedRows().bottom.length;
   }
 
   /**
@@ -10999,11 +11030,11 @@ export class DataGrid extends LitElement {
 
   /** Índice interno da linha fixa `position` do lado `fixed`. */
   #fixedIndex(fixed: 'top' | 'bottom', position: number): number {
-    return this.#fixedBase + (fixed === 'top' ? 0 : this.#fixedTopItems.length) + position;
+    return this.#fixedBase + (fixed === 'top' ? 0 : this.#fixedTopCount) + position;
   }
 
   #isFixedIndex(index: number): boolean {
-    return index >= this.#fixedBase && index < this.#fixedBase + this.#fixedTopItems.length + this.#fixedBottomItems.length;
+    return index >= this.#fixedBase && index < this.#fixedBase + this.#fixedTopCount + this.#fixedBottomCount;
   }
 
   /** Índice de corpo (`0..length-1`): rolagem vertical, seleção por intervalo, paginação. */
@@ -11013,12 +11044,12 @@ export class DataGrid extends LitElement {
 
   /** Quantas linhas há na ordem visual depois do cabeçalho (fixas, corpo, totais). */
   get #visualRowCount(): number {
-    return this.#fixedTopItems.length + this.#rows.length + this.#fixedBottomItems.length + (this.#hasTotals ? 1 : 0);
+    return this.#fixedTopCount + this.#rows.length + this.#fixedBottomCount + (this.#hasTotals ? 1 : 0);
   }
 
   /** Índice interno → posição visual (cabeçalho negativo inalterado). */
   #toVisual(index: number): number {
-    const top = this.#fixedTopItems.length;
+    const top = this.#fixedTopCount;
     const body = this.#rows.length;
 
     if (index < 0) {
@@ -11030,7 +11061,7 @@ export class DataGrid extends LitElement {
     }
 
     if (index === body) {
-      return top + body + this.#fixedBottomItems.length;
+      return top + body + this.#fixedBottomCount;
     }
 
     const position = index - this.#fixedBase;
@@ -11040,9 +11071,9 @@ export class DataGrid extends LitElement {
 
   /** Posição visual → índice interno. */
   #fromVisual(visual: number): number {
-    const top = this.#fixedTopItems.length;
+    const top = this.#fixedTopCount;
     const body = this.#rows.length;
-    const bottom = this.#fixedBottomItems.length;
+    const bottom = this.#fixedBottomCount;
 
     if (visual < 0) {
       return visual;
@@ -11070,14 +11101,14 @@ export class DataGrid extends LitElement {
 
   /** `aria-rowindex` da linha de índice interno `index` (ordem visual, 1-based). */
   #ariaRowIndexOf(index: number, headerRows: number): number {
-    const top = this.#fixedTopItems.length;
+    const top = this.#fixedTopCount;
 
     if (this.#isBodyIndex(index)) {
       return index + 1 + headerRows + top + this.#rows.offset;
     }
 
     if (index === this.#rows.length) {
-      return this.#bodyRowCount + headerRows + top + this.#fixedBottomItems.length + 1;
+      return this.#bodyRowCount + headerRows + top + this.#fixedBottomCount + 1;
     }
 
     const position = index - this.#fixedBase;
@@ -11102,8 +11133,11 @@ export class DataGrid extends LitElement {
       return null;
     }
 
-    if (isFixedRow(row)) {
-      return { fixed: row.fixed, fixedKey: this.#keyOf(row.item), position: row.index };
+    if (isFixedRow(row) || (row.isDetail && row.fixed)) {
+      const position = index - this.#fixedBase - (row.fixed === 'top' ? 0 : this.#fixedTopCount);
+      return row.isDetail
+        ? { fixed: row.fixed!, fixedKey: this.#keyOf(row.item), position, detail: true }
+        : { fixed: row.fixed!, fixedKey: this.#keyOf(row.item), position };
     }
 
     return isDataRow(row) ? { key: this.#keyOf(row.item) } : isDetailRow(row) ? { detailOf: this.#keyOf(row.item) } : { rowKey: row.key };
@@ -11120,8 +11154,11 @@ export class DataGrid extends LitElement {
       return false;
     }
 
-    if ('fixed' in target || isFixedRow(row)) {
-      return 'fixed' in target && isFixedRow(row) && row.fixed === target.fixed && this.#keyOf(row.item) === target.fixedKey;
+    const fixedDetail = !!row.isDetail && !!row.fixed;
+
+    if ('fixed' in target || isFixedRow(row) || fixedDetail) {
+      return 'fixed' in target && (isFixedRow(row) || fixedDetail) && row.fixed === target.fixed
+        && this.#keyOf(row.item) === target.fixedKey && fixedDetail === !!target.detail;
     }
 
     if ('detailOf' in target) {
@@ -11199,7 +11236,7 @@ export class DataGrid extends LitElement {
   #publicFocus(): PublicFocus {
     const focus = this.#publicFocusOf();
     const row = this.#rowAt(this.#activeRowIndex);
-    const rowFixed = isFixedRow(row) ? row.fixed : null;
+    const rowFixed = isFixedRow(row) ? row.fixed : row?.isDetail ? row.fixed ?? null : null;
 
     // Célula de largura total (frente 20): sem coluna.
     if ((focus.cellType === 'data' || focus.cellType === 'command') && this.#activeCol >= this.#leadingColumns && this.#isFullWidthIndex(this.#activeRowIndex)) {
@@ -11432,9 +11469,12 @@ export class DataGrid extends LitElement {
    * a mesma chave no mesmo lado; senão a mesma posição (limitada); lado
    * vazio: a vizinha no corpo (WCAG 2.4.3).
    */
-  #relocateFixed(active: { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number }): number {
+  #relocateFixed(active: { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number; detail?: true }): number {
     const list = this.#fixedRows()[active.fixed];
-    const found = list.findIndex(row => this.#keyOf(row.item) === active.fixedKey);
+    // Detalhe da fixa recolhido (spec 21): volta à linha mestre.
+    const found = [!!active.detail, false]
+      .map(detail => list.findIndex(row => this.#keyOf(row.item) === active.fixedKey && !!row.isDetail === detail))
+      .find(position => position >= 0) ?? -1;
 
     if (found >= 0) {
       return this.#fixedIndex(active.fixed, found);
@@ -11447,11 +11487,11 @@ export class DataGrid extends LitElement {
     const body = this.#rows.length;
 
     if (active.fixed === 'top') {
-      const bottom = this.#fixedBottomItems.length;
+      const bottom = this.#fixedBottomCount;
       return body ? 0 : bottom ? this.#fixedIndex('bottom', 0) : this.#hasTotals ? body : -1;
     }
 
-    return body ? body - 1 : this.#hasTotals ? body : this.#fixedTopItems.length ? this.#fixedIndex('top', this.#fixedTopItems.length - 1) : -1;
+    return body ? body - 1 : this.#hasTotals ? body : this.#fixedTopCount ? this.#fixedIndex('top', this.#fixedTopCount - 1) : -1;
   }
 
   /** `col` negativo: qualquer coluna (linha de grupo, célula única). */
@@ -11768,8 +11808,14 @@ export class DataGrid extends LitElement {
     }
 
     if (isFixedRow(row)) {
-      // Linha fixa: só leitura; Enter/F2 levam ao conteúdo do renderer da célula.
-      if ((event.key === 'Enter' || event.key === 'F2') && focusFirstWithin(cell)) {
+      // Linha fixa: só leitura; Enter/Espaço na expansão abrem os detalhes (spec 21);
+      // Enter/F2 levam ao conteúdo do renderer da célula.
+      if (column === DETAIL_TOGGLE_COLUMN) {
+        if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+          event.preventDefault();
+          this.#setRowExpanded(this.#keyOf(row.item), !this.#isRowExpandedKey(this.#keyOf(row.item)), 'user');
+        }
+      } else if ((event.key === 'Enter' || event.key === 'F2') && focusFirstWithin(cell)) {
         event.preventDefault();
       }
 
@@ -12304,7 +12350,7 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const fixedRows = this.#fixedTopItems.length + this.#fixedBottomItems.length;
+    const fixedRows = this.#fixedTopCount + this.#fixedBottomCount;
     // Com linhas fixas, PageUp/PageDown andam por blocos (spec 20); sem elas, como antes.
     const paged = fixedRows && (key === 'pageUp' || key === 'pageDown') ? this.#pageTarget(position.row, key) : undefined;
     const visual = paged === undefined
@@ -12339,8 +12385,8 @@ export class DataGrid extends LitElement {
    * atravessado de uma vez. Devolve o índice interno.
    */
   #pageTarget(from: number, key: 'pageUp' | 'pageDown'): number {
-    const top = this.#fixedTopItems.length;
-    const bottom = this.#fixedBottomItems.length;
+    const top = this.#fixedTopCount;
+    const bottom = this.#fixedBottomCount;
     const body = this.#rows.length;
     const totals = this.#hasTotals ? body : undefined;
     const page = Math.max(this.#pageSize(), 1);
@@ -13130,8 +13176,9 @@ export class DataGrid extends LitElement {
    * cabeçalho ou acima dos totais (deslocamento medido), fora do
    * virtualizador. Índices internos depois do corpo (`#fixedBase`).
    */
-  #renderFixedRows(fixed: 'top' | 'bottom', rows: readonly DataRow[], headerRows: number, layout: ColumnLayout[]) {
+  #renderFixedRows(fixed: 'top' | 'bottom', rows: readonly FixedSectionRow[], headerRows: number, layout: ColumnLayout[]) {
     const translation = this.#translation;
+    const positions = new Map(rows.map((row, position) => [row, position]));
 
     return html`
       <tbody
@@ -13142,7 +13189,7 @@ export class DataGrid extends LitElement {
         ${keyedRows(
           rows,
           row => row.key,
-          row => this.#renderRow(this.#fixedIndex(fixed, row.index), row, headerRows, layout, false),
+          row => this.#renderRow(this.#fixedIndex(fixed, positions.get(row)!), row, headerRows, layout, false),
         )}
       </tbody>
     `;
@@ -13336,7 +13383,9 @@ export class DataGrid extends LitElement {
     const fullWidth = !row.isGroup && !row.isFooter ? this.#rowRenderOf(row) : undefined;
     const selectable = isDataRow(row) && this.#selectionMode !== 'none';
     const selected = selectable && this.#selection.has(this.#keyOf(row.item));
-    const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
+    // Linhas fixas também expandem (spec 21: os valores das colunas ocultas por espaço).
+    const expandable = isDataRow(row) || isFixedRow(row);
+    const expanded = expandable && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
     const pending = isDataRow(row) ? this.#pendingOf(row) : undefined;
     const editing = isDataRow(row) && !!this.#editor && this.#editor.rowKey === this.#keyOf(row.item);
 
@@ -13384,7 +13433,7 @@ export class DataGrid extends LitElement {
 
     return html`
       <tr
-        id=${ifDefined(this.#showDetailColumn && isDataRow(row) ? `row-${index}` : undefined)}
+        id=${ifDefined(this.#showDetailColumn && expandable ? `row-${index}` : undefined)}
         style="height: ${this.rowHeight}px;"
         data-index=${index}
         role="row"
@@ -13465,7 +13514,7 @@ export class DataGrid extends LitElement {
    * lista oculto depois de cada valor: a leitura da célula inteira tem divisa.
    */
   #renderAdaptiveFields(index: number, master: Row | undefined) {
-    if (!isDataRow(master) || master.skeleton || this.#rowRenderOf(master)) {
+    if (!master || !isDataRowLike(master) || master.skeleton || this.#rowRenderOf(master)) {
       return nothing;
     }
 
@@ -13527,6 +13576,15 @@ export class DataGrid extends LitElement {
             ? html`<div id=${messageId} class="validation-message" part="validation-message">${error}</div>`
             : nothing}${position < last ? html`<span class="visually-hidden">${separator}</span>` : nothing}</dd></div>`;
     })}</dl>`;
+  }
+
+  /**
+   * A linha tem o que expandir: detalhe, ou valores das colunas ocultas por
+   * espaço (linha inteira sem `detailRenderer` não tem colunas). Linhas
+   * fixas também (spec 21).
+   */
+  #hasRowDetails(row: DataRow): boolean {
+    return !row.skeleton && (!!this.detailRenderer || !this.#rowRenderOf(row));
   }
 
   /**
@@ -13790,8 +13848,8 @@ export class DataGrid extends LitElement {
           role="presentation"
           class="group-column sticky-cell"
           style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
-      ${this.#showDetailColumn && (row.skeleton || row.fixed) ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
-      ${this.#showDetailColumn && !row.skeleton && !row.fixed
+      ${this.#showDetailColumn && !this.#hasRowDetails(row) ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
+      ${this.#showDetailColumn && this.#hasRowDetails(row)
         ? html`
           <td
             class=${classMap({ 'detail-toggle-cell': true, 'sticky-cell': true, 'adaptive-invalid': !!marks?.error, 'adaptive-modified': !!marks?.modified })}

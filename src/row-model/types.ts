@@ -99,6 +99,8 @@ export interface DetailRow {
   item: any;
   /** Chave da linha mestre (`DataRow.key`). */
   masterKey: string;
+  /** Detalhe de uma linha fixa (frente 21: a fixa também expande). */
+  fixed?: 'top' | 'bottom';
 }
 
 export type Row = GroupRow | GroupFooterRow | DataRow | DetailRow;

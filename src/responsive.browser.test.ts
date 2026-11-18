@@ -285,6 +285,80 @@ describe('linha adaptativa: teclado', () => {
   });
 });
 
+describe('linha adaptativa: linhas fixas, resumos, exportação', () => {
+  it('linha fixa expande dentro do próprio rowgroup, com aria-rowindex na ordem visual', async () => {
+    const items = sales(5);
+    const grid = await createResponsive(500, g => {
+      g.fixedTopItems = [{ ...items[0], id: 100, invoice: 'TOP' }];
+    }, items);
+    const fixedRow = root(grid).querySelector<HTMLTableRowElement>('tbody.fixed-top-rows > tr.fixed-row')!;
+    const button = fixedRow.querySelector<HTMLButtonElement>('button.detail-toggle')!;
+    expect(button).not.toBeNull();
+
+    button.click();
+    await settle(grid);
+
+    const detail = root(grid).querySelector<HTMLTableRowElement>('tbody.fixed-top-rows > tr.detail-row')!;
+    expect(detail).not.toBeNull();
+    expect(detail.getAttribute('aria-labelledby')).toBe(fixedRow.id);
+    expect(Number(detail.getAttribute('aria-rowindex'))).toBe(Number(fixedRow.getAttribute('aria-rowindex')) + 1);
+    expect(fieldTexts(detail).length).toBe(grid.getAdaptiveColumns().length);
+
+    // A 1ª linha do corpo vem depois da adaptativa da fixa.
+    expect(Number(masterRows(grid).find(tr => !tr.classList.contains('fixed-row'))!.getAttribute('aria-rowindex')))
+      .toBe(Number(detail.getAttribute('aria-rowindex')) + 1);
+
+    // Teclado: ↓ da fixa entra na adaptativa dela.
+    grid.focusCell(grid.fixedTopItems[0], 'invoice', { rowFixed: 'top' });
+    await settle(grid);
+    await key(grid, 'ArrowDown');
+    expect(focused(grid)?.closest('tbody')?.classList.contains('fixed-top-rows')).toBe(true);
+    expect(focused(grid)?.classList.contains('detail-cell')).toBe(true);
+    const result = await axe.run(grid as unknown as Element);
+    expect(result.violations.map(v => v.id)).toEqual([]);
+  });
+
+  it('total de coluna oculta vai para a última exibida, com o texto completo', async () => {
+    const grid = await createResponsive(500, g => {
+      g.summary = { total: [{ column: 'amount', type: 'sum' }, { column: 'invoice', type: 'count' }] };
+    }, sales(3));
+    const cells = [...root(grid).querySelectorAll('tfoot td.summary-cell')].map(td => td.textContent?.replace(/\s+/g, ' ').trim());
+    expect(cells.some(text => text?.includes('Sum of Amount: $303.00'))).toBe(true);
+  });
+
+  it('exportação e cópia de linhas incluem as ocultas', async () => {
+    const grid = await createResponsive(500, g => {
+      g.selectionMode = 'multiple';
+    }, sales(2));
+    const data = await grid.getExportData();
+    expect(data.columns.map(column => column.label)).toContain('Amount');
+    expect(grid.getAdaptiveColumns().map(column => column.label)).toContain('Amount');
+  });
+
+  it('busca realça o valor na linha adaptativa', async () => {
+    const grid = await createResponsive(500, g => {
+      g.showSearchPanel = true;
+    }, sales(3));
+    grid.searchText = 'Employee 1';
+    grid.expandRow(grid.items[1]);
+    await settle(grid);
+    expect(detailRows(grid)[0].querySelector('.search-highlight')?.textContent).toBe('Employee 1');
+  });
+
+  it('seletor: coluna oculta por espaço fica marcada, com a dica', async () => {
+    const grid = await createResponsive(500, g => {
+      g.columnChooser = true;
+    });
+    grid.openColumnChooser();
+    await settle(grid);
+    const hints = [...root(grid).querySelectorAll('.column-chooser-hint')].map(hint => hint.textContent);
+    expect(hints).toEqual(grid.getAdaptiveColumns().map(() => 'In row details'));
+    const input = root(grid).querySelector<HTMLInputElement>('.column-chooser-adaptive input')!;
+    expect(input.checked).toBe(true);
+    expect(root(grid).getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBe('In row details');
+  });
+});
+
 describe('linha adaptativa: edição', () => {
   it('modo célula: Enter no valor abre o editor; Enter confirma e o foco volta ao valor; Esc cancela', async () => {
     const grid = await createResponsive(500, g => {
