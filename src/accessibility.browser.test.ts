@@ -675,7 +675,8 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
 
     expect(event.defaultPrevented).toBe(false);
     expect(th.querySelector('.column-header-menu-button')).toBeNull();
-    expect(th.getAttribute('aria-keyshortcuts')).not.toContain('Shift+F10');
+    // Coluna única: nem Alt+Shift (sem vizinha) — sem atributo.
+    expect(th.getAttribute('aria-keyshortcuts') ?? '').not.toContain('Shift+F10');
   });
 
   it('botão abre o menu; com column-resizing, largura por clique sem arrasto', async () => {

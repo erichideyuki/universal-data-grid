@@ -141,7 +141,8 @@ Foco e teclado (padrão espacial da APG; início/fim lógicos, espelham em RTL):
 - Arrastar banda = bloco; folha só dentro da banda. O menu é a alternativa
   de ponteiro único (2.5.7).
 - Guarda de foco: banda ocultada ou folha agrupada com o foco → a célula do
-  nível mais próximo que existir na mesma coluna.
+  nível mais próximo que existir no mesmo ÍNDICE de coluna (a que ocupou o
+  lugar), como a guarda de foco das colunas comuns.
 - Virtualização: ←/→ até coluna fora do DOM → ela entra no render como
   ativa, recebe o foco, `scrollIntoView` com o `scroll-padding-inline` das
   fixas, a rolagem traz a janela; o foco nunca cai no `<body>`.
@@ -191,6 +192,16 @@ Achados recusados (uma linha cada):
   muda com a rolagem); o `colspan` do rótulo conta as colunas do DOM.
 - A coluna da célula ativa (foco, editor da frente 09) é mantida no DOM
   como as fixas; com ela longe da janela há até 2 espaçadoras de cada lado.
+- Rótulo da banda `sticky` entre as áreas fixas (`--_fixed-start/-end` no
+  contêiner de rolagem; a `<th>` da banda com `overflow: clip`, que não vira
+  contêiner de rolagem): banda larga com colunas fora da tela continua com o
+  nome à vista.
+- `aria-keyshortcuts` só traz Alt+Shift+←/→ quando há irmã visível do mesmo
+  bloco para trocar (folha e banda).
+- Revisão de a11y na entrega, recusado: tirar o `aria-colspan` da linha de
+  detalhe (frente 10). Com a virtualização ele (colunas navegáveis, mesmo
+  espaço do `aria-colindex`) é o certo; o `colspan` nativo conta as
+  espaçadoras do DOM.
 
 ## Referência medida
 

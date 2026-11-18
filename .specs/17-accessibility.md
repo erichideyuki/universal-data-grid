@@ -138,8 +138,10 @@ Ctrl+G, expandir/recolher (ouvir o estado — item 🔎); selecionar com
 Espaço e Ctrl+A; abrir o seletor e fixar; `language="ar"` numa página `en`.
 
 Frente 13 (bandas): conferir que NVDA/JAWS leem banda + coluna ao entrar
-numa célula do corpo e o alcance do `colspan` da banda; 🔎 VoiceOver: se
-ficar mudo no alcance, criar `bandColumnCount` na descrição da banda.
+numa célula do corpo e o alcance do `colspan` da banda, também com
+`column-rendering-mode="virtual"` e a banda só em parte no DOM (o `colspan`
+conta as espaçadoras); 🔎 VoiceOver: se ficar mudo no alcance, criar
+`bandColumnCount` na descrição da banda.
 
 ## Proposta A1–A14 (aprovada pelo usuário em 2026-11-18: "Approve all")
 

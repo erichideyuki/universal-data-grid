@@ -287,6 +287,76 @@ describe('teclado entre níveis', () => {
   });
 });
 
+describe('foco e teclado na banda (revisão de a11y)', () => {
+  it('F2 na banda foca o ⋮ visível; Esc volta à banda', async () => {
+    const c = makeColumns();
+    const grid = await createGrid({ columns: c.all, items });
+    const band = headerCell(grid, 'Population');
+
+    band.focus();
+    await pressOnActive(grid, 'F2');
+    const button = root(grid).activeElement as HTMLElement;
+
+    expect(button.classList.contains('column-header-menu-button')).toBe(true);
+    expect(getComputedStyle(button).opacity).toBe('1');
+    await pressOnActive(grid, 'Escape');
+    expect(root(grid).activeElement).toBe(headerCell(grid, 'Population'));
+  });
+
+  it('banda ocultada com o foco nela: o foco não cai no body', async () => {
+    const c = makeColumns();
+    const grid = await createGrid({ columns: c.all, items });
+
+    headerCell(grid, 'Sectors').focus();
+    await settle(grid);
+    grid._userSetVisible(c.sectors, false);
+    await settle(grid);
+    await settle(grid);
+
+    expect(root(grid).activeElement).not.toBeNull();
+    expect(root(grid).querySelectorAll('thead [tabindex="0"]')).toHaveLength(1);
+
+    grid._userSetVisible(c.gdp, false);
+    grid._userSetVisible(c.population, false);
+    await settle(grid);
+    await settle(grid);
+    // Sobrou um nível só.
+    expect(headerRows(grid)).toHaveLength(1);
+    expect(root(grid).activeElement).not.toBeNull();
+  });
+
+  it('Ctrl+G na folha única de uma sub-banda: o foco fica num nível que existe', async () => {
+    const c = makeColumns();
+    const grid = await createGrid({ columns: [c.country, { ...c.gdp, columns: [c.gdpTotal, { ...c.sectors, columns: [c.agro] }] }], items });
+
+    headerCell(grid, 'Agro').focus();
+    await pressOnActive(grid, 'g', { ctrlKey: true });
+    await settle(grid);
+
+    expect(grid.getGrouping()).toEqual([c.agro]);
+    expect(root(grid).activeElement).not.toBeNull();
+    expect(root(grid).activeElement!.closest('thead, tbody')).not.toBeNull();
+  });
+
+  it('RTL: Alt+Shift+← na banda move para o fim lógico', async () => {
+    const c = makeColumns();
+    const grid = await createGrid({ columns: c.all, items, configure: g => g.dir = 'rtl' });
+
+    headerCell(grid, 'Population').focus();
+    await pressOnActive(grid, 'ArrowLeft', { altKey: true, shiftKey: true });
+    expect(describeHeader(grid)[0]).toBe('Country^3 Gdp/4 Population/2');
+    expect(focusedLabel(grid)).toBe('Population');
+  });
+
+  it('aria-keyshortcuts sem Alt+Shift quando não há irmã para trocar', async () => {
+    const c = makeColumns();
+    const grid = await createGrid({ columns: [c.country, { ...c.population, columns: [c.popTotal] }], items });
+
+    expect(headerCell(grid, 'PopTotal').getAttribute('aria-keyshortcuts')).not.toContain('Alt+Shift');
+    expect(headerCell(grid, 'Population').getAttribute('aria-keyshortcuts')).toContain('Alt+Shift+ArrowLeft');
+  });
+});
+
 describe('fixar, ocultar e seletor', () => {
   it('banda fixa fixa as filhas; fixed numa aninhada é ignorado', async () => {
     const c = makeColumns();
@@ -479,6 +549,21 @@ describe('virtualização de colunas', () => {
     expect(bands.map(th => th.querySelector('.header-text')!.textContent)).toEqual(['First', 'Second']);
     const firstRendered = root(grid).querySelector('th.header-column')!.getAttribute('aria-colindex');
     expect(bands[0].getAttribute('aria-colindex')).toBe(firstRendered);
+
+    // O rótulo fica na parte visível da área de rolagem (banda larga com a coluna ativa longe).
+    const area = scroller.getBoundingClientRect();
+    const label = bands[0].querySelector('.header-text')!.getBoundingClientRect();
+    expect(label.right).toBeGreaterThan(area.left);
+    expect(label.left).toBeLessThan(area.right);
+
+    // ↑ de uma folha até a banda cuja 1ª folha está fora da janela: a coluna lembrada vale.
+    const leaf = root(grid).querySelector<HTMLElement>('th.header-column[aria-colindex="58"]')!;
+    leaf.focus();
+    await settle(grid);
+    await pressOnActive(grid, 'ArrowUp');
+    expect(focusedLabel(grid)).toBe('First');
+    await pressOnActive(grid, 'ArrowDown');
+    expect((root(grid).activeElement as HTMLElement).getAttribute('aria-colindex')).toBe('58');
   });
 
   it('valor desconhecido avisa uma vez e usa auto', async () => {

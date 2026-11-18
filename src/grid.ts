@@ -6245,7 +6245,8 @@ export class DataGrid extends LitElement {
       change(column, true);
 
       if (tree.childrenOf.has(column) && (!returning || !this.#hasOwnVisibleLeaf(column))) {
-        const showAll = (band: GridColumnDef): void => (tree.childrenOf.get(band) ?? []).forEach(child => {
+        // Só as listadas no seletor (as outras ficam como estão).
+        const showAll = (band: GridColumnDef): void => (tree.childrenOf.get(band) ?? []).filter(child => child.showInChooser !== false).forEach(child => {
           change(child, true);
           showAll(child);
         });
@@ -9334,7 +9335,9 @@ export class DataGrid extends LitElement {
     const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
     const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
     // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
+    // `--_fixed-*`: o rótulo da banda prende entre as áreas fixas (frente 13).
     const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
+      + ` --_fixed-start: ${this.#stickyStart() + fixedStart}px; --_fixed-end: ${fixedEnd}px;`
       + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
 
     // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
@@ -9727,7 +9730,10 @@ export class DataGrid extends LitElement {
       idSuffix: `${header.level}-${first.col + 1}`,
       columnId: id,
       description: side === 'start' ? translation.columnFixedStart : side === 'end' ? translation.columnFixedEnd : '',
-      keyShortcuts: ['Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight', ...hasMenu ? ['Shift+F10', 'F2'] : []].join(' '),
+      keyShortcuts: [
+        ...this.#hasMovableNeighbor(column) ? ['Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight'] : [],
+        ...hasMenu ? ['Shift+F10', 'F2'] : [],
+      ].join(' '),
       onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
       menuButton: this.#renderColumnMenuButton(column),
       label: column.headerRenderer ? this.#renderHeaderContent(column, id) : column.label,
@@ -9776,7 +9782,10 @@ export class DataGrid extends LitElement {
       keys.push('Control+G', 'Meta+G');
     }
 
-    keys.push('Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight');
+    // Só quando há irmã visível do mesmo bloco para trocar (spec 17, A13).
+    if (this.#hasMovableNeighbor(column)) {
+      keys.push('Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight');
+    }
 
     if (resizable) {
       keys.push('Alt+ArrowLeft', 'Alt+ArrowRight');
@@ -11304,7 +11313,8 @@ export class DataGrid extends LitElement {
           return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, fixed };
         }
 
-        const leaves = this._regularColumns.filter(leaf => ancestorsOf(tree, leaf).includes(column));
+        // Só as colunas listadas (`showInChooser: false` não conta para o misto).
+        const leaves = this._regularColumns.filter(leaf => leaf.showInChooser !== false && ancestorsOf(tree, leaf).includes(column));
         const shown = leaves.filter(leaf => this._isColumnVisible(leaf)).length;
 
         return {

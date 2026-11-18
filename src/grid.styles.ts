@@ -496,6 +496,8 @@ export const styles = css`
    */
   th:where(.grid-table > * > * > *).band-header {
     position: relative;
+    /* \`clip\` (não \`hidden\`): não vira contêiner de rolagem e o rótulo \`sticky\` segue a área visível. */
+    overflow: clip;
     white-space: normal;
     overflow-wrap: anywhere;
     user-select: none;
@@ -507,6 +509,16 @@ export const styles = css`
 
   .band-header .header-text {
     white-space: normal;
+  }
+
+  /*
+   * O rótulo da banda fica na parte visível dela (banda larga com colunas
+   * fora da tela, virtualização): preso entre as áreas fixas do início e do fim.
+   */
+  .band-header:not(.fixed) > .header-content {
+    position: sticky;
+    inset-inline-start: calc(var(--_fixed-start, 0px) + var(--_cell-inline-padding, 16px));
+    inset-inline-end: calc(var(--_fixed-end, 0px) + var(--_cell-inline-padding, 16px));
   }
 
   /* Colunas fora do DOM (virtualização de colunas): só ocupam a largura. */
@@ -967,8 +979,8 @@ export const styles = css`
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
 
-  .header-column:hover .column-header-menu-button,
-  .header-column:focus-within .column-header-menu-button,
+  :is(.header-column, .band-header):hover .column-header-menu-button,
+  :is(.header-column, .band-header):focus-within .column-header-menu-button,
   .column-header-menu-button[aria-expanded="true"] {
     opacity: 1;
   }

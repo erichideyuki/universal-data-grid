@@ -287,7 +287,7 @@ export class ColumnChooserController implements ReactiveController {
       && (target.classList.contains('column-chooser')
         || target.classList.contains('column-chooser-button')
         // Arrastar um cabeçalho até o painel não pode fechá-lo.
-        || (target.classList.contains('header-column') && this.#host.renderRoot.contains(target))));
+        || ((target.classList.contains('header-column') || target.classList.contains('band-header')) && this.#host.renderRoot.contains(target))));
 
     if (!keep) {
       this.hide();
