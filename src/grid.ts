@@ -1185,6 +1185,14 @@ interface ColumnLayout {
   gapBefore: number;
 }
 
+/** Valor (`<dd>`) da linha adaptativa (spec 21) num caminho de evento: a coluna e a linha mestre. */
+interface AdaptiveValueTarget {
+  element: HTMLElement;
+  column: GridColumnDef;
+  masterIndex: number;
+  rowKey: unknown;
+}
+
 /** Virtualização de colunas: índices (nas visíveis) que entram no DOM e espaçadora antes de cada um. */
 interface ColumnPlan {
   kept: Set<number>;
@@ -2195,8 +2203,10 @@ export class DataGrid extends LitElement {
   #fontScale = 1;
   /** Valor focado na linha adaptativa: a coluna (foco do grid e `u-grid-focus-change`). */
   #adaptiveFocus: { rowKey: unknown; column: GridColumnDef } | undefined;
-  /** Linhas abertas pela edição no modo linha (fecham ao sair dela). */
-  #editOpenedRow: unknown;
+  /** Linha aberta pela edição no modo linha (fecha ao sair dela, com a mesma origem). */
+  #editOpenedRow: { rowKey: unknown; source: GridChangeSource } | undefined;
+  /** Valor da linha adaptativa que recebe o foco depois do render (Esc/Enter no editor, `focusCell`). */
+  #adaptiveRefocus: { rowKey: unknown; column: GridColumnDef } | undefined;
 
   // Estado do usuário por coluna — nunca escrito nos objetos do hospedeiro.
   readonly #userWidths = new VersionedMap<GridColumnDef, number>();
@@ -4072,6 +4082,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#afterEditRender();
+    this.#afterAdaptiveRender();
 
     this.#afterToolbarRender();
     this.#checkXlsxExporter();
@@ -4910,6 +4921,11 @@ export class DataGrid extends LitElement {
     const target = column === undefined || column === null ? undefined : this.#leafColumn(column);
     const col = target ? navColumns.indexOf(target) : column === undefined || column === null ? navColumns.indexOf(this._visibleColumns[0]) : -1;
 
+    // Coluna oculta por falta de espaço (spec 21): abre a linha e vai ao valor.
+    if (target && col < 0 && !fixed && this.#adaptiveColumns.includes(target)) {
+      return this.#revealAdaptive(rowKey, target, 'api');
+    }
+
     if (column !== undefined && column !== null && col < 0) {
       return false;
     }
@@ -5155,7 +5171,7 @@ export class DataGrid extends LitElement {
       // Já aberto: só leva o foco à célula pedida.
       open.column = target;
       open.focus = focus;
-      this.#setActive({ row: rowIndex, col: this.#currentNavColumns().indexOf(target) }, null, { reveal: true });
+      this.#setActive(this.#editActivePosition(rowKey, rowIndex, target, source), null, { reveal: true });
       return true;
     }
 
@@ -5191,10 +5207,35 @@ export class DataGrid extends LitElement {
       seq: 0,
     };
 
-    const col = this.#currentNavColumns().indexOf(target);
-    this.#setActive({ row: rowIndex, col: col >= 0 ? col : this.#activeCol }, source, { reveal: true });
+    // Modo linha com colunas ocultas por falta de espaço (spec 21): a linha adaptativa abre com os editores delas.
+    if (wholeRow && this.#adaptiveColumns.length && !this.#isRowExpandedKey(rowKey)) {
+      this.#setRowExpanded(rowKey, true, source);
+      this.#editOpenedRow = { rowKey, source };
+    }
+
+    this.#setActive(this.#editActivePosition(rowKey, rowIndex, target, source), source, { reveal: true });
     this.requestUpdate();
     return true;
+  }
+
+  /**
+   * Célula ativa ao abrir um editor: a da coluna; coluna oculta por falta de
+   * espaço (spec 21): a linha adaptativa (aberta aqui, com evento).
+   */
+  #editActivePosition(rowKey: unknown, rowIndex: number, target: GridColumnDef, source: GridChangeSource): CellPosition {
+    const col = this.#currentNavColumns().indexOf(target);
+
+    if (col >= 0 || !this.#adaptiveColumns.includes(target)) {
+      return { row: rowIndex, col: col >= 0 ? col : this.#activeCol };
+    }
+
+    if (!this.#isRowExpandedKey(rowKey)) {
+      this.#setRowExpanded(rowKey, true, source);
+    }
+
+    this.#ensureRows();
+    const master = this.#rowIndexOfKey(rowKey);
+    return { row: master >= 0 ? master + 1 : rowIndex, col: this.#activeCol };
   }
 
   /**
@@ -5353,6 +5394,12 @@ export class DataGrid extends LitElement {
 
   #isActiveCell(rowKey: unknown, column: GridColumnDef): boolean {
     const row = this.#rowAt(this.#activeRowIndex);
+
+    // Coluna oculta por falta de espaço (spec 21): a ativa é a linha adaptativa da linha.
+    if (row?.isDetail && this.#adaptiveColumns.includes(column)) {
+      return this.#keyOf(row.item) === rowKey;
+    }
+
     return isDataRow(row) && this.#keyOf(row.item) === rowKey && this.#activeColumn === column;
   }
 
@@ -5384,6 +5431,14 @@ export class DataGrid extends LitElement {
 
   /** Fecha o editor (sem gravar); limpa a mensagem do editor do light DOM. */
   #closeEditor(): void {
+    const opened = this.#editOpenedRow;
+
+    if (opened && this.#editor?.rowKey === opened.rowKey) {
+      // Aberta pela edição no modo linha (spec 21): fecha com ela, com evento.
+      this.#editOpenedRow = undefined;
+      this.#setRowExpanded(opened.rowKey, false, opened.source);
+    }
+
     if (this.#editor) {
       this.#editor = null;
       this.#lightMessage?.remove();
@@ -6004,11 +6059,28 @@ export class DataGrid extends LitElement {
   /** Foco na 1ª célula inválida (abre o editor no modo célula/linha). */
   #focusFirstInvalid(rows: PendingRow[]): void {
     for (const pending of rows) {
-      const column = this._visibleColumns.find(candidate => pending.errors.has(candidate) || pending.unparsed.has(candidate));
+      // Com as ocultas por falta de espaço (spec 21): o editor abre na linha adaptativa.
+      const column = this._shownColumns.find(candidate => pending.errors.has(candidate) || pending.unparsed.has(candidate));
       const index = this.#rowIndexOfKey(pending.rowKey);
 
       if (index < 0) {
         continue;
+      }
+
+      if (column && this.#adaptiveColumns.includes(column)) {
+        if (this.#editMode !== 'batch' && (!this.#editor || this.#editor.rowKey !== pending.rowKey)) {
+          this.#startEdit(index, column, 'user');
+        } else {
+          this.#revealAdaptive(pending.rowKey, column, 'user');
+          const editor = this.#editor as OpenEditor | null;
+
+          if (editor && editor.rowKey === pending.rowKey) {
+            editor.column = column;
+            editor.focus = true;
+          }
+        }
+
+        return;
       }
 
       if (column && this.#editMode !== 'batch') {
@@ -6302,6 +6374,11 @@ export class DataGrid extends LitElement {
   /** Célula do editor (a da coluna dele; no modo linha, a ativa se for da linha). */
   #editorCell(editor: OpenEditor): HTMLElement | null {
     const index = this.#rowIndexOfKey(editor.rowKey);
+
+    // Coluna oculta por falta de espaço (spec 21): o valor na linha adaptativa.
+    if (editor.column && this.#adaptiveColumns.includes(editor.column)) {
+      return this.#adaptiveValueElement(index + 1, editor.column, '.editing');
+    }
     const col = editor.column ? this.#currentNavColumns().indexOf(editor.column) : -1;
     const tr = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${index}"]`);
     return tr?.querySelector<HTMLElement>(`:scope > td.editing[data-col="${col}"]`) ?? tr?.querySelector<HTMLElement>(':scope > td.editing') ?? null;
@@ -6541,14 +6618,22 @@ export class DataGrid extends LitElement {
    * célula navegável (não a linha de filtro, campo editável ou texto
    * selecionado pelo usuário) com `clipboardMode` ligado.
    */
-  #copyCellOf(event: Event): { position: CellPosition } | undefined {
+  #copyCellOf(event: Event): { position: CellPosition; column?: GridColumnDef } | undefined {
     const table = this.#tableRef.value;
 
     if (this.clipboardMode === 'none' || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
       return undefined;
     }
 
-    const cell = this.#navCellOf(event.composedPath());
+    const path = event.composedPath();
+    const value = this.#adaptiveValueOf(path);
+
+    // Valor focado da linha adaptativa (spec 21): copia a célula daquela coluna.
+    if (value) {
+      return { position: { row: value.masterIndex, col: -1 }, column: value.column };
+    }
+
+    const cell = this.#navCellOf(path);
     const position = cell && !cell.closest('tr.filter-row') ? this.#positionOf(cell) : undefined;
 
     return position ? { position } : undefined;
@@ -6615,7 +6700,7 @@ export class DataGrid extends LitElement {
   }
 
   /** A célula de onde veio o Ctrl+C (só célula de dados de coluna exportável). */
-  #copyCell({ position }: { position: CellPosition }): CopyContent | undefined {
+  #copyCell({ position, column }: { position: CellPosition; column?: GridColumnDef }): CopyContent | undefined {
     const row = this.#rowAt(position.row);
 
     if (!row || !(isDataRow(row) || isFixedRow(row))) {
@@ -6623,8 +6708,8 @@ export class DataGrid extends LitElement {
     }
 
     // Célula de largura total (frente 20): a linha inteira, nas colunas exportáveis.
-    const fullWidth = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
-    const navColumn = dataColumnOf(this.#currentNavColumns()[position.col]);
+    const fullWidth = !column && position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+    const navColumn = column ?? dataColumnOf(this.#currentNavColumns()[position.col]);
     const columns = fullWidth ? this._shownColumns.filter(isColumnExportable) : navColumn && isColumnExportable(navColumn) ? [navColumn] : [];
 
     if (!columns.length) {
@@ -8366,6 +8451,183 @@ export class DataGrid extends LitElement {
    */
   getAdaptiveColumns(): GridColumnDef[] {
     return [...this.#adaptiveColumns];
+  }
+
+  /** Valor (`<dd>`) da linha adaptativa no caminho de um evento, com a coluna e a linha mestre. */
+  #adaptiveValueOf(path: readonly EventTarget[]): AdaptiveValueTarget | undefined {
+    if (!this.#adaptiveColumns.length) {
+      return undefined;
+    }
+
+    const element = path.find((node): node is HTMLElement => node instanceof HTMLElement && node.classList.contains('adaptive-value'));
+    const tr = element?.closest('tr.detail-row');
+    const id = Number(element?.getAttribute('data-column'));
+    const column = this.#adaptiveColumns.find(candidate => columnIdOf(candidate) === id);
+
+    if (!element || !tr || !column) {
+      return undefined;
+    }
+
+    const masterIndex = Number(tr.getAttribute('data-index')) - 1;
+    const master = this.#rowAt(masterIndex);
+    return isDataRow(master) ? { element, column, masterIndex, rowKey: this.#keyOf(master.item) } : undefined;
+  }
+
+  /** O `<dd>` da coluna na linha adaptativa de índice `detailIndex`. */
+  #adaptiveValueElement(detailIndex: number, column: GridColumnDef, extra = ''): HTMLElement | null {
+    return this.#tableRef.value?.querySelector<HTMLElement>(
+      `:scope > tbody > tr.detail-row[data-index="${detailIndex}"] .adaptive-value${extra}[data-column="${columnIdOf(column)}"]`,
+    ) ?? null;
+  }
+
+  /**
+   * Teclas num valor da linha adaptativa (ou no editor dele): Enter/F2 editam,
+   * Shift+F10 abre o menu da célula daquela coluna; no editor, Enter/Tab
+   * confirmam e Esc cancela (o foco volta ao valor). O resto (Tab entre os
+   * valores, Esc para a célula) segue o conteúdo da célula de detalhe.
+   */
+  #onAdaptiveKeyDown(event: KeyboardEvent, value: AdaptiveValueTarget, cell: HTMLElement, position: CellPosition): boolean {
+    const { element, column, masterIndex, rowKey } = value;
+    const master = this.#rowAt(masterIndex);
+    const ctrl = event.ctrlKey || event.metaKey;
+    const editor = this.#editor;
+    const onValue = event.composedPath()[0] === element;
+
+    if (!isDataRow(master) || ctrl || event.altKey) {
+      return false;
+    }
+
+    if (editor && editor.rowKey === rowKey && element.classList.contains('editing') && !onValue) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.#adaptiveRefocus = editor.wholeRow ? undefined : { rowKey, column };
+        this.#cancelEditor('user');
+        return true;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+
+        if (editor.wholeRow) {
+          void this.#save('user');
+        } else {
+          // O foco volta ao valor quando o editor fechar (inválido: fica no editor).
+          this.#focusAdaptiveValue(rowKey, column);
+          this.#commitAndThen('user', () => this.#focusAdaptiveValue(rowKey, column));
+        }
+
+        return true;
+      }
+
+      if (event.key === 'Tab') {
+        event.preventDefault();
+
+        if (editor.wholeRow) {
+          this.#tabInRow(cell, event.shiftKey);
+        } else {
+          const step = event.shiftKey ? -1 : 1;
+          this.#focusAdaptiveValue(rowKey, column, step);
+          this.#commitAndThen('user', () => this.#focusAdaptiveValue(rowKey, column, step));
+        }
+
+        return true;
+      }
+
+      return false;
+    }
+
+    if (!onValue) {
+      return false;
+    }
+
+    if ((event.key === 'Enter' || event.key === 'F2') && !event.shiftKey) {
+      event.preventDefault();
+
+      if (this.#editingOn && this.#cellEditable(master, column)) {
+        this.#startEdit(masterIndex, column, 'user');
+      } else {
+        // Conteúdo interativo do renderer dentro do valor.
+        focusTargetsWithin(element).find(target => target !== element)?.focus();
+      }
+
+      return true;
+    }
+
+    if (isContextMenuKey(event)) {
+      this.#noteContextKey(this.#openAdaptiveMenu(value, null, event));
+      return true;
+    }
+
+    void position;
+    return false;
+  }
+
+  /** Menu da célula da coluna oculta (spec 21): ancorado no valor, o foco volta a ele. */
+  #openAdaptiveMenu(value: AdaptiveValueTarget, point: { x: number; y: number } | null, event: Event | null): boolean {
+    const request = this.#rowMenuRequest({ row: value.masterIndex, col: -1 }, value.column);
+
+    if (!request) {
+      return false;
+    }
+
+    const { element, rowKey, column } = value;
+
+    return this.#openContextMenuWith(
+      request,
+      {
+        returnFocus: () => element.isConnected ? element : this.#adaptiveValueElement(this.#rowIndexOfKey(rowKey) + 1, column) ?? this.#activeCellElement(),
+        ...point ?? {},
+        positionTarget: element,
+      },
+      event,
+    );
+  }
+
+  /** Foco num valor da linha adaptativa depois do render (`step`: o vizinho, em ciclo). */
+  #focusAdaptiveValue(rowKey: unknown, column: GridColumnDef, step = 0): void {
+    const columns = this.#adaptiveColumns;
+    const index = columns.indexOf(column);
+    const target = step && index >= 0 ? columns[(index + step + columns.length) % columns.length] : column;
+    this.#adaptiveRefocus = { rowKey, column: target };
+    this.requestUpdate();
+  }
+
+  /**
+   * Abre a linha (evento com `source`) e leva a célula ativa e o foco ao valor
+   * da coluna oculta por falta de espaço (`focusCell`, erro de validação).
+   */
+  #revealAdaptive(rowKey: unknown, column: GridColumnDef, source: GridChangeSource): boolean {
+    if (this.#rowIndexOfKey(rowKey) < 0) {
+      return false;
+    }
+
+    if (!this.#isRowExpandedKey(rowKey)) {
+      this.#setRowExpanded(rowKey, true, source);
+      this.#ensureRows();
+    }
+
+    const master = this.#rowIndexOfKey(rowKey);
+    this.#setActive({ row: master + 1, col: this.#activeCol }, source, { reveal: true });
+    this.#adaptiveRefocus = { rowKey, column };
+    return true;
+  }
+
+  /** Depois do render: foco no valor pedido (`#adaptiveRefocus`). */
+  #afterAdaptiveRender(): void {
+    const target = this.#adaptiveRefocus;
+
+    if (!target || this.#editor?.focus) {
+      return;
+    }
+
+    this.#adaptiveRefocus = undefined;
+    const element = this.#adaptiveValueElement(this.#rowIndexOfKey(target.rowKey) + 1, target.column);
+
+    if (element) {
+      this.#focusPending = false;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   }
 
   /** A banda tem coluna comum visível pelos estados próprios abaixo dela (ignorando ela e as de cima). */
@@ -10907,7 +11169,9 @@ export class DataGrid extends LitElement {
     const rowKey = !row.isDetail && row.skeleton ? null : this.#keyOf(row.item);
 
     if (row.isDetail) {
-      return { rowKey, column: null, cellType: 'detail' };
+      // Valor focado da linha adaptativa (spec 21): a coluna dele.
+      const adaptive = this.#adaptiveFocus;
+      return { rowKey, column: adaptive && adaptive.rowKey === rowKey ? adaptive.column : null, cellType: 'detail' };
     }
 
     if (column === DETAIL_TOGGLE_COLUMN) {
@@ -11020,9 +11284,28 @@ export class DataGrid extends LitElement {
     }
 
     let col = this.#activeColumn === undefined ? -1 : navColumns.indexOf(this.#activeColumn);
+    const adaptiveMoved = this.#adaptiveColumns !== this.#reportedAdaptive;
 
     if (col < 0) {
       col = Math.min(this.#activeCol, Math.max(navColumns.length - 1, 0));
+
+      // Responsivo (spec 21): para onde vai o foco quando a coluna dele sai ou a de expansão some.
+      if (adaptiveMoved) {
+        col = this.#adaptiveFallbackCol(index, navColumns, col);
+      }
+    }
+
+    // Valor focado da linha adaptativa cuja coluna voltou à tabela: a célula dela na mestre.
+    const adaptiveFocus = this.#adaptiveFocus;
+
+    if (adaptiveMoved && adaptiveFocus && rows.at(index)?.isDetail && navColumns.includes(adaptiveFocus.column)) {
+      index -= 1;
+      col = navColumns.indexOf(adaptiveFocus.column);
+      this.#adaptiveFocus = undefined;
+    }
+
+    if (adaptiveMoved && (index !== this.#activeRowIndex || navColumns[col] !== this.#activeColumn) && this.#hadFocusBeforeRender) {
+      this.#focusPending = true;
     }
 
     this.#activeRowIndex = index;
@@ -11035,6 +11318,51 @@ export class DataGrid extends LitElement {
       this.#activeResolved = true;
       this.#reportedFocus = this.#publicFocus();
     }
+  }
+
+  /**
+   * Coluna ativa que saiu por falta de espaço (spec 21): numa linha de
+   * dados, a célula de expansão (de onde se abre o que sumiu); no cabeçalho
+   * e na linha de filtro, a coluna exibida anterior; nos rodapés, a última
+   * coluna exibida (que recebe os resumos). A coluna de expansão que some
+   * (todas voltaram): a 1ª célula de dados.
+   */
+  #adaptiveFallbackCol(index: number, navColumns: NavColumn[], clamped: number): number {
+    const active = this.#activeColumn;
+    const firstData = navColumns.findIndex(column => typeof column === 'object');
+    const lastData = navColumns.reduce((last, column, position) => typeof column === 'object' ? position : last, -1);
+
+    if (active === DETAIL_TOGGLE_COLUMN) {
+      return firstData >= 0 ? firstData : clamped;
+    }
+
+    if (typeof active !== 'object' || !this.#adaptiveColumns.includes(active)) {
+      return clamped;
+    }
+
+    const row = this.#rowAt(index);
+
+    if (index >= 0 && isDataRow(row) && !row.skeleton && navColumns[0] === DETAIL_TOGGLE_COLUMN && !this.#rowRenderOf(row)) {
+      return 0;
+    }
+
+    if (index < 0 || row?.isGroup) {
+      // Anterior exibida (pela ordem das colunas visíveis), senão a próxima.
+      const shown = this._shownColumns;
+      const from = shown.indexOf(active);
+
+      for (let position = from - 1; position >= 0; position--) {
+        const found = navColumns.indexOf(shown[position]);
+
+        if (found >= 0) {
+          return found;
+        }
+      }
+
+      return firstData >= 0 ? firstData : clamped;
+    }
+
+    return lastData >= 0 ? lastData : clamped;
   }
 
   /**
@@ -11086,7 +11414,12 @@ export class DataGrid extends LitElement {
 
     if (this.#focusPending) {
       this.#focusPending = false;
-      cell.focus({ preventScroll: true });
+      // Foco perdido num valor da linha adaptativa (linha recriada ao salvar): volta ao mesmo valor (spec 21).
+      const adaptive = this.#adaptiveFocus;
+      const value = adaptive && cell.classList.contains('detail-cell')
+        ? cell.querySelector<HTMLElement>(`.adaptive-value.focus-target[data-column="${columnIdOf(adaptive.column)}"]`)
+        : null;
+      (value ?? cell).focus({ preventScroll: true });
     }
 
     if (!this.#revealPending) {
@@ -11215,6 +11548,15 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    // Valor da linha adaptativa (spec 21): a coluna dele vai no `u-grid-focus-change`.
+    const value = this.#adaptiveValueOf(path);
+    const previousAdaptive = this.#adaptiveFocus;
+    this.#adaptiveFocus = value ? { rowKey: value.rowKey, column: value.column } : undefined;
+
+    if (position.row === this.#activeRowIndex && (previousAdaptive?.column !== this.#adaptiveFocus?.column)) {
+      this.#reportFocus('user');
+    }
+
     // Mesma célula do cabeçalho (banda ou folha com `rowspan`): o nível lembrado fica.
     if (position.row < 0 && this.#activeRowIndex < 0 && this.#headerCellAt(position.row, position.col)?.column === this.#activeHeaderColumn()) {
       return;
@@ -11248,6 +11590,13 @@ export class DataGrid extends LitElement {
     const position = cell && this.#positionOf(cell);
 
     if (!cell || !position) {
+      return;
+    }
+
+    // Valor (ou editor) da linha adaptativa (spec 21).
+    const adaptiveValue = this.#adaptiveValueOf(path);
+
+    if (adaptiveValue && this.#onAdaptiveKeyDown(event, adaptiveValue, cell, position)) {
       return;
     }
 
@@ -11526,15 +11875,29 @@ export class DataGrid extends LitElement {
 
   /** Modo linha: Tab percorre os editores da linha e os botões Salvar/Cancelar (circular). */
   #tabInRow(cell: HTMLElement, back: boolean): void {
-    const tr = cell.closest('tr');
+    const own = cell.closest('tr');
+    // Na linha adaptativa (spec 21) a linha da edição é a mestre, logo antes.
+    const tr = own?.classList.contains('detail-row') ? own.previousElementSibling as HTMLElement | null : own;
 
     if (!tr) {
       return;
     }
 
+    const detail = tr.nextElementSibling?.classList.contains('detail-row') ? tr.nextElementSibling : null;
     const targets: (HTMLElement | SVGElement)[] = [];
 
-    for (const td of tr.querySelectorAll<HTMLElement>(':scope > td.editing, :scope > td.command-cell')) {
+    // Como num formulário: editores da mestre → editores da linha adaptativa → Salvar/Cancelar.
+    for (const td of tr.querySelectorAll<HTMLElement>(':scope > td.editing')) {
+      targets.push(...focusTargetsWithin(td));
+    }
+
+    if (detail) {
+      for (const value of detail.querySelectorAll<HTMLElement>('.adaptive-value.editing')) {
+        targets.push(...focusTargetsWithin(value));
+      }
+    }
+
+    for (const td of tr.querySelectorAll<HTMLElement>(':scope > td.command-cell')) {
       targets.push(...focusTargetsWithin(td));
     }
 
@@ -11545,7 +11908,7 @@ export class DataGrid extends LitElement {
     const active = this.shadowRoot?.activeElement ?? document.activeElement;
     const current = targets.findIndex(target => target === active || target.contains(active));
     const next = targets[(current + (back ? -1 : 1) + targets.length) % targets.length];
-    const logical = this.#virtualColumns ? this.#nextRowEditorCol(cell, next, back) : undefined;
+    const logical = this.#virtualColumns && own === tr && !detail?.contains(next) ? this.#nextRowEditorCol(cell, next, back) : undefined;
 
     // Confirma o que foi digitado (validação na hora); a linha continua aberta.
     void this.#commitEditor();
@@ -11654,6 +12017,20 @@ export class DataGrid extends LitElement {
     }
 
     const path = event.composedPath();
+    const value = this.#adaptiveValueOf(path);
+
+    // Valor da linha adaptativa (spec 21): o editor abre no lugar dele.
+    if (value) {
+      const onContent = path[0] !== value.element
+        && path.some(node => node instanceof HTMLElement && node !== value.element && value.element.contains(node) && node.matches(TABBABLE_IN_CELL));
+
+      if (!value.element.classList.contains('editing') && !onContent) {
+        this.#startEdit(value.masterIndex, value.column, 'user');
+      }
+
+      return;
+    }
+
     const cell = this.#navCellOf(path);
     const position = cell && this.#positionOf(cell);
 
@@ -13040,7 +13417,7 @@ export class DataGrid extends LitElement {
       const cell = this.#adaptiveCellLayout(column, id);
       const removed = pending?.type === 'remove';
       const added = pending?.type === 'add';
-      const editing = !!pending && this.#isEditingCell(rowKey, column, pending, master);
+      const editing = this.#editingOn && !fixed && this.#isEditingCell(rowKey, column, pending, master);
       const modified = !!pending && !added && !removed && pending.modified.has(column);
       const error = removed ? undefined : pending?.errors.get(column);
       const messageId = error ? `${labelId}-message` : undefined;
@@ -13073,7 +13450,7 @@ export class DataGrid extends LitElement {
           tabindex=${ifDefined(editing ? undefined : '-1')}
           aria-labelledby=${ifDefined(editing ? undefined : `${labelId} ${textId}`)}
           aria-invalid=${ifDefined(error && !editing ? 'true' : undefined)}
-          aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}><span class="adaptive-text" id=${textId}>${content}</span>${error
+          aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}>${editing ? content : html`<span class="adaptive-text" id=${textId}>${content}</span>`}${error
             ? html`<div id=${messageId} class="validation-message" part="validation-message">${error}</div>`
             : nothing}${position < last ? html`<span class="visually-hidden">${separator}</span>` : nothing}</dd></div>`;
     })}</dl>`;
@@ -14789,7 +15166,7 @@ export class DataGrid extends LitElement {
   }
 
   /** Contexto de uma célula do corpo (só linhas de dados carregadas e de grupo). */
-  #rowMenuRequest(position: CellPosition): ContextMenuRequest | null {
+  #rowMenuRequest(position: CellPosition, adaptiveColumn?: GridColumnDef): ContextMenuRequest | null {
     const row = this.#rowAt(position.row);
 
     if (!row) {
@@ -14806,9 +15183,9 @@ export class DataGrid extends LitElement {
       return null;
     }
 
-    const navColumn = this.#currentNavColumns()[position.col];
+    const navColumn = adaptiveColumn ?? this.#currentNavColumns()[position.col];
     // Célula de largura total (frente 20): sem coluna.
-    const fullWidth = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+    const fullWidth = !adaptiveColumn && position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
     const cellType: GridCellType = fullWidth
       ? 'full-width'
       : navColumn === SELECTION_COLUMN
@@ -15238,7 +15615,7 @@ export class DataGrid extends LitElement {
       }
     }
 
-    if (this.detailRenderer) {
+    if (this.#showDetailColumn) {
       const expanded = this.#isRowExpandedKey(request.rowKey);
       items.push(expanded ? { name: 'collapseRow', text: translation.collapseRow } : { name: 'expandRow', text: translation.expandRow });
     }
@@ -15680,6 +16057,13 @@ export class DataGrid extends LitElement {
 
     if (!cell || !position || cell.closest('tr.filter-row')) {
       return false;
+    }
+
+    // Valor da linha adaptativa (spec 21): o menu da célula daquela coluna.
+    const value = this.#adaptiveValueOf(path);
+
+    if (value) {
+      return this.#openAdaptiveMenu(value, point, event);
     }
 
     if (position.row < 0) {

@@ -185,6 +185,167 @@ describe('colunas ocultas por falta de espaço', () => {
 
     expect(seen).toContain(true);
     expect(detailRows(grid)[0].querySelector('.amount')?.textContent).toBe('100');
-    void key;
+  });
+});
+
+const focused = (grid: DataGrid): Element | null => root(grid).activeElement;
+
+const record = <T>(grid: DataGrid, name: string): T[] => {
+  const details: T[] = [];
+  grid.addEventListener(name, event => details.push((event as CustomEvent<T>).detail));
+  return details;
+};
+
+const type = async (grid: DataGrid, text: string): Promise<void> => {
+  const input = focused(grid) as HTMLInputElement;
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  await settle(grid);
+};
+
+describe('linha adaptativa: teclado', () => {
+  it('roteiro: expandir na célula de expansão, ↓ entra, Enter vai ao 1º valor, Tab circula, Esc volta, ↑ sai', async () => {
+    const grid = await createResponsive(500);
+    const focus = record<{ column: GridColumnDef | null; cellType: string }>(grid, 'u-grid-focus-change');
+
+    expect(grid.focusCell(grid.items[0], 'invoice')).toBe(true);
+    await settle(grid);
+    await key(grid, 'Home');
+    expect(focused(grid)?.classList.contains('detail-toggle-cell')).toBe(true);
+
+    await key(grid, 'Enter');
+    expect(grid.isRowExpanded(grid.items[0])).toBe(true);
+    expect(focused(grid)?.classList.contains('detail-toggle-cell')).toBe(true);
+
+    await key(grid, 'ArrowDown');
+    expect(focused(grid)?.classList.contains('detail-cell')).toBe(true);
+    expect(focus.at(-1)?.cellType).toBe('detail');
+
+    await key(grid, 'Enter');
+    const values = [...detailRows(grid)[0].querySelectorAll<HTMLElement>('.adaptive-value')];
+    expect(focused(grid)).toBe(values[0]);
+    expect(focus.at(-1)?.column?.label).toBe('Employee');
+    expect(values[0].getAttribute('aria-labelledby')?.split(' ').map(id => root(grid).getElementById(id)?.textContent?.trim()))
+      .toEqual(['Employee:', 'Employee 0']);
+
+    await key(grid, 'Tab');
+    expect(focused(grid)).toBe(values[1]);
+    await key(grid, 'Tab');
+    await key(grid, 'Tab');
+    expect(focused(grid)).toBe(values[0]);
+    await key(grid, 'Tab', { shiftKey: true });
+    expect(focused(grid)).toBe(values[2]);
+
+    await key(grid, 'Escape');
+    expect(focused(grid)?.classList.contains('detail-cell')).toBe(true);
+
+    await key(grid, 'ArrowUp');
+    expect(focused(grid)?.classList.contains('detail-toggle-cell')).toBe(true);
+  });
+
+  it('RTL: mesmo roteiro (← → não mexem na linha adaptativa)', async () => {
+    const grid = await createResponsive(500, g => {
+      g.dir = 'rtl';
+    });
+    grid.expandRow(grid.items[0]);
+    grid.focusCell(grid.items[0], 'invoice');
+    await settle(grid);
+    await key(grid, 'ArrowDown');
+    expect(focused(grid)?.classList.contains('detail-cell')).toBe(true);
+    await key(grid, 'ArrowLeft');
+    expect(focused(grid)?.classList.contains('detail-cell')).toBe(true);
+    await key(grid, 'F2');
+    expect(focused(grid)?.classList.contains('adaptive-value')).toBe(true);
+  });
+
+  it('focusCell numa coluna oculta abre a linha (api) e foca o valor', async () => {
+    const grid = await createResponsive(500);
+    const expansion = record<GridRowExpansionChangeEventDetail>(grid, 'u-grid-row-expansion-change');
+
+    expect(grid.focusCell(grid.items[1], 'amount')).toBe(true);
+    await settle(grid);
+
+    expect(expansion).toEqual([{ rowKey: grid.items[1], expanded: true, source: 'api' }]);
+    expect(focused(grid)?.getAttribute('data-column')).not.toBeNull();
+    expect((focused(grid) as HTMLElement).textContent).toContain('$101.00');
+  });
+
+  it('coluna da célula ativa que some: o foco vai à célula de expansão da linha', async () => {
+    const grid = await createResponsive(1000);
+    grid.focusCell(grid.items[0], 'amount');
+    await settle(grid);
+    expect(focused(grid)?.textContent).toContain('$100.00');
+
+    await resize(grid, 500);
+    expect(focused(grid)?.classList.contains('detail-toggle-cell')).toBe(true);
+
+    // Todas voltam: a coluna de expansão some, o foco vai à 1ª célula de dados.
+    await resize(grid, 1000);
+    expect(focused(grid)?.textContent).toBe('INV-0');
+  });
+});
+
+describe('linha adaptativa: edição', () => {
+  it('modo célula: Enter no valor abre o editor; Enter confirma e o foco volta ao valor; Esc cancela', async () => {
+    const grid = await createResponsive(500, g => {
+      g.allowEditing = true;
+    });
+    grid.focusCell(grid.items[0], 'employee');
+    await settle(grid);
+    expect(focused(grid)?.classList.contains('adaptive-value')).toBe(true);
+
+    await key(grid, 'Enter');
+    const input = focused(grid) as HTMLInputElement;
+    expect(input.classList.contains('cell-editor')).toBe(true);
+    expect(input.getAttribute('aria-labelledby')).toMatch(/^adaptive-/);
+
+    await type(grid, 'Changed');
+    await key(grid, 'Enter');
+    await settle(grid);
+    expect(focused(grid)?.classList.contains('adaptive-value')).toBe(true);
+    expect(focused(grid)?.textContent).toContain('Changed');
+
+    await key(grid, 'Enter');
+    await type(grid, 'Discarded');
+    await key(grid, 'Escape');
+    expect(focused(grid)?.classList.contains('adaptive-value')).toBe(true);
+    expect(focused(grid)?.textContent).toContain('Changed');
+  });
+
+  it('modo linha: abre a linha adaptativa com os editores; Tab: mestre → adaptativa → botões; fecha ao sair', async () => {
+    const grid = await createResponsive(700, g => {
+      g.allowEditing = true;
+      g.editMode = 'row';
+    });
+    const expansion = record<GridRowExpansionChangeEventDetail>(grid, 'u-grid-row-expansion-change');
+    const hidden = grid.getAdaptiveColumns().length;
+    expect(hidden).toBeGreaterThan(0);
+
+    expect(grid.editRow(grid.items[0])).toBe(true);
+    await settle(grid);
+    expect(expansion.map(e => e.expanded)).toEqual([true]);
+
+    const masterEditors = [...masterRows(grid)[0].querySelectorAll('.cell-editor')];
+    const adaptiveEditors = [...detailRows(grid)[0].querySelectorAll('.cell-editor')];
+    expect(adaptiveEditors).toHaveLength(hidden);
+    expect(focused(grid)).toBe(masterEditors[0]);
+
+    for (let i = 1; i < masterEditors.length; i++) {
+      await key(grid, 'Tab');
+    }
+
+    await key(grid, 'Tab');
+    expect(focused(grid)).toBe(adaptiveEditors[0]);
+
+    for (let i = 1; i < adaptiveEditors.length; i++) {
+      await key(grid, 'Tab');
+    }
+
+    await key(grid, 'Tab');
+    expect((focused(grid) as HTMLElement).textContent?.trim()).toBe('Save');
+
+    await key(grid, 'Escape');
+    expect(expansion.map(e => e.expanded)).toEqual([true, false]);
+    expect(root(grid).querySelector('.cell-editor')).toBeNull();
   });
 });
