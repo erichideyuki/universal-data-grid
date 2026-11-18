@@ -71,6 +71,17 @@
     "searchWorstMs": 53.7,
     "searchMs": 1185.6
   },
+  "fixed-rows-1m": {
+    "firstRenderMs": 26,
+    "enableFixedRowsMs": 6.9,
+    "enableFullWidthMs": 5.4,
+    "fixed.scrollP95Ms": 6.9,
+    "fixed.scrollWorstMs": 8.6,
+    "fixed.jumpP95Ms": 15.2,
+    "fixed.jumpWorstMs": 15.9,
+    "focusFixedRowMs": 0.2,
+    "domNodes": 282
+  },
   "flat-100k": {
     "firstRenderMs": 43.3,
     "scrollP95Ms": 10.9,
