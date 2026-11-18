@@ -756,6 +756,7 @@ column chooser button are separate stops in the bar above.
 | `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
 | `Shift`+`↑`/`↓`, `Shift`+`Space` | Extend the selection (`multiple`). |
 | `Ctrl`+`A` | Select all (`multiple`). |
+| `Ctrl`+`C` / `⌘`+`C` | Copy the selected rows, or the focused data cell (announced). See [Clipboard](#clipboard-ctrlc). |
 | `→` / `←` on a group row | Expand / collapse (`←` on a collapsed group goes to its parent group); `Enter` toggles. |
 | `Enter` / `Space` on a header | Sort (`Shift` adds the column), as with the mouse. |
 | `Alt`+`←`/`→` on a header | Resize the column. |
@@ -1014,15 +1015,17 @@ formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `she
 
 With the focus on a cell, **Ctrl+C** (⌘C, or Copy in the browser menu) copies the selected rows in
 the current order — or, without a selection (or when no selected row passes the filter), the
-focused cell — as tab separated text
-(`text/plain`) and an HTML table (`text/html`, escaped; above 10,000 rows only the text), with the
-visible exportable columns, formatted values, no header and formula injection blocked. Text the
-user selected with the mouse, and copies from the filter row or search box, are left to the
-browser. Screen readers announce the copy.
+focused data cell — as tab separated text (`text/plain`) and an HTML table (`text/html`, escaped;
+above 10,000 rows only the text), with the visible exportable columns, formatted values, no header
+and formula injection blocked. Screen readers announce the copy (again when repeated). Without a
+selection, Ctrl+C on a header, group row, summary or checkbox cell copies nothing. Text the user
+selected with the mouse inside the grid, and copies from the filter row, the search box or an
+editable control inside a cell, are left to the browser.
 
 `clipboard-mode="none"` turns it off. The cancelable `u-grid-copying` event fires before the grid
 writes; `detail` is `{ items, columns, text, html, clipboardData }`. After `preventDefault()` the
-grid writes nothing — write your own content in `clipboardData` (synchronously):
+grid writes nothing and announces nothing — write your own content in `clipboardData`
+(synchronously) and announce the copy in your own live region:
 
 ```js
 grid.addEventListener('u-grid-copying', event => {

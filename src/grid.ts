@@ -13,8 +13,8 @@ import { downloadBlob } from './export/download.js';
 import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
 import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
 import { clipboardContent, collectRows, writeCsv } from './export/write.js';
-import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import { cycleWithin, focusFirstWithin } from './features/cell-content-focus.js';
+import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
   ColumnChooserController,
   columnChooserIcon,
@@ -1873,14 +1873,9 @@ export class DataGrid extends LitElement {
    * `setData` durante o evento.
    */
   readonly #onCopy = (event: ClipboardEvent): void => {
-    const table = this.#tableRef.value;
-
-    if (this.clipboardMode === 'none' || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
-      return;
-    }
-
+    const cell = this.#copyCellOf(event);
     // Seleção toda fora do filtro: copia a célula focada, como sem seleção.
-    const copy = (this.#selection.size ? this.#copySelection() : undefined) ?? this.#copyActiveCell();
+    const copy = cell && ((this.#selection.size ? this.#copySelection() : undefined) ?? this.#copyCell(cell));
 
     if (!copy) {
       return;
@@ -1898,6 +1893,37 @@ export class DataGrid extends LitElement {
     writeClipboard(clipboardData, copy.detail);
     this.#announce(copy.announcement);
   };
+
+  /**
+   * `beforecopy`: cancelar habilita o comando Copiar no WebKit sem seleção de
+   * texto (senão o Cmd+C nem dispara o `copy`); no Chromium não muda nada.
+   * Mesmo critério do `copy`, e só quando há o que copiar.
+   */
+  readonly #onBeforeCopy = (event: Event): void => {
+    const cell = this.#copyCellOf(event);
+
+    if (cell && (this.#selection.size || this.#copyCell(cell))) {
+      event.preventDefault();
+    }
+  };
+
+  /**
+   * Célula de onde veio o `copy`/`beforecopy` quando a cópia é do grid:
+   * célula navegável (não a linha de filtro, campo editável ou texto
+   * selecionado pelo usuário) com `clipboardMode` ligado.
+   */
+  #copyCellOf(event: Event): { position: CellPosition } | undefined {
+    const table = this.#tableRef.value;
+
+    if (this.clipboardMode === 'none' || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
+      return undefined;
+    }
+
+    const cell = this.#navCellOf(event.composedPath());
+    const position = cell && !cell.closest('tr.filter-row') ? this.#positionOf(cell) : undefined;
+
+    return position ? { position } : undefined;
+  }
 
   #copySelection(): CopyContent | undefined {
     const source = this.#exportSource({ selectedOnly: true, includeGroups: false, includeSummaries: false });
@@ -1918,9 +1944,10 @@ export class DataGrid extends LitElement {
     };
   }
 
-  #copyActiveCell(): CopyContent | undefined {
-    const row = this.#rowAt(this.#activeRowIndex);
-    const column = this.#activeColumn;
+  /** A célula de onde veio o Ctrl+C (só célula de dados de coluna exportável). */
+  #copyCell({ position }: { position: CellPosition }): CopyContent | undefined {
+    const row = this.#rowAt(position.row);
+    const column = this.#currentNavColumns()[position.col];
 
     if (!row || !isDataRow(row) || !column || column === SELECTION_COLUMN || !isColumnExportable(column)) {
       return undefined;
@@ -4063,6 +4090,7 @@ export class DataGrid extends LitElement {
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
+            @beforecopy=${this.#onBeforeCopy}
             @focusin=${this.#onGridFocusIn}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}

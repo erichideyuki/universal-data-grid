@@ -9,18 +9,45 @@ import type { ClipboardContent } from '../export/write.js';
 /** `copy` (default): Ctrl/Cmd+C copies the selected rows or the focused cell; `none`: the grid does not touch the clipboard. */
 export type GridClipboardMode = 'copy' | 'none';
 
-const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
+/** Campos editáveis (nativos e widgets ARIA dentro da célula, spec 17): a cópia é deles. */
+const EDITABLE = 'input, textarea, select, [role=textbox], [role=combobox], [role=spinbutton], [role=searchbox]';
 
 interface SelectionRoot {
   getSelection?: () => Selection | null;
 }
 
-/** Há texto selecionado pelo usuário (no documento ou no shadow root do grid)? */
-const hasTextSelection = (root: ShadowRoot): boolean => {
-  const inShadow = (root as unknown as SelectionRoot).getSelection?.();
-  const inDocument = root.ownerDocument.getSelection();
+const isRange = (selection: Selection | null | undefined): selection is Selection =>
+  !!selection && !selection.isCollapsed && selection.toString() !== '';
 
-  return [inShadow, inDocument].some(selection => !!selection && !selection.isCollapsed && selection.toString() !== '');
+/**
+ * O usuário selecionou texto DENTRO do grid? Seleção esquecida em outro
+ * ponto da página não conta (o Chromium a mantém ao entrar no grid por Tab).
+ */
+const hasTextSelection = (root: ShadowRoot): boolean => {
+  if (isRange((root as unknown as SelectionRoot).getSelection?.())) {
+    return true;
+  }
+
+  const selection = root.ownerDocument.getSelection();
+  // No documento, uma seleção dentro do shadow root aparece reapontada para o hospedeiro.
+  const inside = (node: Node | null): boolean => !!node && (node === root.host || root.contains(node) || root.host.contains(node));
+
+  return isRange(selection) && (inside(selection.anchorNode) || inside(selection.focusNode));
+};
+
+/** Algum elemento do caminho, até a tabela, é editável? (shadow roots aninhados do renderer incluídos) */
+const isEditablePath = (path: readonly EventTarget[], table: HTMLTableElement): boolean => {
+  for (const node of path) {
+    if (node === table) {
+      return false;
+    }
+
+    if (node instanceof HTMLElement && (node.isContentEditable || node.matches(EDITABLE))) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 /**
@@ -28,18 +55,14 @@ const hasTextSelection = (root: ShadowRoot): boolean => {
  * editável — linha de filtro, busca) e o usuário não selecionou texto (aí
  * a cópia nativa segue).
  */
-export const isGridCopy = (event: ClipboardEvent, table: HTMLTableElement, root: ShadowRoot): boolean => {
-  if (!event.clipboardData) {
+export const isGridCopy = (event: Event, table: HTMLTableElement, root: ShadowRoot): boolean => {
+  if (event.type === 'copy' && !(event as ClipboardEvent).clipboardData) {
     return false;
   }
 
-  const target = event.composedPath()[0];
+  const path = event.composedPath();
 
-  if (!(target instanceof Element) || !table.contains(target) || target.closest(EDITABLE)) {
-    return false;
-  }
-
-  return !hasTextSelection(root);
+  return path.includes(table) && !isEditablePath(path, table) && !hasTextSelection(root);
 };
 
 /** Escreve o conteúdo no evento (o chamador já decidiu cancelar a cópia nativa). */

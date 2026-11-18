@@ -92,6 +92,23 @@ injetado; `fileName` (`'export.xlsx'`) no download.
   acima, só o TSV). Sem cabeçalho. Com texto selecionado pelo mouse
   (seleção não colapsada), a cópia nativa segue. Anúncio `aria-live`.
 
+### Revisão de acessibilidade na entrega (`a11y-reviewer`, spec 17)
+
+Aplicado (sem mudar API): o `copy` só vale vindo de uma célula navegável
+(o botão de operação da linha de filtro não copia mais a célula ativa de
+antes) e copia a célula de onde veio o evento; `beforecopy` cancelado com o
+mesmo critério (o WebKit só habilita Copiar sem seleção de texto assim);
+seleção de texto esquecida fora do grid não bloqueia; campo editável inclui
+`contenteditable` e widgets ARIA editáveis dentro da célula, em shadow roots
+aninhados; README com Ctrl+C na tabela de teclado, o que não copia e o
+anúncio a cargo do hospedeiro quando ele cancela. Testes desses casos.
+
+Pendente (muda o `detail.html` do `u-grid-copying`, decisão do usuário):
+`<table dir="rtl" lang="ar">` no HTML copiado com o grid em RTL; trocar o
+`'` visível no HTML por `mso-number-format:'\@'` (decisão de segurança —
+conferir antes se o Excel não avalia `=` assim). Não testado em WebKit/
+Firefox (o Vitest do projeto só roda Chromium).
+
 ## Segurança
 **Injeção de fórmula** (OWASP CSV Injection): texto que começa com `=`,
 `+`, `-`, `@`, tab ou CR recebe prefixo `'` (`escapeFormulas: true` no

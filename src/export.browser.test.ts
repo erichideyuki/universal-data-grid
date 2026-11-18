@@ -344,4 +344,89 @@ describe('Ctrl+C', () => {
 
     expect(events).not.toHaveBeenCalled();
   });
+
+  const status = (grid: DataGrid): string => grid.shadowRoot!.querySelector('[role=status]')!.textContent ?? '';
+
+  it('botão de operação da linha de filtro, cabeçalho e linha de grupo sem seleção: nada copiado, nada anunciado', async () => {
+    const grid = await create(g => g.showFilterRow = true);
+    const events = vi.fn();
+    grid.addEventListener('u-grid-copying', events);
+
+    grid.shadowRoot!.querySelector<HTMLElement>('.filter-operation-button')!.focus();
+    expect((await pressCopy())?.prevented).toBe(false);
+
+    grid.shadowRoot!.querySelector<HTMLElement>('thead th[data-col]')!.focus();
+    expect((await pressCopy())?.prevented).toBe(false);
+
+    grid.groupColumn(column(grid, 'country'));
+    await settle(grid);
+    grid.shadowRoot!.querySelector<HTMLElement>('tbody .grouping-cell')!.focus();
+    expect((await pressCopy())?.prevented).toBe(false);
+
+    await settle(grid);
+    expect(events).not.toHaveBeenCalled();
+    expect(status(grid)).toBe('');
+  });
+
+  it('com seleção, Ctrl+C no cabeçalho copia a seleção; repetir anuncia de novo; cancelado não anuncia', async () => {
+    const grid = await create(g => g.selectionMode = 'multiple');
+    grid.selectRows([grid.items[0]]);
+    await settle(grid);
+    grid.shadowRoot!.querySelector<HTMLElement>('thead th[data-col]')!.focus();
+
+    expect(await pressCopy()).toMatchObject({ text: 'Ana\tBrazil\t1,200.50\tok', prevented: true });
+    await settle(grid);
+    const first = status(grid);
+    expect(first).toContain('Copied rows: 1');
+
+    await pressCopy();
+    await settle(grid);
+    expect(status(grid)).toContain('Copied rows: 1');
+    expect(status(grid), 'o mesmo anúncio muda o texto para ser lido de novo').not.toBe(first);
+
+    const second = status(grid);
+    grid.addEventListener('u-grid-copying', event => event.preventDefault());
+    await pressCopy();
+    await settle(grid);
+    expect(status(grid)).toBe(second);
+  });
+
+  it('`beforecopy` é cancelado (habilita o Copiar no WebKit) só quando a cópia é do grid', async () => {
+    const grid = await create(g => g.showFilterRow = true);
+
+    const beforeCopy = (target: HTMLElement): boolean => {
+      const event = new Event('beforecopy', { bubbles: true, composed: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(beforeCopy(firstCell(grid))).toBe(true);
+    expect(beforeCopy(firstCell(grid, 4))).toBe(false);
+    expect(beforeCopy(grid.shadowRoot!.querySelector<HTMLElement>('thead input')!)).toBe(false);
+    grid.clipboardMode = 'none';
+    await settle(grid);
+    expect(beforeCopy(firstCell(grid))).toBe(false);
+  });
+
+  it('texto selecionado FORA do grid não impede a cópia da célula', async () => {
+    const grid = await create();
+    const outside = document.createElement('p');
+    outside.textContent = 'page text';
+    document.body.append(outside);
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+
+    try {
+      const clipboardData = new DataTransfer();
+      const cell = firstCell(grid);
+      cell.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+
+      expect(clipboardData.getData('text/plain')).toBe('Ana');
+    } finally {
+      document.getSelection()!.removeAllRanges();
+      outside.remove();
+    }
+  });
 });
