@@ -220,3 +220,45 @@ export const clipboardContent = (
     html: withHtml ? `<table${dir}${lang}><tbody>${htmlRows.join('')}</tbody></table>` : '',
   };
 };
+
+/** Células de HTML na cópia de intervalos (frente 19); acima disso, só o TSV. */
+export const CLIPBOARD_HTML_CELL_LIMIT = 100_000;
+
+/** Um intervalo copiado: linhas de dados com as colunas dele (frente 19). */
+export interface ClipboardBlock {
+  rows: readonly GridExportRow[];
+  columns: readonly ExportColumnSource[];
+}
+
+/**
+ * Vários intervalos empilhados na vertical (na ordem dada, como o AG Grid):
+ * mesmo TSV/HTML protegido da 12, uma `<table>` só.
+ */
+export const clipboardBlocks = (
+  blocks: readonly ClipboardBlock[],
+  cells: number,
+  options: ClipboardHtmlOptions = {},
+): ClipboardContent => {
+  const lines: string[] = [];
+  const htmlRows: string[] = [];
+  const withHtml = cells <= CLIPBOARD_HTML_CELL_LIMIT;
+
+  for (const { rows, columns } of blocks) {
+    for (const row of rows) {
+      const fields = fieldsOf(row, columns, true, false);
+      lines.push(fields.map(tsvField).join('\t'));
+
+      if (withHtml) {
+        htmlRows.push(`<tr>${fields.map(htmlCell).join('')}</tr>`);
+      }
+    }
+  }
+
+  const dir = options.rtl ? ' dir="rtl"' : '';
+  const lang = options.lang ? ` lang="${escapeHtml(options.lang)}"` : '';
+
+  return {
+    text: lines.join(CRLF),
+    html: withHtml ? `<table${dir}${lang}><tbody>${htmlRows.join('')}</tbody></table>` : '',
+  };
+};

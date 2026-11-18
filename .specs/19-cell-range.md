@@ -29,7 +29,7 @@ aqui é o AG Grid e, onde ele não cobre, a planilha.
 - Resumo opcional (contagem, soma, média) numa barra abaixo do grid e por
   método.
 
-## API (revisada pelo `webcomponent-api-reviewer` e pelo `a11y-reviewer` — aguardando aval)
+## API (aprovada pelo usuário em 2026-11-18; revisada pelo `webcomponent-api-reviewer` e pelo `a11y-reviewer`)
 
 ### `<u-grid>` — propriedades
 - `cellSelectionMode` ↔ `cell-selection-mode`: `'none' | 'single' |

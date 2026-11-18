@@ -136,6 +136,9 @@ const locate = (block: ItemBlock, offset: number): { position: number; detail: b
 
 const isBlock = (segment: Row | ItemBlock): segment is ItemBlock => !('isGroup' in segment);
 
+/** Linha avulsa que é de dados (as avulsas são grupos e rodapés; esqueleto de lista remota conta). */
+const isDataSingle = (row: Row): boolean => !row.isGroup && !row.isFooter && !row.isDetail;
+
 /** O que o grid lê das linhas: a lista inteira ou uma página dela (frente 08). */
 export interface Rows {
   readonly length: number;
@@ -155,6 +158,11 @@ export interface Rows {
   detailIndices(): Int32Array;
   /** Índice da linha que era o esqueleto `key`; `-1` se não está. */
   indexOfSkeletonKey(key: string): number;
+  /**
+   * Quantas linhas de dados (inclusive esqueletos e linhas novas) há antes de
+   * `index` — sem varrer as linhas (frente 19: tamanho do intervalo).
+   */
+  dataRowsBefore(index: number): number;
 }
 
 /**
@@ -208,6 +216,8 @@ export class RowList implements Rows {
   readonly #keyOf: RowKeyOf;
   #length = 0;
   #details = 0;
+  /** Linhas de dados antes de cada segmento (calculado na 1ª consulta). */
+  #dataBefore: number[] | undefined;
 
   constructor(keyOf: RowKeyOf) {
     this.#keyOf = keyOf;
@@ -224,6 +234,7 @@ export class RowList implements Rows {
 
   /** Acrescenta uma linha avulsa (grupo, rodapé…). */
   push(row: Row): void {
+    this.#dataBefore = undefined;
     this.#starts.push(this.#length);
     this.#segments.push(row);
     this.#length++;
@@ -235,6 +246,7 @@ export class RowList implements Rows {
       return;
     }
 
+    this.#dataBefore = undefined;
     const block: ItemBlock = { items, details: details && (details.all || details.positions.length) ? details : undefined };
     const length = blockLength(block);
 
@@ -261,6 +273,42 @@ export class RowList implements Rows {
     }
 
     return low;
+  }
+
+  dataRowsBefore(index: number): number {
+    if (index <= 0 || !this.#segments.length) {
+      return 0;
+    }
+
+    let before = this.#dataBefore;
+
+    if (!before) {
+      before = this.#dataBefore = [];
+      let count = 0;
+
+      for (const segment of this.#segments) {
+        before.push(count);
+        count += isBlock(segment) ? segment.items.length : isDataSingle(segment) ? 1 : 0;
+      }
+
+      before.push(count);
+    }
+
+    if (index >= this.#length) {
+      return before[before.length - 1];
+    }
+
+    const low = this.#segmentIndex(index);
+    const segment = this.#segments[low];
+    const offset = index - this.#starts[low];
+
+    if (!isBlock(segment)) {
+      return before[low];
+    }
+
+    // Linhas de dados do bloco antes do deslocamento: a linha em `offset` é do item `position`.
+    const { position, detail } = locate(segment, offset);
+    return before[low] + position + (detail ? 1 : 0);
   }
 
   /** Linha em `index` (0 ≤ index < length). */
@@ -473,6 +521,11 @@ export class RowPage implements Rows {
 
   at(index: number): Row {
     return this.#rows.at(this.offset + index);
+  }
+
+  dataRowsBefore(index: number): number {
+    const end = Math.min(Math.max(index, 0), this.length);
+    return this.#rows.dataRowsBefore(this.offset + end) - this.#rows.dataRowsBefore(this.offset);
   }
 
   slice(start = 0, end = this.length): Row[] {

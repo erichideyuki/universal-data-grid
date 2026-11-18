@@ -41,8 +41,20 @@ import type {
   GridExportingEventDetail,
   GridExportOptions,
 } from './export/types.js';
-import { type ClipboardHtmlOptions, clipboardContent, collectRows, writeCsv } from './export/write.js';
+import { type ClipboardBlock, type ClipboardHtmlOptions, clipboardBlocks, clipboardContent, collectRows, writeCsv } from './export/write.js';
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
+import {
+  type GridCellRange,
+  type GridCellRangeChangeEventDetail,
+  type GridCellRangeInit,
+  type GridCellRangeSummary,
+  type GridCellSelectionMode,
+  type GridPasteEventDetail,
+  normalizeCellSelectionMode,
+  NOT_DATA,
+  NOT_LOADED,
+  summarizeRange,
+} from './features/cell-range.js';
 import { type GridClipboardMode, hasTextSelection as hasGridTextSelection, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
   ColumnChooserController,
@@ -180,6 +192,20 @@ import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
 import {
+  type CellCorners,
+  type CellRect,
+  type RangeEdges,
+  cellRangeEdges,
+  countCells,
+  isSingleCell,
+  parseTsv,
+  pasteSize,
+  rectOf,
+  rowBands,
+  sameCorners,
+  unescapePasted,
+} from './row-model/cell-range.js';
+import {
   ancestorsOf,
   buildColumnTree,
   buildHeaderRows,
@@ -311,6 +337,14 @@ export type {
 } from './data/data-source.js';
 export type { GridClipboardMode } from './features/clipboard.js';
 export type {
+  GridCellRange,
+  GridCellRangeChangeEventDetail,
+  GridCellRangeInit,
+  GridCellRangeSummary,
+  GridCellSelectionMode,
+  GridPasteEventDetail,
+} from './features/cell-range.js';
+export type {
   GridCsvDownloadOptions,
   GridCsvOptions,
   GridExportColumn,
@@ -438,10 +472,22 @@ export interface GridSelectionChangeEventDetail {
 
 /** `detail` of `u-grid-copying`. */
 export interface GridCopyEventDetail<TItem = any> {
-  /** Copied rows: the selected rows in the current order, or the row of the focused cell. */
+  /**
+   * Copied rows: with cell ranges, the distinct rows of the ranges in the
+   * displayed order; else the selected rows in the current order, or the row
+   * of the focused cell.
+   */
   readonly items: readonly TItem[];
-  /** Copied columns: the visible exportable columns, or the focused column. */
+  /**
+   * Copied columns: with cell ranges, the union of their columns in the
+   * displayed order; else the visible exportable columns, or the focused column.
+   */
   readonly columns: readonly GridColumnDef<TItem>[];
+  /**
+   * The copied cell ranges (frozen), stacked vertically in creation order in
+   * `text`/`html`; empty when the selected rows or the focused cell are copied.
+   */
+  readonly ranges: readonly GridCellRange<TItem>[];
   /** Tab separated text the grid writes as `text/plain` (read only: cancel to write your own). */
   readonly text: string;
   /**
@@ -702,6 +748,131 @@ interface RowEditState {
 
 /** Conteúdo interativo dentro da célula: o clique nele não abre o editor. */
 const TABBABLE_IN_CELL = 'a[href], button, input, select, textarea, [contenteditable], [tabindex]';
+
+// ------------------------------------------- intervalo de células (frente 19)
+
+const EMPTY_RANGES: readonly GridCellRange[] = Object.freeze([]);
+
+/** Valor colado que não converte e não vira pendência (booleano com outro texto): a célula é pulada. */
+const SKIP_PASTE = Symbol('skip-paste');
+
+/**
+ * Células por cópia/colagem de intervalo: o `copy`/`paste` nativo é
+ * síncrono (só aceita `setData`/`getData` durante o evento). Medido no
+ * perfil fraco (spec 16, cenário `cell-range-1m`); acima, recusa e anuncia.
+ */
+const MAX_RANGE_CLIPBOARD_CELLS = 200_000;
+
+/** Pausa antes de anunciar o tamanho do intervalo e trocar o resumo (só o último fala). */
+const RANGE_ANNOUNCE_DELAY = 500;
+
+/** Distância (px) da borda da área de rolagem em que o arrasto rola sozinho. */
+const AUTO_SCROLL_EDGE = 32;
+
+/** Arrasto de intervalo em curso (mouse/caneta). */
+interface RangeDrag {
+  pointerId: number;
+  anchor: CellPosition;
+  end: CellPosition;
+  /** Intervalos que ficam (Ctrl+arrasto, modo "adicionar"). */
+  base: CellCorners[];
+  /** Já saiu da célula de origem (captura pedida). */
+  started: boolean;
+  /** Intervalos antes do arrasto (o evento sai ao soltar). */
+  previous: readonly GridCellRange[];
+  x: number;
+  y: number;
+  /** `requestAnimationFrame` da rolagem automática (0 = nenhum). */
+  frame: number;
+  table: HTMLTableElement;
+}
+
+/** Cantos internos → `GridCellRange` (congelado). */
+const publicRange = (corners: CellCorners, navColumns: readonly NavColumn[]): GridCellRange => Object.freeze({
+  startRowIndex: corners.anchorRow,
+  endRowIndex: corners.endRow,
+  startColumn: navColumns[corners.anchorCol] as GridColumnDef,
+  endColumn: navColumns[corners.endCol] as GridColumnDef,
+});
+
+/** Moeda, `%`, espaços e apóstrofos num número colado (o texto formatado que a cópia gera). */
+const PASTE_NUMBER_NOISE = /[\p{Sc}%\s']/gu;
+/** Letras nas pontas (código da moeda: "R$", "EUR"). */
+const EDGE_LETTERS = /^\p{L}+|\p{L}+$/gu;
+
+/**
+ * Número colado: o parser do editor; senão o texto formatado que a cópia
+ * gera (moeda, espaço, `%` — dividido por 100, como a planilha).
+ */
+const parsePastedNumber = (text: string, language: string | undefined): unknown => {
+  const parsed = parseEditorNumber(text, language);
+
+  if (!(parsed instanceof UnparsedValue) || !(/\d/).test(text)) {
+    return parsed;
+  }
+
+  const percent = text.includes('%');
+  // Tira moeda, `%`, espaços e o código da moeda nas pontas ("R$ 1.234,50", "1 EUR");
+  // qualquer outro símbolo (`=2`) segue inválido.
+  const stripped = text.replace(PASTE_NUMBER_NOISE, '').replace(EDGE_LETTERS, '');
+  const value = parseEditorNumber(stripped, language);
+
+  if (typeof value !== 'number') {
+    return parsed;
+  }
+
+  return percent ? value / 100 : value;
+};
+
+/**
+ * Data colada → texto ISO que o `parseEditorDate` entende: aceita ISO e a
+ * data numérica no formato do idioma (a ordem dia/mês/ano vem do `Intl`),
+ * com hora opcional (AM/PM); senão o que o `Date` entender.
+ */
+const pastedDateText = (text: string, language: string | undefined, withTime: boolean): string => {
+  const trimmed = text.trim();
+
+  if (!trimmed || (/^\d{4,}-\d{2}-\d{2}(T\d{2}:\d{2})?$/).test(trimmed)) {
+    return trimmed;
+  }
+
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  const iso = (date: Date): string => `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    + (withTime ? `T${pad(date.getHours())}:${pad(date.getMinutes())}` : '');
+  const numbers = trimmed.match(/\d+/g)?.map(Number) ?? [];
+
+  if (numbers.length >= 3) {
+    const order = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'numeric', day: 'numeric' })
+      .formatToParts(new Date(2001, 10, 23))
+      .map(part => part.type)
+      .filter(type => type === 'year' || type === 'month' || type === 'day');
+    const parts: Record<string, number> = {};
+    order.forEach((type, index) => {
+      parts[type] = numbers[index];
+    });
+
+    const { year: fullYear, month, day } = parts as { year: number; month: number; day: number };
+    const year = fullYear < 100 ? 2000 + fullYear : fullYear;
+    let hours = numbers[3] ?? 0;
+    const minutes = numbers[4] ?? 0;
+    const pm = (/\bp\.?\s?m\.?/i).test(trimmed);
+
+    if (pm && hours < 12) {
+      hours += 12;
+    } else if ((/\ba\.?\s?m\.?/i).test(trimmed) && hours === 12) {
+      hours = 0;
+    }
+
+    const date = new Date(year, month - 1, day, hours, minutes);
+
+    if (!Number.isNaN(date.getTime()) && date.getMonth() === month - 1) {
+      return iso(date);
+    }
+  }
+
+  const time = Date.parse(trimmed);
+  return Number.isNaN(time) ? trimmed : iso(new Date(time));
+};
 
 /** Ids únicos (no documento) das mensagens de editores do light DOM. */
 let lightMessageCount = 0;
@@ -2021,12 +2192,31 @@ export class DataGrid extends LitElement {
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-checkboxes' }) showCheckboxes = false;
 
   /**
-   * Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected
-   * rows (or, without a selection, the focused cell) as tab separated text
-   * and an HTML table; `none` leaves the clipboard alone. Text selected with
+   * Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the cell
+   * ranges, else the selected rows, else the focused cell, as tab separated
+   * text and an HTML table; `copy-paste` also lets Ctrl/Cmd+V paste tab
+   * separated text into editable cells (with `allowEditing`; fires
+   * `u-grid-pasting`); `none` leaves the clipboard alone. Text selected with
    * the mouse is copied natively.
    */
   @property({ attribute: 'clipboard-mode' }) clipboardMode: GridClipboardMode = 'copy';
+
+  /**
+   * Cell range selection, like a spreadsheet: `none` (default), `single`
+   * (one rectangular range — not one cell) or `multiple` (Ctrl/Cmd+click,
+   * Ctrl/Cmd+drag and Shift+F8 add ranges). Drag, Shift+click, Shift+arrows,
+   * Shift+Home/End/PageUp/PageDown and Ctrl+A select data cells; with row
+   * selection on too, rows are selected with the checkbox column and Space.
+   * Ranges are cleared when rows or columns change (sorting, filtering,
+   * grouping, paging…).
+   */
+  @property({ attribute: 'cell-selection-mode' }) cellSelectionMode: GridCellSelectionMode = 'none';
+
+  /**
+   * Shows a bar below the grid with the count, sum and average of the
+   * selected cells (two or more). Numbers are summed by value, not by text.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-cell-range-summary' }) showCellRangeSummary = false;
 
   // ------------------------------------------------------------- edição
 
@@ -3198,6 +3388,10 @@ export class DataGrid extends LitElement {
       longPressTimers: this.#longPress.timers,
       exportTimers: (this.#exportTimer === undefined ? 0 : 1) + (this.#exporting ? 1 : 0) + (this.#xlsxCheckFrame === undefined ? 0 : 1),
       toolbarWidths: this.#toolbarWidths.size,
+      // Intervalo de células (frente 19): anúncio/resumo esperando a pausa, arrasto, resumo em fatias.
+      rangeTimers: this.#rangeAnnouncer.size,
+      rangeDrag: this.#rangeDrag ? 1 : 0,
+      rangeSummaries: this.#rangeSummaryAbort ? 1 : 0,
     };
   }
 
@@ -3249,6 +3443,11 @@ export class DataGrid extends LitElement {
   override disconnectedCallback() {
     // Antes do super: ele solta os refs (o contêiner) dos diretivos.
     this.#resize.cancel();
+    // Intervalo (frente 19): arrasto (listeners na tabela, captura, quadro), resumo em fatias, modo "adicionar".
+    this.#stopRangeDrag();
+    this.#rangeSummaryAbort?.abort();
+    this.#rangeSummaryAbort = undefined;
+    this.#rangeAddMode = false;
     // A tabela não segura os rótulos da página enquanto o grid está fora dela (antes do super: precisa do ref).
     this.#hostLabel.disconnect();
     this.#syncTableLabel();
@@ -3308,6 +3507,10 @@ export class DataGrid extends LitElement {
       if (this.hasUpdated && normalizeSelectionMode(changed.get('selectionMode')) === 'multiple') {
         this.#applySelection(change, 'api');
       }
+    }
+
+    if (changed.has('cellSelectionMode') || changed.has('selectionMode') || changed.has('showCheckboxes')) {
+      this.#cellSelectionModeChanged(changed.has('cellSelectionMode'));
     }
 
     if (changed.has('autoExpandRows')) {
@@ -3443,6 +3646,16 @@ export class DataGrid extends LitElement {
     // Célula ativa realocada neste render (a linha ou a coluna saiu): só
     // registra, sem evento — quem precisa lê `focusedRowKey`.
     this.#reportFocus(null);
+
+    // Intervalos limpos neste render (linhas/colunas mudaram): o evento sai
+    // depois do evento da causa (spec 19).
+    const rangeClear = this.#rangeClearEvent;
+    this.#rangeClearEvent = undefined;
+    this.#rangeCause = undefined;
+
+    if (rangeClear) {
+      this.#dispatchRangeChange(rangeClear.previous, rangeClear.source);
+    }
 
     if (this.#focusPending || this.#revealPending) {
       this.#afterActiveRender();
@@ -4161,7 +4374,7 @@ export class DataGrid extends LitElement {
    * first render it only sets the active cell (the focus moves when it is
    * rendered) and fires no event.
    */
-  focusCell(rowKey: unknown, column?: GridColumnDef): boolean {
+  focusCell(rowKey: unknown, column?: GridColumnRef): boolean {
     this.#ensureRows();
 
     const row = this.#rowIndexOfKey(rowKey);
@@ -4171,9 +4384,10 @@ export class DataGrid extends LitElement {
     }
 
     const navColumns = this.#currentNavColumns();
-    const col = column ? navColumns.indexOf(column) : navColumns.indexOf(this._visibleColumns[0]);
+    const target = column === undefined ? undefined : this.#leafColumn(column);
+    const col = target ? navColumns.indexOf(target) : column === undefined ? navColumns.indexOf(this._visibleColumns[0]) : -1;
 
-    if (column && col < 0) {
+    if (column !== undefined && col < 0) {
       return false;
     }
 
@@ -4221,10 +4435,11 @@ export class DataGrid extends LitElement {
    * not in the grid, the cell is not editable, a save is running or
    * `u-grid-edit-starting` was canceled.
    */
-  editCell(rowKey: unknown, column: GridColumnDef): boolean {
+  editCell(rowKey: unknown, column: GridColumnRef): boolean {
     this.#ensureRows();
     const index = this.#rowIndexOfKey(rowKey);
-    return index >= 0 && this.#startEdit(index, column, 'api');
+    const target = this.#leafColumn(column);
+    return index >= 0 && !!target && this.#startEdit(index, target, 'api');
   }
 
   /** Opens a whole row for editing (`editMode="row"` only; `false` otherwise or as `editCell`). */
@@ -5750,8 +5965,16 @@ export class DataGrid extends LitElement {
    */
   readonly #onCopy = (event: ClipboardEvent): void => {
     const cell = this.#copyCellOf(event);
-    // Seleção toda fora do filtro: copia a célula focada, como sem seleção.
-    const copy = cell && ((this.#selection.size ? this.#copySelection() : undefined) ?? this.#copyCell(cell));
+    // Intervalos (frente 19) > linhas selecionadas > célula ativa. Seleção toda
+    // fora do filtro: copia a célula focada, como sem seleção.
+    const ranges = cell && this.#copyRanges(cell.position);
+
+    if (ranges && 'refused' in ranges) {
+      this.#announce(ranges.refused);
+      return;
+    }
+
+    const copy = ranges ?? (cell && ((this.#selection.size ? this.#copySelection() : undefined) ?? this.#copyCell(cell)));
 
     if (!copy) {
       return;
@@ -5778,7 +6001,7 @@ export class DataGrid extends LitElement {
   readonly #onBeforeCopy = (event: Event): void => {
     const cell = this.#copyCellOf(event);
 
-    if (cell && (this.#selection.size || this.#copyCell(cell))) {
+    if (cell && (this.#selection.size || (this.#ranges.length && this.#cellSelectionMode !== 'none') || this.#copyCell(cell))) {
       event.preventDefault();
     }
   };
@@ -5814,6 +6037,7 @@ export class DataGrid extends LitElement {
       detail: {
         items: rows.map(row => row.item),
         columns: source.columns.map(column => column.info.column),
+        ranges: EMPTY_RANGES,
         ...clipboardContent(rows, source.columns, this.#clipboardHtmlOptions()),
       },
       announcement: formatMessage(this.#translation.rowsCopiedAnnouncement, { count: String(rows.length) }),
@@ -5874,9 +6098,1185 @@ export class DataGrid extends LitElement {
     const cell: GridExportDataRow = { rowType: 'data', level: 0, item: row.item, values: [value], texts: [source.text(value, row.item)] };
 
     return {
-      detail: { items: [row.item], columns: [column], ...clipboardContent([cell], [source], this.#clipboardHtmlOptions()) },
+      detail: { items: [row.item], columns: [column], ranges: EMPTY_RANGES, ...clipboardContent([cell], [source], this.#clipboardHtmlOptions()) },
       announcement: this.#translation.cellCopiedAnnouncement,
     };
+  }
+
+  // ------------------------------------------- intervalo de células (frente 19)
+
+  /** Intervalos (linha do corpo × coluna navegável), na ordem de criação; o último é o ativo. */
+  #ranges: CellCorners[] = [];
+  /** Retângulos de `#ranges` (o render consulta por célula renderizada). */
+  #rangeRects: CellRect[] = [];
+  /** `#ranges` como API (congelados; nova instância a cada mudança). */
+  #rangesPublic: readonly GridCellRange[] = EMPTY_RANGES;
+  /** Shift+F8: as setas andam sem desfazer; o próximo Shift+seta começa outro intervalo. */
+  #rangeAddMode = false;
+  /** O próximo Shift+seta/Shift+clique recomeça na célula ativa (depois do Ctrl+A ou de andar no modo "adicionar"). */
+  #rangeRestart = false;
+  /** O que os índices dos intervalos querem dizer (linhas e colunas); mudou, limpa. */
+  #rangeSignature: unknown[] = [];
+  /** Origem do último evento do grid neste ciclo (a causa de uma limpeza). */
+  #rangeCause: GridChangeSource | undefined;
+  /** Limpeza feita no render: o evento sai no `updated`. */
+  #rangeClearEvent: { previous: readonly GridCellRange[]; source: GridChangeSource } | undefined;
+  #rangeDrag: RangeDrag | undefined;
+  /** O clique que termina um arrasto não é clique de célula (edição, seleção de linha). */
+  #rangeDragEnded = false;
+  readonly #rangeAnnouncer = new Debouncer<'range' | 'summary'>(this);
+  /** Texto da barra de resumo (trocado só depois da pausa e do cálculo). */
+  #rangeSummaryText = '';
+  #rangeSummaryAbort: AbortController | undefined;
+  #warnedRangeCheckboxes = false;
+
+  get #cellSelectionMode(): GridCellSelectionMode {
+    return normalizeCellSelectionMode(this.cellSelectionMode);
+  }
+
+  /** Colunas navegáveis de dados: [primeira, última] (última < primeira sem colunas). */
+  #rangeColBounds(): [number, number] {
+    const first = this.#leadingColumns;
+    return [first, first + this._visibleColumns.length - 1];
+  }
+
+  /** Linha que entra num intervalo: de dados (carregada ou não). */
+  #isRangeRow(index: number): boolean {
+    const row = this.#rowAt(index);
+    return !!row && isDataRowLike(row);
+  }
+
+  #isRangeCell(row: number, col: number): boolean {
+    const [first, last] = this.#rangeColBounds();
+    return col >= first && col <= last && this.#isRangeRow(row);
+  }
+
+  /** Linha de dados a partir de `index` na direção `step` (grupos são esparsos; nunca a lista inteira); `-1` se não há. */
+  #nearestRangeRow(index: number, step: 1 | -1): number {
+    for (let row = index, budget = 10_000; row >= 0 && row < this.#rows.length && budget > 0; row += step, budget--) {
+      if (this.#isRangeRow(row)) {
+        return row;
+      }
+    }
+
+    return -1;
+  }
+
+  /** `count` linhas na direção `step`, parando numa linha de dados (na borda, a última que há). */
+  #stepRangeRow(row: number, step: 1 | -1, count: number): number {
+    const target = Math.min(Math.max(row + step * Math.max(count, 1), 0), this.#rows.length - 1);
+    const found = this.#nearestRangeRow(target, step);
+
+    if (found >= 0) {
+      return found;
+    }
+
+    const back = this.#nearestRangeRow(target, step === 1 ? -1 : 1);
+    return back >= 0 ? back : row;
+  }
+
+  /** Linhas de dados entre `top` e `bottom` (inclusive), sem varrer. */
+  #dataRowCount(top: number, bottom: number): number {
+    return this.#rows.dataRowsBefore(bottom + 1) - this.#rows.dataRowsBefore(top);
+  }
+
+  /** Linhas e colunas a que os índices se referem (o mesmo conjunto que o estado da 11 observa). */
+  #rangeStructure(): unknown[] {
+    return [
+      this._visibleColumns,
+      this.#leadingColumns,
+      this._groupColumns,
+      this.#sorting,
+      this.#filtering.filterValue,
+      this.#filtering.searchText,
+      this.#expansion.version,
+      this.#expansionDefaultsVersion,
+      this.#rowExpansion.version,
+      this.autoExpandRows,
+      this.#pageIndex,
+      this.#effectivePageSize,
+      this.#dataSource,
+      this.#added.size,
+      // Trocar `items` com a mesma quantidade (o `items` do `u-grid-save`) mantém; remoto cresce ao rolar.
+      this.#lazy ? -1 : this.#rows.length,
+    ];
+  }
+
+  /** Troca os intervalos; `source` nulo = sem evento (arrasto em curso). */
+  #setRanges(next: CellCorners[], source: GridChangeSource | null): boolean {
+    // Um 1×1 sozinho não é seleção (a navegação comum não vira intervalo).
+    const ranges = next.length === 1 && isSingleCell(next[0]) ? [] : next;
+
+    if (sameCorners(ranges, this.#ranges)) {
+      return false;
+    }
+
+    const previous = this.#rangesPublic;
+    const navColumns = this.#currentNavColumns();
+
+    this.#ranges = ranges;
+    this.#rangeRects = ranges.map(rectOf);
+    this.#rangesPublic = ranges.length ? Object.freeze(ranges.map(corners => publicRange(corners, navColumns))) : EMPTY_RANGES;
+    this.#rangeSignature = this.#rangeStructure();
+    this.requestUpdate();
+    this.#scheduleRangeAnnouncement();
+
+    if (source) {
+      this.#dispatchRangeChange(previous, source);
+    }
+
+    return true;
+  }
+
+  #dispatchRangeChange(previous: readonly GridCellRange[], source: GridChangeSource): void {
+    this.dispatchEvent(new CustomEvent('u-grid-cell-range-change', this.#eventInit<GridCellRangeChangeEventDetail>({
+      ranges: this.#rangesPublic,
+      previous,
+      source,
+    })));
+  }
+
+  /** Render: mudaram as linhas ou colunas a que os índices se referem → limpa (evento no `updated`). */
+  #checkRangeStructure(): void {
+    if (!this.#ranges.length) {
+      return;
+    }
+
+    const now = this.#rangeStructure();
+    const before = this.#rangeSignature;
+
+    if (now.length === before.length && now.every((value, index) => Object.is(value, before[index]))) {
+      // Remoto: a lista pode encolher (total do servidor); intervalo além do fim sai.
+      if (this.#ranges.every(corners => Math.max(corners.anchorRow, corners.endRow) < this.#rows.length)) {
+        return;
+      }
+    }
+
+    const previous = this.#rangesPublic;
+
+    this.#ranges = [];
+    this.#rangeRects = [];
+    this.#rangesPublic = EMPTY_RANGES;
+    this.#rangeRestart = false;
+    this.#stopRangeDrag();
+    this.#scheduleRangeAnnouncement();
+    this.#rangeClearEvent ??= { previous, source: this.#rangeCause ?? 'api' };
+  }
+
+  #single(position: CellPosition): CellCorners {
+    return { anchorRow: position.row, anchorCol: position.col, endRow: position.row, endCol: position.col };
+  }
+
+  /** Teclas de intervalo numa célula do corpo; `true` = tratada. */
+  #onRangeKeyDown(event: KeyboardEvent, position: CellPosition, column: NavColumn | undefined): boolean {
+    const mode = this.#cellSelectionMode;
+
+    if (mode === 'none' || position.row < 0 || event.altKey) {
+      return false;
+    }
+
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    if (event.key === 'F8' && event.shiftKey && !ctrl) {
+      if (mode !== 'multiple') {
+        return false;
+      }
+
+      event.preventDefault();
+      this.#setRangeAddMode(!this.#rangeAddMode);
+      return true;
+    }
+
+    if (event.key === 'Escape' && this.#rangeAddMode) {
+      event.preventDefault();
+      this.#setRangeAddMode(false);
+      return true;
+    }
+
+    // Ctrl+A: todas as células de dados (na coluna de caixas segue a 05: todas as linhas).
+    if (ctrl && !event.shiftKey && event.key.toLowerCase() === 'a' && column !== SELECTION_COLUMN) {
+      event.preventDefault();
+      this.#selectAllCells('user');
+      return true;
+    }
+
+    const key = navigationKeyOf(event, this._isRtl());
+
+    if (!key) {
+      return false;
+    }
+
+    if (event.shiftKey && typeof column === 'object' && this.#isRangeRow(position.row)) {
+      event.preventDefault();
+      this.#extendRangeByKey(position, key, ctrl);
+      return true;
+    }
+
+    // Sem Shift a seta anda; fora do modo "adicionar" desfaz os intervalos (como a planilha).
+    if (!event.shiftKey) {
+      if (this.#rangeAddMode) {
+        this.#rangeRestart = true;
+      } else if (this.#ranges.length) {
+        this.#rangeRestart = false;
+        this.#setRanges([], 'user');
+      }
+    }
+
+    return false;
+  }
+
+  /** `cellSelectionMode` (ou a seleção de linhas) mudou: `none` limpa; `single` fica com o ativo. */
+  #cellSelectionModeChanged(modeChanged: boolean): void {
+    const mode = this.#cellSelectionMode;
+
+    if (modeChanged) {
+      if (mode !== 'multiple') {
+        this.#setRangeAddMode(false, false);
+      }
+
+      const next = mode === 'none' ? [] : mode === 'single' ? this.#ranges.slice(-1) : this.#ranges;
+
+      if (next.length !== this.#ranges.length) {
+        const previous = this.#rangesPublic;
+        this.#setRanges(next, null);
+        this.#rangeClearEvent ??= { previous, source: 'api' };
+      }
+    }
+
+    // Os dois modos sem caixas: o clique é do intervalo, linhas só pelo Espaço.
+    if (mode !== 'none' && this.#selectionMode !== 'none' && !this.#showSelectionColumn && !this.#warnedRangeCheckboxes) {
+      this.#warnedRangeCheckboxes = true;
+      console.warn('<u-grid>: with cell-selection-mode and selection-mode, clicks select cells; add show-checkboxes (selection-mode="multiple") so rows can be selected with the pointer.');
+    }
+  }
+
+  #setRangeAddMode(on: boolean, announce = true): void {
+    if (this.#rangeAddMode === on) {
+      return;
+    }
+
+    this.#rangeAddMode = on;
+    this.#rangeRestart = on;
+    this.requestUpdate();
+
+    if (announce) {
+      this.#announce(on ? this.#translation.addToSelectionOnAnnouncement : this.#translation.addToSelectionOffAnnouncement);
+    }
+  }
+
+  /** Ctrl+A: um intervalo com todas as células de dados; a ativa não muda (o próximo Shift+seta recomeça nela). */
+  #selectAllCells(source: GridChangeSource): boolean {
+    const [firstCol, lastCol] = this.#rangeColBounds();
+    const top = this.#nearestRangeRow(0, 1);
+    const bottom = this.#nearestRangeRow(this.#rows.length - 1, -1);
+
+    if (top < 0 || bottom < 0 || lastCol < firstCol) {
+      return false;
+    }
+
+    this.#rangeRestart = true;
+    return this.#setRanges([{ anchorRow: top, anchorCol: firstCol, endRow: bottom, endCol: lastCol }], source);
+  }
+
+  /** Shift+tecla: o `end` do intervalo ativo anda (o foco vai junto); a âncora fica. */
+  #extendRangeByKey(position: CellPosition, key: NavigationKey, ctrl: boolean): void {
+    const [firstCol, lastCol] = this.#rangeColBounds();
+    const active = this.#ranges[this.#ranges.length - 1];
+    const fresh = !active || this.#rangeRestart || active.endRow !== position.row || active.endCol !== position.col;
+    let { row, col } = position;
+
+    switch (key) {
+      case 'left':
+        col = ctrl ? firstCol : Math.max(col - 1, firstCol);
+        break;
+      case 'right':
+        col = ctrl ? lastCol : Math.min(col + 1, lastCol);
+        break;
+      case 'up':
+        row = ctrl ? this.#nearestRangeRow(0, 1) : this.#stepRangeRow(row, -1, 1);
+        break;
+      case 'down':
+        row = ctrl ? this.#nearestRangeRow(this.#rows.length - 1, -1) : this.#stepRangeRow(row, 1, 1);
+        break;
+      case 'home':
+        col = firstCol;
+        break;
+      case 'end':
+        col = lastCol;
+        break;
+      case 'gridHome':
+        row = this.#nearestRangeRow(0, 1);
+        col = firstCol;
+        break;
+      case 'gridEnd':
+        row = this.#nearestRangeRow(this.#rows.length - 1, -1);
+        col = lastCol;
+        break;
+      case 'pageUp':
+        row = this.#stepRangeRow(row, -1, this.#pageSize());
+        break;
+      case 'pageDown':
+        row = this.#stepRangeRow(row, 1, this.#pageSize());
+        break;
+    }
+
+    const anchor = fresh ? position : { row: active.anchorRow, col: active.anchorCol };
+    const keep = fresh
+      ? this.#rangeAddMode && this.#cellSelectionMode === 'multiple' ? this.#ranges : []
+      : this.#ranges.slice(0, -1);
+
+    this.#rangeRestart = false;
+    this.#setRanges([...keep, { anchorRow: anchor.row, anchorCol: anchor.col, endRow: row, endCol: col }], 'user');
+
+    if (row !== position.row || col !== position.col) {
+      this.#setActive({ row, col }, 'user', { focus: true, reveal: true });
+    }
+  }
+
+  /**
+   * O intervalo ativo vai da âncora até `position` (Shift+clique; item
+   * "Estender seleção até esta célula" do menu da 18). Foco no `end`.
+   */
+  #extendRangeTo(position: CellPosition, source: GridChangeSource): void {
+    const active = this.#ranges[this.#ranges.length - 1];
+    const continuing = !!active && !this.#rangeRestart;
+    let anchor: CellPosition = continuing
+      ? { row: active.anchorRow, col: active.anchorCol }
+      : { row: this.#activeRowIndex, col: this.#activeCol };
+
+    if (!this.#isRangeCell(anchor.row, anchor.col)) {
+      anchor = position;
+    }
+
+    const keep = continuing
+      ? this.#ranges.slice(0, -1)
+      : this.#rangeAddMode && this.#cellSelectionMode === 'multiple' ? this.#ranges : [];
+
+    this.#rangeRestart = false;
+    this.#setRanges([...keep, { anchorRow: anchor.row, anchorCol: anchor.col, endRow: position.row, endCol: position.col }], source);
+    this.#setActive(position, source, { focus: true });
+  }
+
+  /** Item "Adicionar célula à seleção" do menu da 18 (equivale ao Ctrl+clique). */
+  #addCellToRanges(position: CellPosition, source: GridChangeSource): void {
+    const base = this.#ranges.length || !this.#isRangeCell(this.#activeRowIndex, this.#activeCol)
+      ? this.#ranges
+      : [this.#single({ row: this.#activeRowIndex, col: this.#activeCol })];
+
+    this.#rangeRestart = false;
+    this.#setRanges(this.#cellSelectionMode === 'multiple' ? [...base, this.#single(position)] : [], source);
+    this.#setActive(position, source, { focus: true });
+  }
+
+  /**
+   * Para o menu de contexto da célula (frente 18, WCAG 2.5.7): estende o
+   * intervalo ativo até a célula. `false` fora de uma célula de dados.
+   * @internal
+   */
+  _extendCellRangeTo(rowIndex: number, col: number): boolean {
+    if (this.#cellSelectionMode === 'none' || !this.#isRangeCell(rowIndex, col)) {
+      return false;
+    }
+
+    this.#extendRangeTo({ row: rowIndex, col }, 'user');
+    return true;
+  }
+
+  /**
+   * Para o menu de contexto da célula (frente 18): a célula vira mais um
+   * intervalo (`multiple`).
+   * @internal
+   */
+  _addCellToRanges(rowIndex: number, col: number): boolean {
+    if (this.#cellSelectionMode !== 'multiple' || !this.#isRangeCell(rowIndex, col)) {
+      return false;
+    }
+
+    this.#addCellToRanges({ row: rowIndex, col }, 'user');
+    return true;
+  }
+
+  /** Botão principal do mouse/caneta numa célula do corpo: clique, Shift/Ctrl+clique e início do arrasto. */
+  #onRangePointerDown(event: PointerEvent): void {
+    const mode = this.#cellSelectionMode;
+    this.#rangeDragEnded = false;
+
+    if (mode === 'none' || event.button !== 0 || event.pointerType === 'touch' || event.altKey) {
+      return;
+    }
+
+    const path = event.composedPath();
+    const cell = this.#navCellOf(path);
+    const position = cell && this.#positionOf(cell);
+
+    if (!cell || !position || position.row < 0) {
+      return;
+    }
+
+    const column = this.#currentNavColumns()[position.col];
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    if (typeof column !== 'object' || !this.#isRangeRow(position.row)) {
+      // Grupo, detalhe, botões: desfaz (a coluna de caixas é da seleção de linhas e não mexe).
+      if (column !== SELECTION_COLUMN && !event.shiftKey && !ctrl && this.#ranges.length && !this.#rangeAddMode) {
+        this.#setRanges([], 'user');
+      }
+
+      return;
+    }
+
+    // Editor aberto ou conteúdo interativo da célula: o gesto é dele.
+    const onContent = path[0] !== cell
+      && path.some(node => node instanceof HTMLElement && node !== cell && cell.contains(node) && node.matches(TABBABLE_IN_CELL));
+
+    if (cell.classList.contains('editing') || onContent) {
+      return;
+    }
+
+    if (event.shiftKey) {
+      // Sem seleção de texto; o foco vai pelo `#setActive`.
+      event.preventDefault();
+      this.#extendRangeTo(position, 'user');
+      return;
+    }
+
+    const append = ctrl && mode === 'multiple';
+
+    if (append) {
+      this.#addCellToRanges(position, 'user');
+    } else if (this.#ranges.length && !this.#rangeAddMode) {
+      this.#setRanges([], 'user');
+    }
+
+    const base = append || this.#rangeAddMode ? this.#ranges.slice(0, append ? -1 : undefined) : [];
+
+    this.#rangeRestart = false;
+    this.#startRangeDrag(event, position, base);
+  }
+
+  #startRangeDrag(event: PointerEvent, anchor: CellPosition, base: CellCorners[]): void {
+    const table = this.#tableRef.value;
+
+    if (!table) {
+      return;
+    }
+
+    this.#stopRangeDrag();
+    this.#rangeDrag = {
+      pointerId: event.pointerId,
+      anchor,
+      end: anchor,
+      base,
+      started: false,
+      previous: this.#rangesPublic,
+      x: event.clientX,
+      y: event.clientY,
+      frame: 0,
+      table,
+    };
+    table.addEventListener('pointermove', this.#onRangePointerMove);
+    table.addEventListener('pointerup', this.#onRangePointerUp);
+    table.addEventListener('pointercancel', this.#onRangePointerUp);
+    table.addEventListener('lostpointercapture', this.#onRangePointerUp);
+  }
+
+  readonly #onRangePointerMove = (event: PointerEvent): void => {
+    const drag = this.#rangeDrag;
+
+    if (drag?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+
+    // Soltou fora da janela sem `pointerup` (captura ainda não pedida).
+    if (event.buttons % 2 === 0) {
+      this.#finishRangeDrag();
+      return;
+    }
+
+    this.#dragRangeTo();
+    this.#scheduleRangeAutoScroll();
+  };
+
+  readonly #onRangePointerUp = (event: PointerEvent): void => {
+    if (event.pointerId === this.#rangeDrag?.pointerId) {
+      this.#finishRangeDrag();
+    }
+  };
+
+  /** Célula de dados sob o ponteiro, com o ponto preso à área do corpo (abaixo do cabeçalho grudado). */
+  #rangeCellAt(x: number, y: number): CellPosition | undefined {
+    const scroller = this._scrollContainerRef.value;
+    const table = this.#tableRef.value;
+    const root = this.shadowRoot;
+
+    if (!scroller || !table || !root) {
+      return undefined;
+    }
+
+    const box = scroller.getBoundingClientRect();
+    const head = table.tHead?.getBoundingClientRect().bottom ?? box.top;
+    const px = Math.min(Math.max(x, box.left + 1), box.right - 2);
+    const py = Math.min(Math.max(y, Math.max(head, box.top) + 1), box.bottom - 2);
+    const [firstCol, lastCol] = this.#rangeColBounds();
+
+    for (const element of root.elementsFromPoint(px, py)) {
+      const cell = element.closest('td[data-col]');
+
+      if (!(cell instanceof HTMLElement) || cell.parentElement?.parentElement?.parentElement !== table || cell.closest('tbody') === null) {
+        continue;
+      }
+
+      const position = this.#positionOf(cell);
+
+      if (!position || !this.#isRangeRow(position.row)) {
+        return undefined;
+      }
+
+      return { row: position.row, col: Math.min(Math.max(position.col, firstCol), lastCol) };
+    }
+
+    return undefined;
+  }
+
+  #dragRangeTo(): void {
+    const drag = this.#rangeDrag;
+
+    if (!drag) {
+      return;
+    }
+
+    const position = this.#rangeCellAt(drag.x, drag.y);
+
+    if (!position) {
+      return;
+    }
+
+    if (!drag.started) {
+      if (position.row === drag.anchor.row && position.col === drag.anchor.col) {
+        return;
+      }
+
+      drag.started = true;
+      drag.table.classList.add('range-dragging');
+
+      try {
+        drag.table.setPointerCapture(drag.pointerId);
+      } catch {
+        // Ponteiro já solto: o `pointerup` encerra.
+      }
+    }
+
+    if (position.row === drag.end.row && position.col === drag.end.col) {
+      return;
+    }
+
+    drag.end = position;
+    this.#setRanges([...drag.base, { anchorRow: drag.anchor.row, anchorCol: drag.anchor.col, endRow: position.row, endCol: position.col }], null);
+  }
+
+  /** Rolagem automática perto das bordas da área de rolagem (linhas e colunas virtualizadas). */
+  #scheduleRangeAutoScroll(): void {
+    const drag = this.#rangeDrag;
+
+    if (!drag?.started || drag.frame) {
+      return;
+    }
+
+    drag.frame = requestAnimationFrame(() => {
+      drag.frame = 0;
+      const scroller = this._scrollContainerRef.value;
+
+      if (this.#rangeDrag !== drag || !scroller) {
+        return;
+      }
+
+      const box = scroller.getBoundingClientRect();
+      const head = Math.max(drag.table.tHead?.getBoundingClientRect().bottom ?? box.top, box.top);
+      const speed = (distance: number): number => Math.min(Math.ceil(distance / 2) + 2, 48);
+      const dy = drag.y < head + AUTO_SCROLL_EDGE
+        ? -speed(head + AUTO_SCROLL_EDGE - drag.y)
+        : drag.y > box.bottom - AUTO_SCROLL_EDGE ? speed(drag.y - box.bottom + AUTO_SCROLL_EDGE) : 0;
+      const dx = drag.x < box.left + AUTO_SCROLL_EDGE
+        ? -speed(box.left + AUTO_SCROLL_EDGE - drag.x)
+        : drag.x > box.right - AUTO_SCROLL_EDGE ? speed(drag.x - box.right + AUTO_SCROLL_EDGE) : 0;
+
+      if (!dx && !dy) {
+        return;
+      }
+
+      scroller.scrollBy(dx, dy);
+      this.#dragRangeTo();
+      this.#scheduleRangeAutoScroll();
+    });
+  }
+
+  #finishRangeDrag(): void {
+    const drag = this.#rangeDrag;
+
+    if (!drag) {
+      return;
+    }
+
+    this.#stopRangeDrag();
+
+    if (!drag.started) {
+      return;
+    }
+
+    this.#rangeDragEnded = true;
+    // Foco no `end` (a célula sob o ponteiro ao soltar).
+    this.#setActive(drag.end, 'user', { focus: true });
+
+    if (drag.previous !== this.#rangesPublic) {
+      this.#dispatchRangeChange(drag.previous, 'user');
+    }
+  }
+
+  #stopRangeDrag(): void {
+    const drag = this.#rangeDrag;
+
+    if (!drag) {
+      return;
+    }
+
+    this.#rangeDrag = undefined;
+    drag.table.removeEventListener('pointermove', this.#onRangePointerMove);
+    drag.table.removeEventListener('pointerup', this.#onRangePointerUp);
+    drag.table.removeEventListener('pointercancel', this.#onRangePointerUp);
+    drag.table.removeEventListener('lostpointercapture', this.#onRangePointerUp);
+    drag.table.classList.remove('range-dragging');
+
+    if (drag.frame) {
+      cancelAnimationFrame(drag.frame);
+    }
+
+    try {
+      if (drag.table.hasPointerCapture(drag.pointerId)) {
+        drag.table.releasePointerCapture(drag.pointerId);
+      }
+    } catch {
+      // Já solto.
+    }
+  }
+
+  /** Classes da célula no intervalo (bordas externas desenhadas por CSS). */
+  #rangeClass(edges: RangeEdges | null): string {
+    if (!edges) {
+      return '';
+    }
+
+    return ` in-range${edges.top ? ' range-top' : ''}${edges.bottom ? ' range-bottom' : ''}${edges.start ? ' range-start' : ''}${edges.end ? ' range-end' : ''}`;
+  }
+
+  #rangeEdgesAt(row: number, col: number): RangeEdges | null {
+    return this.#rangeRects.length ? cellRangeEdges(this.#rangeRects, row, col) : null;
+  }
+
+  // Anúncios e resumo: só o último, depois de uma pausa (spec 19).
+
+  #scheduleRangeAnnouncement(): void {
+    this.#rangeSummaryAbort?.abort();
+    this.#rangeSummaryAbort = undefined;
+
+    if (!this.#ranges.length) {
+      this.#rangeAnnouncer.cancel('range');
+      this.#rangeAnnouncer.cancel('summary');
+
+      if (this.#rangeSummaryText) {
+        this.#rangeSummaryText = '';
+        this.requestUpdate();
+      }
+
+      return;
+    }
+
+    this.#rangeAnnouncer.run('range', () => this.#announceRange(), RANGE_ANNOUNCE_DELAY);
+
+    if (this.showCellRangeSummary) {
+      this.#rangeAnnouncer.run('summary', () => this.#updateRangeSummary(), RANGE_ANNOUNCE_DELAY);
+    }
+  }
+
+  #announceRange(): void {
+    if (!this.#ranges.length) {
+      return;
+    }
+
+    const translation = this.#translation;
+    const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+
+    if (this.#ranges.length === 1) {
+      const rect = this.#rangeRects[0];
+      const rows = this.#dataRowCount(rect.top, rect.bottom);
+      const columns = rect.right - rect.left + 1;
+
+      this.#announce(formatMessage(translation.cellRangeSelectedAnnouncement, {
+        cells: format.format(rows * columns),
+        rows: format.format(rows),
+        columns: format.format(columns),
+      }), true);
+      return;
+    }
+
+    const cells = countCells(rowBands(this.#rangeRects), (top, bottom) => this.#dataRowCount(top, bottom));
+
+    this.#announce(formatMessage(translation.cellRangesSelectedAnnouncement, {
+      count: format.format(this.#ranges.length),
+      cells: format.format(cells),
+    }), true);
+  }
+
+  #updateRangeSummary(): void {
+    const controller = new AbortController();
+    this.#rangeSummaryAbort?.abort();
+    this.#rangeSummaryAbort = controller;
+
+    this.getCellRangeSummary({ signal: controller.signal }).then(summary => {
+      if (this.#rangeSummaryAbort !== controller) {
+        return;
+      }
+
+      this.#rangeSummaryAbort = undefined;
+      this.#rangeSummaryText = this.#rangeSummaryLine(summary);
+      this.requestUpdate();
+    }, () => {
+      if (this.#rangeSummaryAbort === controller) {
+        this.#rangeSummaryAbort = undefined;
+      }
+    });
+  }
+
+  /** "Count: 6, Sum: 1,234, Avg: 205.7" no idioma (soma e média só com números). */
+  #rangeSummaryLine(summary: GridCellRangeSummary): string {
+    const translation = this.#translation;
+    const count = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+    const amount = getNumberFormat(this.language, { maximumFractionDigits: 2 });
+    const parts = [formatMessage(translation.summaryText, { type: translation.summaryCount, value: count.format(summary.count) })];
+
+    if (summary.sum !== null && summary.avg !== null) {
+      parts.push(formatMessage(translation.summaryText, { type: translation.summarySum, value: amount.format(summary.sum) }));
+      parts.push(formatMessage(translation.summaryText, { type: translation.summaryAvg, value: amount.format(summary.avg) }));
+    }
+
+    return parts.join(this.#listSeparatorText);
+  }
+
+  /** Barra abaixo do grid: modo "adicionar" (visível) e o resumo (`role="status"`). */
+  #renderCellRangeBar() {
+    const mode = this.#cellSelectionMode;
+    const showSummary = this.showCellRangeSummary && mode !== 'none';
+    const adding = this.#rangeAddMode && mode === 'multiple';
+
+    if (!showSummary && !adding) {
+      return nothing;
+    }
+
+    const translation = this.#translation;
+    const text = this.#ranges.length ? this.#rangeSummaryText : '';
+
+    return html`
+      <div class=${text || adding ? 'cell-range-bar has-text' : 'cell-range-bar'} part="cell-range-summary">
+        ${adding ? html`<span class="cell-range-adding">${translation.addingToSelection}</span>` : nothing}
+        ${showSummary
+          ? html`<div class="cell-range-summary" role="status" aria-atomic="true" aria-label=${translation.cellRangeSummaryLabel}>${text}</div>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  // Copiar e colar intervalos.
+
+  /** Item exibido da linha (com o que está pendente na edição). */
+  #displayedItem(row: DataRow): unknown {
+    const pending = this.#pendingOf(row);
+    return pending && pending.type !== 'add' && Object.keys(pending.data).length ? this.#edits.mergedOf(pending) : row.item;
+  }
+
+  /** Cópia dos intervalos (empilhados na ordem de criação); `undefined` sem intervalo ou fora das células de dados. */
+  #copyRanges(position: CellPosition): CopyContent | { refused: string } | undefined {
+    if (this.#cellSelectionMode === 'none' || !this.#ranges.length || typeof this.#currentNavColumns()[position.col] !== 'object') {
+      return undefined;
+    }
+
+    const navColumns = this.#currentNavColumns();
+    const translation = this.#translation;
+    const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+    // Empilhados: cada intervalo conta inteiro (a sobreposição sai duas vezes, como no AG Grid).
+    const cells = this.#rangeRects.reduce((sum, rect) => sum + this.#dataRowCount(rect.top, rect.bottom) * (rect.right - rect.left + 1), 0);
+
+    if (cells > MAX_RANGE_CLIPBOARD_CELLS) {
+      return {
+        refused: formatMessage(translation.copyLimitExceededAnnouncement, { count: format.format(cells), max: format.format(MAX_RANGE_CLIPBOARD_CELLS) }),
+      };
+    }
+
+    const sources = new Map<GridColumnDef, ExportColumnSource>();
+
+    const sourceOf = (column: GridColumnDef): ExportColumnSource => {
+      let source = sources.get(column);
+
+      if (!source) {
+        source = isColumnExportable(column) ? this.#exportColumn(column) : this.#emptyExportColumn(column);
+        sources.set(column, source);
+      }
+
+      return source;
+    };
+
+    const blocks: ClipboardBlock[] = [];
+
+    for (const rect of this.#rangeRects) {
+      const columns: ExportColumnSource[] = [];
+
+      for (let col = rect.left; col <= rect.right; col++) {
+        columns.push(sourceOf(navColumns[col] as GridColumnDef));
+      }
+
+      const rows: GridExportDataRow[] = [];
+
+      for (let index = rect.top; index <= rect.bottom; index++) {
+        const row = this.#rowAt(index);
+
+        if (!row || !isDataRowLike(row)) {
+          continue;
+        }
+
+        if (row.skeleton) {
+          return { refused: translation.rowsNotLoadedAnnouncement };
+        }
+
+        const item = this.#displayedItem(row);
+        const values = columns.map(column => column.read(item));
+        rows.push({ rowType: 'data', level: 0, item, values, texts: values.map((value, i) => columns[i].text(value, item)) });
+      }
+
+      blocks.push({ rows, columns });
+    }
+
+    // `items`/`columns`: linhas distintas e união das colunas, na ordem de exibição.
+    const bands = rowBands(this.#rangeRects);
+    const items: unknown[] = [];
+
+    for (const band of bands) {
+      for (let index = band.top; index <= band.bottom; index++) {
+        const row = this.#rowAt(index);
+
+        if (isDataRow(row)) {
+          items.push(this.#displayedItem(row));
+        }
+      }
+    }
+
+    const columns = [...new Set(this.#rangeRects.flatMap(rect => navColumns.slice(rect.left, rect.right + 1)))]
+      .filter((column): column is GridColumnDef => typeof column === 'object')
+      .sort((a, b) => navColumns.indexOf(a) - navColumns.indexOf(b));
+
+    return {
+      detail: {
+        items,
+        columns,
+        ranges: this.#rangesPublic,
+        ...clipboardBlocks(blocks, cells, this.#clipboardHtmlOptions()),
+      },
+      announcement: formatMessage(translation.cellsCopiedAnnouncement, { count: format.format(cells) }),
+    };
+  }
+
+  /** Coluna sem valor exportável (só `renderer`): célula vazia na cópia. */
+  #emptyExportColumn(column: GridColumnDef): ExportColumnSource {
+    return {
+      info: { column, label: column.label ?? '', dataType: this.#dataTypeOf(column), alignment: 'start' },
+      read: () => '',
+      text: () => '',
+      builtIn: true,
+    };
+  }
+
+  /** Ctrl/Cmd+V (`paste` nativo) numa célula de dados com `clipboard-mode="copy-paste"`. */
+  readonly #onPaste = (event: ClipboardEvent): void => {
+    const table = this.#tableRef.value;
+
+    if (
+      this.clipboardMode !== 'copy-paste'
+      || !this.#editingOn
+      || !this.allowEditing
+      || this.#editor
+      || this.#saving
+      || !table
+      || !this.shadowRoot
+      || !isGridCopy(event, table, this.shadowRoot)
+    ) {
+      return;
+    }
+
+    const cell = this.#navCellOf(event.composedPath());
+    const position = cell && !cell.closest('tr.filter-row') ? this.#positionOf(cell) : undefined;
+
+    if (!position || !this.#isRangeCell(position.row, position.col)) {
+      return;
+    }
+
+    const text = event.clipboardData!.getData('text/plain');
+    const values = parseTsv(text).map(row => row.map(unescapePasted));
+
+    if (!values.length) {
+      return;
+    }
+
+    const blockRows = values.length;
+    const blockCols = Math.max(...values.map(row => row.length));
+    const active = this.#rangeRects[this.#rangeRects.length - 1];
+    const inActive = !!active && position.row >= active.top && position.row <= active.bottom && position.col >= active.left && position.col <= active.right;
+    const target: CellRect = inActive ? active : { top: position.row, bottom: position.row, left: position.col, right: position.col };
+    const size = pasteSize(blockRows, blockCols, this.#dataRowCount(target.top, target.bottom), target.right - target.left + 1);
+    const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+
+    if (size.rows * size.cols > MAX_RANGE_CLIPBOARD_CELLS) {
+      event.preventDefault();
+      this.#announce(formatMessage(this.#translation.pasteLimitExceededAnnouncement, {
+        count: format.format(size.rows * size.cols),
+        max: format.format(MAX_RANGE_CLIPBOARD_CELLS),
+      }));
+      return;
+    }
+
+    // Linhas de dados a partir do canto (grupos e detalhes não contam); colunas cortadas na borda.
+    const rows: number[] = [];
+
+    for (let index = target.top; index < this.#rows.length && rows.length < size.rows; index++) {
+      if (this.#isRangeRow(index)) {
+        rows.push(index);
+      }
+    }
+
+    const [, lastCol] = this.#rangeColBounds();
+    const right = Math.min(target.left + size.cols - 1, lastCol);
+    const navColumns = this.#currentNavColumns();
+    const range = publicRange({ anchorRow: target.top, anchorCol: target.left, endRow: rows[rows.length - 1], endCol: right }, navColumns);
+    const detail: GridPasteEventDetail = { text, values, range, clipboardData: event.clipboardData! };
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-pasting', { ...this.#eventInit(detail), cancelable: true }))) {
+      return;
+    }
+
+    event.preventDefault();
+
+    // O ouvinte pode ter mexido em `values` (sem trocar o array).
+    const pasted = detail.values;
+    const pastedRows = Math.max(pasted.length, 1);
+    const pastedCols = Math.max(1, ...pasted.map(line => line.length));
+    let written = 0;
+    let skipped = 0;
+
+    rows.forEach((index, i) => {
+      const row = this.#rowAt(index);
+
+      if (!isDataRow(row)) {
+        skipped += right - target.left + 1;
+        return;
+      }
+
+      const pending = this.#pendingOf(row);
+      const line = pasted[i % pastedRows] ?? [];
+
+      for (let col = target.left; col <= right; col++) {
+        const column = navColumns[col] as GridColumnDef;
+
+        if (!this.#cellEditable(row, column, pending)) {
+          skipped++;
+          continue;
+        }
+
+        const pendingRow = this.#pendingForKey(this.#keyOf(row.item));
+
+        if (!pendingRow) {
+          skipped++;
+          continue;
+        }
+
+        const value = this.#parsePasted(String(line[(col - target.left) % pastedCols] ?? ''), column, getCellValue(pendingRow.item, column));
+
+        if (value === SKIP_PASTE) {
+          skipped++;
+          continue;
+        }
+
+        this.#writeCell(pendingRow, column, value);
+        written++;
+      }
+    });
+
+    for (const pending of [...this.#edits.values()]) {
+      this.#edits.prune(pending);
+    }
+
+    this.#edits.touch();
+    this.requestUpdate();
+
+    const announcement = formatMessage(this.#translation.cellsPastedAnnouncement, { count: format.format(written) });
+    this.#announce(skipped
+      ? `${announcement}. ${formatMessage(this.#translation.cellsSkippedAnnouncement, { count: format.format(skipped) })}`
+      : announcement);
+
+    // Célula e linha salvam já (um `u-grid-saving`); inválidos barram o salvamento como na 09.
+    if (written && this.#editMode !== 'batch') {
+      void this.#save('user');
+    }
+  };
+
+  /** Texto colado → valor da coluna (parser dos editores, no idioma; aceita o texto formatado que a cópia gera). */
+  #parsePasted(text: string, column: GridColumnDef, original: unknown): unknown {
+    const kind = editorKindOf(this.#dataTypeOf(column));
+    const language = this.language || undefined;
+
+    if (kind === 'number') {
+      return parsePastedNumber(text, language);
+    }
+
+    if (kind === 'date' || kind === 'datetime') {
+      return parseEditorDate(pastedDateText(text, language, kind === 'datetime'), original, kind === 'datetime');
+    }
+
+    if (kind === 'boolean') {
+      const value = text.trim().toLowerCase();
+      const translation = this.#translation;
+
+      if (!value) {
+        return null;
+      }
+
+      if (['true', '1', 'yes', '✓', translation.trueText.toLowerCase()].includes(value)) {
+        return true;
+      }
+
+      if (['false', '0', 'no', translation.falseText.toLowerCase()].includes(value)) {
+        return false;
+      }
+
+      // Texto que não é booleano: a célula fica como está (contada como pulada).
+      return SKIP_PASTE;
+    }
+
+    return text;
+  }
+
+  /** Ranges of selected cells, in creation order (the last one is the active range). A copy. */
+  getCellRanges(): GridCellRange[] {
+    return [...this.#rangesPublic];
+  }
+
+  /**
+   * Selects a range of data cells (`startRowIndex`/`endRowIndex` as in
+   * `getRowIndex`; columns by definition, `name` or `path`). With `append`
+   * (`cell-selection-mode="multiple"`) it is added to the current ranges;
+   * otherwise it replaces them. The active cell moves to the `end` corner
+   * (`u-grid-focus-change` with `source: 'api'`) without moving the DOM focus.
+   * Returns `false` (nothing changes) when the mode is `none`, a column is
+   * not a visible data column, a row is not a data row of the displayed body,
+   * or the range is a single cell without `append`.
+   */
+  selectCellRange(range: GridCellRangeInit, options: { append?: boolean } = {}): boolean {
+    const mode = this.#cellSelectionMode;
+
+    if (mode === 'none' || !range) {
+      return false;
+    }
+
+    this.#ensureRows();
+
+    const navColumns = this.#currentNavColumns();
+    const startColumn = this.#leafColumn(range.startColumn);
+    const endColumn = this.#leafColumn(range.endColumn);
+    const anchorCol = startColumn ? navColumns.indexOf(startColumn) : -1;
+    const endCol = endColumn ? navColumns.indexOf(endColumn) : -1;
+    const { startRowIndex, endRowIndex } = range;
+
+    if (
+      anchorCol < 0 || endCol < 0
+      || !Number.isInteger(startRowIndex) || !Number.isInteger(endRowIndex)
+      || !this.#isRangeRow(startRowIndex) || !this.#isRangeRow(endRowIndex)
+    ) {
+      return false;
+    }
+
+    const corners: CellCorners = { anchorRow: startRowIndex, anchorCol, endRow: endRowIndex, endCol };
+    const append = !!options.append && mode === 'multiple';
+
+    if (isSingleCell(corners) && !append) {
+      return false;
+    }
+
+    this.#rangeRestart = false;
+    this.#setRanges([...append ? this.#ranges : [], corners], 'api');
+    this.#setActive({ row: endRowIndex, col: endCol }, 'api');
+    return true;
+  }
+
+  /** Clears the cell ranges (fires `u-grid-cell-range-change` if there were any). */
+  clearCellRanges(): void {
+    this.#rangeRestart = false;
+    this.#setRanges([], 'api');
+  }
+
+  /**
+   * Count, sum and average of the selected cells (each cell once), computed
+   * in slices so that millions of cells do not block the page. It reads the
+   * ranges at the call; rejects with `AbortError` only through `signal`.
+   * Rows not loaded yet (remote data source) are left out (`complete: false`).
+   */
+  getCellRangeSummary(options: { signal?: AbortSignal } = {}): Promise<GridCellRangeSummary> {
+    this.#ensureRows();
+
+    const rows = this.#rows;
+    const navColumns = this.#currentNavColumns();
+    const bands = rowBands(this.#rangeRects);
+
+    return summarizeRange(
+      bands,
+      index => {
+        const row = index >= 0 && index < rows.length ? rows.at(index) : undefined;
+
+        if (!row || !isDataRowLike(row)) {
+          return NOT_DATA;
+        }
+
+        return row.skeleton ? NOT_LOADED : this.#displayedItem(row);
+      },
+      col => dataColumnOf(navColumns[col]) ?? undefined,
+      (item, column) => getCellValue(item, column),
+      options.signal,
+    );
+  }
+
+  /**
+   * Position of the data row `rowKey` in the displayed body (the index used
+   * by `GridCellRange`; the current page with `paging`); `-1` when the row is
+   * not displayed (filtered out, collapsed group, other page, not loaded).
+   */
+  getRowIndex(rowKey: unknown): number {
+    this.#ensureRows();
+    return this.#rowIndexOfKey(rowKey);
+  }
+
+  /** Key of the data row at `rowIndex` (see `getRowIndex`); `undefined` for group, detail and footer rows and rows not loaded. */
+  getRowKey(rowIndex: number): unknown {
+    this.#ensureRows();
+    const row = this.#rowAt(rowIndex);
+    return isDataRow(row) ? this.#keyOf(row.item) : undefined;
+  }
+
+  /** Coluna folha por definição, `name` ou `path` (visíveis, ocultas ou agrupadas). */
+  #leafColumn(columnRef: GridColumnRef | undefined): GridColumnDef | undefined {
+    const leaves = [...this._regularColumns, ...this._groupColumns];
+
+    if (typeof columnRef === 'string') {
+      return leaves.find(column => column.name === columnRef) ?? leaves.find(column => column.path === columnRef);
+    }
+
+    return columnRef && leaves.includes(columnRef) ? columnRef : undefined;
   }
 
   /** Moves the focus to the active cell of the grid (the one keyboard navigation starts from). */
@@ -6413,6 +7813,8 @@ export class DataGrid extends LitElement {
     const index = this._siblingIndexOf(column);
 
     if (previousIndex >= 0 && index !== previousIndex) {
+      // Gesto do usuário (eventos só de gesto): causa de limpar os intervalos (spec 19).
+      this.#rangeCause = 'user';
       this.dispatchEvent(new CustomEvent('u-grid-column-reorder', this.#eventInit<GridColumnReorderEventDetail>({
         column,
         band: this._parentBandOf(column),
@@ -6495,6 +7897,8 @@ export class DataGrid extends LitElement {
 
     this.#layoutDirty = true;
     this.requestUpdate();
+    // Gesto do usuário (eventos só de gesto): causa de limpar os intervalos (spec 19).
+    this.#rangeCause = 'user';
     changes.forEach(target => this.dispatchEvent(new CustomEvent('u-grid-column-visibility-change', this.#eventInit<GridColumnVisibilityChangeEventDetail>({ column: target, visible }))));
     return true;
   }
@@ -6514,11 +7918,24 @@ export class DataGrid extends LitElement {
     this.#userFixed.set(column, fixed);
     this.#layoutDirty = true;
     this.requestUpdate();
+    // Gesto do usuário (eventos só de gesto): causa de limpar os intervalos (spec 19).
+    this.#rangeCause = 'user';
     this.dispatchEvent(new CustomEvent('u-grid-column-fixed-change', this.#eventInit<GridColumnFixedChangeEventDetail>({ column, fixed, previousFixed })));
   }
 
   #eventInit<T>(detail: T): CustomEventInit<T> {
+    const source = (detail as { source?: unknown } | null)?.source;
+
+    if (source === 'user' || source === 'api') {
+      this.#noteRangeCause(source);
+    }
+
     return { detail, bubbles: true, composed: true };
+  }
+
+  /** A causa de uma limpeza dos intervalos neste ciclo (spec 19): gesto vence método. */
+  #noteRangeCause(source: GridChangeSource): void {
+    this.#rangeCause = this.#rangeCause === 'user' ? 'user' : source;
   }
 
   // ----------------------------------------------------------- larguras
@@ -7960,6 +9377,7 @@ export class DataGrid extends LitElement {
 
     this.#sorting = copy();
     this.#sortDirty = true;
+    this.#noteRangeCause(source);
     this.requestUpdate();
 
     this.dispatchEvent(new CustomEvent<GridSortEventDetail>('u-grid-sort-change', {
@@ -8295,7 +9713,12 @@ export class DataGrid extends LitElement {
     this.#announce(formatMessage(this.#translation.rowsSelectedAnnouncement, { count: String(this.#selection.size) }));
   }
 
-  #announce(text: string): void {
+  #announce(text: string, fromRange = false): void {
+    // Outro anúncio cancela o do tamanho do intervalo que esperava a pausa (spec 19).
+    if (!fromRange) {
+      this.#rangeAnnouncer.cancel('range');
+    }
+
     this.#announcement = withRepeatMark(text, this.#announcement);
     this.requestUpdate();
   }
@@ -8314,6 +9737,18 @@ export class DataGrid extends LitElement {
   }
 
   readonly #onBodyClick = (event: MouseEvent): void => {
+    const cellRanges = this.#cellSelectionMode !== 'none';
+
+    // O clique que termina um arrasto, Shift/Ctrl+clique de intervalo: não editam nem selecionam linhas.
+    if (cellRanges && (this.#rangeDragEnded || event.shiftKey || event.ctrlKey || event.metaKey)) {
+      const onCheckbox = event.composedPath().some(node => node instanceof HTMLElement && node.classList.contains('selection-cell'));
+      this.#rangeDragEnded = false;
+
+      if (!onCheckbox) {
+        return;
+      }
+    }
+
     this.#onEditPointer(event, 'click');
 
     if (this.#selectionMode === 'none') {
@@ -8348,8 +9783,9 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    // Com caixas, o clique na linha só move o foco (como o DevExtreme no modo `always`).
-    if (this.#showSelectionColumn) {
+    // Com caixas, o clique na linha só move o foco (como o DevExtreme no modo `always`);
+    // com intervalo de células (frente 19), o clique na célula é do intervalo.
+    if (this.#showSelectionColumn || cellRanges) {
       return;
     }
 
@@ -8892,6 +10328,11 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    // Intervalo de células (frente 19): Shift+setas, Ctrl+A, Shift+F8 nas células de dados.
+    if (this.#onRangeKeyDown(event, position, column)) {
+      return;
+    }
+
     if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
       if (this.#selectionMode === 'multiple') {
         event.preventDefault();
@@ -9188,6 +10629,15 @@ export class DataGrid extends LitElement {
 
   /** Perda de foco do editor (clique fora): válido confirma; inválido fica pendente marcado. */
   readonly #onGridFocusOut = (event: FocusEvent): void => {
+    // Foco saindo do grid desliga o "adicionar à seleção" (Shift+F8, spec 19).
+    if (this.#rangeAddMode && (typeof document.hasFocus !== 'function' || document.hasFocus())) {
+      const next = event.relatedTarget as Node | null;
+
+      if (!next || !(this.shadowRoot?.contains(next) || this.contains(next))) {
+        this.#setRangeAddMode(false);
+      }
+    }
+
     const editor = this.#editor;
 
     if (!editor || editor.wholeRow) {
@@ -9247,6 +10697,7 @@ export class DataGrid extends LitElement {
   readonly #onBodyPointerDown = (event: PointerEvent): void => {
     const target = event.composedPath()[0];
     this.#checkboxPointer = target instanceof HTMLInputElement && target.classList.contains('cell-editor-checkbox');
+    this.#onRangePointerDown(event);
   };
 
   /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, menu, alça. */
@@ -9581,6 +11032,7 @@ export class DataGrid extends LitElement {
     const navColumns = this.#currentNavColumns();
     this.#updateHeaderGrid(navColumns);
     this.#resolveActive(navColumns);
+    this.#checkRangeStructure();
 
     // Virtualização de colunas: só as da janela, as fixas e a ativa (frente 13).
     const layout = this.#columnLayout(this.#columnPlan());
@@ -9616,12 +11068,12 @@ export class DataGrid extends LitElement {
         <div class="scroll-container" style=${scrollPadding} .inert=${waiting} ${ref(this._scrollContainerRef)}>
           ${this.#renderToolbar()}
           <table
-            class=${fit ? 'grid-table fit' : 'grid-table'}
+            class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
             aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#allRows.length + this.#added.size + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
-            aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
+            aria-multiselectable=${ifDefined(selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined)}
             aria-busy=${ifDefined(waiting || this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
@@ -9632,6 +11084,7 @@ export class DataGrid extends LitElement {
             @pointerdown=${this.#onLongPressStart}
             @click=${this.#longPressClickCapture}
             @beforecopy=${this.#onBeforeCopy}
+            @paste=${this.#onPaste}
             @focusin=${this.#onGridFocusIn}
             @focusout=${this.#onGridFocusOut}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
@@ -9656,6 +11109,7 @@ export class DataGrid extends LitElement {
           ? renderFilterMenu(this.#filterRow, this.#filterRow.menuColumn, this.#dataTypeOf(this.#filterRow.menuColumn), this.#translation)
           : nothing)}
       </div>
+      ${this.#inTextLanguage(this.#renderCellRangeBar())}
       ${this.#inTextLanguage(this.paging ? this.#renderPager() : nothing)}
       </div>
       ${this.#contextMenu.open ? this.#renderContextMenu() : nothing}
@@ -10656,23 +12110,25 @@ export class DataGrid extends LitElement {
       ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${row.skeleton
         ? html`
           <td
-            part="cell"
-            class=${cell.cellClassName}
+            part=${this.#rangeEdgesAt(rowIndex, cell.col) ? 'cell selected' : 'cell'}
+            class=${cell.cellClassName + this.#rangeClass(this.#rangeEdgesAt(rowIndex, cell.col))}
             style=${cell.style}
             role="gridcell"
             aria-colindex="${cell.col + 1}"
             data-col=${cell.col}
+            aria-selected=${ifDefined(this.#rangeEdgesAt(rowIndex, cell.col) ? 'true' : undefined)}
             tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
         : edit
           ? this.#renderEditableCell(row, rowIndex, cell, cell.col, matcher, edit)
           : html`
           <td
-            part="cell"
-            class=${cell.cellClassName}
+            part=${this.#rangeEdgesAt(rowIndex, cell.col) ? 'cell selected' : 'cell'}
+            class=${cell.cellClassName + this.#rangeClass(this.#rangeEdgesAt(rowIndex, cell.col))}
             style=${cell.style}
             role="gridcell"
             aria-colindex="${cell.col + 1}"
             data-col=${cell.col}
+            aria-selected=${ifDefined(this.#rangeEdgesAt(rowIndex, cell.col) ? 'true' : undefined)}
             tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
       ${this.#trailingSpacerCell()}
       ${this.#showCommandColumn ? this.#renderCommandCell(row, rowIndex, this.#leadingColumns + this._visibleColumns.length, edit?.pending) : nothing}
@@ -10698,8 +12154,9 @@ export class DataGrid extends LitElement {
     const rowErrorId = rowError ? `edit-row-error-${rowIndex}` : undefined;
     const describedBy = [messageId, rowErrorId, stateId].filter(Boolean).join(' ');
     const showMessage = !!messageId && (editing || active);
-    const classes = [cell.cellClassName];
-    const parts = ['cell'];
+    const rangeEdges = this.#rangeEdgesAt(rowIndex, col);
+    const classes = [cell.cellClassName + this.#rangeClass(rangeEdges)];
+    const parts = rangeEdges ? ['cell', 'selected'] : ['cell'];
 
     if (modified) {
       classes.push('modified');
@@ -10766,6 +12223,7 @@ export class DataGrid extends LitElement {
         role="gridcell"
         aria-colindex="${col + 1}"
         data-col=${col}
+        aria-selected=${ifDefined(rangeEdges ? 'true' : undefined)}
         aria-readonly=${ifDefined(readonly ? 'true' : undefined)}
         aria-invalid=${ifDefined((error || rowError) && !editing ? 'true' : undefined)}
         aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}

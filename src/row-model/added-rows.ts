@@ -97,6 +97,12 @@ export class RowsWithAdded implements Rows {
     return sliceRows(this, start, end);
   }
 
+  dataRowsBefore(index: number): number {
+    const end = Math.min(Math.max(index, 0), this.length);
+    const added = this.#before(end);
+    return added + this.#base.dataRowsBefore(end - added);
+  }
+
   indexOfKey(key: string): number {
     const index = this.#added.findIndex(entry => entry.row.key === key);
     return index >= 0 ? this.#finals[index] : this.#toFinal(this.#base.indexOfKey(key));

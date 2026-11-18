@@ -2081,4 +2081,110 @@ export const styles = css`
       color: GrayText;
     }
   }
+
+  /*
+   * Intervalo de células (frente 19): tinta de fundo + contorno de borda real
+   * nas bordas externas de cada intervalo (não só cor, WCAG 1.4.1/1.4.11;
+   * propriedades lógicas: espelha em RTL e sobrevive ao forced-colors).
+   */
+  .cell-range-mode td:where(.grid-table > tbody > tr > *)[data-col]:not(.editing) {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  td:where(.grid-table > * > * > *).in-range {
+    background-color: var(--u-grid-selected-cell-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 14%, transparent));
+  }
+
+  td.in-range:not(.fixed):not(.sticky-cell) {
+    position: relative;
+  }
+
+  td.in-range::before {
+    --_range-border: var(--u-grid-cell-range-border-width, 2px) solid var(--u-grid-cell-range-border-color, var(--u-color-primary, rgb(103, 80, 164)));
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  td.in-range.range-top::before {
+    border-block-start: var(--_range-border);
+  }
+
+  td.in-range.range-bottom::before {
+    border-block-end: var(--_range-border);
+  }
+
+  td.in-range.range-start::before {
+    border-inline-start: var(--_range-border);
+  }
+
+  td.in-range.range-end::before {
+    border-inline-end: var(--_range-border);
+  }
+
+  /* Célula ativa dentro do intervalo: anel + faixa clara (o anel não se funde ao contorno; WCAG 2.4.7). */
+  td:where(.grid-table > * > * > *).in-range[tabindex]:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: calc(var(--u-grid-focus-ring-width, 2px) * -1);
+    box-shadow:
+      inset 0 0 0 calc(var(--u-grid-focus-ring-width, 2px) + 2px) var(--u-color-surface, #fff),
+      var(--_col-line),
+      var(--_row-line);
+  }
+
+  td.in-range[tabindex]:focus-visible::before {
+    inset: calc(var(--u-grid-focus-ring-width, 2px) + 2px);
+  }
+
+  .range-dragging {
+    cursor: cell;
+  }
+
+  /* Barra abaixo do grid: modo "adicionar à seleção" e o resumo (contagem, soma, média). */
+  .cell-range-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    min-width: 0;
+    font-size: 0.875rem;
+    color: var(--u-color-on-surface, inherit);
+  }
+
+  .cell-range-bar.has-text {
+    padding: 8px 16px;
+    border-block-start: var(--_borders-width, 1px) solid var(--u-color-outline-variant, rgb(202, 196, 208));
+  }
+
+  .cell-range-adding {
+    font-weight: 500;
+    color: var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  .cell-range-summary {
+    overflow-wrap: anywhere;
+  }
+
+  @media (forced-colors: active) {
+    td.in-range::before {
+      --_range-border: var(--u-grid-cell-range-border-width, 2px) solid Highlight;
+      forced-color-adjust: none;
+    }
+
+    tbody tr[role=row].selected > td.in-range::before {
+      --_range-border: var(--u-grid-cell-range-border-width, 2px) solid HighlightText;
+    }
+
+    td:where(.grid-table > * > * > *).in-range[tabindex]:focus-visible {
+      outline: 2px solid CanvasText;
+      outline-offset: -4px;
+    }
+
+    .cell-range-bar.has-text {
+      border-block-start: 1px solid CanvasText;
+    }
+  }
 `;

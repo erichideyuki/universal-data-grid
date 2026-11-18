@@ -6,8 +6,13 @@
  */
 import type { ClipboardContent } from '../export/write.js';
 
-/** `copy` (default): Ctrl/Cmd+C copies the selected rows or the focused cell; `none`: the grid does not touch the clipboard. */
-export type GridClipboardMode = 'copy' | 'none';
+/**
+ * `copy` (default): Ctrl/Cmd+C copies the cell ranges, the selected rows or
+ * the focused cell; `copy-paste`: also Ctrl/Cmd+V pastes into editable cells
+ * (needs `allowEditing`); `none`: the grid does not touch the clipboard. May
+ * gain members in minor versions.
+ */
+export type GridClipboardMode = 'copy' | 'copy-paste' | 'none';
 
 /** Campos editáveis (nativos e widgets ARIA dentro da célula, spec 17): a cópia é deles. */
 const EDITABLE = 'input, textarea, select, [role=textbox], [role=combobox], [role=spinbutton], [role=searchbox]';
