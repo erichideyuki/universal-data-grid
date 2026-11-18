@@ -647,7 +647,7 @@ describe('árvore: colunas ocultas por espaço (frente 21)', () => {
 
     // Foco no detalhe de a2x (descendente de a); recolher a.
     const a2x = treeCell(grid, 'a2x').closest('tr')!;
-    (a2x.nextElementSibling!.querySelector('[tabindex]')!).focus();
+    a2x.nextElementSibling!.querySelector<HTMLElement>('[tabindex]')!.focus();
     await settle(grid);
     grid.collapseNode(1);
     await settle(grid);
