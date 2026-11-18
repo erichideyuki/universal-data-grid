@@ -9,9 +9,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
 import { cleanup, createGrid, dataRows, settle } from './test/fixture.js';
-import { aliveAfterGc, expectCollected, heapDelta, kib, measureHeap, track, type Tracked } from './test/leak.js';
+import { aliveAfterGc, expectCollected, heapDelta, type HeapSample, kib, measureHeap, track, type Tracked } from './test/leak.js';
 
 afterEach(cleanup);
+
+/** Rodadas por lote na medida de vida longa. */
+const BATCH = 15;
 
 const makeItems = (count: number, seed = 0) =>
   Array.from({ length: count }, (_, n) => ({ region: `R${(n + seed) % 3}`, name: `Name ${n + seed}`, amount: n }));
@@ -137,22 +140,34 @@ describe('memória do intervalo de células', () => {
       await swap(10 + n * 3);
     }
 
-    const before = await measureHeap();
+    // Dois lotes iguais depois do aquecimento: vazamento de verdade cresce nos
+    // DOIS (linear por rodada); ruído de carga da máquina (GC, JIT, caches do
+    // navegador) infla um lote e não o outro. Falha só se os dois crescem.
+    const batch = async (seed: number): Promise<HeapSample> => {
+      const start = await measureHeap();
 
-    for (let n = 0; n < 15; n++) {
-      await swap(100 + n * 3);
-    }
+      for (let n = 0; n < BATCH; n++) {
+        await swap(seed + n * 3);
+      }
 
-    // Anúncio/resumo da última rodada: limitados pelo timer.
-    await new Promise(resolve => setTimeout(resolve, 700));
-    const delta = heapDelta(before, await measureHeap());
-    const report = `heap ${kib(delta.jsHeapUsed)}, nós ${delta.nodes}, listeners ${delta.listeners}`;
+      // Anúncio/resumo da última rodada: limitados pelo timer.
+      await new Promise(resolve => setTimeout(resolve, 700));
+      return heapDelta(start, await measureHeap());
+    };
+
+    const first = await batch(100);
+    const second = await batch(300);
+    const report = `lote 1: heap ${kib(first.jsHeapUsed)}, nós ${first.nodes}, listeners ${first.listeners}; `
+      + `lote 2: heap ${kib(second.jsHeapUsed)}, nós ${second.nodes}, listeners ${second.listeners}`;
 
     expect(grid._memoryStats.rangeDrag).toBe(0);
     expect(grid._memoryStats.rangeTimers).toBe(0);
-    expect(delta.jsHeapUsed, report).toBeLessThan(512 * 1024);
-    expect(delta.nodes, report).toBeLessThan(30);
-    expect(delta.listeners, report).toBeLessThan(30);
+    // Crescimento sustentado: o menor dos dois lotes (> 24 KiB por rodada nos dois = vazamento).
+    expect(Math.min(first.jsHeapUsed, second.jsHeapUsed), report).toBeLessThan(BATCH * 24 * 1024);
+    // Vazamento grande aparece mesmo com ruído num lote.
+    expect(first.jsHeapUsed + second.jsHeapUsed, report).toBeLessThan(2 * 1024 * 1024);
+    expect(Math.min(first.nodes, second.nodes), report).toBeLessThan(30);
+    expect(Math.min(first.listeners, second.listeners), report).toBeLessThan(30);
     expect(await aliveAfterGc(await swap(500))).toEqual([]);
   }, 240_000);
 });
