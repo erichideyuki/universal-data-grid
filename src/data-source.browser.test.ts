@@ -736,7 +736,7 @@ describe('master-detail com chave e fonte remota (frente 10)', () => {
     await settle(grid);
     await waitFor(() => skeletonRows(grid) === 0);
     expect(detailRows(grid)[0].textContent.trim()).toBe('Detail 2');
-    expect(dataRows(grid).filter(tr => !tr.classList.contains('detail-row'))[0].getAttribute('aria-rowindex')).toBe('2');
+    expect(dataRows(grid).find(tr => !tr.classList.contains('detail-row'))!.getAttribute('aria-rowindex')).toBe('2');
     expect(grid.getTotalCount()).toBe(5000);
   });
 });

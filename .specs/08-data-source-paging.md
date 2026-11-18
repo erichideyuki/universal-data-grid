@@ -177,6 +177,12 @@ mantendo seleção, foco e expansão.
   paginação ou grupos no servidor, só as linhas já carregadas, na ordem da
   tela, sem linhas de grupo (a coluna agrupada vira coluna) e com os totais
   do servidor — exportação completa é do servidor (README).
+- Master-detail (frente 10): a expansão de linha (`expandRow`, botão,
+  `u-grid-row-expansion-change`) e a altura medida do detalhe usam a chave
+  (`keyExpr`), e os slots do renderer usam a chave de linha. Num bloco
+  remoto só as linhas carregadas têm detalhe (`all: false`, posições dos
+  carregados); o esqueleto não tem. Com paginação, o virtualizador recebe
+  os detalhes da página (índices relativos).
 - `aria-rowindex` é o índice real (com a página), não reinicia por página
   como na referência; `aria-rowcount="-1"` na rolagem infinita até o fim.
 
