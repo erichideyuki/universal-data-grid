@@ -151,6 +151,14 @@ export interface GridColumnDef<TItem = any> {
   /** Maximum width in px when resizing and auto-sizing. */
   maxWidth?: number | null;
   /**
+   * Order in which the column leaves the table when the grid is too narrow
+   * (`autoHideColumns`; its values move to the row details): the lowest goes
+   * first, ties from the end. When any column has a `hidingPriority`, only
+   * those columns hide; otherwise columns hide from the last one. Fixed
+   * columns never hide. Ignored on bands.
+   */
+  hidingPriority?: number | null;
+  /**
    * Fixes the column at the start or end of the scrollable area. A fixed band
    * fixes its columns; ignored on nested columns (they follow the top band).
    */
@@ -303,6 +311,12 @@ export interface GridCellRenderContext<TItem = any> extends GridRenderContextBas
   readonly column: GridColumnDef<TItem>;
   /** Row key (without `keyExpr`, the item itself). */
   readonly rowKey: unknown;
+  /**
+   * `true` when the value is drawn in the row details because the column is
+   * hidden for lack of space (`autoHideColumns`), `false` in the table cell.
+   * Moving between the two discards the content (the `signal` aborts).
+   */
+  readonly adaptive: boolean;
 }
 
 /** Context of a `headerRenderer`. */
@@ -535,6 +549,8 @@ export interface GridEditorRenderContext<TItem = any> extends GridRenderContextB
   readonly rowKey: unknown;
   /** Accessible name for the editor (the column label). */
   readonly label: string;
+  /** `true` when the editor is in the row details (column hidden for lack of space, `autoHideColumns`). */
+  readonly adaptive: boolean;
   /** The value failed a validation rule. */
   readonly invalid: boolean;
   /** Error text of the value (`''` when valid). */

@@ -42,6 +42,7 @@ import type {
   GridExportOptions,
 } from './export/types.js';
 import { type ClipboardBlock, type ClipboardHtmlOptions, clipboardBlocks, clipboardContent, collectRows, writeCsv } from './export/write.js';
+import { type AdaptiveColumnInput, adaptiveHiddenIndexes, hidingPriorityOf } from './features/adaptive.js';
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
 import {
   type GridCellRange,
@@ -446,8 +447,20 @@ export interface GridRowExpansionChangeEventDetail {
   rowKey: unknown;
   /** New state. */
   expanded: boolean;
-  /** `user` (toggle button, keyboard) or `api` (`expandRow`/`collapseRow`). */
+  /**
+   * `user` (toggle button, keyboard, a row edit that opened or closed the
+   * details) or `api` (`expandRow`/`collapseRow`, `focusCell`/`editCell` on a
+   * column hidden by `autoHideColumns`).
+   */
   source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-adaptive-columns-change`. */
+export interface GridAdaptiveColumnsChangeEventDetail {
+  /** Columns hidden now for lack of space (`autoHideColumns`), in column order (frozen). */
+  columns: readonly GridColumnDef[];
+  /** The columns hidden before the change (frozen). */
+  previous: readonly GridColumnDef[];
 }
 
 /** `detail` of `u-grid-filter-change`. */
@@ -1021,6 +1034,9 @@ const ADD_PATH = 'M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z';
 
 // Ícone Material Symbols (Apache 2.0): chevron_right.
 const CHEVRON_PATH = 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z';
+/** Seta de ordenação (para cima; `desc` gira) e funil, no rótulo da linha adaptativa (spec 21). */
+const SORT_ARROW_PATH = 'M440-160v-487L216-423l-56-57 320-320 320 320-56 57-224-224v487h-80Z';
+const FILTER_MARK_PATH = 'M400-240v-80h160v80H400ZM240-440v-80h480v80H240ZM120-640v-80h720v80H120Z';
 
 /** Célula ativa como o hospedeiro a vê (eventos). */
 interface PublicFocus {
@@ -1204,6 +1220,16 @@ const DEFAULT_VIRTUAL_COLUMN_WIDTH = 150;
 
 /** Antes de medir (SSR, 1º render): largura suposta da área visível. */
 const DEFAULT_VIEWPORT_WIDTH = 1920;
+/** Largura (px, em `font-size` 16px) de coluna sem largura na conta do `autoHideColumns` (spec 21). */
+const DEFAULT_ADAPTIVE_COLUMN_WIDTH = 150;
+/** Folga (px) para uma coluna oculta por espaço voltar (a barra de rolagem que some não a traz de volta). */
+const ADAPTIVE_HYSTERESIS = 24;
+/** Largura (px) da coluna de botões da edição; igual ao `.command-column`. */
+const COMMAND_COLUMN_WIDTH = 176;
+/** Espera (ms) depois da última mudança das ocultas por espaço para anunciar (redimensionar arrastando anuncia uma vez). */
+const ADAPTIVE_ANNOUNCE_DELAY = 1000;
+/** Até quantos nomes o anúncio das ocultas lista (acima disso, a contagem). */
+const ADAPTIVE_ANNOUNCE_NAMES = 3;
 
 /**
  * Folga da janela horizontal de cada lado (px): uma coluna a mais para o
@@ -1444,7 +1470,10 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * or the grid cleared them because rows or columns changed (`source` of the cause: a gesture, or `api` for methods and setters such as `items`, `columns`, `cellSelectionMode`).
  * @fires {CustomEvent<GridPasteEventDetail>} u-grid-pasting - Before Ctrl/Cmd+V or the cell menu "Paste" pastes into editable cells (`clipboard-mode="copy-paste"`; user only).
  * Cancelable: nothing changes (on Ctrl/Cmd+V the native paste goes on).
- * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
+ * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`,
+ * a row edit or `focusCell`/`editCell` that opened the details of a column hidden by `autoHideColumns`; not `autoExpandRows`).
+ * @fires {CustomEvent<GridAdaptiveColumnsChangeEventDetail>} u-grid-adaptive-columns-change - The columns hidden for lack of space changed (`autoHideColumns`: the grid
+ * width, the columns, their widths or the property itself), after the render. Layout only: no `source`, not cancelable.
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter nor a relocation).
@@ -1577,6 +1606,10 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart detail-toggle-button - The expand/collapse button of a master row.
  * @csspart detail-row - Detail rows (with `row`).
  * @csspart detail-cell - The full-width cell of a detail row.
+ * @csspart adaptive-fields - The list (`<dl>`) of the values of the columns hidden by `autoHideColumns`, in the detail cell.
+ * @csspart adaptive-field - A label + value pair of `adaptive-fields`.
+ * @csspart adaptive-label - The label (`<dt>`) of a hidden column: band path, column label, sort and filter marks.
+ * @csspart adaptive-value - The value (`<dd>`) of a hidden column (with `modified`/`invalid` like the cell).
  * @csspart fixed-row - Fixed rows (`fixedTopItems`/`fixedBottomItems`; with `row`, `odd`/`even`, never `selected`).
  * @csspart fixed-top-row - Rows fixed at the top (with `fixed-row`).
  * @csspart fixed-bottom-row - Rows fixed at the bottom (with `fixed-row`).
@@ -1665,6 +1698,18 @@ export class DataGrid extends LitElement {
    * event).
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-rows' }) autoExpandRows = false;
+
+  /**
+   * Hides columns automatically when the grid itself is too narrow for them
+   * (its own width, not the window's), by `hidingPriority` (or from the last
+   * column); fixed columns never hide and at least one column stays. The
+   * values of the hidden ("adaptive") columns move to the row details: the
+   * toggle column appears and `expandRow`/`collapseRow` work even without
+   * `detailRenderer`. Layout only: hidden columns stay visible in the column
+   * chooser, `getState()`, exports, row copies, the search and the filters.
+   * See `getAdaptiveColumns()` and `u-grid-adaptive-columns-change`.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-hide-columns' }) autoHideColumns = false;
 
   /**
    * Rows fixed ("pinned") right below the column headers (property only):
@@ -2123,10 +2168,35 @@ export class DataGrid extends LitElement {
   @internalState() _regularColumns: GridColumnDef[] = [];
 
   /**
-   * Colunas comuns visíveis, na ordem de exibição (recalculado a cada update).
+   * Colunas comuns EXIBIDAS na tabela, na ordem de exibição (recalculado a
+   * cada update): as visíveis menos as ocultas por falta de espaço (spec 21).
    * @internal
    */
   _visibleColumns: GridColumnDef[] = [];
+
+  /**
+   * Colunas comuns visíveis pelo usuário/hospedeiro, com as ocultas por falta
+   * de espaço (exportação, cópia de linhas, busca, seletor). Igual a
+   * `_visibleColumns` sem `autoHideColumns`.
+   * @internal
+   */
+  _shownColumns: GridColumnDef[] = [];
+
+  /** Colunas ocultas por falta de espaço (spec 21), na ordem das colunas. */
+  #adaptiveColumns: readonly GridColumnDef[] = [];
+  /** Conjunto avisado por último em `u-grid-adaptive-columns-change`. */
+  #reportedAdaptive: readonly GridColumnDef[] = [];
+  /** Conjunto antes da rajada que está esperando o anúncio. */
+  #announcedAdaptive: readonly GridColumnDef[] | undefined;
+  #adaptiveTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Recalcular as ocultas no próximo update (largura, colunas, congelamento acabou). */
+  #adaptiveDirty = true;
+  /** Escala do `font-size` do grid (1 = 16px): a largura padrão acompanha o zoom só de texto. */
+  #fontScale = 1;
+  /** Valor focado na linha adaptativa: a coluna (foco do grid e `u-grid-focus-change`). */
+  #adaptiveFocus: { rowKey: unknown; column: GridColumnDef } | undefined;
+  /** Linhas abertas pela edição no modo linha (fecham ao sair dela). */
+  #editOpenedRow: unknown;
 
   // Estado do usuário por coluna — nunca escrito nos objetos do hospedeiro.
   readonly #userWidths = new VersionedMap<GridColumnDef, number>();
@@ -2506,9 +2576,14 @@ export class DataGrid extends LitElement {
     return this.showCheckboxes && this.#selectionMode === 'multiple';
   }
 
-  /** Coluna de expansão do master-detail (antes da de caixas). */
+  /** Coluna de expansão do master-detail (antes da de caixas): com detalhe ou com coluna oculta por espaço (spec 21). */
   get #showDetailColumn(): boolean {
-    return !!this.detailRenderer;
+    return !!this.detailRenderer || this.#adaptiveColumns.length > 0;
+  }
+
+  /** A expansão de linhas vale (estado guardado, métodos e evento): com `detailRenderer` ou `autoHideColumns`. */
+  get #expandable(): boolean {
+    return !!this.detailRenderer || this.autoHideColumns;
   }
 
   /** Colunas navegáveis do grid antes das colunas comuns (expansão, caixas). */
@@ -3787,6 +3862,10 @@ export class DataGrid extends LitElement {
     this.#syncPageHide();
     this.#releaseEditing();
     this.#releaseExport();
+    // Anúncio das ocultas por espaço (spec 21): nenhum timer fica.
+    clearTimeout(this.#adaptiveTimer);
+    this.#adaptiveTimer = undefined;
+    this.#announcedAdaptive = undefined;
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -3828,6 +3907,14 @@ export class DataGrid extends LitElement {
       }
 
       this.#rowsDirty = true;
+    }
+
+    if (changed.has('autoHideColumns')) {
+      this.#adaptiveDirty = true;
+
+      if (this.autoHideColumns && this.#viewportWidth) {
+        this.#fontScale = (parseFloat(getComputedStyle(this).fontSize) || 16) / 16;
+      }
     }
 
     if (changed.has('detailRenderer') && !changed.get('detailRenderer') !== !this.detailRenderer) {
@@ -3958,9 +4045,17 @@ export class DataGrid extends LitElement {
       }
     }
 
+    // Colunas ocultas por espaço mudaram (spec 21): evento depois do render
+    // (fora do callback do `ResizeObserver`) e foco movido avisado como `api`.
+    const adaptiveChanged = this.#adaptiveColumns !== this.#reportedAdaptive;
+
     // Célula ativa realocada neste render (a linha ou a coluna saiu): só
     // registra, sem evento — quem precisa lê `focusedRowKey`.
-    this.#reportFocus(null);
+    this.#reportFocus(adaptiveChanged ? 'api' : null);
+
+    if (adaptiveChanged) {
+      this.#adaptiveColumnsChanged();
+    }
 
     // Intervalos limpos neste render (linhas/colunas mudaram): o evento sai
     // depois do evento da causa (spec 19).
@@ -4127,8 +4222,10 @@ export class DataGrid extends LitElement {
   }
 
   /**
-   * Expands the detail of the row `rowKey` (master-detail; without
-   * `detailRenderer` it does nothing). A key not in the rows (filtered out,
+   * Expands the detail of the row `rowKey` (master-detail, and the values of
+   * the columns hidden by `autoHideColumns`; without `detailRenderer` and
+   * `autoHideColumns` it does nothing; with `autoHideColumns` the state is
+   * kept even while no column is hidden). A key not in the rows (filtered out,
    * in a collapsed group, not in `items`) keeps the state — and the key —
    * until collapsed; parent groups are not expanded.
    */
@@ -4141,9 +4238,12 @@ export class DataGrid extends LitElement {
     this.#setRowExpanded(rowKey, false, 'api');
   }
 
-  /** Whether the detail of the row `rowKey` is (or would be) expanded; `false` without `detailRenderer`. */
+  /**
+   * Whether the detail of the row `rowKey` is (or would be) expanded; `false`
+   * without `detailRenderer` and `autoHideColumns`.
+   */
   isRowExpanded(rowKey: unknown): boolean {
-    return !!this.detailRenderer && this.#isRowExpandedKey(rowKey);
+    return this.#expandable && this.#isRowExpandedKey(rowKey);
   }
 
   #isRowExpandedKey(key: unknown): boolean {
@@ -4151,7 +4251,7 @@ export class DataGrid extends LitElement {
   }
 
   #setRowExpanded(key: unknown, expanded: boolean, source: GridChangeSource): void {
-    if (!this.detailRenderer || key === undefined || this.#isRowExpandedKey(key) === expanded) {
+    if (!this.#expandable || key === undefined || this.#isRowExpandedKey(key) === expanded) {
       return;
     }
 
@@ -4178,7 +4278,8 @@ export class DataGrid extends LitElement {
    * uma a uma (`all: false`).
    */
   readonly #detailsOf = (items: readonly unknown[] | LazyItems): BlockDetails | undefined => {
-    if (!this.detailRenderer) {
+    // Sem detalhe nem coluna oculta por espaço, nada a desenhar (a expansão guardada continua valendo).
+    if (!this.#showDetailColumn) {
       return undefined;
     }
 
@@ -8083,13 +8184,187 @@ export class DataGrid extends LitElement {
       this._regularColumns = partitioned;
     }
 
-    const visible = this._regularColumns.filter(column => this._isColumnVisible(column));
+    const shown = this._regularColumns.filter(column => this._isColumnVisible(column));
+
+    if (!sameItems(shown, this._shownColumns)) {
+      this._shownColumns = shown;
+      this.#adaptiveDirty = true;
+    }
+
+    if (this.#adaptiveDirty || this.#layoutDirty) {
+      this.#updateAdaptiveColumns();
+    }
+
+    const adaptive = this.#adaptiveColumns;
+    const visible = adaptive.length ? shown.filter(column => !adaptive.includes(column)) : shown;
 
     if (!sameItems(visible, this._visibleColumns)) {
       this._visibleColumns = visible;
       this.#layoutDirty = true;
       this.#dragAndDropDirty = true;
     }
+  }
+
+  // ------------------------------------------------- responsivo (spec 21)
+
+  /**
+   * Colunas ocultas por falta de espaço: só larguras em memória (O(colunas),
+   * nada do DOM das células). Congelado com editor ou popover aberto (o que
+   * se digita não some num zoom). Volta a mostrar com folga
+   * (`ADAPTIVE_HYSTERESIS`) para não oscilar com a barra de rolagem.
+   */
+  #updateAdaptiveColumns(): void {
+    if (this.#adaptiveFrozen()) {
+      // Recalcula quando o editor/popover fechar; só tira as que deixaram de ser visíveis.
+      const kept = this.#adaptiveColumns.filter(column => this._shownColumns.includes(column));
+      this.#setAdaptiveColumns(kept);
+      return;
+    }
+
+    this.#adaptiveDirty = false;
+    this.#setAdaptiveColumns(this.#computeAdaptiveColumns());
+  }
+
+  #setAdaptiveColumns(next: readonly GridColumnDef[]): void {
+    const previous = this.#adaptiveColumns;
+
+    if (sameItems(next as GridColumnDef[], previous as GridColumnDef[])) {
+      return;
+    }
+
+    this.#adaptiveColumns = next;
+    this.#layoutDirty = true;
+
+    if (!previous.length !== !next.length) {
+      // A coluna de expansão e as linhas adaptativas aparecem/somem.
+      this.#rowsDirty = true;
+    }
+
+    // Cópia velha da lista de detalhe com campos de outra largura: re-render das abertas.
+    this.requestUpdate();
+  }
+
+  #computeAdaptiveColumns(): GridColumnDef[] {
+    const viewport = this.#viewportWidth;
+    const shown = this._shownColumns;
+
+    if (!this.autoHideColumns || isServer || viewport <= 0 || shown.length < 2) {
+      return [];
+    }
+
+    const scale = this.#fontScale;
+    const inputs: AdaptiveColumnInput[] = shown.map(column => ({
+      width: this.#neededWidth(column, scale),
+      fixed: this._fixedOf(column) !== null,
+      priority: hidingPriorityOf(column.hidingPriority),
+    }));
+    const anyPriority = this._regularColumns.some(column => hidingPriorityOf(column.hidingPriority) !== null)
+      || this._groupColumns.some(column => hidingPriorityOf(column.hidingPriority) !== null);
+    const reserved = this._groupColumns.length * GROUP_COLUMN_WIDTH
+      + (this.#showSelectionColumn ? SELECTION_COLUMN_WIDTH : 0)
+      + (this.#showCommandColumn ? COMMAND_COLUMN_WIDTH : 0)
+      + (this.detailRenderer ? DETAIL_TOGGLE_WIDTH : 0);
+    let total = 0;
+
+    for (const input of inputs) {
+      total += input.width;
+    }
+
+    // Tudo cabe sem a coluna de expansão: nada sai.
+    if (total <= viewport - reserved) {
+      return [];
+    }
+
+    const available = viewport - reserved - (this.detailRenderer ? 0 : DETAIL_TOGGLE_WIDTH);
+    const previous = this.#adaptiveColumns.length;
+    let hidden = adaptiveHiddenIndexes(inputs, available, anyPriority);
+
+    if (hidden.length < previous) {
+      // Voltar a mostrar só com folga (a barra de rolagem que some não pode reabrir a conta).
+      const relaxed = adaptiveHiddenIndexes(inputs, available - ADAPTIVE_HYSTERESIS, anyPriority);
+
+      if (relaxed.length <= previous) {
+        hidden = relaxed;
+      }
+    }
+
+    return hidden.map(index => shown[index]);
+  }
+
+  /** Largura que a coluna precisa: a escolhida ou `max(minWidth, 150 × escala do texto)`. */
+  #neededWidth(column: GridColumnDef, scale: number): number {
+    return this.#widthOf(column)
+      ?? clampWidth(Math.max(column.minWidth ?? 0, DEFAULT_ADAPTIVE_COLUMN_WIDTH * scale), column.minWidth ?? 0, column.maxWidth ?? Infinity);
+  }
+
+  /** Editor aberto, popover ou menu ancorado: o conjunto de ocultas não muda agora. */
+  #adaptiveFrozen(): boolean {
+    if (this.#editor || this.#contextMenu.open || this.#toolbarMenu.open || this.#headerFilterPopover.open) {
+      return true;
+    }
+
+    // Editor da linha de filtro com o foco.
+    const active = this.shadowRoot?.activeElement;
+    return !!active && !!active.closest?.('.filter-row');
+  }
+
+  /** Evento e anúncio da troca do conjunto de ocultas por espaço (depois do render). */
+  #adaptiveColumnsChanged(): void {
+    const previous = this.#reportedAdaptive;
+    const columns = this.#adaptiveColumns;
+    this.#reportedAdaptive = columns;
+
+    this.#announcedAdaptive ??= previous;
+    clearTimeout(this.#adaptiveTimer);
+    this.#adaptiveTimer = setTimeout(() => this.#announceAdaptive(), ADAPTIVE_ANNOUNCE_DELAY);
+
+    this.dispatchEvent(new CustomEvent('u-grid-adaptive-columns-change', this.#eventInit<GridAdaptiveColumnsChangeEventDetail>({
+      columns: Object.freeze([...columns]),
+      previous: Object.freeze([...previous]),
+    })));
+  }
+
+  /**
+   * Anúncio da rajada (spec 21): resultado líquido, só com o foco dentro do
+   * grid (inclusive popovers dele) na hora de anunciar.
+   */
+  #announceAdaptive(): void {
+    const before = this.#announcedAdaptive ?? [];
+    const now = this.#adaptiveColumns;
+    this.#adaptiveTimer = undefined;
+    this.#announcedAdaptive = undefined;
+
+    if (sameItems(before as GridColumnDef[], now as GridColumnDef[]) || !this.isConnected || !this.#focusWithin()) {
+      return;
+    }
+
+    this.#announce(this.#adaptiveAnnouncementText());
+  }
+
+  /** Texto do anúncio das ocultas (também a descrição do cabeçalho da coluna de expansão). */
+  #adaptiveAnnouncementText(): string {
+    const translation = this.#translation;
+    const columns = this.#adaptiveColumns;
+
+    if (!columns.length) {
+      return translation.noAdaptiveColumnsAnnouncement;
+    }
+
+    const names = columns.length <= ADAPTIVE_ANNOUNCE_NAMES ? this.#formatList(columns.map(column => column.label ?? '')) : String(columns.length);
+    return formatMessage(translation.adaptiveColumnsAnnouncement, { columns: names });
+  }
+
+  #focusWithin(): boolean {
+    return !!this.shadowRoot?.activeElement || (typeof this.matches === 'function' && this.matches(':focus-within'));
+  }
+
+  /**
+   * Columns hidden now because the grid is too narrow (`autoHideColumns`),
+   * in column order: their values are in the row details. A copy; `[]` when
+   * `autoHideColumns` is off, before the first layout and on the server.
+   */
+  getAdaptiveColumns(): GridColumnDef[] {
+    return [...this.#adaptiveColumns];
   }
 
   /** A banda tem coluna comum visível pelos estados próprios abaixo dela (ignorando ela e as de cima). */
@@ -8728,7 +9003,10 @@ export class DataGrid extends LitElement {
     this.#resizeObserver = new ResizeObserver(entries => {
       if (entries.some(entry => entry.target === scroller)) {
         this.#layoutDirty = true;
+        this.#adaptiveDirty = true;
         this.#viewportWidth = scroller.clientWidth;
+        // Zoom só de texto muda o `font-size`: a largura padrão da conta do responsivo acompanha (1.4.4).
+        this.#fontScale = this.autoHideColumns ? (parseFloat(getComputedStyle(this).fontSize) || 16) / 16 : 1;
         // Largura visível: o conteúdo do detalhe e da linha inteira não passa dela (WCAG 1.4.10).
         // No contêiner: o \`style\` do \`.scroll-container\` é do template (o render o sobrescreve).
         this._containerRef.value?.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
@@ -12706,7 +12984,9 @@ export class DataGrid extends LitElement {
           data-col="detail"
           colspan=${Math.max(this.#totalColumns(layout), 1)}
           aria-colspan=${Math.max(this.#navColumns.length, 1)}
-          tabindex=${this.#isActive(index, -1) ? 0 : -1}><div class="detail-content">${renderer
+          tabindex=${this.#isActive(index, -1) ? 0 : -1}><div class="detail-content">${this.#adaptiveColumns.length
+            ? this.#renderAdaptiveFields(index, this.#rowAt(index - 1))
+            : nothing}${renderer
             ? rendererContent({
               host: this,
               slotName: `u-grid-internal:detail:${row.masterKey}`,
@@ -12724,6 +13004,99 @@ export class DataGrid extends LitElement {
             : nothing}</div></td>
       </tr>
     `;
+  }
+
+  /**
+   * Linha adaptativa (spec 21): um par rótulo + valor por coluna oculta por
+   * falta de espaço, com o render da célula (formatação, renderer, realce da
+   * busca, edição). Todo valor é parada do Tab dentro da célula (Enter/F2
+   * entram); o nome dele é rótulo + valor (`aria-labelledby`). Separador de
+   * lista oculto depois de cada valor: a leitura da célula inteira tem divisa.
+   */
+  #renderAdaptiveFields(index: number, master: Row | undefined) {
+    if (!isDataRow(master) || master.skeleton || this.#rowRenderOf(master)) {
+      return nothing;
+    }
+
+    const columns = this.#adaptiveColumns;
+    const translation = this.#translation;
+    const fixed = !!master.fixed;
+    const matcher = fixed ? null : this.#highlightMatcher();
+    const pending = this.#editingOn && !fixed ? this.#pendingOf(master) : undefined;
+    const rowKey = this.#keyOf(master.item);
+    const sorting = this.#sorting;
+    const filterValue = this.#filtering.filterValue;
+    const separator = this.#listSeparatorText;
+    const last = columns.length - 1;
+
+    return html`<dl class="adaptive-fields" part="adaptive-fields">${map(columns, (column, position) => {
+      const id = columnIdOf(column);
+      const labelId = `adaptive-${index}-${id}`;
+      const textId = `${labelId}-value`;
+      const bands = this._bandChainOf(column).map(band => band.label ?? '').filter(Boolean);
+      const order = sorting.find(spec => spec.column === column)?.order;
+      const filtered = hasColumnCondition(filterValue, column);
+      const cell = this.#adaptiveCellLayout(column, id);
+      const removed = pending?.type === 'remove';
+      const added = pending?.type === 'add';
+      const editing = !!pending && this.#isEditingCell(rowKey, column, pending, master);
+      const modified = !!pending && !added && !removed && pending.modified.has(column);
+      const error = removed ? undefined : pending?.errors.get(column);
+      const messageId = error ? `${labelId}-message` : undefined;
+      const stateId = added ? 'edit-desc-added' : removed ? 'edit-desc-removed' : modified ? 'edit-desc-modified' : undefined;
+      const describedBy = [messageId, stateId].filter(Boolean).join(' ');
+      const parts = ['adaptive-value', ...modified ? ['modified'] : [], ...error ? ['invalid'] : []];
+      let content: unknown;
+
+      if (editing) {
+        content = this.#renderEditor(master, pending, column, cell, describedBy, labelId);
+      } else if (pending?.unparsed.has(column)) {
+        content = pending.unparsed.get(column)!.text;
+      } else if (pending && !added && Object.keys(pending.data).length) {
+        content = this.#renderCellContent({ ...master, item: this.#edits.mergedOf(pending) }, cell, matcher, true);
+      } else {
+        content = this.#renderCellContent(master, cell, matcher, true);
+      }
+
+      return html`<div class="adaptive-field" part="adaptive-field"><dt
+          class="adaptive-label"
+          part="adaptive-label"
+          id=${labelId}>${bands.length ? html`<span class="adaptive-band">${bands.join(' ')}</span> ` : nothing}<span class="adaptive-label-text">${column.label ?? ''}</span>${order
+            ? html`<svg class="adaptive-mark adaptive-sort ${order}" xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d=${SORT_ARROW_PATH}/></svg><span class="visually-hidden"> ${order === 'asc' ? translation.sortAscending : translation.sortDescending}</span>`
+            : nothing}${filtered
+            ? html`<svg class="adaptive-mark adaptive-filter" xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d=${FILTER_MARK_PATH}/></svg><span class="visually-hidden"> ${translation.columnFiltered}</span>`
+            : nothing}<span class="adaptive-separator">${translation.adaptiveLabelSeparator}</span></dt><dd
+          class=${classMap({ 'adaptive-value': true, modified, invalid: !!error, editing, 'focus-target': !editing })}
+          part=${parts.join(' ')}
+          data-column=${id}
+          tabindex=${ifDefined(editing ? undefined : '-1')}
+          aria-labelledby=${ifDefined(editing ? undefined : `${labelId} ${textId}`)}
+          aria-invalid=${ifDefined(error && !editing ? 'true' : undefined)}
+          aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}><span class="adaptive-text" id=${textId}>${content}</span>${error
+            ? html`<div id=${messageId} class="validation-message" part="validation-message">${error}</div>`
+            : nothing}${position < last ? html`<span class="visually-hidden">${separator}</span>` : nothing}</dd></div>`;
+    })}</dl>`;
+  }
+
+  /** Layout de célula de uma coluna oculta por espaço (render do valor e do editor na linha adaptativa). */
+  #adaptiveCellLayout(column: GridColumnDef, id: number): ColumnLayout {
+    const format = this.#formatContext(column);
+
+    return {
+      column,
+      id,
+      format,
+      className: '',
+      cellClassName: '',
+      style: '',
+      headerClasses: {},
+      headerStyles: {},
+      resizable: false,
+      bounds: this._boundsOf(column),
+      width: undefined,
+      col: -1,
+      gapBefore: 0,
+    };
   }
 
   /**
@@ -13131,7 +13504,7 @@ export class DataGrid extends LitElement {
   }
 
   /** Editor da célula: o `editorRenderer` da coluna ou o embutido pelo tipo. */
-  #renderEditor(row: DataRow, pending: PendingRow | undefined, column: GridColumnDef, cell: ColumnLayout, describedBy: string) {
+  #renderEditor(row: DataRow, pending: PendingRow | undefined, column: GridColumnDef, cell: ColumnLayout, describedBy: string, adaptiveLabelId?: string) {
     const editor = this.#editor!;
     const item = pending ? pending.item : row.item;
     const current = editor.drafts.has(column)
@@ -13147,7 +13520,7 @@ export class DataGrid extends LitElement {
 
       return rendererContent({
         host: this,
-        slotName: `u-grid-internal:editor:${row.key}:${cell.id}`,
+        slotName: `u-grid-internal:${adaptiveLabelId ? 'adaptive-editor' : 'editor'}:${row.key}:${cell.id}`,
         deps: [editor.session, column, renderer, this.#renderEpoch(), error],
         renderer,
         invoke: signal => {
@@ -13162,6 +13535,7 @@ export class DataGrid extends LitElement {
             column,
             rowKey,
             label,
+            adaptive: !!adaptiveLabelId,
             invalid: !!error,
             errorMessage: error,
             describedBy,
@@ -13211,8 +13585,8 @@ export class DataGrid extends LitElement {
       text,
       checked: current === null || current === undefined ? null : !!current,
       label,
-      // Id do rótulo do cabeçalho: nível de cima da folha + coluna (frente 13).
-      labelledBy: this.showColumnHeaders && headerIndex > 0 ? `header-text-${this._bandChainOf(column).length}-${headerIndex}` : undefined,
+      // Id do rótulo do cabeçalho: nível de cima da folha + coluna (frente 13); na linha adaptativa, o `<dt>` (spec 21).
+      labelledBy: adaptiveLabelId ?? (this.showColumnHeaders && headerIndex > 0 ? `header-text-${this._bandChainOf(column).length}-${headerIndex}` : undefined),
       invalid: !!error,
       describedBy,
       onInput: (event: Event) => {
@@ -13425,8 +13799,8 @@ export class DataGrid extends LitElement {
   }
 
   /** Conteúdo da célula, com os trechos da busca destacados (só texto nativo). */
-  #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null) {
-    const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch());
+  #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null, adaptive = false) {
+    const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch(), adaptive);
 
     return matcher && typeof content === 'string' && isColumnFilterable(cell.column)
       ? renderHighlighted(content, matcher)
@@ -15681,6 +16055,7 @@ declare global {
     'u-grid-load-error': CustomEvent<GridLoadErrorEventDetail>;
     'u-grid-page-change': CustomEvent<GridPageChangeEventDetail>;
     'u-grid-row-expansion-change': CustomEvent<GridRowExpansionChangeEventDetail>;
+    'u-grid-adaptive-columns-change': CustomEvent<GridAdaptiveColumnsChangeEventDetail>;
     'u-grid-edit-starting': CustomEvent<GridEditStartingEventDetail>;
     'u-grid-row-adding': CustomEvent<GridRowAddingEventDetail>;
     'u-grid-row-removing': CustomEvent<GridRowRemovingEventDetail>;

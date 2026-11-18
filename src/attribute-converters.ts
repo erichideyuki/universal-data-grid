@@ -21,6 +21,22 @@ export const optionalBooleanAttribute: ComplexAttributeConverter<boolean | null>
 };
 
 /**
+ * Número opcional (`hiding-priority`): sem atributo, vazio ou não numérico =
+ * `null` (o `type: Number` do Lit daria `0` para vazio e `NaN` para texto).
+ */
+export const optionalNumberAttribute: ComplexAttributeConverter<number | null> = {
+  fromAttribute: (value: string | null): number | null => {
+    if (value === null || value.trim() === '') {
+      return null;
+    }
+
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  },
+  toAttribute: (value: number | null): string | null => value === null || value === undefined ? null : String(value),
+};
+
+/**
  * Atributos renomeados (antigo → novo). O elemento observa os antigos e os
  * repassa ao novo com aviso de deprecação uma vez por instância.
  */

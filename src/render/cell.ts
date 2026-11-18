@@ -43,7 +43,8 @@ export const cellText = (item: unknown, column: GridColumnDef, format: FormatCon
  * célula (`TemplateResult`/texto) ou, se for `HTMLElement`, para o light DOM
  * do grid, projetado por um slot nomeado pela CHAVE da linha e pelo id da
  * coluna — nunca por índices, que mudam ao expandir, ordenar ou reordenar.
- * `epoch` muda com o idioma (o renderer roda de novo).
+ * `epoch` muda com o idioma (o renderer roda de novo). `adaptive`: o valor
+ * vai na linha adaptativa (coluna oculta por falta de espaço, spec 21).
  */
 export const renderDataCell = (
   grid: DataGrid,
@@ -52,6 +53,7 @@ export const renderDataCell = (
   columnId: number,
   format: FormatContext,
   epoch: unknown,
+  adaptive = false,
 ): unknown => {
   const { renderer } = column;
 
@@ -68,7 +70,8 @@ export const renderDataCell = (
 
   return rendererContent({
     host: grid,
-    slotName: `u-grid-internal:cell:${row.key}:${columnId}`,
+    // Linha adaptativa (spec 21): outro slot (a troca célula ↔ detalhe descarta o conteúdo).
+    slotName: `u-grid-internal:${adaptive ? 'adaptive' : 'cell'}:${row.key}:${columnId}`,
     deps: [item, column, renderer, epoch],
     renderer,
     invoke: signal => {
@@ -82,6 +85,7 @@ export const renderDataCell = (
         },
         column,
         rowKey: item,
+        adaptive,
         grid,
         get signal() {
           return signal();

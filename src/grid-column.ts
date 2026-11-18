@@ -1,7 +1,7 @@
 import { html, LitElement, type PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
-import { booleanAttribute, filterOperationAttribute, filterOperationsAttribute, type LegacyAttributes, optionalBooleanAttribute } from './attribute-converters.js';
+import { booleanAttribute, filterOperationAttribute, filterOperationsAttribute, type LegacyAttributes, optionalBooleanAttribute, optionalNumberAttribute } from './attribute-converters.js';
 import type {
   GridCellRenderer,
   GridColumnAlignment,
@@ -171,6 +171,14 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
 
   /** Maximum width in px when resizing and auto-sizing. */
   @property({ type: Number, attribute: 'max-width' }) maxWidth: number | null = null;
+
+  /**
+   * Order in which the column leaves the table when the grid is too narrow
+   * (`auto-hide-columns`; its values move to the row details): the lowest
+   * goes first. When any column has one, only those columns hide. Empty or
+   * not a number = none. Ignored on bands.
+   */
+  @property({ converter: optionalNumberAttribute, attribute: 'hiding-priority' }) hidingPriority: number | null = null;
 
   /** `resizable="false"` prevents resizing this column even with `column-resizing`. */
   @property({ converter: optionalBoolean }) resizable: boolean | null = null;
