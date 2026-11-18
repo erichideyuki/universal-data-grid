@@ -168,6 +168,29 @@ Achados recusados (uma linha cada):
 - Chave `bandColumnCount` (a11y): NVDA/JAWS já leem o `colspan`; VoiceOver
   vai ao roteiro manual da spec 17 (🔎).
 
+## Decisões da implementação
+
+- Estado: continua a lista PLANA de folhas (`_regularColumns`); a ordem das
+  bandas é derivada (1ª folha) e `normalizeLeafOrder` mantém as folhas de
+  cada banda juntas depois de qualquer mudança (definições novas, mover,
+  desagrupar). `fixed` é o da coluna do nível de cima (`_fixedOf`), então a
+  partição em blocos não parte banda.
+- Posição do foco no cabeçalho: linhas `-N..-1` (o `-1` de antes é o nível
+  de baixo); a célula ativa é a que cobre (nível lembrado, coluna lembrada)
+  no cabeçalho lógico (todas as colunas, sem virtualização). No `keydown`
+  da célula ativa vale a posição lembrada, não a do DOM (`data-level`,
+  `data-col` da 1ª folha).
+- Virtualização: só larguras e lados para todas as colunas; o layout
+  completo (formato, classes, limites) só das que entram no DOM. Folga de
+  160 px por lado (uma coluna a mais para o passo de 120 px da roda): folga
+  maior encareceu cada render de rolagem no perfil fraco. Células com chave
+  (`keyedRows`) só no modo virtual — o elemento focado segue a sua coluna
+  quando a janela desliza; no modo padrão continua `map` (mais barato).
+- Resumos alinhados na linha de grupo usam índices LÓGICOS (o texto não
+  muda com a rolagem); o `colspan` do rótulo conta as colunas do DOM.
+- A coluna da célula ativa (foco, editor da frente 09) é mantida no DOM
+  como as fixas; com ela longe da janela há até 2 espaçadoras de cada lado.
+
 ## Referência medida
 
 DevExtreme 26.1, demos jQuery (2026-11-18):

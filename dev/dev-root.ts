@@ -77,19 +77,32 @@ const demoSummary: GridSummary = {
   ],
 };
 
-/** Demo largo: 2 colunas fixas no início, 1 no fim e métricas sintéticas. */
-const wideColumns = (count: number): GridColumnDef[] => [
-  { path: 'country', label: 'Country', width: 180, fixed: 'start' },
-  { path: 'code', label: 'Code', width: 90, fixed: 'start' },
-  { path: 'year', label: 'Year', width: 100 },
-  ...Array.from({ length: count - 4 }, (_, i): GridColumnDef => ({
+/** Demo largo: 2 colunas fixas no início, 1 no fim e métricas sintéticas (em bandas de 10 com `?bands`). */
+const wideColumns = (count: number, bands: boolean): GridColumnDef[] => {
+  const metrics = Array.from({ length: count - 4 }, (_, i): GridColumnDef => ({
     path: `m${i + 1}`,
     label: `Metric ${i + 1}`,
     width: 120,
     minWidth: 60,
-  })),
-  { path: 'population', label: 'Population', width: 150, fixed: 'end' },
-];
+  }));
+  const banded = bands
+    ? Array.from({ length: Math.ceil(metrics.length / 10) }, (_, band): GridColumnDef => ({
+      label: `Metrics ${band * 10 + 1}–${Math.min((band + 1) * 10, metrics.length)}`,
+      columns: metrics.slice(band * 10, (band + 1) * 10),
+    }))
+    : metrics;
+  const place: GridColumnDef[] = [
+    { path: 'country', label: 'Country', width: 180 },
+    { path: 'code', label: 'Code', width: 90 },
+  ];
+
+  return [
+    ...bands ? [{ label: 'Place', fixed: 'start' as const, columns: place }] : place.map(column => ({ ...column, fixed: 'start' as const })),
+    { path: 'year', label: 'Year', width: 100 },
+    ...banded,
+    { path: 'population', label: 'Population', width: 150, fixed: 'end' },
+  ];
+};
 
 const withMetrics = (rows: any[], count: number): any[] =>
   rows.map(row => {
@@ -165,6 +178,10 @@ export class DevRoot extends LitElement {
   @property({ type: Number, attribute: 'columns-count' })
   columnsCount = 4;
 
+  /** Métricas em bandas (frente 13). */
+  @property({ type: Boolean })
+  bands = false;
+
   #columns?: GridColumnDef[];
   #items?: any[];
   #keyed?: any[];
@@ -200,7 +217,7 @@ export class DevRoot extends LitElement {
 
     if (!this.#columns) {
       const wide = this.columnsCount > 4;
-      this.#columns = wide ? wideColumns(this.columnsCount) : baseColumns;
+      this.#columns = wide ? wideColumns(this.columnsCount, this.bands) : baseColumns;
       this.#items = wide ? withMetrics(this.initialData, this.columnsCount) : this.initialData;
     }
 

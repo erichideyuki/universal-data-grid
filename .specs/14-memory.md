@@ -86,6 +86,10 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 44 | Frente 09: validações assíncronas (`AbortController` por célula, promessa do hospedeiro) e o temporizador "Salvando…" (1 s) | `grid.ts`, `features/validation.ts` | OK | Abortadas ao digitar de novo, ao cancelar e no `disconnectedCallback` (a espera corre contra o `abort`: promessa do hospedeiro que nunca responde não segura o grid); timer limpo no `disconnectedCallback` e não criado com o grid fora do DOM. `_memoryStats.validations`/`editTimers`. |
 | 45 | Frente 09: editor `HTMLElement` (light DOM, pelo `rendererContent`) e a mensagem de erro no light DOM; diálogo de exclusão (`showModal`) | `grid.ts`, `render/content.ts` | OK | Editor e mensagem saem ao fechar o editor e no `disconnectedCallback`; o diálogo sai com o DOM do grid. Testes em `editing.memory.browser.test.ts` (removido com editor, validação e `waitUntil` pendentes e diálogo aberto é coletado; uso repetido não cresce). |
 
+| 40 | Frente 13: `<slot>` + `slotchange` de cada `<u-grid-column>` (bandas declarativas) | `grid-column.ts` | OK | Binding do Lit no shadow root da coluna; sai com ela. |
+| 41 | Frente 13: listener `scroll` horizontal (janela de colunas) e caches por render (irmãs, bandas visíveis, cabeçalho lógico) | `grid.ts` | OK | Listener no contêiner do próprio shadow root (sai com ele, como o das sombras); caches seguram só as colunas atuais e são trocados a cada mudança de ordem/árvore/visibilidade. |
+| 42 | Frente 13: células com chave (virtualização de colunas) | `grid.ts`, `render/footer.ts` | OK | `keyedRows` em vez do `repeat` do Lit 3.3, que deixa um comentário por item removido (medido: +120 nós por rolagem horizontal). Testes em `bands.memory.browser.test.ts`. |
+
 ## Medição (`src/test/leak.ts`)
 
 - `collectGarbage()`: duas passadas de `HeapProfiler.collectGarbage` pelo

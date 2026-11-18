@@ -137,6 +137,10 @@ pela linha de filtro e pelo funil (Esc devolve ao funil); agrupar por
 Ctrl+G, expandir/recolher (ouvir o estado — item 🔎); selecionar com
 Espaço e Ctrl+A; abrir o seletor e fixar; `language="ar"` numa página `en`.
 
+Frente 13 (bandas): conferir que NVDA/JAWS leem banda + coluna ao entrar
+numa célula do corpo e o alcance do `colspan` da banda; 🔎 VoiceOver: se
+ficar mudo no alcance, criar `bandColumnCount` na descrição da banda.
+
 ## Proposta A1–A14 (aprovada pelo usuário em 2026-11-18: "Approve all")
 
 Nomes e desenho concretos, revisados pelo `webcomponent-api-reviewer` e

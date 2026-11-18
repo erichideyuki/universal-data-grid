@@ -92,6 +92,7 @@ percentual, data ISO com `dataType: 'date'`, booleano). Grid de 600 px.
 | `flat-100k`, `flat-1m` | 100 mil / 1 milhão × 24 colunas | 1º render; rolar; ordenar texto (16 valores), texto único, inverter, número, data; rolar ordenado; trocar `items`; nós no DOM; heap do grid; última linha alcançável |
 | `grouped-100k`, `grouped-1m` | idem | agrupar (1 e 2 níveis); ordenar agrupado; expandir tudo (`autoExpandGroups`); rolar; reagrupar; recolher tudo; trocar `items` |
 | `lean-5m` | 5 milhões × 8 colunas | 1º render; rolar; ordenar número, texto, texto único; agrupar; expandir tudo; rolar agrupado; última linha alcançável |
+| `wide-1m`, `bands-1m` | 1 milhão × 300 colunas calculadas (`valueGetter` do `id`; sem e com bandas de 10), frente 13 | 1º render; rolar na vertical; rolar na horizontal (`horizontal.`: 40 passos de 120 px e 20 saltos pela largura); rolar na vertical com a janela de colunas no meio (`middle.`); nós; heap |
 
 - **5 milhões × 24 colunas não cabe** no heap de 1 GiB: só os itens passam
   de ~900 MiB (24 propriedades + `double`s em caixa + nome único por linha).
