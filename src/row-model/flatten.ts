@@ -419,7 +419,7 @@ export class RowList implements Rows {
   }
 }
 
-const sliceRows = (rows: Rows, start: number, end: number): Row[] => {
+export const sliceRows = (rows: Rows, start: number, end: number): Row[] => {
   const result: Row[] = [];
   const seen = new Map<string, number>();
 

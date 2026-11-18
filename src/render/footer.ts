@@ -84,6 +84,8 @@ export interface TotalFooterContext {
   colOffset?: number;
   /** Roving tabindex do grid (ver `renderSummaryCells`). */
   tabIndexOf?: (col: number) => 0 | -1;
+  /** Células depois das colunas comuns (coluna de botões da edição). */
+  trailing?: TemplateResult | typeof nothing;
 }
 
 /** Rodapé de totais: `rowgroup` próprio, fixo embaixo (fora do virtualizador). */
@@ -95,6 +97,7 @@ export const renderTotalFooter = ({
   rowIndex,
   separator,
   leading = nothing,
+  trailing = nothing,
   colOffset = 0,
   tabIndexOf,
 }: TotalFooterContext): TemplateResult => html`
@@ -103,5 +106,6 @@ export const renderTotalFooter = ({
       ${groupColumns ? renderIndentCells(groupColumns, groupColumnWidth) : nothing}
       ${leading}
       ${renderSummaryCells(layout, texts, 0, separator, colOffset, tabIndexOf)}
+      ${trailing}
     </tr>
   </tfoot>`;

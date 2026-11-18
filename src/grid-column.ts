@@ -11,10 +11,13 @@ import type {
   GridColumnDef,
   GridColumnFixed,
   GridColumnFormat,
+  GridEditorRenderer,
   GridFilterOperation,
   GridGroupRenderer,
   GridHeaderRenderer,
   GridSortOrder,
+  GridValidationRule,
+  GridValueSetter,
 } from './grid-column-def.js';
 
 /**
@@ -224,6 +227,22 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
    * list. Unknown attribute values are ignored with a warning.
    */
   @property({ converter: filterOperationAttribute, attribute: 'default-filter-operation' }) defaultFilterOperation: GridFilterOperation | null = null;
+
+  /**
+   * Allows editing the cells of this column (with `allow-editing` on the
+   * grid). Default (`null`): `true` when it has a `path` or a
+   * `valueSetter`. `editable="false"` makes it read-only.
+   */
+  @property({ converter: optionalBoolean }) editable: boolean | null = null;
+
+  /** Builds the cell editor instead of the built-in one (property only). See `GridEditorRenderer`. */
+  @property({ attribute: false }) editorRenderer: GridEditorRenderer | null = null;
+
+  /** Rules checked when a value is committed and before saving (property only). See `GridValidationRule`. */
+  @property({ attribute: false }) validationRules: readonly GridValidationRule[] | null = null;
+
+  /** Writes an edited value into the pending change of the row (property only). Default: sets `path`. */
+  @property({ attribute: false }) valueSetter: GridValueSetter | null = null;
 
   override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
     const renamed = LEGACY_ATTRIBUTES[name];

@@ -1584,4 +1584,288 @@ export const styles = css`
       animation: none;
     }
   }
+
+  /* ------------------------------------------------------- edição (09) */
+
+  td:where(.grid-table > * > * > *).editing {
+    /* O editor ocupa a célula; a mensagem de erro sai por baixo dela. */
+    padding-block: 4px;
+    padding-inline: max(4px, calc(var(--_cell-inline-padding) - 8px));
+    overflow: visible;
+  }
+
+  td:where(.grid-table > * > * > *).show-message {
+    overflow: visible;
+  }
+
+  td.editing:not(.fixed):not(.sticky-cell),
+  td.show-message:not(.fixed):not(.sticky-cell) {
+    position: relative;
+  }
+
+  td.show-message > .cell-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cell-editor {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 32px;
+    padding-inline: 8px;
+    border: none;
+    /* Limite do campo de 3:1 ou mais (WCAG 1.4.11), como a linha de filtro. */
+    border-bottom: 1px solid var(--u-color-outline, rgb(121, 116, 126));
+    border-radius: 4px 4px 0 0;
+    background-color: color-mix(in srgb, currentColor 4%, transparent);
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+  }
+
+  .cell-editor:focus {
+    outline: var(--_focus-ring);
+    outline-offset: 1px;
+  }
+
+  .cell-editor[aria-invalid="true"] {
+    border-bottom: 2px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+  }
+
+  /* Caixa do booleano: alvo de 24 px (WCAG 2.5.8). */
+  .cell-editor-checkbox {
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  /* Célula alterada (lote): fundo + marca no canto (não só cor, WCAG 1.4.1). */
+  td:where(.grid-table > * > * > *).modified {
+    background-color: var(--u-grid-modified-cell-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 10%, transparent));
+    background-image: linear-gradient(
+      to bottom left,
+      var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164))) 50%,
+      transparent 50%);
+    background-size: 8px 8px;
+    background-repeat: no-repeat;
+    background-position: top right;
+  }
+
+  :host(:dir(rtl)) td.modified {
+    background-image: linear-gradient(
+      to bottom right,
+      var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164))) 50%,
+      transparent 50%);
+    background-position: top left;
+  }
+
+  /* Célula inválida: borda de erro (cor + espessura). */
+  td:where(.grid-table > * > * > *).invalid {
+    outline: 2px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    outline-offset: -2px;
+  }
+
+  td:where(.grid-table > * > * > *).invalid[tabindex]:focus-visible {
+    outline: var(--_focus-ring);
+    box-shadow: inset 0 0 0 4px var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+  }
+
+  /* Mensagem visível e persistente abaixo da célula (acima, na última linha). */
+  .validation-message {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-start: 0;
+    z-index: 4;
+    min-width: 100%;
+    max-width: max(100%, 320px);
+    width: max-content;
+    padding: 6px 10px;
+    border-inline-start: 4px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    border-radius: 0 0 4px 4px;
+    background-color: var(--u-color-error-container, rgb(249, 222, 220));
+    color: var(--u-color-on-error-container, rgb(65, 14, 11));
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.4;
+    white-space: normal;
+    text-align: start;
+    text-decoration: none;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+  }
+
+  .validation-message[hidden] {
+    display: none;
+  }
+
+  tr.last > td > .validation-message {
+    inset-block-start: auto;
+    inset-block-end: 100%;
+    border-radius: 4px 4px 0 0;
+  }
+
+  .validating-spinner {
+    display: inline-block;
+    width: 0.9em;
+    height: 0.9em;
+    margin-inline-end: 6px;
+    vertical-align: -0.1em;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-block-start-color: transparent;
+    animation: u-grid-edit-spin 0.9s linear infinite;
+  }
+
+  @keyframes u-grid-edit-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Linha nova e linha marcada para remoção (lote). */
+  tbody:where(.grid-table > *) tr:where(.grid-table > * > *).added {
+    background-color: var(--u-grid-added-row-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 6%, transparent));
+  }
+
+  tbody:where(.grid-table > *) tr:where(.grid-table > * > *).removed > td:not(.command-cell) {
+    opacity: var(--u-grid-removed-row-opacity, 0.7);
+    text-decoration: line-through;
+  }
+
+  /* Coluna dos botões da linha. */
+  .command-column {
+    width: 176px;
+  }
+
+  td:where(.grid-table > * > * > *).command-cell,
+  th:where(.grid-table > * > * > *).command-cell {
+    padding-block: 0;
+    padding-inline: 8px;
+  }
+
+  .command-button,
+  .edit-bar-button,
+  .dialog-button {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 24px;
+    min-height: 32px;
+    padding-inline: 10px;
+    border-radius: 16px;
+    cursor: pointer;
+    color: var(--u-color-primary, rgb(103, 80, 164));
+    font-size: 0.875rem;
+    font-weight: var(--u-font-weight-medium, 500);
+    white-space: nowrap;
+  }
+
+  .command-button:hover,
+  .edit-bar-button:not([aria-disabled="true"]):hover,
+  .dialog-button:hover {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .command-button:focus-visible,
+  .edit-bar-button:focus-visible,
+  .dialog-button:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .edit-bar-button[aria-disabled="true"] {
+    cursor: default;
+    color: color-mix(in srgb, currentColor 60%, transparent);
+  }
+
+  .edit-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-inline-end: 8px;
+  }
+
+  .edit-status {
+    padding: 4px 10px;
+    border-inline-start: 4px solid var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    background-color: var(--u-color-error-container, rgb(249, 222, 220));
+    color: var(--u-color-on-error-container, rgb(65, 14, 11));
+    font-size: 0.8125rem;
+  }
+
+  .remove-dialog {
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 24px;
+    border: none;
+    border-radius: var(--u-grid-column-chooser-shape, 12px);
+    background-color: var(--u-grid-column-chooser-background-color, var(--u-color-surface-container-high, rgb(236, 230, 240)));
+    color: var(--u-grid-color, var(--u-color-on-surface, rgb(29, 27, 32)));
+    box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  }
+
+  .remove-dialog::backdrop {
+    background-color: rgb(0 0 0 / 32%);
+  }
+
+  .remove-dialog-title {
+    margin: 0 0 12px;
+    font-size: 1.25rem;
+    font-weight: 400;
+  }
+
+  .remove-dialog-message {
+    margin: 0 0 20px;
+    font-size: 0.875rem;
+  }
+
+  .remove-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .dialog-button.danger {
+    color: var(--u-color-error, rgb(179, 38, 30));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .validating-spinner {
+      animation: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    td.modified {
+      forced-color-adjust: none;
+      background: Canvas;
+      background-image: linear-gradient(to bottom left, Highlight 50%, transparent 50%);
+      background-size: 8px 8px;
+      background-repeat: no-repeat;
+      background-position: top right;
+      color: CanvasText;
+    }
+
+    td.invalid,
+    .cell-editor[aria-invalid="true"] {
+      outline: 2px dashed CanvasText;
+    }
+
+    .validation-message,
+    .edit-status,
+    .remove-dialog,
+    .cell-editor {
+      border: 1px solid CanvasText;
+    }
+
+    .edit-bar-button[aria-disabled="true"] {
+      color: GrayText;
+    }
+  }
 `;

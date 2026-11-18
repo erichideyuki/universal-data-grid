@@ -34,6 +34,24 @@ import { type ClipboardHtmlOptions, clipboardContent, collectRows, writeCsv } fr
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
 import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
+  copyData,
+  createProvisionalKey,
+  EditStore,
+  editorKindOf,
+  formatEditorDate,
+  formatEditorNumber,
+  type GridEditChange,
+  type GridEditMode,
+  type GridEditTrigger,
+  type GridValidationError,
+  parseEditorDate,
+  parseEditorNumber,
+  type PendingRow,
+  publicChange,
+  setValueByPath,
+} from './features/editing.js';
+import { UnparsedValue, validateValue, type ValidationResult } from './features/validation.js';
+import {
   ColumnChooserController,
   columnChooserIcon,
   type ColumnChooserItem,
@@ -110,6 +128,9 @@ import {
   type GridFilterExpression,
   isColumnFilterable,
   isColumnSortable,
+  isColumnEditable,
+  type GridEditorRenderContext,
+  type GridValidationContext,
 } from './grid-column-def.js';
 import { type DataGridColumn, type GridColumnChange } from './grid-column.js';
 import {
@@ -125,6 +146,7 @@ import { rendererContent } from './render/content.js';
 import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
 import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
+import { renderBuiltInEditor } from './render/editors.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { createComparer } from './row-model/compare.js';
@@ -141,6 +163,7 @@ import {
   replaceColumnCondition,
   searchExpression,
 } from './row-model/filter.js';
+import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
 import { type BlockDetails, flattenRows, pageBounds, RowList, RowPage, type Rows } from './row-model/flatten.js';
 import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
@@ -160,7 +183,7 @@ import { LruCache } from './row-model/lru.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
 import { type DataRow, type DetailRow, type GroupFooterRow, type GroupNode, type GroupRow, isLazyItems, type LazyItems, type Row } from './row-model/types.js';
-import { cellValueReader } from './row-model/value.js';
+import { cellValueReader, getCellValue, getValueByPath } from './row-model/value.js';
 import {
   GRID_STATE_VERSION,
   type GridColumnState,
@@ -213,7 +236,20 @@ export type {
   GridSummaryItem,
   GridSummaryType,
   GridSummaryValue,
+  GridCustomRule,
+  GridEditorRenderContext,
+  GridEditorRenderer,
+  GridEmailRule,
+  GridPatternRule,
+  GridRangeRule,
+  GridRequiredRule,
+  GridStringLengthRule,
+  GridValidationContext,
+  GridValidationRule,
+  GridValidationRuleBase,
+  GridValueSetter,
 } from './grid-column-def.js';
+export type { GridEditChange, GridEditMode, GridEditTrigger, GridValidationError } from './features/editing.js';
 export type { GridSortMode, GridSortingMode } from './features/sorting.js';
 export type { GridSelectionMode } from './features/selection.js';
 export type {
@@ -391,9 +427,10 @@ export interface GridPageChangeEventDetail {
 /**
  * Kind of the active cell: column header, data cell, selection checkbox
  * cell, group row, summary row (group footer, totals), detail toggle cell or
- * detail row (master-detail). May gain members in minor versions.
+ * detail row (master-detail), row buttons column (editing). May gain
+ * members in minor versions.
  */
-export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail';
+export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command';
 
 /** `detail` of `u-grid-focus-change`. */
 export interface GridFocusChangeEventDetail {
@@ -413,6 +450,100 @@ export interface GridFocusChangeEventDetail {
   previousColumn: GridColumnDef | null;
   /** `user` (keyboard, click) or `api` (`focusCell`). */
   source: GridChangeSource;
+}
+/** `detail` of `u-grid-edit-starting` (cancelable: `preventDefault()` keeps the cell or row closed). */
+export interface GridEditStartingEventDetail<TItem = any> {
+  /** Row key (a new row has an opaque provisional key). */
+  readonly rowKey: unknown;
+  /** The original row item (empty object for a new row). */
+  readonly item: TItem;
+  /** Column of the editor; `null` when a whole row opens without a column (`editRow`). */
+  readonly column: GridColumnDef<TItem> | null;
+  /** `user` (click, Enter/F2, Tab, Edit button) or `api` (`editCell`, `editRow`, `addRow`). */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-row-adding` (cancelable: no row is added). */
+export interface GridRowAddingEventDetail<TItem = any> {
+  /** The new row (owned by the grid, already with the `addRow` argument): set its initial values here. Reassigning `detail.data` is ignored. */
+  readonly data: Partial<TItem>;
+  /** `user` (Add row button) or `api` (`addRow`). */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-row-removing` (cancelable: the row stays; fired before the confirmation dialog). */
+export interface GridRowRemovingEventDetail<TItem = any> {
+  /** Row key. */
+  readonly rowKey: unknown;
+  /** The row item. */
+  readonly item: TItem;
+  /** `user` (Delete button) or `api` (`removeRow`). */
+  readonly source: GridChangeSource;
+}
+
+/**
+ * `detail` of `u-grid-row-validating`, fired for each added or edited row
+ * before saving. Cancelable: `preventDefault()` (or `setError`) keeps the
+ * row unsaved and marked invalid.
+ */
+export interface GridRowValidatingEventDetail<TItem = any> {
+  /** Row key. */
+  readonly rowKey: unknown;
+  /** The original row item (empty object for a new row). */
+  readonly item: TItem;
+  /** The pending change of the row (a copy). */
+  readonly change: GridEditChange<TItem>;
+  /** Rules broken by the values of the row (empty when the rules passed). */
+  readonly errors: readonly GridValidationError<TItem>[];
+  /** Marks the row invalid with a message, on a column (its cell) or on the row. Implies `preventDefault()`; may be called several times. */
+  setError(message: string, column?: GridColumnDef<TItem>): void;
+  /** `user` (Enter, Save buttons) or `api` (`saveChanges`). */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-saving` (cancelable: nothing is saved and the changes stay pending). */
+export interface GridSavingEventDetail<TItem = any> {
+  /** The changes to save (copies). */
+  readonly changes: readonly GridEditChange<TItem>[];
+  /**
+   * Makes the grid wait for `promise` (save on the server here). Rejected:
+   * the changes stay pending and `u-grid-save-error` fires. Resolved with
+   * `GridDataChanges` (e.g. new rows with the keys the server created): the
+   * grid applies those instead of the ones it computed. Only during the
+   * event dispatch (`InvalidStateError` afterwards); several calls wait for
+   * all.
+   */
+  waitUntil(promise: Promise<void | GridDataChanges<TItem>>): void;
+  /** `user` or `api`. */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-save`. */
+export interface GridSaveEventDetail<TItem = any> {
+  /** The saved changes. */
+  readonly changes: readonly GridEditChange<TItem>[];
+  /** With `items`: the new array the grid now shows (also returned by `grid.items`) — keep it in your state. `null` with `dataSource`. */
+  readonly items: TItem[] | null;
+  /** `user` or `api`. */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-save-error`. */
+export interface GridSaveErrorEventDetail<TItem = any> {
+  /** The changes that were not saved (still pending). */
+  readonly changes: readonly GridEditChange<TItem>[];
+  /** What the `waitUntil` promise rejected with. */
+  readonly error: unknown;
+  /** `user` or `api`. */
+  readonly source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-edit-cancel`. */
+export interface GridEditCancelEventDetail<TItem = any> {
+  /** The discarded changes. */
+  readonly changes: readonly GridEditChange<TItem>[];
+  /** `user` (Esc, Cancel, Discard changes) or `api` (`discardChanges`, `items` replaced without the rows). */
+  readonly source: GridChangeSource;
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n, type GridI18nInput } from './grid-i18n.js';
@@ -438,13 +569,182 @@ const SELECTION_COLUMN = 'selection' as const;
 /** Coluna de expansão do master-detail entre as navegáveis. */
 const DETAIL_TOGGLE_COLUMN = 'detail-toggle' as const;
 
-type NavColumn = GridColumnDef | typeof SELECTION_COLUMN | typeof DETAIL_TOGGLE_COLUMN;
+/** Editor aberto (frente 09): uma célula ou, no modo linha, a linha inteira. */
+interface OpenEditor {
+  rowKey: unknown;
+  /** Coluna do editor (no modo linha, a focada). */
+  column: GridColumnDef | null;
+  wholeRow: boolean;
+  /** Valores digitados ainda não confirmados, por coluna. */
+  readonly drafts: Map<GridColumnDef, unknown>;
+  /** Texto cru dos editores embutidos (o que o usuário digitou). */
+  readonly texts: Map<GridColumnDef, string>;
+  /** A linha pendente antes de abrir (Esc volta a ela; `null` = não havia). */
+  snapshot: EditSnapshot | null;
+  /** Depois do render: levar o foco ao editor. */
+  focus: boolean;
+  /** "Adicionar linha" que abriu a linha nova (Esc devolve o foco a ele). */
+  returnFocus: HTMLElement | null;
+  /** Identidade desta abertura (dependência do `editorRenderer`). */
+  readonly session: object;
+  /** Muda a cada tecla: uma confirmação esperando validação antiga é descartada. */
+  seq: number;
+}
+
+interface EditSnapshot {
+  type: PendingRow['type'];
+  removedFrom: PendingRow['removedFrom'];
+  data: Record<string, unknown>;
+  modified: Set<GridColumnDef>;
+  unparsed: Map<GridColumnDef, UnparsedValue>;
+  errors: Map<GridColumnDef, string>;
+  rowError: string | undefined;
+}
+
+/** Onde uma linha nova aparece: antes da linha que estava no topo da tela. */
+interface AddedAnchor {
+  seq: number;
+  /** Chave da linha de dados do topo. */
+  anchorKey: unknown;
+  /** Chave da linha de grupo do topo. */
+  anchorRowKey: string | undefined;
+  /** Índice quando a âncora sumiu. */
+  fallback: number;
+}
+
+/** Estado de edição de uma linha renderizada. */
+interface RowEditState {
+  pending: PendingRow | undefined;
+  rowKey: unknown;
+  /** `aria-readonly` nas células não editáveis (há o que editar no grid). */
+  readonlyMarks: boolean;
+}
+
+/** Conteúdo interativo dentro da célula: o clique nele não abre o editor. */
+const TABBABLE_IN_CELL = 'a[href], button, input, select, textarea, [contenteditable], [tabindex]';
+
+/** Ids únicos (no documento) das mensagens de editores do light DOM. */
+let lightMessageCount = 0;
+
+/** Depois disto salvando, "Salvando…" aparece e é anunciado. */
+const SLOW_SAVE_DELAY = 1000;
+
+const isPromiseLike = <T>(value: T | Promise<T>): value is Promise<T> =>
+  !!value && typeof (value as Promise<T>).then === 'function';
+
+const snapshotOf = (pending: PendingRow): EditSnapshot => ({
+  type: pending.type,
+  removedFrom: pending.removedFrom,
+  data: copyData(pending.data),
+  modified: new Set(pending.modified),
+  unparsed: new Map(pending.unparsed),
+  errors: new Map(pending.errors),
+  rowError: pending.rowError,
+});
+
+/** Volta a linha pendente ao estado guardado (`null` = não havia: sai). */
+const restoreSnapshot = (store: EditStore, pending: PendingRow, snapshot: EditSnapshot | null): void => {
+  if (!snapshot) {
+    store.delete(pending.rowKey);
+    return;
+  }
+
+  pending.type = snapshot.type;
+  pending.removedFrom = snapshot.removedFrom;
+  pending.data = copyData(snapshot.data);
+  pending.modified.clear();
+  snapshot.modified.forEach(column => pending.modified.add(column));
+  pending.unparsed.clear();
+  snapshot.unparsed.forEach((value, column) => pending.unparsed.set(column, value));
+  pending.errors.clear();
+  snapshot.errors.forEach((message, column) => pending.errors.set(column, message));
+  pending.rowError = snapshot.rowError;
+  store.touch(pending);
+};
+
+/** Tira `path` de `data` (e os objetos que ficaram vazios). */
+const deletePath = (data: Record<string, unknown>, path: string): void => {
+  const keys = path.split('.');
+  const parents: Record<string, unknown>[] = [];
+  let target: Record<string, unknown> | undefined = data;
+
+  for (const key of keys.slice(0, -1)) {
+    parents.push(target);
+    const next: unknown = target[key];
+
+    if (!next || typeof next !== 'object') {
+      return;
+    }
+
+    target = next as Record<string, unknown>;
+  }
+
+  delete target[keys[keys.length - 1]];
+
+  for (let index = parents.length - 1; index >= 0; index--) {
+    const child = parents[index][keys[index]] as Record<string, unknown>;
+
+    if (Object.keys(child).length) {
+      break;
+    }
+
+    delete parents[index][keys[index]];
+  }
+};
+
+/** Lote, Esc: só a célula volta ao que era ao abrir o editor. */
+const restoreCell = (store: EditStore, pending: PendingRow, column: GridColumnDef, snapshot: EditSnapshot | null): void => {
+  if (column.valueSetter || !column.path) {
+    restoreSnapshot(store, pending, snapshot ?? { ...snapshotOf(pending), data: {}, modified: new Set(), unparsed: new Map(), errors: new Map() });
+    store.prune(pending);
+    return;
+  }
+
+  if (snapshot?.modified.has(column)) {
+    setValueByPath(pending.data, column.path, getValueByPath(snapshot.data, column.path));
+  } else {
+    deletePath(pending.data, column.path);
+    pending.modified.delete(column);
+  }
+
+  const unparsed = snapshot?.unparsed.get(column);
+  const error = snapshot?.errors.get(column);
+
+  if (unparsed) {
+    pending.unparsed.set(column, unparsed);
+  } else {
+    pending.unparsed.delete(column);
+  }
+
+  if (error) {
+    pending.errors.set(column, error);
+  } else {
+    pending.errors.delete(column);
+  }
+
+  store.touch(pending);
+  store.prune(pending);
+};
+
+/** Mesmo valor para a edição (datas pelo instante). */
+const sameEditValue = (a: unknown, b: unknown): boolean =>
+  Object.is(a, b)
+  || (a instanceof Date && b instanceof Date && a.getTime() === b.getTime())
+  || ((a === null || a === undefined || a === '') && (b === null || b === undefined || b === ''));
+
+/** Coluna dos botões da linha (editar, excluir), a última das navegáveis (frente 09). */
+const COMMAND_COLUMN = 'command' as const;
+
+type NavColumn = GridColumnDef | typeof SELECTION_COLUMN | typeof DETAIL_TOGGLE_COLUMN | typeof COMMAND_COLUMN;
 
 /** Coluna de dados (ou `null` nas colunas do grid: caixas, expansão). */
 const dataColumnOf = (column: NavColumn | undefined): GridColumnDef | null =>
   typeof column === 'object' ? column : null;
 
 const NO_POSITIONS = new Int32Array(0);
+
+// Ícone Material Symbols (Apache 2.0): add.
+const ADD_PATH = 'M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z';
 
 // Ícone Material Symbols (Apache 2.0): chevron_right.
 const CHEVRON_PATH = 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z';
@@ -756,6 +1056,14 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
+ * @fires {CustomEvent<GridEditStartingEventDetail>} u-grid-edit-starting - Before a cell editor (or a row, `editMode="row"`) opens (user or API). Cancelable.
+ * @fires {CustomEvent<GridRowAddingEventDetail>} u-grid-row-adding - Before a new row is added (Add row button or `addRow`): set its initial values in `detail.data`. Cancelable.
+ * @fires {CustomEvent<GridRowRemovingEventDetail>} u-grid-row-removing - Before a row is deleted or marked for removal (Delete button, before the confirmation, or `removeRow`). Cancelable.
+ * @fires {CustomEvent<GridRowValidatingEventDetail>} u-grid-row-validating - Before saving, for each added or edited row. Cancelable: `preventDefault()`/`setError` marks the row invalid.
+ * @fires {CustomEvent<GridSavingEventDetail>} u-grid-saving - Before saving the pending changes: save on the server with `waitUntil(promise)`. Cancelable: the changes stay pending.
+ * @fires {CustomEvent<GridSaveEventDetail>} u-grid-save - The changes were saved and applied (`items` copy or `dataSource.applyChanges`).
+ * @fires {CustomEvent<GridSaveErrorEventDetail>} u-grid-save-error - The `waitUntil` promise rejected; the changes stay pending.
+ * @fires {CustomEvent<GridEditCancelEventDetail>} u-grid-edit-cancel - Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`).
  *
  * @cssprop --u-grid-background-color - Grid background.
  * @cssprop --u-grid-color - Text color of the grid. Default: on-surface token (`rgb(29, 27, 32)`).
@@ -816,6 +1124,11 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-load-panel-background-color - Background of the load panel.
  * @cssprop --u-grid-skeleton-row-color - Color of the placeholders in rows still loading.
  * @cssprop --u-grid-pager-height - Minimum height of the pager. Default `56px`.
+ * @cssprop --u-grid-modified-cell-background-color - Background of edited, unsaved cells (`editMode="batch"`). Default: primary color at 10%.
+ * @cssprop --u-grid-modified-cell-indicator-color - Corner mark of edited, unsaved cells (not shown by color alone). Default: primary color.
+ * @cssprop --u-grid-invalid-cell-color - Border and message accent of cells with a validation error. Default: error token (`rgb(179, 38, 30)`).
+ * @cssprop --u-grid-added-row-background-color - Background of new, unsaved rows. Default: primary color at 6%.
+ * @cssprop --u-grid-removed-row-opacity - Opacity of rows marked for removal (their text is also struck through). Default `0.7`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
  * @csspart group-row - Group header rows.
@@ -859,6 +1172,18 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart error-row - The bar shown when the data source failed.
  * @csspart retry-button - The "Retry" button of the error bar.
  * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
+ * @csspart modified - Edited, unsaved data cells (with `cell`).
+ * @csspart invalid - Data cells with a validation error (with `cell`).
+ * @csspart added - New, unsaved rows (with `row`).
+ * @csspart removed - Rows marked for removal (with `row`, `editMode="batch"`).
+ * @csspart cell-editor - The built-in cell editors (`<input>`).
+ * @csspart validation-message - The validation error shown below an invalid cell.
+ * @csspart command-cell - Cells and header of the row buttons column (edit, delete).
+ * @csspart command-button - The row buttons (edit, save, cancel, delete, restore).
+ * @csspart add-row-button - The toolbar "Add row" button.
+ * @csspart save-button - The toolbar "Save changes" button (`editMode="batch"`).
+ * @csspart discard-button - The toolbar "Discard changes" button (`editMode="batch"`).
+ * @csspart remove-dialog - The delete confirmation dialog.
  */
 @customElement('u-grid')
 export class DataGrid extends LitElement {
@@ -937,6 +1262,8 @@ export class DataGrid extends LitElement {
   #keyExpr: GridKeyExpr | null = null;
   /** Chave de linha: `keyExpr` ou o próprio item. */
   #keyOf: (item: unknown) => unknown = item => item;
+  /** Chave pelo `keyExpr` (sem as linhas novas da edição). */
+  #baseKeyOf: (item: unknown) => unknown = item => item;
   /** Chave vazia ou repetida nas linhas renderizadas já foi avisada. */
   #warnedKeys = false;
 
@@ -966,7 +1293,8 @@ export class DataGrid extends LitElement {
     const hadRendered = this.hasUpdated;
 
     this.#keyExpr = next;
-    this.#keyOf = keyReader(next);
+    this.#baseKeyOf = keyReader(next);
+    this.#syncKeyOf();
     this.#warnedKeys = false;
     this.#rowsDirty = true;
 
@@ -1009,6 +1337,11 @@ export class DataGrid extends LitElement {
 
     if (next === this.#dataSource) {
       return;
+    }
+
+    if (this.#edits.size || this.#editor) {
+      // Outra fonte: as mudanças pendentes eram da anterior.
+      this.#discard('api');
     }
 
     this.#dataSource = next;
@@ -1137,6 +1470,7 @@ export class DataGrid extends LitElement {
     }
 
     if (!this.#dataSource) {
+      this.#reconcileEdits(this.#hostItems);
       this.#setItems(this.#hostItems);
     }
   }
@@ -1418,6 +1752,42 @@ export class DataGrid extends LitElement {
    * the mouse is copied natively.
    */
   @property({ attribute: 'clipboard-mode' }) clipboardMode: GridClipboardMode = 'copy';
+
+  // ------------------------------------------------------------- edição
+
+  /**
+   * How rows are edited: `cell` (default; a committed cell is saved at once),
+   * `row` (Edit/Save/Cancel buttons per row) or `batch` (changes stay pending
+   * until "Save changes" or `saveChanges()`).
+   */
+  @property({ attribute: 'edit-mode' }) editMode: GridEditMode = 'cell';
+
+  /**
+   * Lets the user edit cells (columns with `editable`, by default those with
+   * `path`). A function (property only) decides per row. The grid never
+   * mutates the items: changes are delivered in `u-grid-saving`. With
+   * `dataSource`, editing needs `keyExpr`.
+   * @default false
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'allow-editing' })
+  allowEditing: boolean | ((item: any) => boolean) = false;
+
+  /** Shows the "Add row" button and allows `addRow()`. */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'allow-adding' }) allowAdding = false;
+
+  /**
+   * Shows the Delete button of each row and allows `removeRow()`. A function
+   * (property only) decides per row.
+   * @default false
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'allow-removing' })
+  allowRemoving: boolean | ((item: any) => boolean) = false;
+
+  /** Pointer gesture that opens a cell editor: `click` (default) or `dblclick`. Enter and F2 always open it. */
+  @property({ attribute: 'edit-trigger' }) editTrigger: GridEditTrigger = 'click';
+
+  /** Asks before deleting a row with the Delete button (not in `batch` mode, where removal is pending, nor with `removeRow()`). */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'confirm-remove' }) confirmRemove = true;
 
   readonly #selection = new SelectionModel();
   /** Âncora do Shift+clique/Shift+setas: chave da última linha alternada. */
@@ -2574,6 +2944,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#syncPageHide();
+    this.#releaseEditing();
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -2721,6 +3092,8 @@ export class DataGrid extends LitElement {
     if (this.#focusPending || this.#revealPending) {
       this.#afterActiveRender();
     }
+
+    this.#afterEditRender();
 
     if (this.#chipFocusPending) {
       this.#chipFocusPending = false;
@@ -3287,7 +3660,7 @@ export class DataGrid extends LitElement {
     this.#ensureRows();
 
     if (!this.#lazy) {
-      this.#applyLocalChanges(add, update, remove);
+      this.#applyLocalChanges(add, new Map(update.map(item => [this.#baseKeyOf(item), item])), new Set(remove));
       return;
     }
 
@@ -3435,6 +3808,1385 @@ export class DataGrid extends LitElement {
 
     this.#setActive({ row, col: Math.max(col, 0) }, 'api', { focus: true, reveal: true });
     return true;
+  }
+
+  // ------------------------------------------------------------- edição
+
+  /** Mudanças pendentes por chave de linha (o grid nunca muta o item do hospedeiro). */
+  readonly #edits = new EditStore();
+  /** Editor aberto: uma célula (célula/lote) ou a linha inteira (modo linha). */
+  #editor: OpenEditor | null = null;
+  /** Linhas novas ainda não salvas: chave provisória → onde aparecem. */
+  readonly #added = new Map<unknown, AddedAnchor>();
+  #addedSeq = 0;
+  /** Item exibido de uma linha nova → chave provisória (o `keyOf` delas). */
+  #addedItemKeys = new WeakMap<object, unknown>();
+  /** Validações assíncronas em curso, por linha e coluna (corrida: a resposta velha é abortada). */
+  readonly #validations = new Map<PendingRow, Map<GridColumnDef, AbortController>>();
+  /** Promessas das validações em curso (salvar espera por elas). */
+  readonly #validationPromises = new Set<Promise<unknown>>();
+  #saving: Promise<boolean> | null = null;
+  /** Salvando há mais de 1 s: "Salvando…" visível e anunciado. */
+  #savingSlow = false;
+  #savingTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Mensagem persistente da barra (erro ao salvar, linhas inválidas). */
+  #editStatus = '';
+  /** Confirmação de exclusão aberta. */
+  #removeDialog: { rowKey: unknown; returnFocus: HTMLElement | null } | null = null;
+  readonly #removeDialogRef: Ref<HTMLDialogElement> = createRef();
+  /** Linhas com as novas inseridas (reaproveitada enquanto nada muda). */
+  #withAdded: { base: Rows; version: number; rows: Rows } | undefined;
+  #warnedEditingKey = false;
+  /** Mensagem do editor `HTMLElement` (light DOM: o `aria-describedby` dele não alcança o shadow). */
+  #lightMessage: HTMLElement | undefined;
+  /** O clique que mudou a caixa do editor booleano (alterna e confirma num passo). */
+  #checkboxPointer = false;
+
+  /**
+   * Opens the editor of a cell (focus goes to it). In `row` mode it opens the
+   * whole row with the focus on that cell. Returns `false` when the row is
+   * not in the grid, the cell is not editable, a save is running or
+   * `u-grid-edit-starting` was canceled.
+   */
+  editCell(rowKey: unknown, column: GridColumnDef): boolean {
+    this.#ensureRows();
+    const index = this.#rowIndexOfKey(rowKey);
+    return index >= 0 && this.#startEdit(index, column, 'api');
+  }
+
+  /** Opens a whole row for editing (`editMode="row"` only; `false` otherwise or as `editCell`). */
+  editRow(rowKey: unknown): boolean {
+    if (this.editMode !== 'row') {
+      return false;
+    }
+
+    this.#ensureRows();
+    const index = this.#rowIndexOfKey(rowKey);
+    return index >= 0 && this.#startEdit(index, null, 'api');
+  }
+
+  /**
+   * Adds a new row at the top of the visible rows (of the current page with
+   * `paging`) and opens its first editable cell. `data` gives initial values
+   * (also editable in `u-grid-row-adding`). Returns the opaque provisional key
+   * of the row (focus and selection move to the real key when it is saved),
+   * or `null` without `allowAdding`, during a save or when canceled.
+   */
+  addRow(data: Record<string, unknown> = {}): unknown {
+    return this.#addRow(data, 'api', null);
+  }
+
+  /**
+   * Deletes a row: in `cell` and `row` modes it is saved at once
+   * (`u-grid-saving`); in `batch` mode it is marked for removal. Never asks
+   * for confirmation. Resolves `false` when nothing was removed (row not
+   * found, `u-grid-row-removing` or `u-grid-saving` canceled, save failed).
+   */
+  removeRow(rowKey: unknown): Promise<boolean> {
+    return this.#removeRowNow(rowKey, 'api');
+  }
+
+  /** Restores a row marked for removal (`editMode="batch"`). */
+  restoreRow(rowKey: unknown): void {
+    this.#restoreRow(rowKey, 'api');
+  }
+
+  /**
+   * Commits the open editor, validates and saves every pending change
+   * (`u-grid-row-validating`, `u-grid-saving`, `u-grid-save`). Resolves
+   * `true` when saved (or nothing was pending).
+   */
+  saveChanges(): Promise<boolean> {
+    return this.#save('api');
+  }
+
+  /** Closes the editor and discards every pending change (`u-grid-edit-cancel` when there was any). */
+  discardChanges(): void {
+    this.#discard('api');
+  }
+
+  /** Whether there are pending changes (or an editor with a changed value). */
+  hasChanges(): boolean {
+    return this.#edits.size > 0 || !!this.#editor?.drafts.size;
+  }
+
+  /** The pending changes, in the order they started (copies). The value of an open editor is not included until committed. */
+  getChanges(): GridEditChange[] {
+    return [...this.#edits.values()].map(publicChange);
+  }
+
+  /** Há edição ligada (alguma permissão e, com `dataSource`, `keyExpr`)? */
+  get #editingOn(): boolean {
+    if (!this.allowEditing && !this.allowAdding && !this.allowRemoving) {
+      return false;
+    }
+
+    if (this.#dataSource && !this.#keyExpr) {
+      if (!this.#warnedEditingKey) {
+        this.#warnedEditingKey = true;
+        console.error('<u-grid>: editing with "dataSource" needs "keyExpr"; editing is off.');
+      }
+
+      return false;
+    }
+
+    return true;
+  }
+
+  get #editMode(): GridEditMode {
+    const mode = this.editMode;
+    return mode === 'row' || mode === 'batch' ? mode : 'cell';
+  }
+
+  #canEditItem(item: unknown): boolean {
+    const allow = this.allowEditing;
+    return typeof allow === 'function' ? !!allow(item) : !!allow;
+  }
+
+  #canRemoveItem(item: unknown): boolean {
+    const allow = this.allowRemoving;
+    return typeof allow === 'function' ? !!allow(item) : !!allow;
+  }
+
+  /** Coluna dos botões da linha: excluir, ou editar/salvar/cancelar no modo linha. */
+  get #showCommandColumn(): boolean {
+    return this.#editingOn && (!!this.allowRemoving || (this.#editMode === 'row' && (!!this.allowEditing || this.allowAdding)));
+  }
+
+  /** Mudança pendente da linha renderizada. */
+  #pendingOf(row: DataRow): PendingRow | undefined {
+    return this.#edits.size ? this.#edits.get(this.#keyOf(row.item)) : undefined;
+  }
+
+  /** A linha é editável (pela permissão), sem olhar a coluna. */
+  #rowEditable(row: DataRow, pending = this.#pendingOf(row)): boolean {
+    if (!this.#editingOn || row.skeleton || pending?.type === 'remove') {
+      return false;
+    }
+
+    return pending?.type === 'add' ? this.allowAdding : this.#canEditItem(row.item);
+  }
+
+  #cellEditable(row: DataRow, column: GridColumnDef, pending = this.#pendingOf(row)): boolean {
+    return isColumnEditable(column) && this.#rowEditable(row, pending);
+  }
+
+  /** Todas as colunas (comuns, ocultas e agrupadas). */
+  #allEditColumns(): GridColumnDef[] {
+    return [...this._regularColumns, ...this._groupColumns];
+  }
+
+  /** Item original da linha (o que `u-grid-edit-starting` e as regras recebem). */
+  #originalOf(row: DataRow, pending: PendingRow | undefined): unknown {
+    return pending ? pending.item : row.item;
+  }
+
+  /** O editor está aberto nesta célula? */
+  #isEditingCell(rowKey: unknown, column: GridColumnDef, pending: PendingRow | undefined, row: DataRow): boolean {
+    const editor = this.#editor;
+
+    if (!editor || editor.rowKey !== rowKey) {
+      return false;
+    }
+
+    return editor.wholeRow ? this.#cellEditable(row, column, pending) : editor.column === column;
+  }
+
+  // --------------------------------------------- abrir, confirmar, cancelar
+
+  #startEdit(
+    rowIndex: number,
+    column: GridColumnDef | null,
+    source: GridChangeSource,
+    { focus = true, returnFocus = null }: { focus?: boolean; returnFocus?: HTMLElement | null } = {},
+  ): boolean {
+    if (this.#saving) {
+      return false;
+    }
+
+    const row = this.#rowAt(rowIndex);
+
+    if (!isDataRow(row) || row.skeleton) {
+      return false;
+    }
+
+    const wholeRow = this.#editMode === 'row';
+    const pending = this.#pendingOf(row);
+    let target = column;
+
+    if (target && !this.#cellEditable(row, target, pending)) {
+      if (!wholeRow) {
+        return false;
+      }
+
+      target = null;
+    }
+
+    if (wholeRow) {
+      if (!this.#rowEditable(row, pending)) {
+        return false;
+      }
+
+      target ??= this._visibleColumns.find(candidate => this.#cellEditable(row, candidate, pending)) ?? null;
+
+      if (!target) {
+        return false;
+      }
+    } else if (!target) {
+      return false;
+    }
+
+    const rowKey = this.#keyOf(row.item);
+    const open = this.#editor;
+
+    if (open && open.rowKey === rowKey && (open.wholeRow || open.column === target)) {
+      // Já aberto: só leva o foco à célula pedida.
+      open.column = target;
+      open.focus = focus;
+      this.#setActive({ row: rowIndex, col: this.#currentNavColumns().indexOf(target) }, null, { reveal: true });
+      return true;
+    }
+
+    if (open) {
+      // Trocar de célula: confirma a anterior; inválida (célula/linha) fica onde está.
+      if (this.#commitEditor() === false && !open.wholeRow && this.#editMode !== 'batch') {
+        open.focus = true;
+        this.requestUpdate();
+        return false;
+      }
+
+      this.#closeEditor();
+    }
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-edit-starting', {
+      ...this.#eventInit<GridEditStartingEventDetail>({ rowKey, item: this.#originalOf(row, pending), column: source === 'api' && wholeRow && !column ? null : target, source }),
+      cancelable: true,
+    }))) {
+      return false;
+    }
+
+    this.#editStatus = '';
+    this.#editor = {
+      rowKey,
+      column: target,
+      wholeRow,
+      drafts: new Map(),
+      texts: new Map(),
+      snapshot: pending ? snapshotOf(pending) : null,
+      focus,
+      returnFocus,
+      session: {},
+      seq: 0,
+    };
+
+    const col = this.#currentNavColumns().indexOf(target);
+    this.#setActive({ row: rowIndex, col: col >= 0 ? col : this.#activeCol }, source, { reveal: true });
+    this.requestUpdate();
+    return true;
+  }
+
+  /**
+   * Grava os rascunhos do editor aberto na mudança da linha e valida.
+   * `true` válido, `false` inválido, promessa quando há regra assíncrona.
+   */
+  #commitEditor(): boolean | Promise<boolean> {
+    const editor = this.#editor;
+
+    if (!editor || !editor.drafts.size) {
+      return editor ? !this.#hasErrors(editor.rowKey, editor.wholeRow ? null : editor.column) : true;
+    }
+
+    const pending = this.#pendingForKey(editor.rowKey);
+
+    if (!pending) {
+      editor.drafts.clear();
+      return true;
+    }
+
+    const results: (ValidationResult | Promise<ValidationResult>)[] = [];
+
+    for (const [column, value] of editor.drafts) {
+      results.push(this.#writeCell(pending, column, value));
+    }
+
+    editor.drafts.clear();
+    editor.texts.clear();
+    this.#edits.prune(pending);
+    this.requestUpdate();
+
+    const async = results.filter((result): result is Promise<ValidationResult> => isPromiseLike(result));
+
+    if (!async.length) {
+      return !results.some(Boolean) && !this.#hasErrors(editor.rowKey, editor.wholeRow ? null : editor.column);
+    }
+
+    return Promise.all(async).then(() => !this.#hasErrors(editor.rowKey, editor.wholeRow ? null : editor.column));
+  }
+
+  /** Linha pendente da chave (cria a de `update` pelo item carregado). */
+  #pendingForKey(rowKey: unknown): PendingRow | undefined {
+    const found = this.#edits.get(rowKey);
+
+    if (found) {
+      return found;
+    }
+
+    const index = this.#rowIndexOfKey(rowKey);
+    const row = this.#rowAt(index);
+
+    return isDataRow(row) && !row.skeleton ? this.#edits.ensure(rowKey, row.item) : undefined;
+  }
+
+  /** Erros na linha (`column` nula = qualquer coluna ou da linha). */
+  #hasErrors(rowKey: unknown, column: GridColumnDef | null): boolean {
+    const pending = this.#edits.get(rowKey);
+
+    if (!pending) {
+      return false;
+    }
+
+    return column ? pending.errors.has(column) : pending.errors.size > 0 || !!pending.rowError;
+  }
+
+  /** Grava um valor na mudança da linha e valida a célula. */
+  #writeCell(pending: PendingRow, column: GridColumnDef, value: unknown): ValidationResult | Promise<ValidationResult> {
+    if (value instanceof UnparsedValue) {
+      pending.unparsed.set(column, value);
+    } else {
+      const original = getCellValue(pending.item, column);
+      pending.unparsed.delete(column);
+
+      if (!pending.modified.has(column) && sameEditValue(original, value)) {
+        this.#edits.touch(pending);
+        return this.#validateCell(pending, column, value);
+      }
+
+      if (column.valueSetter) {
+        column.valueSetter(pending.data as never, value, pending.item as never);
+      } else if (column.path) {
+        setValueByPath(pending.data, column.path, value);
+      }
+    }
+
+    pending.modified.add(column);
+    this.#edits.touch(pending);
+    return this.#validateCell(pending, column, value);
+  }
+
+  /** Valor atual da célula na linha pendente (com o que já foi editado). */
+  #pendingValue(pending: PendingRow, column: GridColumnDef): unknown {
+    return pending.unparsed.get(column) ?? getCellValue(this.#edits.mergedOf(pending), column);
+  }
+
+  #validateCell(pending: PendingRow, column: GridColumnDef, value: unknown): ValidationResult | Promise<ValidationResult> {
+    let byColumn = this.#validations.get(pending);
+    byColumn?.get(column)?.abort();
+
+    const controller = new AbortController();
+    const translation = this.#translation;
+    const ctx: GridValidationContext = { value, item: pending.item, data: pending.data, column, rowKey: pending.rowKey };
+    const result = validateValue(column.validationRules, ctx, translation, bound => this.#formatBound(bound, column), controller.signal);
+
+    if (!isPromiseLike(result)) {
+      byColumn?.delete(column);
+      this.#setCellError(pending, column, result);
+      return result;
+    }
+
+    if (!byColumn) {
+      byColumn = new Map();
+      this.#validations.set(pending, byColumn);
+    }
+
+    byColumn.set(column, controller);
+    this.#edits.touch();
+    this.requestUpdate();
+
+    // Abortada (valor novo, edição fechada): para de esperar já, mesmo que a promessa do hospedeiro nunca resolva.
+    const aborted = new Promise<null>(resolve => {
+      controller.signal.addEventListener('abort', () => resolve(null), { once: true });
+    });
+    const promise = Promise.race([result, aborted]).then(outcome => {
+      this.#validationPromises.delete(promise);
+
+      if (controller.signal.aborted) {
+        return null;
+      }
+
+      byColumn.delete(column);
+
+      if (!byColumn.size) {
+        this.#validations.delete(pending);
+      }
+
+      this.#setCellError(pending, column, outcome);
+      this.#edits.touch();
+      this.requestUpdate();
+
+      // A resposta chegou com o foco em outra célula: anuncia com contexto.
+      if (outcome && !this.#isActiveCell(pending.rowKey, column)) {
+        this.#announce(`${column.label ?? ''}: ${outcome.message}`);
+      }
+
+      return outcome;
+    });
+
+    this.#validationPromises.add(promise);
+    return promise;
+  }
+
+  #isValidating(pending: PendingRow, column: GridColumnDef): boolean {
+    return !!this.#validations.get(pending)?.has(column);
+  }
+
+  #isActiveCell(rowKey: unknown, column: GridColumnDef): boolean {
+    const row = this.#rowAt(this.#activeRowIndex);
+    return isDataRow(row) && this.#keyOf(row.item) === rowKey && this.#activeColumn === column;
+  }
+
+  #setCellError(pending: PendingRow, column: GridColumnDef, result: ValidationResult): void {
+    if (result) {
+      pending.errors.set(column, result.message);
+    } else {
+      pending.errors.delete(column);
+    }
+
+    pending.rowError = undefined;
+  }
+
+  #formatBound(bound: number | Date, column: GridColumnDef): string {
+    if (bound instanceof Date) {
+      return getDateTimeFormat(this.language, DEFAULT_DATE).format(bound);
+    }
+
+    return this.#dataTypeOf(column) === 'date' || this.#dataTypeOf(column) === 'datetime'
+      ? getDateTimeFormat(this.language, DEFAULT_DATE).format(new Date(bound))
+      : getNumberFormat(this.language).format(bound);
+  }
+
+  /** Fecha o editor (sem gravar); limpa a mensagem do editor do light DOM. */
+  #closeEditor(): void {
+    if (this.#editor) {
+      this.#editor = null;
+      this.#lightMessage?.remove();
+      this.#lightMessage = undefined;
+      this.requestUpdate();
+    }
+  }
+
+  /** Esc: desfaz o que o editor mudou e devolve o foco à célula (linha nova no modo célula/linha: some). */
+  #cancelEditor(source: GridChangeSource): void {
+    const editor = this.#editor;
+
+    if (!editor) {
+      return;
+    }
+
+    const pending = this.#edits.get(editor.rowKey);
+    const discarded: GridEditChange[] = [];
+
+    if (pending?.type === 'add' && this.#editMode !== 'batch') {
+      discarded.push(publicChange(pending));
+      this.#dropPending(pending);
+      this.#closeEditor();
+
+      if (editor.returnFocus?.isConnected) {
+        editor.returnFocus.focus();
+      } else {
+        this.#focusPending = true;
+      }
+    } else {
+      if (pending && (editor.wholeRow || this.#editMode !== 'batch')) {
+        const before = publicChange(pending);
+        const changed = JSON.stringify(before.data ?? null) !== JSON.stringify(editor.snapshot?.data ?? {});
+        restoreSnapshot(this.#edits, pending, editor.snapshot);
+        this.#abortValidations(pending);
+
+        if (changed && pending.type !== 'remove') {
+          discarded.push(before);
+        }
+      } else if (pending && editor.column) {
+        // Lote: a célula volta ao que era antes de abrir; o resto da linha fica.
+        restoreCell(this.#edits, pending, editor.column, editor.snapshot);
+      }
+
+      this.#closeEditor();
+      this.#focusPending = true;
+    }
+
+    if (discarded.length) {
+      this.dispatchEvent(new CustomEvent('u-grid-edit-cancel', this.#eventInit<GridEditCancelEventDetail>({ changes: discarded, source })));
+    }
+
+    this.requestUpdate();
+  }
+
+  #abortValidations(pending: PendingRow): void {
+    const byColumn = this.#validations.get(pending);
+
+    if (byColumn) {
+      byColumn.forEach(controller => controller.abort());
+      this.#validations.delete(pending);
+    }
+  }
+
+  /** Tira a linha pendente (linha nova some das linhas). */
+  #dropPending(pending: PendingRow): void {
+    this.#abortValidations(pending);
+    this.#edits.delete(pending.rowKey);
+
+    if (this.#added.delete(pending.rowKey)) {
+      this.#syncKeyOf();
+    }
+  }
+
+  /**
+   * Confirma o editor (Enter, Tab, clique fora). Célula: salva já; inválido
+   * (célula/linha) fica aberto. `then` roda quando a validação termina com
+   * sucesso (mover o foco).
+   */
+  #commitAndThen(source: GridChangeSource, then: () => void, { keepOpen = false, blur = false } = {}): void {
+    const editor = this.#editor;
+
+    if (!editor) {
+      then();
+      return;
+    }
+
+    const seq = editor.seq;
+
+    const finish = (valid: boolean): void => {
+      // Fechou, ou digitou de novo enquanto validava: esta confirmação não vale mais.
+      if (this.#editor !== editor || editor.seq !== seq) {
+        return;
+      }
+
+      if (!valid && this.#editMode !== 'batch' && blur) {
+        // O foco já saiu: fecha e a célula fica pendente marcada (inválida).
+        this.#closeEditor();
+        return;
+      }
+
+      if (!valid && this.#editMode !== 'batch') {
+        // Fica aberto; a mensagem já está visível e é anunciada.
+        const pending = this.#edits.get(editor.rowKey);
+        const message = pending && editor.column ? pending.errors.get(editor.column) : undefined;
+
+        if (message) {
+          this.#announce(message);
+        }
+
+        editor.focus = true;
+        this.requestUpdate();
+        return;
+      }
+
+      if (!keepOpen && !editor.wholeRow) {
+        this.#closeEditor();
+      }
+
+      if (this.#editMode === 'cell' && !editor.wholeRow && this.#edits.size && !this.#hasAnyError()) {
+        // Modo célula: salva já; o foco anda quando terminar (a linha não muda no meio).
+        void this.#save(source).then(() => then());
+        return;
+      }
+
+      then();
+    };
+
+    const result = this.#commitEditor();
+
+    if (isPromiseLike(result)) {
+      void result.then(finish);
+    } else {
+      finish(result);
+    }
+  }
+
+  #hasAnyError(): boolean {
+    for (const pending of this.#edits.values()) {
+      if (pending.errors.size || pending.rowError || pending.unparsed.size) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // ------------------------------------------------- inserir e excluir
+
+  #addRow(data: Record<string, unknown>, source: GridChangeSource, returnFocus: HTMLElement | null): unknown {
+    if (!this.#editingOn || !this.allowAdding || this.#saving) {
+      return null;
+    }
+
+    if (this.#editor && this.#commitEditor() === false && this.#editMode !== 'batch') {
+      return null;
+    }
+
+    this.#closeEditor();
+
+    const initial = copyData(data && typeof data === 'object' ? data : {});
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-row-adding', {
+      ...this.#eventInit<GridRowAddingEventDetail>({ data: initial, source }),
+      cancelable: true,
+    }))) {
+      return null;
+    }
+
+    this.#ensureRows();
+
+    const rowKey = createProvisionalKey();
+    // No topo das linhas visíveis (a página atual com `paging`).
+    const first = this.#firstVisibleRowIndex();
+    const anchorRow = this.#rowAt(Math.min(first, this.#rows.length - 1));
+    const anchor: AddedAnchor = {
+      seq: ++this.#addedSeq,
+      anchorKey: isDataRow(anchorRow) && !anchorRow.skeleton ? this.#keyOf(anchorRow.item) : undefined,
+      anchorRowKey: anchorRow && !isDataRow(anchorRow) ? anchorRow.key : undefined,
+      fallback: Math.min(first, this.#rows.length),
+    };
+
+    this.#added.set(rowKey, anchor);
+    const pending = this.#edits.add(rowKey, initial);
+
+    for (const column of this.#allEditColumns()) {
+      // Valores iniciais contam como digitados (a marca e a validação na hora de salvar).
+      if (column.path && getValueByPath(initial, column.path) !== undefined) {
+        pending.modified.add(column);
+      }
+    }
+
+    this.#syncKeyOf();
+    this.#withAdded = undefined;
+    this.requestUpdate();
+    this.#ensureRows();
+
+    // Abre a 1ª célula editável da linha nova (o foco vai ao editor).
+    const index = this.#rowIndexOfKey(rowKey);
+    const target = this._visibleColumns.find(column => isColumnEditable(column));
+    const opened = index >= 0 && !!target && this.#startEdit(index, target, source, { returnFocus });
+
+    if (!opened) {
+      this.#announce(this.#translation.rowAddedAnnouncement);
+
+      if (index >= 0) {
+        this.#setActive({ row: index, col: this.#activeCol }, source, { focus: !!returnFocus, reveal: true });
+      }
+    }
+
+    return rowKey;
+  }
+
+  /** 1ª linha renderizada visível abaixo do que é fixo no topo (0 sem layout). */
+  #firstVisibleRowIndex(): number {
+    const scroller = this._scrollContainerRef.value;
+    const rows = this.#tableRef.value?.querySelectorAll<HTMLElement>(':scope > tbody > tr[data-index]:not(.pinned)');
+
+    if (!scroller || !rows?.length) {
+      return 0;
+    }
+
+    const limit = scroller.getBoundingClientRect().top + this.#stickyTop();
+
+    for (const tr of rows) {
+      if (tr.getBoundingClientRect().bottom > limit + 1) {
+        return Math.min(Number(tr.getAttribute('data-index')), this.#rows.length);
+      }
+    }
+
+    return 0;
+  }
+
+  /** Botão Excluir: evento, confirmação (célula/linha) e remoção. */
+  async #requestRemove(rowKey: unknown, returnFocus: HTMLElement | null): Promise<void> {
+    const pending = this.#edits.get(rowKey);
+
+    if (pending?.type === 'add') {
+      // Linha nova: não há o que perguntar nem salvar.
+      await this.#removeRowNow(rowKey, 'user');
+      return;
+    }
+
+    if (this.confirmRemove && this.#editMode !== 'batch') {
+      const item = this.#itemOfKey(rowKey);
+
+      if (item === undefined || !this.#dispatchRemoving(rowKey, item, 'user')) {
+        return;
+      }
+
+      this.#removeDialog = { rowKey, returnFocus };
+      this.requestUpdate();
+      return;
+    }
+
+    await this.#removeRowNow(rowKey, 'user');
+  }
+
+  #dispatchRemoving(rowKey: unknown, item: unknown, source: GridChangeSource): boolean {
+    return this.dispatchEvent(new CustomEvent('u-grid-row-removing', {
+      ...this.#eventInit<GridRowRemovingEventDetail>({ rowKey, item, source }),
+      cancelable: true,
+    }));
+  }
+
+  #itemOfKey(rowKey: unknown): unknown {
+    const pending = this.#edits.get(rowKey);
+
+    if (pending) {
+      return pending.item;
+    }
+
+    const row = this.#rowAt(this.#rowIndexOfKey(rowKey));
+    return isDataRow(row) && !row.skeleton ? row.item : undefined;
+  }
+
+  /** Remove (célula/linha: salva já) ou marca (lote). `skipEvent`: o diálogo já disparou `u-grid-row-removing`. */
+  async #removeRowNow(rowKey: unknown, source: GridChangeSource, skipEvent = false): Promise<boolean> {
+    if (!this.#editingOn || this.#saving) {
+      return false;
+    }
+
+    this.#ensureRows();
+
+    const existing = this.#edits.get(rowKey);
+    const item = this.#itemOfKey(rowKey);
+
+    if (item === undefined || existing?.type === 'remove') {
+      return false;
+    }
+
+    if (!skipEvent && !this.#dispatchRemoving(rowKey, existing?.type === 'add' ? existing.item : item, source)) {
+      return false;
+    }
+
+    const activeKey = this.#publicFocus().rowKey;
+    const wasActive = activeKey === rowKey;
+
+    if (this.#editor?.rowKey === rowKey) {
+      this.#closeEditor();
+    }
+
+    if (existing?.type === 'add') {
+      this.#dropPending(existing);
+      this.#withAdded = undefined;
+      this.#announce(this.#translation.rowRemovedAnnouncement);
+      this.#focusAfterRemoval(wasActive);
+      this.requestUpdate();
+      return true;
+    }
+
+    const pending = this.#edits.ensure(rowKey, item);
+    const previous = snapshotOf(pending);
+    pending.removedFrom = Object.keys(pending.data).length ? 'update' : undefined;
+    pending.type = 'remove';
+    this.#abortValidations(pending);
+    pending.errors.clear();
+    this.#edits.touch(pending);
+    this.requestUpdate();
+
+    if (this.#editMode === 'batch') {
+      this.#announce(this.#translation.rowMarkedForRemovalAnnouncement);
+      return true;
+    }
+
+    const saved = await this.#save(source, [pending]);
+
+    if (!saved && this.#edits.get(rowKey) === pending) {
+      // Não salvou: a linha volta ao que era.
+      restoreSnapshot(this.#edits, pending, previous);
+      this.requestUpdate();
+    } else if (saved) {
+      this.#announce(this.#translation.rowRemovedAnnouncement);
+      this.#focusAfterRemoval(wasActive);
+    }
+
+    return saved;
+  }
+
+  /** Foco depois de excluir: mesma coluna na linha que ficou no lugar (ou a anterior; sem linhas, o cabeçalho). */
+  #focusAfterRemoval(wasActive: boolean): void {
+    if (!wasActive) {
+      return;
+    }
+
+    void this.updateComplete.then(() => {
+      const rows = this.#rows.length;
+      const row = rows ? Math.min(this.#activeRowIndex, rows - 1) : HEADER_ROW;
+      this.#setActive({ row, col: this.#activeCol }, null, { focus: true, reveal: true });
+    });
+  }
+
+  #restoreRow(rowKey: unknown, source: GridChangeSource): void {
+    const pending = this.#edits.get(rowKey);
+
+    if (!pending || pending.type !== 'remove') {
+      return;
+    }
+
+    if (pending.removedFrom) {
+      pending.type = pending.removedFrom;
+      pending.removedFrom = undefined;
+      this.#edits.touch(pending);
+    } else {
+      this.#edits.delete(rowKey);
+    }
+
+    if (source === 'user') {
+      this.#announce(this.#translation.rowRestoredAnnouncement);
+    }
+
+    this.requestUpdate();
+  }
+
+  // --------------------------------------------------- salvar e descartar
+
+  /** Salva as mudanças pendentes (todas, ou `only`). Uma vez por vez. */
+  #save(source: GridChangeSource, only?: PendingRow[]): Promise<boolean> {
+    if (this.#saving) {
+      return this.#saving;
+    }
+
+    const run = this.#runSave(source, only).finally(() => {
+      this.#saving = null;
+      clearTimeout(this.#savingTimer);
+      this.#savingTimer = undefined;
+      this.#savingSlow = false;
+      this.requestUpdate();
+    });
+
+    this.#saving = run;
+    return run;
+  }
+
+  async #runSave(source: GridChangeSource, only?: PendingRow[]): Promise<boolean> {
+    const editor = this.#editor;
+
+    if (editor) {
+      const committed = this.#commitEditor();
+
+      if (isPromiseLike(committed)) {
+        await committed;
+      }
+    }
+
+    // Validações assíncronas em curso: o resultado conta.
+    while (this.#validationPromises.size) {
+      await Promise.all([...this.#validationPromises]);
+    }
+
+    const rows = (only ?? [...this.#edits.values()]).filter(row => this.#edits.get(row.rowKey) === row);
+
+    if (!rows.length) {
+      if (editor?.wholeRow) {
+        this.#closeEditor();
+      }
+
+      return true;
+    }
+
+    // Linhas novas: todas as colunas com regras; alteradas: as editadas.
+    const checks: Promise<unknown>[] = [];
+
+    for (const pending of rows) {
+      if (pending.type === 'remove') {
+        continue;
+      }
+
+      for (const column of this.#allEditColumns()) {
+        const due = pending.type === 'add' ? !!column.validationRules?.length && !pending.modified.has(column) : false;
+
+        if (due) {
+          const result = this.#validateCell(pending, column, this.#pendingValue(pending, column));
+
+          if (isPromiseLike(result)) {
+            checks.push(result);
+          }
+        }
+      }
+    }
+
+    await Promise.all(checks);
+
+    let invalidRows = 0;
+
+    for (const pending of rows) {
+      if (pending.type === 'remove') {
+        continue;
+      }
+
+      const errors: GridValidationError[] = [];
+
+      for (const [column, message] of pending.errors) {
+        errors.push({ column, rule: null, message });
+      }
+
+      let rowError: string | undefined;
+      const detail: GridRowValidatingEventDetail = {
+        rowKey: pending.rowKey,
+        item: pending.item,
+        change: publicChange(pending),
+        errors,
+        setError: (message: string, column?: GridColumnDef) => {
+          event.preventDefault();
+
+          if (column) {
+            pending.errors.set(column, String(message));
+          } else {
+            rowError = String(message);
+          }
+        },
+        source,
+      };
+      const event = new CustomEvent('u-grid-row-validating', { ...this.#eventInit(detail), cancelable: true });
+      const accepted = this.dispatchEvent(event);
+      pending.rowError = rowError ?? (!accepted && !errors.length && pending.errors.size === 0 ? this.#translation.validationInvalid : undefined);
+
+      if (!accepted || pending.errors.size || pending.unparsed.size || pending.rowError) {
+        invalidRows++;
+      }
+    }
+
+    this.#edits.touch();
+
+    if (invalidRows) {
+      this.#editStatus = formatMessage(this.#translation.invalidRowsMessage, { count: String(invalidRows) });
+      this.#announce(this.#editStatus);
+      this.#focusFirstInvalid(rows);
+      this.requestUpdate();
+      return false;
+    }
+
+    const changes = rows.map(publicChange);
+    const waits: Promise<unknown>[] = [];
+    let dispatching = true;
+    const savingDetail: GridSavingEventDetail = {
+      changes,
+      waitUntil: (promise: Promise<void | GridDataChanges>) => {
+        if (!dispatching) {
+          throw new DOMException('waitUntil() can only be called while u-grid-saving is dispatched.', 'InvalidStateError');
+        }
+
+        waits.push(Promise.resolve(promise));
+      },
+      source,
+    };
+
+    const go = this.dispatchEvent(new CustomEvent('u-grid-saving', { ...this.#eventInit(savingDetail), cancelable: true }));
+    dispatching = false;
+
+    if (!go) {
+      return false;
+    }
+
+    let replacement: GridDataChanges | undefined;
+
+    if (waits.length) {
+      this.#savingTimer = setTimeout(() => {
+        this.#savingTimer = undefined;
+        this.#savingSlow = true;
+        this.#announce(this.#translation.saving);
+      }, SLOW_SAVE_DELAY);
+      this.requestUpdate();
+
+      try {
+        const results = await Promise.all(waits);
+        replacement = results.find((result): result is GridDataChanges => !!result && typeof result === 'object');
+      } catch (error) {
+        const text = typeof error === 'string' ? error : error instanceof Error && error.message ? error.message : '';
+        this.#editStatus = text ? `${this.#translation.saveError} ${text}` : this.#translation.saveError;
+        this.#announce(this.#editStatus);
+        this.dispatchEvent(new CustomEvent('u-grid-save-error', this.#eventInit<GridSaveErrorEventDetail>({ changes, error, source })));
+        this.requestUpdate();
+        return false;
+      }
+    }
+
+    if (!this.isConnected && !this.hasUpdated) {
+      return false;
+    }
+
+    const items = this.#applySaved(rows, replacement);
+
+    for (const pending of rows) {
+      this.#dropPending(pending);
+    }
+
+    if (this.#editor && rows.some(row => row.rowKey === this.#editor?.rowKey)) {
+      this.#closeEditor();
+      this.#focusPending = this.#hadFocusInGrid();
+    }
+
+    this.#withAdded = undefined;
+    this.#editStatus = '';
+    this.requestUpdate();
+    this.dispatchEvent(new CustomEvent('u-grid-save', this.#eventInit<GridSaveEventDetail>({ changes, items, source })));
+
+    if (!(rows.length === 1 && rows[0].type === 'remove')) {
+      this.#announce(this.#translation.changesSavedAnnouncement);
+    }
+
+    return true;
+  }
+
+  #hadFocusInGrid(): boolean {
+    return !!this.shadowRoot?.activeElement;
+  }
+
+  /** Foco na 1ª célula inválida (abre o editor no modo célula/linha). */
+  #focusFirstInvalid(rows: PendingRow[]): void {
+    for (const pending of rows) {
+      const column = this._visibleColumns.find(candidate => pending.errors.has(candidate) || pending.unparsed.has(candidate));
+      const index = this.#rowIndexOfKey(pending.rowKey);
+
+      if (index < 0) {
+        continue;
+      }
+
+      if (column && this.#editMode !== 'batch') {
+        if (!this.#editor || this.#editor.rowKey !== pending.rowKey) {
+          this.#startEdit(index, column, 'user');
+        } else {
+          this.#editor.column = column;
+          this.#editor.focus = true;
+          this.#setActive({ row: index, col: this.#currentNavColumns().indexOf(column) }, null, { reveal: true });
+        }
+      } else {
+        const col = column ? this.#currentNavColumns().indexOf(column) : this.#activeCol;
+        this.#setActive({ row: index, col }, 'user', { focus: true, reveal: true });
+      }
+
+      return;
+    }
+  }
+
+  /**
+   * Aplica o que foi salvo: `dataSource` por `applyChanges`; `items` numa
+   * cópia do array (o do hospedeiro fica intacto). Devolve a cópia (`items`).
+   */
+  #applySaved(rows: PendingRow[], replacement: GridDataChanges | undefined): unknown[] | null {
+    const keyed = !!this.#keyExpr;
+    const add: unknown[] = [];
+    const updates = new Map<unknown, unknown>();
+    const remove: unknown[] = [];
+    // Linha nova → item salvo (o foco e a seleção vão para a chave real).
+    const addedItems = new Map<unknown, unknown>();
+
+    if (replacement) {
+      add.push(...replacement.add ?? []);
+      remove.push(...replacement.remove ?? []);
+
+      for (const item of replacement.update ?? []) {
+        updates.set(this.#baseKeyOf(item), item);
+      }
+
+      const newRows = rows.filter(row => row.type === 'add');
+      (replacement.add ?? []).forEach((item, index) => {
+        if (newRows[index]) {
+          addedItems.set(newRows[index].rowKey, item);
+        }
+      });
+    } else {
+      for (const pending of rows) {
+        if (pending.type === 'remove') {
+          remove.push(pending.rowKey);
+        } else if (pending.type === 'add') {
+          const item = copyData(pending.data);
+          add.push(item);
+          addedItems.set(pending.rowKey, item);
+        } else {
+          updates.set(pending.rowKey, this.#edits.mergedOf(pending));
+        }
+      }
+    }
+
+    // A célula ativa numa linha nova passa para o item salvo.
+    const activeKey = this.#activeRef && 'key' in this.#activeRef ? this.#activeRef.key : undefined;
+    const savedActive = activeKey === undefined ? undefined : addedItems.get(activeKey);
+
+    for (const pending of rows) {
+      if (pending.type === 'add') {
+        this.#added.delete(pending.rowKey);
+      }
+    }
+
+    this.#syncKeyOf();
+    this.#withAdded = undefined;
+
+    if (this.#dataSource) {
+      this.applyChanges({ add, update: [...updates.values()], remove });
+    } else {
+      this.#ensureRows();
+      this.#applyLocalChanges(add, updates, new Set(remove));
+      this.#hostItems = this.#items;
+
+      if (!keyed) {
+        this.#migrateObjectKeys(updates, new Set(remove));
+      }
+    }
+
+    if (savedActive !== undefined) {
+      this.#activeRef = { key: this.#keyOf(savedActive) };
+    }
+
+    return this.#dataSource ? null : this.#items as unknown[];
+  }
+
+  /** Sem `keyExpr` a chave é o objeto: seleção, expansão e foco passam do item velho para o novo. */
+  #migrateObjectKeys(updates: ReadonlyMap<unknown, unknown>, removed: ReadonlySet<unknown>): void {
+    if (this.#selection.size) {
+      const keys = this.#selection.keys
+        .filter(key => !removed.has(key))
+        .map(key => updates.get(key) ?? key);
+      this.#selection.replace(keys);
+    }
+
+    for (const [previous, next] of updates) {
+      if (this.#rowExpansion.delete(previous)) {
+        this.#rowExpansion.add(next);
+      }
+    }
+
+    if (this.#activeRef && 'key' in this.#activeRef && updates.has(this.#activeRef.key)) {
+      this.#activeRef = { key: updates.get(this.#activeRef.key) };
+    }
+  }
+
+  #discard(source: GridChangeSource): void {
+    const changes = this.getChanges();
+    const hadEditor = !!this.#editor;
+
+    for (const pending of [...this.#edits.values()]) {
+      this.#dropPending(pending);
+    }
+
+    this.#edits.clear();
+    this.#added.clear();
+    this.#syncKeyOf();
+    this.#withAdded = undefined;
+    this.#editStatus = '';
+
+    if (hadEditor) {
+      this.#closeEditor();
+      this.#focusPending = this.#hadFocusInGrid();
+    }
+
+    this.requestUpdate();
+
+    if (changes.length) {
+      this.dispatchEvent(new CustomEvent('u-grid-edit-cancel', this.#eventInit<GridEditCancelEventDetail>({ changes, source })));
+
+      if (source === 'user') {
+        this.#announce(formatMessage(this.#translation.changesDiscardedAnnouncement, { count: String(changes.length) }));
+      }
+    }
+  }
+
+  /** `items` trocado: ficam as pendências de chaves presentes; o resto sai (`u-grid-edit-cancel`, api). */
+  #reconcileEdits(items: readonly unknown[]): void {
+    if (!this.#edits.size) {
+      return;
+    }
+
+    const byKey = new Map<unknown, unknown>();
+
+    for (const item of items) {
+      byKey.set(this.#baseKeyOf(item), item);
+    }
+
+    const dropped: GridEditChange[] = [];
+
+    for (const pending of [...this.#edits.values()]) {
+      if (pending.type === 'add') {
+        continue;
+      }
+
+      if (byKey.has(pending.rowKey)) {
+        pending.item = byKey.get(pending.rowKey);
+        this.#edits.touch(pending);
+      } else {
+        dropped.push(publicChange(pending));
+
+        if (this.#editor?.rowKey === pending.rowKey) {
+          this.#closeEditor();
+        }
+
+        this.#dropPending(pending);
+      }
+    }
+
+    if (dropped.length) {
+      this.dispatchEvent(new CustomEvent('u-grid-edit-cancel', this.#eventInit<GridEditCancelEventDetail>({ changes: dropped, source: 'api' })));
+    }
+  }
+
+  /** `#keyOf` reconhece as linhas novas enquanto houver alguma. */
+  #syncKeyOf(): void {
+    const base = this.#baseKeyOf;
+
+    if (!this.#added.size) {
+      this.#keyOf = base;
+      return;
+    }
+
+    const keys = this.#addedItemKeys;
+    this.#keyOf = item => (item && typeof item === 'object' && keys.get(item)) || base(item);
+  }
+
+  /** Linhas com as novas no lugar delas (topo da janela visível quando foram adicionadas). */
+  #rowsWithAdded(base: Rows): Rows {
+    if (!this.#added.size) {
+      this.#withAdded = undefined;
+      return base;
+    }
+
+    const cached = this.#withAdded;
+
+    if (cached && cached.base === base && cached.version === this.#edits.version) {
+      return cached.rows;
+    }
+
+    const keyOf = this.#keyExpr ? this.#baseKeyOf : undefined;
+    const added: AddedRow[] = [];
+
+    for (const [rowKey, anchor] of this.#added) {
+      const pending = this.#edits.get(rowKey);
+
+      if (!pending) {
+        continue;
+      }
+
+      const item = this.#edits.mergedOf(pending) as object;
+      this.#addedItemKeys.set(item, rowKey);
+
+      let position = anchor.anchorKey !== undefined ? base.indexOfDataKey(anchor.anchorKey, keyOf) : -1;
+
+      if (position < 0 && anchor.anchorRowKey) {
+        position = base.indexOfKey(anchor.anchorRowKey);
+      }
+
+      added.push({
+        position: position >= 0 ? position : Math.min(anchor.fallback, base.length),
+        rowKey,
+        row: { isGroup: false, key: `n:${anchor.seq}`, item, index: 0 },
+      });
+    }
+
+    // Mais nova primeiro na mesma posição (como a referência: a nova fica no topo).
+    added.sort((a, b) => a.position - b.position || (this.#added.get(b.rowKey)!.seq - this.#added.get(a.rowKey)!.seq));
+
+    const rows = new RowsWithAdded(base, added);
+    this.#withAdded = { base, version: this.#edits.version, rows };
+    return rows;
+  }
+
+  /** Depois do render: diálogo, foco no editor e ARIA do editor `HTMLElement`. */
+  #afterEditRender(): void {
+    const dialog = this.#removeDialogRef.value;
+
+    if (this.#removeDialog && dialog && !dialog.open && dialog.isConnected) {
+      dialog.showModal();
+    }
+
+    const editor = this.#editor;
+
+    if (!editor) {
+      return;
+    }
+
+    if (!this.#editingOn) {
+      this.#closeEditor();
+      return;
+    }
+
+    if (this.#rowIndexOfKey(editor.rowKey) < 0) {
+      // A linha saiu (filtro, troca de dados): o que foi digitado fica pendente.
+      void this.#commitEditor();
+      this.#closeEditor();
+      return;
+    }
+
+    const cell = this.#editorCell(editor);
+    const target = cell && (cell.querySelector<HTMLElement>(':scope > .cell-editor') ?? focusTargetsWithin(cell)[0]);
+
+    if (target instanceof HTMLElement && target.getRootNode() !== this.shadowRoot) {
+      this.#describeLightEditor(target, editor);
+    }
+
+    if (!editor.focus || !(target instanceof HTMLElement || target instanceof SVGElement)) {
+      return;
+    }
+
+    editor.focus = false;
+    target.focus({ preventScroll: true });
+
+    // Cursor no fim do texto (como a referência).
+    if (target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'search')) {
+      const end = target.value.length;
+      target.setSelectionRange(end, end);
+    }
+  }
+
+  /** Célula do editor (a da coluna dele; no modo linha, a ativa se for da linha). */
+  #editorCell(editor: OpenEditor): HTMLElement | null {
+    const index = this.#rowIndexOfKey(editor.rowKey);
+    const col = editor.column ? this.#currentNavColumns().indexOf(editor.column) : -1;
+    const tr = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${index}"]`);
+    return tr?.querySelector<HTMLElement>(`:scope > td.editing[data-col="${col}"]`) ?? tr?.querySelector<HTMLElement>(':scope > td.editing') ?? null;
+  }
+
+  /**
+   * Editor `HTMLElement` (light DOM): o `aria-describedby` dele não alcança o
+   * shadow do grid. O grid põe a mensagem num elemento do light DOM e
+   * completa o rótulo e o estado de erro, se faltarem.
+   */
+  #describeLightEditor(target: HTMLElement, editor: OpenEditor): void {
+    const pending = this.#edits.get(editor.rowKey);
+    const column = editor.column;
+    const error = pending && column ? pending.errors.get(column) : undefined;
+
+    if (column && !target.hasAttribute('aria-label') && !target.hasAttribute('aria-labelledby')) {
+      target.setAttribute('aria-label', column.label ?? '');
+    }
+
+    if (!error) {
+      if (this.#lightMessage && target.getAttribute('aria-describedby') === this.#lightMessage.id) {
+        target.removeAttribute('aria-describedby');
+      }
+
+      target.removeAttribute('aria-invalid');
+      return;
+    }
+
+    if (!this.#lightMessage) {
+      this.#lightMessage = document.createElement('div');
+      this.#lightMessage.id = `u-grid-${++lightMessageCount}-edit-message`;
+      // Sem slot correspondente: não aparece, mas serve de descrição.
+      this.#lightMessage.slot = 'u-grid-internal:edit-message';
+      this.append(this.#lightMessage);
+    }
+
+    this.#lightMessage.textContent = error;
+    target.setAttribute('aria-invalid', 'true');
+
+    if (!target.hasAttribute('aria-describedby')) {
+      target.setAttribute('aria-describedby', this.#lightMessage.id);
+    }
+  }
+
+  /** Libera o que a edição segura (desconectado): validações, temporizador, editor do light DOM. */
+  #releaseEditing(): void {
+    for (const pending of [...this.#validations.keys()]) {
+      this.#abortValidations(pending);
+    }
+
+    this.#validationPromises.clear();
+    clearTimeout(this.#savingTimer);
+    this.#savingTimer = undefined;
+    this.#lightMessage?.remove();
+    this.#lightMessage = undefined;
+    this.#removeDialog = null;
   }
 
   // ---------------------------------------------------------- exportação
@@ -4779,12 +6531,16 @@ export class DataGrid extends LitElement {
     return size > 0 ? size : 20;
   }
 
+  /** Página atual (sem as linhas novas da edição). */
+  #basePage: RowPage | undefined;
+
   /** Página (com `paging`) sobre as linhas inteiras. */
   #applyPage(): void {
     const all = this.#allRows;
 
     if (!this.paging) {
-      this.#rows = all;
+      this.#basePage = undefined;
+      this.#rows = this.#rowsWithAdded(all);
       this.#syncDetailsIfChanged();
       return;
     }
@@ -4808,12 +6564,14 @@ export class DataGrid extends LitElement {
     }
 
     const { offset, length } = pageBounds(all, this.#pageIndex * size, size);
-    const page = this.#rows;
+    let page = this.#basePage;
 
     // A mesma página das mesmas linhas: reaproveita (o virtualizador guarda as alturas dela).
-    if (!(page instanceof RowPage && page.source === all && page.offset === offset && page.length === length)) {
-      this.#rows = new RowPage(all, offset, length);
+    if (!(page && page.source === all && page.offset === offset && page.length === length)) {
+      page = this.#basePage = new RowPage(all, offset, length);
     }
+
+    this.#rows = this.#rowsWithAdded(page);
 
     this.#syncDetailsIfChanged();
   }
@@ -4976,14 +6734,8 @@ export class DataGrid extends LitElement {
   }
 
   /** Atualizações por chave na carga única: sem reordenar nem refiltrar (como o `push` da referência). */
-  #applyLocalChanges(add: readonly unknown[], update: readonly unknown[], remove: readonly unknown[]): void {
-    const keyOf = this.#keyOf;
-    const updates = new Map<unknown, unknown>();
-    const removals = new Set(remove);
-
-    for (const item of update) {
-      updates.set(keyOf(item), item);
-    }
+  #applyLocalChanges(add: readonly unknown[], updates: ReadonlyMap<unknown, unknown>, removals: ReadonlySet<unknown>): void {
+    const keyOf = this.#baseKeyOf;
 
     const items = this.#items;
     // Só acréscimos: cópia direta (sem passar item por item).
@@ -5653,6 +7405,8 @@ export class DataGrid extends LitElement {
   }
 
   readonly #onBodyClick = (event: MouseEvent): void => {
+    this.#onEditPointer(event, 'click');
+
     if (this.#selectionMode === 'none') {
       return;
     }
@@ -5807,7 +7561,9 @@ export class DataGrid extends LitElement {
       leading.push(SELECTION_COLUMN);
     }
 
-    return [...leading, ...this._visibleColumns];
+    return this.#showCommandColumn
+      ? [...leading, ...this._visibleColumns, COMMAND_COLUMN]
+      : [...leading, ...this._visibleColumns];
   }
 
   #publicFocus(): PublicFocus {
@@ -5836,6 +7592,10 @@ export class DataGrid extends LitElement {
 
     if (column === DETAIL_TOGGLE_COLUMN) {
       return { rowKey, column: null, cellType: 'detail-toggle' };
+    }
+
+    if (column === COMMAND_COLUMN) {
+      return { rowKey, column: null, cellType: 'command' };
     }
 
     return column === SELECTION_COLUMN || !column
@@ -6117,6 +7877,11 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    // Editor aberto: Enter/Tab/Esc são da edição (antes do "conteúdo da célula").
+    if (this.#editor && this.#onEditorKeyDown(event, cell, position)) {
+      return;
+    }
+
     // Foco dentro do conteúdo da célula (Enter/F2): as teclas são dele; Esc volta à célula.
     if (path[0] !== cell) {
       if (event.key === 'Escape') {
@@ -6221,10 +7986,211 @@ export class DataGrid extends LitElement {
         this.#toggleRow(row);
       }
     } else if ((event.key === 'Enter' || event.key === 'F2') && column !== SELECTION_COLUMN) {
-      if (focusFirstWithin(cell)) {
+      if (typeof column === 'object' && this.#editingOn && this.#editFromCell(position, column)) {
+        event.preventDefault();
+      } else if (focusFirstWithin(cell)) {
         event.preventDefault();
       }
     }
+  };
+
+  /** Enter/F2 numa célula de dados: abre o editor (ou leva o foco ao já aberto). */
+  #editFromCell(position: CellPosition, column: GridColumnDef): boolean {
+    const editor = this.#editor;
+    const row = this.#rowAt(position.row);
+
+    if (editor && isDataRow(row) && editor.rowKey === this.#keyOf(row.item) && (editor.wholeRow || editor.column === column)) {
+      editor.column = column;
+      editor.focus = true;
+      this.requestUpdate();
+      return true;
+    }
+
+    return this.#startEdit(position.row, column, 'user');
+  }
+
+  /** Teclas com o foco num editor (ou nos botões da linha em edição, modo linha). */
+  #onEditorKeyDown(event: KeyboardEvent, cell: HTMLElement, position: CellPosition): boolean {
+    const editor = this.#editor!;
+    const row = this.#rowAt(position.row);
+
+    if (!isDataRow(row) || this.#keyOf(row.item) !== editor.rowKey || event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const column = this.#navColumns[position.col];
+    const inside = event.composedPath()[0] !== cell;
+    const inEditor = inside && cell.classList.contains('editing');
+    const inRowButtons = inside && editor.wholeRow && column === COMMAND_COLUMN;
+
+    if (!inEditor && !inRowButtons) {
+      return false;
+    }
+
+    this.#revealEditingRow(event);
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.#cancelEditor('user');
+      return true;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+
+      if (editor.wholeRow) {
+        this.#tabInRow(cell, event.shiftKey);
+      } else {
+        this.#commitAndThen('user', () => this.#tabToEditable(position, event.shiftKey));
+      }
+
+      return true;
+    }
+
+    if (event.key === 'Enter' && inEditor) {
+      event.preventDefault();
+
+      if (editor.wholeRow) {
+        void this.#save('user');
+      } else {
+        const delta = event.shiftKey ? -1 : 1;
+        this.#commitAndThen('user', () => this.#moveAfterCommit(position, delta));
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Enter confirmou: a célula da mesma coluna na linha de dados de baixo (Shift: de cima). */
+  #moveAfterCommit(position: CellPosition, delta: number): void {
+    let row = position.row + delta;
+
+    while (row >= 0 && row < this.#rows.length && !isDataRow(this.#rowAt(row))) {
+      row += delta;
+    }
+
+    const target = row >= 0 && row < this.#rows.length ? row : position.row;
+    this.#setActive({ row: target, col: position.col }, 'user', { focus: true, reveal: true });
+  }
+
+  /** Tab confirmou: abre a próxima célula editável (pula grupos, detalhes, removidas); nas pontas, foco na célula. */
+  #tabToEditable(position: CellPosition, back: boolean): void {
+    const navColumns = this.#currentNavColumns();
+    const step = back ? -1 : 1;
+    let row = position.row;
+    let col = position.col + step;
+    // Não varre a lista inteira (1 milhão de linhas) procurando: algumas telas bastam.
+    let budget = Math.max(navColumns.length, 1) * 200;
+
+    while (row >= 0 && row < this.#rows.length && budget-- > 0) {
+      const candidate = this.#rowAt(row);
+
+      if (isDataRow(candidate) && !candidate.skeleton) {
+        const pending = this.#pendingOf(candidate);
+
+        for (; col >= 0 && col < navColumns.length; col += step) {
+          const column = navColumns[col];
+
+          if (typeof column === 'object' && this.#cellEditable(candidate, column, pending)) {
+            this.#startEdit(row, column, 'user');
+            return;
+          }
+        }
+      }
+
+      row += step;
+      col = back ? navColumns.length - 1 : 0;
+    }
+
+    this.#setActive(position, 'user', { focus: true, reveal: true });
+  }
+
+  /** Modo linha: Tab percorre os editores da linha e os botões Salvar/Cancelar (circular). */
+  #tabInRow(cell: HTMLElement, back: boolean): void {
+    const tr = cell.closest('tr');
+
+    if (!tr) {
+      return;
+    }
+
+    const targets: (HTMLElement | SVGElement)[] = [];
+
+    for (const td of tr.querySelectorAll<HTMLElement>(':scope > td.editing, :scope > td.command-cell')) {
+      targets.push(...focusTargetsWithin(td));
+    }
+
+    if (!targets.length) {
+      return;
+    }
+
+    const active = this.shadowRoot?.activeElement ?? document.activeElement;
+    const current = targets.findIndex(target => target === active || target.contains(active));
+    const next = targets[(current + (back ? -1 : 1) + targets.length) % targets.length];
+    // Confirma o que foi digitado (validação na hora); a linha continua aberta.
+    void this.#commitEditor();
+    next.focus();
+  }
+
+  /** Perda de foco do editor (clique fora): válido confirma; inválido fica pendente marcado. */
+  readonly #onGridFocusOut = (event: FocusEvent): void => {
+    const editor = this.#editor;
+
+    if (!editor || editor.wholeRow) {
+      return;
+    }
+
+    const cell = this.#navCellOf(event.composedPath());
+
+    if (!cell?.classList.contains('editing')) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      if (this.#editor !== editor || (typeof document.hasFocus === 'function' && !document.hasFocus())) {
+        return;
+      }
+
+      const active = this.shadowRoot?.activeElement;
+
+      // Ainda no editor (o foco andou dentro da célula) ou no editor do light DOM.
+      if ((active && cell.contains(active)) || (document.activeElement && document.activeElement !== this && this.contains(document.activeElement))) {
+        return;
+      }
+
+      this.#commitAndThen('user', () => undefined, { blur: true });
+    });
+  };
+
+  /** Clique ou duplo clique (`editTrigger`) numa célula editável abre o editor. */
+  #onEditPointer(event: MouseEvent, trigger: GridEditTrigger): void {
+    if (!this.#editingOn || this.#editMode === 'row' || (this.editTrigger === 'dblclick' ? 'dblclick' : 'click') !== trigger) {
+      return;
+    }
+
+    const path = event.composedPath();
+    const cell = this.#navCellOf(path);
+    const position = cell && this.#positionOf(cell);
+
+    if (!cell || !position || cell.classList.contains('editing') || path[0] !== cell && path.some(node => node instanceof HTMLElement && node !== cell && cell.contains(node) && node.matches(TABBABLE_IN_CELL))) {
+      return;
+    }
+
+    const column = this.#currentNavColumns()[position.col];
+
+    if (typeof column === 'object') {
+      this.#startEdit(position.row, column, 'user');
+    }
+  }
+
+  readonly #onBodyDblClick = (event: MouseEvent): void => {
+    this.#onEditPointer(event, 'dblclick');
+  };
+
+  readonly #onBodyPointerDown = (event: PointerEvent): void => {
+    const target = event.composedPath()[0];
+    this.#checkboxPointer = target instanceof HTMLInputElement && target.classList.contains('cell-editor-checkbox');
   };
 
   /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, menu, alça. */
@@ -6249,7 +8215,7 @@ export class DataGrid extends LitElement {
       return false;
     }
 
-    if (!column || column === DETAIL_TOGGLE_COLUMN) {
+    if (!column || column === DETAIL_TOGGLE_COLUMN || column === COMMAND_COLUMN) {
       return false;
     }
 
@@ -6551,7 +8517,7 @@ export class DataGrid extends LitElement {
             class=${fit ? 'grid-table fit' : 'grid-table'}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
-            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#allRows.length + headerRows + footerRows}"
+            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#allRows.length + this.#added.size + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
             aria-busy=${ifDefined(waiting || this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
@@ -6560,10 +8526,16 @@ export class DataGrid extends LitElement {
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
             @beforecopy=${this.#onBeforeCopy}
-            @focusin=${this.#onGridFocusIn}>
+            @focusin=${this.#onGridFocusIn}
+            @focusout=${this.#onGridFocusOut}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
-            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize()}px;" @click=${this.#onBodyClick}>
+            <tbody
+              role="rowgroup"
+              style="height: ${virtualizer.getTotalSize()}px;"
+              @click=${this.#onBodyClick}
+              @dblclick=${this.#onBodyDblClick}
+              @pointerdown=${this.#onBodyPointerDown}>
               <tr class="spacer" role="presentation" aria-hidden="true" style="height: ${window.offset}px;"></tr>
               ${this.#renderBody(window, headerRows, layout)}
               <tr role="presentation"></tr>
@@ -6583,6 +8555,12 @@ export class DataGrid extends LitElement {
       ${this.#inTextLanguage(this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing)}
       ${this.#inTextLanguage(this.#columnMenu.open ? this.#renderColumnHeaderMenu() : nothing)}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" lang=${this.#textLanguage}>${this.#announcement}</div>
+      ${this.#editingOn
+        ? html`<div hidden lang=${this.#textLanguage}><span id="edit-desc-added">${this.#translation.addedRowDescription}</span><span
+            id="edit-desc-removed">${this.#translation.removedRowDescription}</span><span
+            id="edit-desc-modified">${this.#translation.modifiedCellDescription}</span></div>`
+        : nothing}
+      ${this.#renderRemoveDialog()}
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
   }
@@ -6604,6 +8582,7 @@ export class DataGrid extends LitElement {
         return html`
           <col style="${styleMap(colStyles)}"/>`;
       })}
+      ${this.#showCommandColumn ? html`<col class="command-column"/>` : nothing}
     `;
   }
 
@@ -6673,6 +8652,7 @@ export class DataGrid extends LitElement {
           style: cell.style,
           colIndex: index + 1 + this.#leadingColumns,
         }))}
+        ${this.#renderEmptyCommandCell(null, this.#leadingColumns + layout.length)}
       </tr>`;
   }
 
@@ -6752,6 +8732,15 @@ export class DataGrid extends LitElement {
               label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
             });
           })}
+          ${this.#showCommandColumn
+            ? html`<th
+              class="command-cell"
+              part="command-cell"
+              role="columnheader"
+              aria-colindex=${offset + layout.length + 1}
+              data-col=${offset + layout.length}
+              tabindex=${this.#isActive(HEADER_ROW, offset + layout.length) ? 0 : -1}><span class="header-text">${translation.commandColumn}</span></th>`
+            : nothing}
         </tr>`;
   }
 
@@ -7047,7 +9036,7 @@ export class DataGrid extends LitElement {
   }
 
   #totalColumns(layout: ColumnLayout[]): number {
-    return this._groupColumns.length + this.#leadingColumns + layout.length;
+    return this._groupColumns.length + this.#leadingColumns + layout.length + (this.#showCommandColumn ? 1 : 0);
   }
 
   /**
@@ -7078,6 +9067,8 @@ export class DataGrid extends LitElement {
     const selectable = isDataRow(row) && this.#selectionMode !== 'none';
     const selected = selectable && this.#selection.has(this.#keyOf(row.item));
     const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
+    const pending = isDataRow(row) ? this.#pendingOf(row) : undefined;
+    const editing = isDataRow(row) && !!this.#editor && this.#editor.rowKey === this.#keyOf(row.item);
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
@@ -7088,6 +9079,9 @@ export class DataGrid extends LitElement {
       selected,
       expanded,
       pinned,
+      added: pending?.type === 'add',
+      removed: pending?.type === 'remove',
+      editing,
     };
 
     if (parity) {
@@ -7102,6 +9096,10 @@ export class DataGrid extends LitElement {
 
     if (expanded) {
       parts.push('expanded');
+    }
+
+    if (pending?.type === 'add' || pending?.type === 'remove') {
+      parts.push(pending.type === 'add' ? 'added' : 'removed');
     }
 
     return html`
@@ -7183,7 +9181,7 @@ export class DataGrid extends LitElement {
   #renderGroupRowCells(row: GroupRow, rowIndex: number, layout: ColumnLayout[]) {
     const groupColumns = this._groupColumns.length;
     const offset = this.#leadingColumns;
-    const totalColumns = groupColumns + offset + layout.length;
+    const totalColumns = this.#totalColumns(layout);
     // Colunas depois do botão: recuos dos níveis internos, caixas e colunas comuns.
     const base = groupColumns - row.level - 1 + offset;
     const specs = this.#groupSpecs;
@@ -7249,8 +9247,8 @@ export class DataGrid extends LitElement {
       valueText,
       info,
       ariaLabel,
-      labelSpan: base + alignedFrom,
-      trailing: aligned,
+      labelSpan: base + alignedFrom + (aligned === nothing && this.#showCommandColumn ? 1 : 0),
+      trailing: aligned === nothing ? nothing : html`${aligned}${this.#showCommandColumn ? html`<td class="command-cell" role="gridcell" aria-colindex=${offset + layout.length + 1}></td>` : nothing}`,
       tabIndex: this.#isActive(rowIndex, -1) ? 0 : -1,
       onToggle: this.#toggleGroup,
     });
@@ -7265,6 +9263,7 @@ export class DataGrid extends LitElement {
       ${this.#renderEmptyDetailToggleCell(rowIndex)}
       ${this.#renderEmptySelectionCell(rowIndex)}
       ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText, offset, col => this.#isActive(rowIndex, col) ? 0 : -1)}
+      ${this.#renderEmptyCommandCell(rowIndex, offset + layout.length)}
     `;
   }
 
@@ -7309,6 +9308,7 @@ export class DataGrid extends LitElement {
       rowIndex: ariaRowIndex,
       separator: this.#listSeparatorText,
       leading: html`${this.#renderEmptyDetailToggleCell(rowIndex)}${this.#renderEmptySelectionCell(rowIndex)}`,
+      trailing: this.#renderEmptyCommandCell(rowIndex, this.#leadingColumns + layout.length),
       colOffset: this.#leadingColumns,
       tabIndexOf: col => this.#isActive(rowIndex, col) ? 0 : -1,
     });
@@ -7318,6 +9318,9 @@ export class DataGrid extends LitElement {
     const offset = this.#leadingColumns;
     const selectionCol = this.#selectionCol;
     const matcher = this.#highlightMatcher();
+    const edit: RowEditState | undefined = this.#editingOn && !row.skeleton
+      ? { pending: this.#pendingOf(row), rowKey: this.#keyOf(row.item), readonlyMarks: !!this.allowEditing || this.allowAdding }
+      : undefined;
 
     return html`
       ${map(this._groupColumns, (_, index) => html`
@@ -7369,18 +9372,302 @@ export class DataGrid extends LitElement {
               ? nothing
               : this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
-      ${map(layout, (cell, index) => html`
-        <td
-          part="cell"
-          class=${cell.cellClassName}
-          style=${cell.style}
-          role="gridcell"
-          aria-colindex="${index + 1 + offset}"
-          data-col=${index + offset}
-          tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${row.skeleton
-            ? html`<span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span>`
-            : this.#renderCellContent(row, cell, matcher)}</td>`)}
+      ${map(layout, (cell, index) => row.skeleton
+        ? html`
+          <td
+            part="cell"
+            class=${cell.cellClassName}
+            style=${cell.style}
+            role="gridcell"
+            aria-colindex="${index + 1 + offset}"
+            data-col=${index + offset}
+            tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
+        : edit
+          ? this.#renderEditableCell(row, rowIndex, cell, index + offset, matcher, edit)
+          : html`
+          <td
+            part="cell"
+            class=${cell.cellClassName}
+            style=${cell.style}
+            role="gridcell"
+            aria-colindex="${index + 1 + offset}"
+            data-col=${index + offset}
+            tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`)}
+      ${this.#showCommandColumn ? this.#renderCommandCell(row, rowIndex, offset + layout.length, edit?.pending) : nothing}
     `;
+  }
+
+  /** Célula de dados com a edição ligada: editor, valor pendente, marcas e ARIA (frente 09). */
+  #renderEditableCell(row: DataRow, rowIndex: number, cell: ColumnLayout, col: number, matcher: RegExp | null, edit: RowEditState) {
+    const { column } = cell;
+    const { pending, rowKey } = edit;
+    const active = this.#isActive(rowIndex, col);
+    const editing = this.#isEditingCell(rowKey, column, pending, row);
+    const removed = pending?.type === 'remove';
+    const added = pending?.type === 'add';
+    const modified = !!pending && !added && !removed && pending.modified.has(column);
+    const error = removed ? undefined : pending?.errors.get(column);
+    const validating = !!pending && !removed && this.#isValidating(pending, column);
+    const readonly = edit.readonlyMarks && !this.#cellEditable(row, column, pending);
+    const messageId = error || validating ? `edit-message-${rowIndex}-${col}` : undefined;
+    const stateId = added ? 'edit-desc-added' : removed ? 'edit-desc-removed' : modified ? 'edit-desc-modified' : undefined;
+    const describedBy = [messageId, stateId].filter(Boolean).join(' ');
+    const showMessage = !!messageId && (editing || active);
+    const classes = [cell.cellClassName];
+    const parts = ['cell'];
+
+    if (modified) {
+      classes.push('modified');
+      parts.push('modified');
+    }
+
+    if (error) {
+      classes.push('invalid');
+      parts.push('invalid');
+    }
+
+    if (editing) {
+      classes.push('editing');
+    }
+
+    if (showMessage) {
+      classes.push('show-message');
+    }
+
+    let content: unknown;
+
+    if (editing) {
+      content = this.#renderEditor(row, pending, column, cell, describedBy);
+    } else if (pending?.unparsed.has(column)) {
+      content = pending.unparsed.get(column)!.text;
+    } else if (pending && !added && Object.keys(pending.data).length) {
+      content = this.#renderCellContent({ ...row, item: this.#edits.mergedOf(pending) }, cell, matcher);
+    } else {
+      content = this.#renderCellContent(row, cell, matcher);
+    }
+
+    const message = messageId
+      ? html`<div
+          id=${messageId}
+          class="validation-message"
+          part="validation-message"
+          lang=${ifDefined(error ? undefined : this.#textLanguage)}
+          ?hidden=${!showMessage}>${error
+            ? editing && this.#editMode !== 'batch' ? `${error} ${this.#translation.validationEscapeHint}` : error
+            : html`<span class="validating-spinner" aria-hidden="true"></span>${this.#translation.validating}`}</div>`
+      : nothing;
+
+    return html`
+      <td
+        part=${parts.join(' ')}
+        class=${classes.join(' ')}
+        style=${cell.style}
+        role="gridcell"
+        aria-colindex="${col + 1}"
+        data-col=${col}
+        aria-readonly=${ifDefined(readonly ? 'true' : undefined)}
+        aria-invalid=${ifDefined(error && !editing ? 'true' : undefined)}
+        aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}
+        aria-busy=${ifDefined(validating ? 'true' : undefined)}
+        tabindex=${active ? 0 : -1}>${showMessage && !editing ? html`<span class="cell-text">${content}</span>` : content}${message}</td>`;
+  }
+
+  /** Editor da célula: o `editorRenderer` da coluna ou o embutido pelo tipo. */
+  #renderEditor(row: DataRow, pending: PendingRow | undefined, column: GridColumnDef, cell: ColumnLayout, describedBy: string) {
+    const editor = this.#editor!;
+    const item = pending ? pending.item : row.item;
+    const current = editor.drafts.has(column)
+      ? editor.drafts.get(column)
+      : pending ? this.#pendingValue(pending, column) : getCellValue(row.item, column);
+    const label = column.label ?? '';
+    const error = pending?.errors.get(column) ?? '';
+    const renderer = column.editorRenderer;
+
+    if (renderer) {
+      const grid = this;
+      const rowKey = editor.rowKey;
+
+      return rendererContent({
+        host: this,
+        slotName: `u-grid-internal:editor:${row.key}:${cell.id}`,
+        deps: [editor.session, column, renderer, this.#renderEpoch(), error],
+        renderer,
+        invoke: signal => {
+          const ctx: GridEditorRenderContext = {
+            item,
+            get value() {
+              return editor.drafts.has(column) ? editor.drafts.get(column) : current;
+            },
+            get data() {
+              return (pending?.data ?? {}) as Partial<unknown>;
+            },
+            column,
+            rowKey,
+            label,
+            invalid: !!error,
+            errorMessage: error,
+            describedBy,
+            setValue: (value: unknown) => {
+              if (grid.#editor === editor) {
+                grid.#editorChanged(editor, column);
+                editor.drafts.set(column, value);
+              }
+            },
+            commit: () => {
+              if (grid.#editor === editor) {
+                grid.#commitAndThen('user', () => undefined, { keepOpen: true });
+              }
+            },
+            cancel: () => {
+              if (grid.#editor === editor) {
+                grid.#cancelEditor('user');
+              }
+            },
+            grid,
+            get signal() {
+              return signal();
+            },
+          };
+
+          return renderer.call(column, item, ctx);
+        },
+      });
+    }
+
+    const kind = editorKindOf(this.#dataTypeOf(column));
+    const language = this.language || undefined;
+    const original = getCellValue(item, column);
+    const text = editor.texts.get(column) ?? (
+      current instanceof UnparsedValue
+        ? current.text
+        : kind === 'number'
+          ? formatEditorNumber(current, language)
+          : kind === 'date' || kind === 'datetime'
+            ? formatEditorDate(current, kind === 'datetime')
+            : current === null || current === undefined ? '' : String(current));
+
+    return renderBuiltInEditor({
+      kind,
+      text,
+      checked: current === null || current === undefined ? null : !!current,
+      label,
+      invalid: !!error,
+      describedBy,
+      onInput: (event: Event) => {
+        if (this.#editor !== editor) {
+          return;
+        }
+
+        const value = (event.target as HTMLInputElement).value;
+        this.#editorChanged(editor, column);
+        editor.texts.set(column, value);
+        editor.drafts.set(column, kind === 'number'
+          ? parseEditorNumber(value, language)
+          : kind === 'date' || kind === 'datetime'
+            ? parseEditorDate(value, original, kind === 'datetime')
+            : value);
+        this.#revealEditingRow(event);
+      },
+      onChange: (event: Event) => {
+        if (this.#editor !== editor || kind !== 'boolean') {
+          return;
+        }
+
+        editor.drafts.set(column, (event.target as HTMLInputElement).checked);
+
+        // Clique na caixa: alterna e confirma num passo (Espaço só alterna).
+        if (this.#checkboxPointer && !editor.wholeRow) {
+          this.#checkboxPointer = false;
+          this.#commitAndThen('user', () => {
+            this.#focusPending = true;
+            this.requestUpdate();
+          });
+        }
+      },
+    });
+  }
+
+  /** Valor do editor mudou: aborta a validação em curso da célula (a resposta velha não vale). */
+  #editorChanged(editor: OpenEditor, column: GridColumnDef): void {
+    editor.seq++;
+    const pending = this.#edits.get(editor.rowKey);
+    const controller = pending && this.#validations.get(pending)?.get(column);
+
+    if (controller) {
+      controller.abort();
+      this.#validations.get(pending)!.delete(column);
+      this.#edits.touch();
+      this.requestUpdate();
+    }
+  }
+
+  /** Editor numa linha fora da janela (presa, invisível): rola até ela antes de agir. */
+  #revealEditingRow(event: Event): void {
+    const tr = event.composedPath().find(node => node instanceof HTMLTableRowElement) as HTMLTableRowElement | undefined;
+
+    if (tr?.classList.contains('pinned')) {
+      this.#revealPending = true;
+      this.#revealAttempts = 0;
+      this.requestUpdate();
+    }
+  }
+
+  /** Botões da linha: Editar/Excluir; Salvar/Cancelar (linha em edição); Restaurar (lote). */
+  #renderCommandCell(row: DataRow, rowIndex: number, col: number, pending: PendingRow | undefined) {
+    const translation = this.#translation;
+    let buttons: unknown = nothing;
+
+    if (!row.skeleton) {
+      const rowKey = this.#keyOf(row.item);
+      const removed = pending?.type === 'remove';
+      const canRemove = pending?.type === 'add' ? true : this.#canRemoveItem(row.item);
+      const button = (text: string, onClick: (event: MouseEvent) => void, name: string) => html`<button
+        class="command-button ${name}"
+        part="command-button"
+        type="button"
+        tabindex="-1"
+        @click=${onClick}>${text}</button>`;
+
+      if (this.#editMode === 'row') {
+        const editing = this.#editor?.rowKey === rowKey;
+
+        buttons = editing
+          ? html`${button(translation.saveRow, () => void this.#save('user'), 'save')}${button(translation.cancel, () => this.#cancelEditor('user'), 'cancel')}`
+          : html`${this.#rowEditable(row, pending)
+            ? button(translation.editRow, () => this.#startEdit(this.#rowIndexOfKey(rowKey), null, 'user'), 'edit')
+            : nothing}${canRemove && this.allowRemoving
+            ? button(translation.removeRow, event => void this.#requestRemove(rowKey, event.currentTarget as HTMLElement), 'remove')
+            : nothing}`;
+      } else if (this.allowRemoving && (canRemove || removed)) {
+        // O MESMO botão vira Restaurar (lote): o foco fica nele.
+        buttons = button(
+          removed ? translation.restoreRow : translation.removeRow,
+          event => removed ? this.#restoreRow(rowKey, 'user') : void this.#requestRemove(rowKey, event.currentTarget as HTMLElement),
+          'remove',
+        );
+      }
+    }
+
+    return html`<td
+      class="command-cell"
+      part="command-cell"
+      role="gridcell"
+      aria-colindex=${col + 1}
+      data-col=${col}
+      tabindex=${this.#isActive(rowIndex, col) ? 0 : -1}>${buttons}</td>`;
+  }
+
+  /** Célula vazia da coluna de botões (resumos; `null` = linha de filtro, fora da navegação). */
+  #renderEmptyCommandCell(rowIndex: number | null, col: number) {
+    return this.#showCommandColumn
+      ? html`<td
+        class="command-cell"
+        part="command-cell"
+        role="gridcell"
+        aria-colindex=${col + 1}
+        data-col=${ifDefined(rowIndex === null ? undefined : col)}
+        tabindex=${ifDefined(rowIndex === null ? undefined : this.#isActive(rowIndex, col) ? 0 : -1)}></td>`
+      : nothing;
   }
 
   /** Rótulo do cabeçalho pelo `headerRenderer` da coluna. */
@@ -7486,7 +9773,9 @@ export class DataGrid extends LitElement {
 
   /** Barra acima da tabela: painel de grupos, busca e/ou botão do seletor de colunas. */
   #renderToolbar() {
-    if (!this.showGroupPanel && !this.columnChooser && !this.showSearchPanel) {
+    const editBar = this.#showEditBar;
+
+    if (!this.showGroupPanel && !this.columnChooser && !this.showSearchPanel && !editBar) {
       return nothing;
     }
 
@@ -7495,6 +9784,7 @@ export class DataGrid extends LitElement {
     return html`
       <div class="header" ${ref(this.#toolbarRef)}>
         ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
+        ${editBar ? this.#inTextLanguage(this.#renderEditBar()) : nothing}
         ${this.#inTextLanguage(this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing)}
         ${this.columnChooser
           ? html`
@@ -7509,6 +9799,124 @@ export class DataGrid extends LitElement {
           : nothing}
       </div>
     `;
+  }
+
+  /** Barra da edição: "Adicionar linha", "Salvar"/"Descartar" (lote) e a mensagem persistente. */
+  get #showEditBar(): boolean {
+    return (this.#editingOn && (this.allowAdding || this.#editMode === 'batch')) || !!this.#editStatus || this.#savingSlow;
+  }
+
+  #renderEditBar() {
+    const translation = this.#translation;
+    const status = this.#savingSlow ? translation.saving : this.#editStatus;
+    const batch = this.#editingOn && this.#editMode === 'batch';
+    const empty = !this.hasChanges();
+    const saving = !!this.#saving;
+
+    return html`
+      <div class="edit-bar">
+        ${this.#editingOn && this.allowAdding
+          ? html`<button
+            class="edit-bar-button add-row-button"
+            part="add-row-button"
+            type="button"
+            aria-disabled=${saving ? 'true' : 'false'}
+            @click=${(event: MouseEvent) => {
+              if (!this.#saving) {
+                this.#addRow({}, 'user', event.currentTarget as HTMLElement);
+              }
+            }}><svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 -960 960 960"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"><path d=${ADD_PATH}/></svg>${translation.addRow}</button>`
+          : nothing}
+        ${batch
+          ? html`<button
+              class="edit-bar-button save-button"
+              part="save-button"
+              type="button"
+              aria-disabled=${empty || saving ? 'true' : 'false'}
+              aria-busy=${saving ? 'true' : 'false'}
+              @click=${() => {
+                if (this.hasChanges() && !this.#saving) {
+                  void this.#save('user');
+                }
+              }}>${translation.saveChanges}</button><button
+              class="edit-bar-button discard-button"
+              part="discard-button"
+              type="button"
+              aria-disabled=${empty || saving ? 'true' : 'false'}
+              @click=${() => {
+                if (this.hasChanges() && !this.#saving) {
+                  this.#discard('user');
+                }
+              }}>${translation.discardChanges}</button>`
+          : nothing}
+        ${status ? html`<span class="edit-status">${status}</span>` : nothing}
+      </div>
+    `;
+  }
+
+  /** Confirmação de exclusão (`alertdialog` modal; foco inicial em Cancelar). */
+  #renderRemoveDialog() {
+    if (!this.#removeDialog) {
+      return nothing;
+    }
+
+    const translation = this.#translation;
+
+    return html`
+      <dialog
+        class="remove-dialog"
+        part="remove-dialog"
+        role="alertdialog"
+        aria-labelledby="remove-dialog-title"
+        aria-describedby="remove-dialog-message"
+        lang=${this.#textLanguage}
+        ${ref(this.#removeDialogRef)}
+        @cancel=${(event: Event) => {
+          event.preventDefault();
+          this.#closeRemoveDialog(false);
+        }}>
+        <h2 id="remove-dialog-title" class="remove-dialog-title">${translation.confirmRemoveTitle}</h2>
+        <p id="remove-dialog-message" class="remove-dialog-message">${translation.confirmRemoveMessage}</p>
+        <div class="remove-dialog-actions">
+          <button class="dialog-button" type="button" autofocus @click=${() => this.#closeRemoveDialog(false)}>${translation.cancel}</button>
+          <button class="dialog-button danger" type="button" @click=${() => this.#closeRemoveDialog(true)}>${translation.removeRow}</button>
+        </div>
+      </dialog>`;
+  }
+
+  #closeRemoveDialog(confirmed: boolean): void {
+    const pending = this.#removeDialog;
+
+    if (!pending) {
+      return;
+    }
+
+    this.#removeDialog = null;
+    this.#removeDialogRef.value?.close();
+    this.requestUpdate();
+
+    if (confirmed) {
+      void this.#removeRowNow(pending.rowKey, 'user', true).then(removed => {
+        if (!removed && pending.returnFocus?.isConnected) {
+          pending.returnFocus.focus();
+        }
+      });
+      // Enquanto salva, o foco fica no botão Excluir (não cai no body).
+      pending.returnFocus?.focus();
+      return;
+    }
+
+    if (pending.returnFocus?.isConnected) {
+      pending.returnFocus.focus();
+    } else {
+      this.#focusPending = true;
+    }
   }
 
   #renderGroupPanel() {
@@ -7938,5 +10346,13 @@ declare global {
     'u-grid-load-error': CustomEvent<GridLoadErrorEventDetail>;
     'u-grid-page-change': CustomEvent<GridPageChangeEventDetail>;
     'u-grid-row-expansion-change': CustomEvent<GridRowExpansionChangeEventDetail>;
+    'u-grid-edit-starting': CustomEvent<GridEditStartingEventDetail>;
+    'u-grid-row-adding': CustomEvent<GridRowAddingEventDetail>;
+    'u-grid-row-removing': CustomEvent<GridRowRemovingEventDetail>;
+    'u-grid-row-validating': CustomEvent<GridRowValidatingEventDetail>;
+    'u-grid-saving': CustomEvent<GridSavingEventDetail>;
+    'u-grid-save': CustomEvent<GridSaveEventDetail>;
+    'u-grid-save-error': CustomEvent<GridSaveErrorEventDetail>;
+    'u-grid-edit-cancel': CustomEvent<GridEditCancelEventDetail>;
   }
 }

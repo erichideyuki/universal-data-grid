@@ -162,6 +162,25 @@ export interface GridColumnDef<TItem = any> {
    * `valueGetter` or `displayValue` (a `renderer`-only column has no text).
    */
   exportable?: boolean | null;
+  /**
+   * Allows editing the cells of this column (with `allowEditing` on the grid;
+   * new rows with `allowAdding`). Default: `true` when the column has a
+   * `path` or a `valueSetter`.
+   */
+  editable?: boolean | null;
+  /**
+   * Builds the editor of a cell instead of the built-in one (text, number,
+   * date, checkbox). See `GridEditorRenderer`.
+   */
+  editorRenderer?: GridEditorRenderer<TItem> | null;
+  /** Rules checked when a value is committed and before saving. See `GridValidationRule`. */
+  validationRules?: readonly GridValidationRule<TItem>[] | null;
+  /**
+   * Writes an edited value into `data`, the pending change of the row (a
+   * partial item owned by the grid). Default: sets `path` (dots create nested
+   * objects). Set other fields too to edit computed columns.
+   */
+  valueSetter?: GridValueSetter<TItem> | null;
 }
 
 /** A column of the grid: its `name`, its `path` (first column with that name, else with that path) or the column itself. */
@@ -360,3 +379,130 @@ export const isColumnExportable = (column: GridColumnDef): boolean =>
  */
 export const isColumnFilterable = (column: GridColumnDef): boolean =>
   !!column.path && column.filterable !== false;
+
+// ----------------------------------------------------------------- edição
+
+/** Writes an edited `value` into `data` (the pending change of the row); `item` is the original row (empty object for new rows). */
+export type GridValueSetter<TItem = any> = (data: Partial<TItem>, value: unknown, item: TItem) => void;
+
+/** What a validation rule receives. */
+export interface GridValidationContext<TItem = any> {
+  /** The value being checked. */
+  readonly value: unknown;
+  /** The original row item (empty object for a new row). */
+  readonly item: TItem;
+  /** The pending change of the row (fields edited so far, this value included). */
+  readonly data: Partial<TItem>;
+  /** The column of the value. */
+  readonly column: GridColumnDef<TItem>;
+  /** Row key (a new row has an opaque provisional key). */
+  readonly rowKey: unknown;
+}
+
+/** Members shared by every validation rule. */
+export interface GridValidationRuleBase {
+  /** Error text; default: the grid translation of the rule. */
+  message?: string;
+}
+
+/** The value cannot be empty (`null`, `undefined`, `''`, or only spaces with `trim`). */
+export interface GridRequiredRule extends GridValidationRuleBase {
+  type: 'required';
+  /** Spaces only count as empty. Default `true`. */
+  trim?: boolean;
+}
+
+/** A number or date between `min` and `max` (inclusive). */
+export interface GridRangeRule extends GridValidationRuleBase {
+  type: 'range';
+  min?: number | Date;
+  max?: number | Date;
+}
+
+/** Text length between `min` and `max` characters. */
+export interface GridStringLengthRule extends GridValidationRuleBase {
+  type: 'stringLength';
+  min?: number;
+  max?: number;
+}
+
+/** The text matches `pattern`; a string matches the whole value, like the HTML `pattern` attribute. */
+export interface GridPatternRule extends GridValidationRuleBase {
+  type: 'pattern';
+  pattern: RegExp | string;
+}
+
+/** An e-mail address (the rule of `<input type="email">`). */
+export interface GridEmailRule extends GridValidationRuleBase {
+  type: 'email';
+}
+
+/**
+ * Host check: return `true` (valid), `false` (invalid, `message` or the
+ * default text) or an error text; or a promise of it (server check). The
+ * `signal` aborts when the value changes again or the edit ends: a stale
+ * answer is ignored.
+ */
+export interface GridCustomRule<TItem = any> extends GridValidationRuleBase {
+  type: 'custom';
+  validate: (ctx: GridValidationContext<TItem>, signal: AbortSignal) => boolean | string | Promise<boolean | string>;
+}
+
+/**
+ * A validation rule of `validationRules`. Empty values only fail `required`
+ * (and `custom`, which always runs).
+ */
+export type GridValidationRule<TItem = any> =
+  | GridRequiredRule
+  | GridRangeRule
+  | GridStringLengthRule
+  | GridPatternRule
+  | GridEmailRule
+  | GridCustomRule<TItem>;
+
+/** Context of an `editorRenderer`. */
+export interface GridEditorRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The original row item (empty object for a new row). */
+  readonly item: TItem;
+  /** The value being edited (pending, not yet saved). */
+  readonly value: unknown;
+  /** The pending change of the row. */
+  readonly data: Partial<TItem>;
+  /** The column of the cell. */
+  readonly column: GridColumnDef<TItem>;
+  /** Row key (a new row has an opaque provisional key). */
+  readonly rowKey: unknown;
+  /** Accessible name for the editor (the column label). */
+  readonly label: string;
+  /** The value failed a validation rule. */
+  readonly invalid: boolean;
+  /** Error text of the value (`''` when valid). */
+  readonly errorMessage: string;
+  /**
+   * Id of the element with the error text, for `aria-describedby` — only for
+   * editors rendered in the grid's shadow DOM (`TemplateResult`). For an
+   * `HTMLElement` editor the grid places the text in its light DOM and sets
+   * `aria-label`, `aria-invalid` and `aria-describedby` when missing.
+   */
+  readonly describedBy: string;
+  /** Changes the edited value (the grid validates it on commit). */
+  setValue(value: unknown): void;
+  /** Commits the value (like Enter, without moving). */
+  commit(): void;
+  /** Discards the value and closes the editor (like Esc). */
+  cancel(): void;
+}
+
+/**
+ * Editor of a cell: focus goes to the first focusable element it renders.
+ * The grid handles Enter, Tab and Esc unless the editor calls
+ * `preventDefault()` on the `keydown` (a combobox that uses Enter).
+ */
+export type GridEditorRenderer<TItem = any> = (item: TItem, ctx: GridEditorRenderContext<TItem>) => GridRenderResult;
+
+/**
+ * A coluna é editável (sem olhar o `allowEditing` do grid)? Padrão: com
+ * `path` ou `valueSetter`.
+ */
+export const isColumnEditable = (column: GridColumnDef): boolean =>
+  column.editable ?? (!!column.path || !!column.valueSetter);
