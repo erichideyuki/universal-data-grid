@@ -250,6 +250,10 @@ BAIXA) — fica para depois, sem quebra.
 - Paginação local: por linhas visíveis (como o DevExtreme); `aria-setsize`
   é o do conjunto inteiro de irmãos mesmo que a página o corte.
 - `scrollMode: 'infinite'`: ignorado na árvore (aviso).
+- **Responsivo** (frente 21, `autoHideColumns`): ignorado na árvore (aviso)
+  — a linha adaptativa é uma linha de detalhe, que a árvore não tem;
+  ocultar colunas sem ela esconderia dados (decidido no rebase; **pendente
+  de aval do usuário**).
 - Linhas fixas, intervalo de células, colunas fixas/bandas, virtualização
   de colunas: valem sem mudança (fixas e rodapé de totais com nível 1).
 
