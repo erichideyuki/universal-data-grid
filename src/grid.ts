@@ -2251,7 +2251,9 @@ export class DataGrid extends LitElement {
    * Built-in items of the row context menu (right-click, long press,
    * Shift+F10 or the context menu key on a cell): copy the cell or the
    * selected rows, export the selected rows, edit, delete/restore, show/hide
-   * the detail; on group rows, expand/collapse and ungroup. Default `false`
+   * the detail; on group rows, expand/collapse and ungroup. On a full-width
+   * row (`rowRenderer`) Copy copies the row and there is no Edit; fixed rows
+   * have no context menu (nor `u-grid-context-menu-opening`). Default `false`
    * (unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the
    * cells stays; the host may still add items through
    * `u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu
@@ -14379,9 +14381,12 @@ export class DataGrid extends LitElement {
     request.rangeFrom = before && performance.now() - before.at < 1000 ? before.position : { row: this.#activeRowIndex, col: this.#activeCol };
     this.#setActive(position, 'user');
 
+    // Célula de largura total: o menu sob o bloco visível (sticky), não sob a célula da largura da tabela.
+    const anchorTarget = positionTarget ?? (cell?.classList.contains('full-width-cell') ? cell.querySelector<HTMLElement>('.full-width-content') ?? cell : cell);
+
     return this.#openContextMenuWith(
       request,
-      { returnFocus: () => this.#activeCellElement(), ...point ?? {}, positionTarget: positionTarget ?? cell },
+      { returnFocus: () => this.#activeCellElement(), ...point ?? {}, positionTarget: anchorTarget },
       event,
     );
   }
@@ -14786,7 +14791,10 @@ export class DataGrid extends LitElement {
     const copying = this.clipboardMode !== 'none';
     const column = request.column;
 
-    if (copying && column && isColumnExportable(column)) {
+    // Linha inteira (frente 20): "Copiar" copia a linha, como o Ctrl+C nela.
+    const fullWidthCell = request.cellType === 'full-width';
+
+    if (copying && (fullWidthCell ? this._visibleColumns.some(isColumnExportable) : column && isColumnExportable(column))) {
       items.push({ name: 'copyCell', text: translation.copyCell });
     }
 
@@ -15028,8 +15036,9 @@ export class DataGrid extends LitElement {
 
         break;
       case 'removeRow':
-        // O diálogo (ou a remoção) decide o foco; volta à célula disparadora.
-        menu.hide();
+        // Volta à célula disparadora (no lote não há diálogo nem foco movido pela remoção;
+        // com o diálogo, ele tira o foco do menu e o devolve à célula ao fechar).
+        menu.hide(true);
         void this.#requestRemove(rowKey, this.#activeCellElement());
         break;
       case 'restoreRow':
@@ -15050,7 +15059,9 @@ export class DataGrid extends LitElement {
   #copyFromMenu(name: 'copyCell' | 'copySelectedRows', column: GridColumnDef | null, rowIndex: number): void {
     const content = name === 'copySelectedRows'
       ? this.#copySelection()
-      : column && rowIndex >= 0 ? this.#copyCell({ position: { row: rowIndex, col: this.#currentNavColumns().indexOf(column) } }) : undefined;
+      : rowIndex >= 0 && (column || this.#isFullWidthIndex(rowIndex))
+        ? this.#copyCell({ position: { row: rowIndex, col: column ? this.#currentNavColumns().indexOf(column) : this.#leadingColumns } })
+        : undefined;
 
     if (content) {
       void this.#writeToClipboard(content, 'user');
@@ -15290,15 +15301,15 @@ export class DataGrid extends LitElement {
       // Campo editável ou texto selecionado: fica o menu nativo (colar, copiar).
       if (path.some(node => node instanceof HTMLElement && (node.isContentEditable || node.matches('input, textarea, select')))
         || (!!this.shadowRoot && hasGridTextSelection(this.shadowRoot))) {
-        return;
+        return false;
       }
 
       if (path.some(node => node === this._groupContainerRef.value)) {
         const chip = path.find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
-        this.#openGroupPanelMenu(chip ?? null, { x, y }, null);
-      } else {
-        this.#openMenuAtPath(path, { x, y }, null);
+        return this.#openGroupPanelMenu(chip ?? null, { x, y }, null);
       }
+
+      return this.#openMenuAtPath(path, { x, y }, null);
     });
   };
 
@@ -15401,7 +15412,8 @@ export class DataGrid extends LitElement {
    * a group row (`{ groupPath }`) — e.g. from a "⋯" button in a cell
    * `renderer`. Under `anchor` (or the cell); the focus goes back to `anchor`
    * (or the cell). Returns `false` when canceled, empty, the row or column is
-   * not shown, or before the first render.
+   * not shown, or before the first render. `rowKey`: body rows only; on a
+   * full-width row `column` is ignored.
    */
   openContextMenu(
     target: { rowKey: unknown; column?: GridColumnDef } | { column: GridColumnDef } | { groupPath: GridGroupPath },

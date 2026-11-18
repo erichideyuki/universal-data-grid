@@ -1497,12 +1497,14 @@ group row. Built-in items:
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
 
 On a [full-width row](#full-width-rows-rowrenderer) the `row` menu has `cellType: 'full-width'` and
-`column: null` (no Copy cell nor Edit; Delete / Restore and Show / Hide details stay — with `row-menu`, the way to
-restore a full-width row removed in `batch` mode). [Fixed rows](#fixed-pinned-rows) have no context
-menu (the browser's stays).
+`column: null`: Copy copies the row (like `Ctrl+C`), there is no Edit, and Delete / Restore and
+Show / Hide details stay — with `row-menu`, the way to restore a full-width row removed in `batch`
+mode. [Fixed rows](#fixed-pinned-rows) have no context menu and fire no
+`u-grid-context-menu-opening` (the browser's menu stays). `openContextMenu({ rowKey })` finds body
+rows only.
 
 Before any context menu opens, the cancelable `u-grid-context-menu-opening` fires — also with no
-built-in item, so you can add menus anywhere. Change `detail.menuItems` in place (synchronously):
+built-in item, so you can add menus anywhere (except fixed rows). Change `detail.menuItems` in place (synchronously):
 
 ```js
 grid.addEventListener('u-grid-context-menu-opening', event => {

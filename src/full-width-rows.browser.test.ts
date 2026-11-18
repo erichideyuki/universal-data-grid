@@ -470,7 +470,7 @@ describe('linha inteira: menu de contexto (frente 18)', () => {
 
     await contextMenu(grid, cell());
     expect(detail).toMatchObject({ target: 'row', cellType: 'full-width', column: null, rowKey: 1 });
-    expect(menuTexts(grid)).toEqual(['Delete', 'Show details']);
+    expect(menuTexts(grid)).toEqual(['Copy', 'Delete', 'Show details']);
 
     [...root(grid).querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent.includes('Delete'))!.click();
     await settle(grid);
@@ -493,5 +493,44 @@ describe('linha inteira: menu de contexto (frente 18)', () => {
     expect(menuTexts(grid)).not.toContain('Edit');
     await contextMenu(grid, rowOf(grid, 0).querySelector<HTMLElement>('td[part~=cell]')!);
     expect(menuTexts(grid)).toContain('Edit');
+  });
+
+  it('teclado: Shift+F10 abre no 1º item, Esc volta à célula; Excluir/Restaurar pelo teclado mantêm o foco; axe com o menu', async () => {
+    const grid = await create(6, g => {
+      g.rowMenu = true;
+      g.editMode = 'batch';
+      g.allowEditing = true;
+      g.allowRemoving = true;
+    });
+    const cell = (): HTMLElement => rowOf(grid, 1).querySelector<HTMLElement>('td.full-width-cell')!;
+
+    const pick = async (text: string): Promise<void> => {
+      for (let i = 0; i < 5 && !active(grid).textContent.includes(text); i++) {
+        await key(grid, 'ArrowDown');
+      }
+
+      expect(active(grid).textContent).toContain(text);
+      // Item é um <button>: Enter dele vira clique (evento sintético não ativa).
+      active(grid).click();
+      await settle(grid);
+    };
+
+    expect(grid.focusCell(1)).toBe(true);
+    await settle(grid);
+    await key(grid, 'F10', { shiftKey: true });
+    expect(active(grid).getAttribute('role')).toBe('menuitem');
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(violation => violation.id)).toEqual([]);
+    await key(grid, 'Escape');
+    expect(active(grid)).toBe(cell());
+
+    await key(grid, 'F10', { shiftKey: true });
+    await pick('Delete');
+    expect(active(grid)).toBe(cell());
+    expect(cell().getAttribute('aria-describedby')).toContain('edit-desc-removed');
+
+    await key(grid, 'F10', { shiftKey: true });
+    await pick('Restore');
+    expect(active(grid)).toBe(cell());
+    expect(grid.hasChanges()).toBe(false);
   });
 });

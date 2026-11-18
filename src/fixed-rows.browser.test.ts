@@ -482,4 +482,33 @@ describe('linhas fixas: barra e menu de contexto (frente 18)', () => {
     await settle(grid);
     expect(fixedNames(grid, 'top')).toEqual(['Target', 'Last year']);
   });
+
+  it('com a barra (também quebrando linha a 320 px), a célula ativa nunca fica sob o que gruda', async () => {
+    for (const width of ['900px', '320px']) {
+      const grid = await create(300, g => {
+        g.style.width = width;
+        g.showSearchPanel = true;
+        g.exportFormats = ['csv'];
+        g.fixedTopItems = rows(2).map(row => ({ ...row, id: -10 - row.id }));
+        g.fixedBottomItems = rows(2).map(row => ({ ...row, id: -20 - row.id }));
+        g.summary = { total: [{ column: 'amount', type: 'sum' }] };
+      }, '900px');
+
+      const visible = (): boolean => {
+        const cell = active(grid);
+        const rect = cell.getBoundingClientRect();
+        return grid.shadowRoot!.elementFromPoint(rect.left + Math.min(rect.width / 2, 20), rect.top + rect.height / 2)?.closest('td, th') === cell;
+      };
+
+      expect(grid.focusCell(0)).toBe(true);
+      await settle(grid);
+
+      for (const name of ['ArrowDown', 'PageDown', 'PageDown', 'ArrowDown', 'PageUp', 'ArrowUp', 'PageUp', 'ArrowUp']) {
+        await key(grid, name);
+        expect(visible(), `${width} ${name}`).toBe(true);
+      }
+
+      grid.remove();
+    }
+  });
 });

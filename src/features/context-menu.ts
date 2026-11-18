@@ -76,7 +76,8 @@ export interface GridContextMenuContext<TItem = any> {
   /**
    * Kind of the cell the menu was opened on (`row`: data, selection,
    * command, detail toggle, full-width; `header`: header; `group-row`:
-   * group); `null` in the group panel. Fixed rows have no context menu.
+   * group); `null` in the group panel. Fixed rows (`fixedTopItems`/
+   * `fixedBottomItems`) have no context menu and fire no event.
    */
   readonly cellType: GridCellType | null;
   /**
@@ -190,7 +191,7 @@ export class LongPressController implements ReactiveController {
   }
 
   /** `pointerdown` de toque num alvo com menu: arma o timer. */
-  start(event: PointerEvent, open: (path: EventTarget[], x: number, y: number) => void): void {
+  start(event: PointerEvent, open: (path: EventTarget[], x: number, y: number) => boolean): void {
     // Toque novo: o `click` do toque longo anterior (se nunca veio) não engole este.
     this.#swallowClick = false;
 
@@ -215,9 +216,13 @@ export class LongPressController implements ReactiveController {
     this.#timer = setTimeout(() => {
       const start = this.#start!;
       this.#release();
-      this.#swallowClick = true;
-      this.#firedAt = performance.now();
-      open(path, start.x + LONG_PRESS_OFFSET, start.y + LONG_PRESS_OFFSET);
+
+      // Só um menu aberto engole o clique e o \`contextmenu\` do mesmo toque
+      // (sem menu, como numa linha fixa, fica o do navegador).
+      if (open(path, start.x + LONG_PRESS_OFFSET, start.y + LONG_PRESS_OFFSET)) {
+        this.#swallowClick = true;
+        this.#firedAt = performance.now();
+      }
     }, LONG_PRESS_MS);
   }
 
