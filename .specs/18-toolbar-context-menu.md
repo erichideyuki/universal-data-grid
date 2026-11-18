@@ -16,7 +16,7 @@ DevExtreme: `toolbar: { items }` com itens nomeados (`groupPanel`,
 `items`. AG Grid: `getContextMenuItems(params)` e `MenuItemDef { name,
 action, disabled, subMenu, … }`. Medido em "Referência medida".
 
-## Escopo — API (revisada; aguarda aval)
+## Escopo — API (revisada; aprovada pelo usuário em 2026-11-18)
 
 Revisada pelo `webcomponent-api-reviewer` (24 achados) e pelo
 `a11y-reviewer` (20 achados) — aceitos, exceto: método `fixColumn()`
@@ -195,7 +195,8 @@ Mantidas: `column-header-menu-button`, `add-row-button`, `save-button`,
 - **Menu de contexto — embutidos por alvo** (só os que se aplicam):
   - `header` (`columnHeaderMenu`): ordenar crescente/decrescente/limpar
     (ordenável; "limpar" desabilitado sem ordenação), agrupar, fixar
-    início/fim/desafixar (mesma regra do seletor), mover ←/→, ajustar/
+    início/fim/desafixar (com `column-chooser`, onde o usuário já fixa;
+    só o nível de cima), mover ←/→, ajustar/
     aumentar/diminuir largura.
   - `group-panel` (`groupPanelMenu`): como hoje.
   - `row` (`rowMenu`): copiar célula, copiar selecionadas (com seleção),
@@ -323,6 +324,27 @@ aberto, menus, RTL); `forced-colors`; SSR e hidratação; vazamento
 `AbortSignal`); perf (sem custo por linha; abrir o menu em 1 milhão de
 linhas).
 
+## Decisões da implementação
+
+- **Fixar no menu do cabeçalho só com `column-chooser`**: sem o seletor o
+  usuário não fixa hoje; ligar o menu de fixação para todo grid mudaria o
+  cabeçalho de quem atualiza (botão "⋮" em toda coluna).
+- **Reserva do painel de grupos** na medida do "mais": `min(120px, 100%)`
+  (o painel quebra linha por dentro, A9); o roving cresce a partir de 200 px
+  (`flex: 1 1 200px`), então a busca desce de linha antes de espremer os
+  botões. A largura disponível vem do espaço, não do conteúdo (sem laço de
+  medida).
+- **`always` já no 1º render e no SSR** (sem medida); `auto` só depois de
+  medir (o SSR e a hidratação desenham tudo, iguais).
+- **Tecla de menu sem itens**: quando a tecla não abriu menu, o `contextmenu`
+  que o navegador solta depois fica nativo (o evento não dispara duas vezes);
+  quando abriu, ele cai no menu focado, que o cancela.
+- **Guarda de foco**: foco levado de propósito para fora do grid (âncora do
+  `openContextMenu`) não é foco perdido — a guarda só age com o foco no
+  `<body>`.
+- **Ícone do botão do hospedeiro** desenhado direto no shadow DOM (valor, não
+  função): `TemplateResult` ou texto; um `HTMLElement` é movido para lá.
+
 ## Critério de pronto
 Global (`00-overview.md`) + `npm run test:perf` sem regressão.
 
@@ -394,3 +416,11 @@ Enterprise).
 Divergências nossas (de propósito): roving na barra (APG), Shift+F10/tecla
 Menu abrem os menus, Esc devolve o foco ao disparador, ordem de hoje
 (busca antes do seletor) mantida.
+
+### Nossa medida (perfil de máquina fraca, spec 16 — cenário `menus-1m`)
+
+1 milhão de linhas × 8 colunas com a barra completa (painel, exportar,
+seletor, busca, botão do hospedeiro e um `always` no "mais") e `row-menu`:
+1º render ~34–55 ms, 217 nós; abrir o menu da linha ~4 ms, o do cabeçalho
+~4–5 ms, o "mais" ~4–5 ms (sem custo por linha). Os outros cenários sem
+regressão (`npm run test:perf` inteiro verde contra a linha de base).

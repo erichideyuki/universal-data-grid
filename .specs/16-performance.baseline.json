@@ -149,6 +149,13 @@
     "domNodes": 223,
     "gridHeapMiB": 47
   },
+  "menus-1m": {
+    "firstRenderMs": 54.6,
+    "domNodes": 217,
+    "rowMenuOpenMs": 4.2,
+    "headerMenuOpenMs": 4.4,
+    "toolbarMoreOpenMs": 4.2
+  },
   "remote-5m": {
     "firstRenderMs": 4.1,
     "scrollP95Ms": 3.7,

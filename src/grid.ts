@@ -8,7 +8,7 @@ import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
-import { booleanAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';
+import { booleanAttribute, exportFormatsAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';
 import type { GridChangeSource } from './change-source.js';
 import {
   type GridDataChanges,
@@ -29,10 +29,20 @@ import {
 import { flattenRemote, type LoaderQuery, remoteGroupNodes, RemoteLoader } from './data/remote-loader.js';
 import { downloadBlob } from './export/download.js';
 import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
-import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
+import type {
+  GridCsvDownloadOptions,
+  GridCsvOptions,
+  GridExportData,
+  GridExportDataRow,
+  GridExporter,
+  GridExportErrorEventDetail,
+  GridExportFormat,
+  GridExportingEventDetail,
+  GridExportOptions,
+} from './export/types.js';
 import { type ClipboardHtmlOptions, clipboardContent, collectRows, writeCsv } from './export/write.js';
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
-import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
+import { type GridClipboardMode, hasTextSelection as hasGridTextSelection, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
   ColumnChooserController,
   columnChooserIcon,
@@ -40,6 +50,15 @@ import {
   renderColumnChooser,
 } from './features/column-chooser.js';
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
+import {
+  CONTEXT_MENU_ITEMS_BY_TARGET,
+  type GridContextMenuContext,
+  type GridContextMenuItem,
+  type GridContextMenuItemName,
+  type GridContextMenuOpeningEventDetail,
+  type GridContextMenuTarget,
+  LongPressController,
+} from './features/context-menu.js';
 import { releaseInteractions } from './features/drag-helper.js';
 import { isRtl } from './features/drop-position.js';
 import {
@@ -62,14 +81,6 @@ import {
 import { FilterRowController, renderFilterCell, renderFilterMenu } from './features/filter-row.js';
 import { FilteringController } from './features/filtering.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
-import {
-  type GroupPanelMenuAction,
-  GroupPanelMenuController,
-  isContextMenuKey,
-  type MenuItem,
-  renderGroupPanelMenu,
-  renderMenuItems,
-} from './features/group-panel-menu.js';
 import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import { HOST_LABEL_ATTRIBUTES, HostLabel } from './features/host-label.js';
 import {
@@ -81,6 +92,7 @@ import {
   nextHeaderCell,
   rangeBetween,
 } from './features/keyboard.js';
+import { isContextMenuKey, type MenuEntry, MenuController, renderMenu } from './features/menu.js';
 import {
   clampWidth,
   ColumnResizeController,
@@ -108,6 +120,17 @@ import {
   sortingAfterGesture,
   toggleOrder,
 } from './features/sorting.js';
+import {
+  type GridToolbarButtonItem,
+  type GridToolbarContentItem,
+  type GridToolbarItem,
+  type GridToolbarItemName,
+  isCollapsible,
+  overflowKeys,
+  resolveToolbar,
+  type ResolvedToolbar,
+  type ToolbarEntry,
+} from './features/toolbar.js';
 import { UnparsedValue, validateValue, type ValidationResult } from './features/validation.js';
 import {
   type GridColumnDataType,
@@ -295,7 +318,33 @@ export type {
   GridExportOptions,
   GridExportRow,
   GridExportSummaryRow,
+  GridExportFormat,
+  GridExporter,
+  GridExportingEventDetail,
+  GridExportEventDetail,
+  GridExportErrorEventDetail,
 } from './export/types.js';
+export type {
+  GridContextMenuContext,
+  GridContextMenuItem,
+  GridContextMenuItemActionContext,
+  GridContextMenuItemName,
+  GridContextMenuOpeningEventDetail,
+  GridContextMenuTarget,
+} from './features/context-menu.js';
+export { GRID_DEFAULT_TOOLBAR_ITEMS } from './features/toolbar.js';
+export type {
+  GridBuiltInToolbarItem,
+  GridHostToolbarItem,
+  GridToolbarButtonItem,
+  GridToolbarContentItem,
+  GridToolbarItem,
+  GridToolbarItemActionContext,
+  GridToolbarItemName,
+  GridToolbarItemOptions,
+  GridToolbarItemRenderContext,
+  GridToolbarItemRenderer,
+} from './features/toolbar.js';
 export type {
   GridColumnState,
   GridGroupExpansionState,
@@ -401,9 +450,14 @@ export interface GridCopyEventDetail<TItem = any> {
   /**
    * The clipboard of the native `copy` event. After `preventDefault()` the
    * grid writes nothing and lets the native copy go on: call `setData` here
-   * to write your own content (synchronously, in the listener).
+   * to write your own content (synchronously, in the listener). From
+   * `copySelection()` and the row menu "Copy" items it is a `DataTransfer` of
+   * the grid: canceled, the grid writes what the listener set on it (through
+   * the asynchronous Clipboard API), like the native copy does.
    */
   readonly clipboardData: DataTransfer;
+  /** `user` (Ctrl/Cmd+C, the Edit menu, the row menu) or `api` (`copySelection()`). */
+  readonly source: GridChangeSource;
 }
 
 /** `detail` of `u-grid-loading` (cancelable: `preventDefault()` skips the call and keeps the rows shown). */
@@ -572,7 +626,7 @@ export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n
 
 /** O que o Ctrl+C escreve, antes do `u-grid-copying`. */
 interface CopyContent {
-  detail: Omit<GridCopyEventDetail, 'clipboardData'>;
+  detail: Omit<GridCopyEventDetail, 'clipboardData' | 'source'>;
   announcement: string;
 }
 
@@ -1035,8 +1089,32 @@ const LAST_PAGE_PATH = 'm280-240-56-56 184-184-184-184 56-56 240 240-240 240Zm36
 const CHECK_PATH = 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z';
 const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 
-/** Ações do menu do cabeçalho das colunas (spec 17, A1). */
-type ColumnHeaderMenuAction = 'groupColumn' | 'moveLeft' | 'moveRight' | 'autoSizeColumn' | 'increaseColumnWidth' | 'decreaseColumnWidth';
+/** Pedido de menu de contexto (frente 18): o contexto público + o que o grid precisa (linha de grupo, índice). */
+interface ContextMenuRequest extends Omit<GridContextMenuContext, 'grid'> {
+  groupRow?: GroupRow;
+  rowIndex?: number;
+}
+
+/** Item embutido que se aplica ao alvo agora (texto da i18n). */
+interface BuiltInMenuItem {
+  name: GridContextMenuItemName;
+  text: string;
+  disabled?: boolean;
+  separatorBefore?: boolean;
+  /** Texto oculto depois do rótulo (a coluna de "Desagrupar"). */
+  hiddenSuffix?: string;
+}
+
+/** Menu de contexto aberto: o pedido, os itens (validados) e os embutidos que se aplicam. */
+interface OpenContextMenu {
+  request: ContextMenuRequest;
+  items: GridContextMenuItem[];
+  available: Map<GridContextMenuItemName, BuiltInMenuItem>;
+}
+
+/** Ícone "download" (Material Symbols, Apache 2.0) do botão exportar. */
+const EXPORT_PATH = 'M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z';
+const exportIcon = html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="24" height="24" fill="currentColor" aria-hidden="true"><path d=${EXPORT_PATH}/></svg>`;
 
 /** Id da coluna no estado (frente 11): `name`, senão `path`. */
 const columnNameOf = (column: GridColumnDef): string | undefined =>
@@ -1140,6 +1218,11 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridSaveEventDetail>} u-grid-save - The changes were saved and applied (`items` copy or `dataSource.applyChanges`).
  * @fires {CustomEvent<GridSaveErrorEventDetail>} u-grid-save-error - The `waitUntil` promise rejected; the changes stay pending.
  * @fires {CustomEvent<GridEditCancelEventDetail>} u-grid-edit-cancel - Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`).
+ * @fires {CustomEvent<GridContextMenuOpeningEventDetail>} u-grid-context-menu-opening - Before a context menu opens (header, group panel, row, group row: right-click,
+ * long press, Shift+F10, the context menu key, the header "⋮" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
+ * @fires {CustomEvent<GridExportingEventDetail>} u-grid-exporting - Before an export started from the UI (toolbar, "More actions", row menu). Cancelable: export your own way (e.g. PDF).
+ * @fires {CustomEvent<GridExportEventDetail>} u-grid-export - An export started from the UI finished.
+ * @fires {CustomEvent<GridExportErrorEventDetail>} u-grid-export-error - An export started from the UI failed (`detail.error`).
  *
  * @cssprop --u-grid-background-color - Grid background.
  * @cssprop --u-grid-color - Text color of the grid. Default: on-surface token (`rgb(29, 27, 32)`).
@@ -1204,6 +1287,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-modified-cell-indicator-color - Corner mark of edited, unsaved cells (not shown by color alone). Default: primary color.
  * @cssprop --u-grid-invalid-cell-color - Border and message accent of cells with a validation error. Default: error token (`rgb(179, 38, 30)`).
  * @cssprop --u-grid-added-row-background-color - Background of new, unsaved rows. Default: primary color at 6%.
+ * @cssprop --u-grid-menu-background-color - Background of the menus (context menus, "More actions", export). Default: surface-container token.
+ * @cssprop --u-grid-menu-shape - Corner radius of the menus. Default `4px`.
  * @cssprop --u-grid-removed-row-opacity - Opacity of rows marked for removal (their text is also struck through). Default `0.7`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
@@ -1225,6 +1310,16 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart group-footer-row - Group footer rows (summaries with `display: 'footer'`).
  * @csspart summary-cell - Cells with summaries (footers and `display: 'column'` in group rows).
  * @csspart group-count - Count and inline summaries in a group row (`"(3, Sum of Population: 1,234)"`).
+ * @csspart toolbar - The bar above the table (group panel, buttons, search).
+ * @csspart toolbar-button - Toolbar buttons (built-in and host), with `add-row-button`, `save-button`, `discard-button`, `export-button` or `column-chooser-button`.
+ * @csspart toolbar-more-button - The "More actions" button that lists the toolbar items that do not fit.
+ * @csspart export-button - The toolbar export button (`exportFormats`).
+ * @csspart column-chooser-button - The toolbar column chooser button.
+ * @csspart menu - Every menu of the grid (with `column-header-menu`, `group-panel-menu`, `row-menu` or `toolbar-menu`).
+ * @csspart menu-item - Menu items.
+ * @csspart menu-separator - Menu separators.
+ * @csspart row-menu - The context menu of data and group rows.
+ * @csspart toolbar-menu - The "More actions" and export menus.
  * @csspart group-panel-menu - The group panel context menu.
  * @csspart column-header-menu - The column header context menu.
  * @csspart column-header-menu-button - The "⋮" button that opens the column header menu.
@@ -1742,22 +1837,89 @@ export class DataGrid extends LitElement {
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-group-count' }) showGroupCount = true;
 
   /**
-   * Context menu of the group panel (right-click, Shift+F10 or the context
-   * menu key on a group chip): ungroup, move the chip left/right (grouping
-   * level), ungroup all, expand/collapse all groups. Default `true`;
-   * `group-panel-menu="false"` disables it.
+   * Built-in items of the group panel context menu (right-click, long press,
+   * Shift+F10 or the context menu key on a group chip): ungroup, move the
+   * chip left/right (grouping level), ungroup all, expand/collapse all
+   * groups. Default `true`; with `group-panel-menu="false"` the host may
+   * still add items through `u-grid-context-menu-opening`.
    */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'group-panel-menu' }) groupPanelMenu = true;
 
   /**
-   * Context menu of the column headers (right-click, the "⋮" button, Shift+F10
-   * or the context menu key on a header): group by the column, move it
-   * left/right, auto-size or widen/narrow it. It is the single-pointer
-   * alternative to dragging (WCAG 2.5.7): with `column-header-menu="false"`
-   * the host must provide one. Only actions that apply to the column are
-   * listed; without any, the browser menu is kept. Default `true`.
+   * Built-in items of the column header context menu (right-click, long
+   * press, the "⋮" button, Shift+F10 or the context menu key on a header):
+   * sort, group by the column, pin it, move it left/right, auto-size or
+   * widen/narrow it. It is the single-pointer alternative to dragging (WCAG
+   * 2.5.7): with `column-header-menu="false"` the host must provide one
+   * (it may add items through `u-grid-context-menu-opening`). Only actions
+   * that apply to the column are listed; without any, the browser menu is
+   * kept. Default `true`.
    */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'column-header-menu' }) columnHeaderMenu = true;
+
+  /**
+   * Built-in items of the row context menu (right-click, long press,
+   * Shift+F10 or the context menu key on a cell): copy the cell or the
+   * selected rows, export the selected rows, edit, delete/restore, show/hide
+   * the detail; on group rows, expand/collapse and ungroup. Default `false`
+   * (unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the
+   * cells stays; the host may still add items through
+   * `u-grid-context-menu-opening`. The browser menu is always kept with
+   * selected text, on editable fields and with Ctrl+right-click.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'row-menu' }) rowMenu = false;
+
+  // ------------------------------------------------- barra de ferramentas
+
+  /**
+   * Items of the toolbar above the table (property only), in order:
+   * built-in names (`'searchPanel'`) or objects — `{ name, location,
+   * locateInMenu, showText, disabled, text }` configures a built-in, `{ text,
+   * icon, action }` is a host button and `{ renderer }` host content. A
+   * built-in shows only with its feature on (`showGroupPanel`,
+   * `showSearchPanel`, `columnChooser`, `exportFormats`, `allowAdding`,
+   * `editMode="batch"`). `null` (default) = `GRID_DEFAULT_TOOLBAR_ITEMS`;
+   * `[]` hides the bar (the editing status text still shows). Replace the
+   * array instead of mutating it; the getter returns a frozen copy.
+   */
+  @property({ attribute: false })
+  get toolbarItems(): readonly (GridToolbarItemName | GridToolbarItem)[] | null {
+    return this.#toolbarItems;
+  }
+
+  set toolbarItems(value: readonly (GridToolbarItemName | GridToolbarItem)[] | null | undefined) {
+    this.#toolbarItems = Array.isArray(value) ? Object.freeze([...value]) : null;
+  }
+
+  #toolbarItems: readonly (GridToolbarItemName | GridToolbarItem)[] | null = null;
+
+  /**
+   * Formats of the export UI: the toolbar export button and the "Export
+   * selected rows" items of the row menu. Attribute: words separated by
+   * spaces or commas (`export-formats="csv xlsx"`). `xlsx` needs
+   * `xlsxExporter`. Default `[]` (no export UI; the export methods always work).
+   */
+  @property({ attribute: 'export-formats', converter: exportFormatsAttribute })
+  get exportFormats(): readonly GridExportFormat[] {
+    return this.#exportFormats;
+  }
+
+  set exportFormats(value: readonly GridExportFormat[] | null | undefined) {
+    this.#exportFormats = Object.freeze(Array.isArray(value) ? [...new Set(value)] : []);
+  }
+
+  #exportFormats: readonly GridExportFormat[] = Object.freeze([]);
+
+  /**
+   * Builds and downloads the Excel file of the export UI (property only):
+   * `createXlsxExporter(ExcelJS, options)` from
+   * `@universal-material/data-grid/export-xlsx`. Without it the `xlsx`
+   * entries are not shown.
+   */
+  @property({ attribute: false }) xlsxExporter: GridExporter | null = null;
+
+  /** Options of the CSV file of the export UI (property only): `fileName`, `separator`, `includeGroups`… */
+  @property({ attribute: false }) csvExportOptions: Omit<GridCsvDownloadOptions, 'selectedOnly' | 'signal'> | null = null;
   // ---------------------------------------------------------------- filtro
 
   /** Shows the filter row below the column headers (an editor and an operation menu per filterable column). */
@@ -1958,8 +2120,6 @@ export class DataGrid extends LitElement {
   /** Depois do próximo render: rolar até a célula ativa. */
   #revealPending = false;
   /** Chip do painel de grupos com `tabindex="0"` (roving na barra). */
-  #activeChip = 0;
-  #chipFocusPending = false;
   /**
    * O foco do DOM estava dentro do grid antes do render (spec 17): se o render
    * remover o elemento focado (linha filtrada, chip desagrupado, coluna
@@ -2949,8 +3109,10 @@ export class DataGrid extends LitElement {
 
   readonly #resize = new ColumnResizeController(this);
   readonly #chooser = new ColumnChooserController(this);
-  readonly #groupMenu = new GroupPanelMenuController(this);
-  readonly #columnMenu = new GroupPanelMenuController(this, 'column-header-menu');
+  /** Menu de contexto (cabeçalho, painel, linhas) e menus da barra ("mais", exportar): mesmo motor (frente 18). */
+  readonly #contextMenu = new MenuController<OpenContextMenu>(this, 'context-menu-panel');
+  readonly #toolbarMenu = new MenuController<{ kind: 'more' | 'export' }>(this, 'toolbar-menu');
+  readonly #longPress = new LongPressController(this);
   readonly #filtering = new FilteringController(this);
   readonly #filterRow = new FilterRowController(this);
   readonly #headerFilterPopover = new HeaderFilterController(this);
@@ -3019,6 +3181,11 @@ export class DataGrid extends LitElement {
       validations: this.#validations.size + this.#validationPromises.size,
       editTimers: (this.#savingTimer === undefined ? 0 : 1) + (this.#validatingTimer === undefined ? 0 : 1),
       editLightNodes: this.#lightMessage ? 1 : 0,
+      // Barra e menus (frente 18): busca por letra, toque longo, exportação em curso, larguras medidas.
+      menuTimers: this.#contextMenu.timers + this.#toolbarMenu.timers,
+      longPressTimers: this.#longPress.timers,
+      exportTimers: (this.#exportTimer === undefined ? 0 : 1) + (this.#exporting ? 1 : 0),
+      toolbarWidths: this.#toolbarWidths.size,
     };
   }
 
@@ -3105,6 +3272,7 @@ export class DataGrid extends LitElement {
 
     this.#syncPageHide();
     this.#releaseEditing();
+    this.#releaseExport();
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -3160,24 +3328,26 @@ export class DataGrid extends LitElement {
       this.#rowsDirty = true;
     }
 
-    const menuColumn = this.#groupMenu.column;
+    // Menu de contexto cuja coluna saiu (ocultada, agrupada, desagrupada) fecha.
+    const openMenu = this.#contextMenu.open ? this.#contextMenu.data?.request : undefined;
+    const menuColumn = openMenu?.column;
 
-    const columnMenuColumn = this.#columnMenu.column;
-
-    if (this.#columnMenu.open && (
-      !this.columnHeaderMenu
-      || !columnMenuColumn
-      || !(this._isBand(columnMenuColumn) ? this._isColumnVisible(columnMenuColumn) : this._visibleColumns.includes(columnMenuColumn)))) {
-      this.#columnMenu.hide();
+    if (openMenu?.target === 'header' && (
+      !menuColumn
+      || !(this._isBand(menuColumn) ? this._isColumnVisible(menuColumn) : this._visibleColumns.includes(menuColumn)))) {
+      this.#contextMenu.hide();
     }
 
-    if (this.#groupMenu.open && (
-      !this.groupPanelMenu
-      || !this.showGroupPanel
+    if (openMenu?.target === 'group-panel' && (
+      !this.showGroupPanel
       || !this._groupColumns.length
       || (menuColumn && !this._groupColumns.includes(menuColumn)))) {
-      this.#groupMenu.hide();
+      this.#contextMenu.hide();
     }
+
+    // O item focado da barra pode sair neste render (chip desagrupado, recolhido no "mais").
+    const focused = this.shadowRoot?.activeElement;
+    this.#toolbarHadFocus = !!focused && !!this.#toolbarRef.value?.contains(focused);
 
     if (changed.has('columnAutoWidth')) {
       this.#autoWidths.clear();
@@ -3268,10 +3438,7 @@ export class DataGrid extends LitElement {
 
     this.#afterEditRender();
 
-    if (this.#chipFocusPending) {
-      this.#chipFocusPending = false;
-      this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]')?.focus();
-    }
+    this.#afterToolbarRender();
 
     if (this.#hadFocusBeforeRender) {
       // O conteúdo de uma célula removida sai num microtask (grid-custom-cell):
@@ -3285,7 +3452,9 @@ export class DataGrid extends LitElement {
       });
     }
 
-    if (this.#hadFocusBeforeRender && !this.shadowRoot?.activeElement && !this.matches(':focus-within')) {
+    // Foco levado de propósito para fora (âncora do hospedeiro): não é foco perdido.
+    if (this.#hadFocusBeforeRender && !this.shadowRoot?.activeElement && !this.matches(':focus-within')
+      && (!document.activeElement || document.activeElement === document.body)) {
       this.#hadFocusBeforeRender = false;
       this.#focusPending = true;
       this.#afterActiveRender();
@@ -5576,7 +5745,7 @@ export class DataGrid extends LitElement {
     }
 
     const clipboardData = event.clipboardData!;
-    const detail: GridCopyEventDetail = { ...copy.detail, clipboardData };
+    const detail: GridCopyEventDetail = { ...copy.detail, clipboardData, source: 'user' };
 
     if (!this.dispatchEvent(new CustomEvent('u-grid-copying', { ...this.#eventInit(detail), cancelable: true }))) {
       return;
@@ -6640,6 +6809,7 @@ export class DataGrid extends LitElement {
       }
 
       this.#syncToolbarOffset();
+      this.#measureToolbar();
     });
 
     this.#resizeObserver.observe(scroller);
@@ -8703,6 +8873,12 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    // Menu da linha (frente 18): Shift+F10/tecla Menu na própria célula (no conteúdo dela, fica o nativo).
+    if (isContextMenuKey(event) && position.row >= 0) {
+      this.#noteContextKey(this.#openRowMenu(position, cell, null, event));
+      return;
+    }
+
     if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
       if (this.#selectionMode === 'multiple') {
         event.preventDefault();
@@ -9114,11 +9290,7 @@ export class DataGrid extends LitElement {
 
     if (isContextMenuKey(event)) {
       // Menu do cabeçalho pelo teclado (spec 17, A1); abre sob o cabeçalho.
-      if (this.columnHeaderMenu && this.#columnMenuItems(column).length) {
-        event.preventDefault();
-        this.#columnMenu.show({ column, returnFocus: cell });
-      }
-
+      this.#noteContextKey(this.#openHeaderMenu(column, cell, {}, event));
       return true;
     }
 
@@ -9161,11 +9333,7 @@ export class DataGrid extends LitElement {
     }
 
     if (isContextMenuKey(event)) {
-      if (this.columnHeaderMenu && this.#columnMenuItems(band).length) {
-        event.preventDefault();
-        this.#columnMenu.show({ column: band, returnFocus: cell });
-      }
-
+      this.#noteContextKey(this.#openHeaderMenu(band, cell, {}, event));
       return true;
     }
 
@@ -9298,7 +9466,7 @@ export class DataGrid extends LitElement {
     this.#revealPending = true;
   }
 
-  /** Teclado no chip do painel de grupos (barra com roving tabindex). */
+  /** Teclado no chip do painel de grupos (←/→/Home/End são do roving da barra). */
   #onChipKeyDown(column: GridColumnDef, index: number, event: KeyboardEvent): void {
     const ctrl = event.ctrlKey || event.metaKey;
     const count = this._groupColumns.length;
@@ -9320,20 +9488,15 @@ export class DataGrid extends LitElement {
 
     if ((ctrl && !event.altKey && event.key.toLowerCase() === 'g') || event.key === 'Delete') {
       event.preventDefault();
-      this.#activeChip = Math.min(index, Math.max(count - 2, 0));
       this.#userUngroup(column);
       return;
     }
 
-    if (horizontal && !event.altKey && !ctrl) {
+    if (isContextMenuKey(event)) {
+      this.#noteContextKey(this.#openGroupPanelMenu(event.currentTarget as HTMLElement, null, event));
+    } else if (this.groupPanelMenu && !this.#canSortByUser(column) && isActivationKey(event)) {
       event.preventDefault();
-      this.#focusChip(Math.min(Math.max(index + (forward ? 1 : -1), 0), count - 1));
-    } else if ((event.key === 'Home' || event.key === 'End') && !ctrl) {
-      event.preventDefault();
-      this.#focusChip(event.key === 'Home' ? 0 : count - 1);
-    } else if (this.groupPanelMenu && (isContextMenuKey(event) || (!this.#canSortByUser(column) && isActivationKey(event)))) {
-      event.preventDefault();
-      this.#groupMenu.show({ column, returnFocus: event.currentTarget as HTMLElement });
+      this.#openGroupPanelMenu(event.currentTarget as HTMLElement, null, null);
     } else if (isActivationKey(event) && !event.repeat && this.#canSortByUser(column)) {
       event.preventDefault();
       this.#onGroupChipActivate(column, event);
@@ -9376,12 +9539,6 @@ export class DataGrid extends LitElement {
         this.#setActive({ row: HEADER_ROW, col }, 'user', { focus: true });
       }
     });
-  }
-
-  #focusChip(index: number): void {
-    this.#activeChip = index;
-    this.#chipFocusPending = true;
-    this.requestUpdate();
   }
 
   // ----------------------------------------------------------------- render
@@ -9457,6 +9614,9 @@ export class DataGrid extends LitElement {
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
+            @contextmenu=${this.#onTableContextMenu}
+            @pointerdown=${this.#onLongPressStart}
+            @click=${this.#longPressClickCapture}
             @beforecopy=${this.#onBeforeCopy}
             @focusin=${this.#onGridFocusIn}
             @focusout=${this.#onGridFocusOut}>
@@ -9484,8 +9644,8 @@ export class DataGrid extends LitElement {
       </div>
       ${this.#inTextLanguage(this.paging ? this.#renderPager() : nothing)}
       </div>
-      ${this.#inTextLanguage(this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing)}
-      ${this.#inTextLanguage(this.#columnMenu.open ? this.#renderColumnHeaderMenu() : nothing)}
+      ${this.#contextMenu.open ? this.#renderContextMenu() : nothing}
+      ${this.#toolbarMenu.open ? this.#renderToolbarMenu() : nothing}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" lang=${this.#textLanguage}>${this.#announcement}</div>
       ${this.#editingOn
         ? html`<div hidden lang=${this.#textLanguage}><span id="edit-desc-added">${this.#translation.addedRowDescription}</span><span
@@ -9779,7 +9939,6 @@ export class DataGrid extends LitElement {
         : nothing,
       filtered: hasColumnCondition(filterValue, column),
       description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
-      onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
       menuButton: this.#renderColumnMenuButton(column),
       keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
       label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
@@ -9831,7 +9990,6 @@ export class DataGrid extends LitElement {
         ...this.#hasMovableNeighbor(column) ? ['Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight'] : [],
         ...hasMenu ? ['Shift+F10', 'F2'] : [],
       ].join(' '),
-      onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
       menuButton: this.#renderColumnMenuButton(column),
       label: column.headerRenderer ? this.#renderHeaderContent(column, id) : column.label,
     });
@@ -10916,93 +11074,1811 @@ export class DataGrid extends LitElement {
       : content;
   }
 
-  /** Barra acima da tabela: painel de grupos, busca e/ou botão do seletor de colunas. */
-  #renderToolbar() {
-    const editBar = this.#showEditBar;
+  // ------------------------------------------------ barra de ferramentas (frente 18)
 
-    if (!this.showGroupPanel && !this.columnChooser && !this.showSearchPanel && !editBar) {
+  /** O recurso do embutido está ligado (sem isso ele não aparece). */
+  #toolbarFeatureOn(name: GridToolbarItemName): boolean {
+    switch (name) {
+      case 'groupPanel':
+        return this.showGroupPanel;
+      case 'searchPanel':
+        return this.showSearchPanel;
+      case 'columnChooserButton':
+        return this.columnChooser;
+      case 'exportButton':
+        return this.#exportEntries().length > 0;
+      case 'addRowButton':
+        return this.#editingOn && this.allowAdding;
+      case 'saveButton':
+      case 'discardButton':
+        return this.#editingOn && this.#editMode === 'batch';
+    }
+  }
+
+  /** Entradas do menu exportar (um formato só com o exportador; "selecionadas" com seleção ligada). */
+  #exportEntries(): { key: string; label: string; format: GridExportFormat; selectedOnly: boolean; disabled: boolean }[] {
+    const translation = this.#translation;
+    const selection = this.#selectionMode !== 'none';
+    const entries: { key: string; label: string; format: GridExportFormat; selectedOnly: boolean; disabled: boolean }[] = [];
+
+    for (const format of this.#exportFormats) {
+      if (format === 'xlsx' && typeof this.xlsxExporter !== 'function') {
+        if (!this.#warnedXlsxExporter) {
+          this.#warnedXlsxExporter = true;
+          console.warn('<u-grid>: export format "xlsx" needs "xlsxExporter" (createXlsxExporter from "@universal-material/data-grid/export-xlsx"); its entries are not shown.');
+        }
+
+        continue;
+      }
+
+      const csv = format === 'csv';
+      entries.push({ key: `export:${format}:all`, label: csv ? translation.exportCsv : translation.exportXlsx, format, selectedOnly: false, disabled: false });
+
+      if (selection) {
+        entries.push({
+          key: `export:${format}:selected`,
+          label: csv ? translation.exportSelectedCsv : translation.exportSelectedXlsx,
+          format,
+          selectedOnly: true,
+          disabled: this.#selection.size === 0,
+        });
+      }
+    }
+
+    return entries;
+  }
+
+  #warnedXlsxExporter = false;
+
+  /**
+   * Exportação pela interface: `u-grid-exporting` (cancelável) →
+   * `downloadCsv`/`xlsxExporter` → `u-grid-export` ou `u-grid-export-error`.
+   * "Exportando…" só depois de 1 s; desconectar aborta.
+   */
+  async #runExport(format: GridExportFormat, selectedOnly: boolean): Promise<void> {
+    const translation = this.#translation;
+
+    if (this.#exporting) {
+      // Ocupado: ativar de novo relê o "Exportando…" (marca alternada).
+      this.#announce(translation.exportingAnnouncement);
+      return;
+    }
+
+    const detail: GridExportingEventDetail = { format, selectedOnly };
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-exporting', { ...this.#eventInit(detail), cancelable: true }))) {
+      return;
+    }
+
+    const controller = new AbortController();
+    this.#exporting = controller;
+    this.#exportTimer = setTimeout(() => {
+      this.#exportTimer = undefined;
+      this.#announce(translation.exportingAnnouncement);
+    }, 1000);
+    this.requestUpdate();
+
+    try {
+      if (format === 'csv') {
+        await this.downloadCsv({ ...this.csvExportOptions, selectedOnly, signal: controller.signal });
+      } else {
+        await this.xlsxExporter!(this, { selectedOnly, signal: controller.signal });
+      }
+
+      controller.signal.throwIfAborted();
+      this.dispatchEvent(new CustomEvent('u-grid-export', this.#eventInit<GridExportingEventDetail>({ format, selectedOnly })));
+      this.#announce(formatMessage(this.#translation.exportCompleteAnnouncement, { format: format === 'csv' ? 'CSV' : 'Excel' }));
+    } catch (error) {
+      // Desconectado no meio: nada a avisar.
+      if (!controller.signal.aborted) {
+        console.error('<u-grid>: the export failed.', error);
+        this.dispatchEvent(new CustomEvent('u-grid-export-error', this.#eventInit<GridExportErrorEventDetail>({ format, selectedOnly, error })));
+        this.#announce(this.#translation.exportErrorAnnouncement);
+      }
+    } finally {
+      clearTimeout(this.#exportTimer);
+      this.#exportTimer = undefined;
+
+      if (this.#exporting === controller) {
+        this.#exporting = null;
+        this.requestUpdate();
+      }
+    }
+  }
+
+  #exporting: AbortController | null = null;
+  #exportTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Solto no disconnect (spec 14): aborta a exportação em curso e o timer do anúncio. */
+  #releaseExport(): void {
+    this.#exporting?.abort();
+    this.#exporting = null;
+    clearTimeout(this.#exportTimer);
+    this.#exportTimer = undefined;
+  }
+
+  /** Item do roving da barra que tem o ponto de Tab (chave lógica e posição, para o vizinho do mesmo índice). */
+  #toolbarActiveKey: string | null = null;
+  #toolbarActiveIndex = 0;
+  #toolbarFocusPending = false;
+  /** Itens recolhidos no "mais" (chaves das entradas). */
+  #toolbarOverflow: ReadonlySet<string> = new Set();
+  /** Larguras medidas dos itens recolhíveis (com o espaço entre itens). */
+  readonly #toolbarWidths = new Map<string, number>();
+  /** Assinatura do que muda a medida (itens, idioma, status); diferente = medir de novo depois do render. */
+  #toolbarSignature = '';
+  #toolbarMeasuredSignature = '';
+  #resolvedToolbar: ResolvedToolbar | null = null;
+  readonly #rovingRef: Ref<HTMLDivElement> = createRef();
+
+  /** O foco estava na barra antes do render (o item focado pode sair: chip, recolhido). */
+  #toolbarHadFocus = false;
+
+  /** Rótulo de um botão embutido (o `text` do hospedeiro substitui). */
+  #builtInToolbarText(entry: Extract<ToolbarEntry, { kind: 'built-in' }>): string {
+    const translation = this.#translation;
+
+    if (entry.item.text) {
+      return entry.item.text;
+    }
+
+    switch (entry.name) {
+      case 'addRowButton':
+        return translation.addRow;
+      case 'saveButton':
+        return translation.saveChanges;
+      case 'discardButton':
+        return translation.discardChanges;
+      case 'exportButton':
+        return translation.exportButtonLabel;
+      case 'columnChooserButton':
+        return translation.columnChooser;
+      default:
+        return '';
+    }
+  }
+
+  /** O texto do botão é do hospedeiro (sem o `lang` da i18n). */
+  #isHostText(entry: ToolbarEntry): boolean {
+    return entry.kind !== 'built-in' || !!entry.item.text;
+  }
+
+  /** Idioma do conteúdo do hospedeiro (o `lang` mais próximo dele), para os textos que ele deu. */
+  get #contentLanguage(): string {
+    return (typeof this.closest === 'function' ? this.closest('[lang]')?.getAttribute('lang') : undefined) ?? '';
+  }
+
+  /** O item embutido está desabilitado agora (salvar/descartar sem mudanças, salvando, exportando). */
+  #builtInDisabled(entry: Extract<ToolbarEntry, { kind: 'built-in' }>): boolean {
+    if (entry.item.disabled) {
+      return true;
+    }
+
+    const saving = !!this.#saving;
+
+    switch (entry.name) {
+      case 'addRowButton':
+        return saving;
+      case 'saveButton':
+      case 'discardButton':
+        return saving || !this.hasChanges();
+      default:
+        return false;
+    }
+  }
+
+  /** Ativa um item da barra (na barra ou no "mais"); `returnFocus` = onde o foco volta. */
+  #activateToolbarEntry(entry: ToolbarEntry, opener: HTMLElement | null): void {
+    if (entry.kind === 'button') {
+      if (entry.item.disabled) {
+        return;
+      }
+
+      try {
+        entry.item.action({ toolbarItem: entry.item, grid: this });
+      } catch (error) {
+        console.error('<u-grid>: a toolbar item action threw.', error);
+      }
+
+      return;
+    }
+
+    if (entry.kind !== 'built-in' || this.#builtInDisabled(entry)) {
+      return;
+    }
+
+    switch (entry.name) {
+      case 'addRowButton':
+        this.#addRow({}, 'user', opener);
+        break;
+      case 'saveButton':
+        void this.#save('user');
+        break;
+      case 'discardButton':
+        this.#discard('user');
+        break;
+      case 'columnChooserButton':
+        this.#chooser.toggle(opener);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Recolhidos: os medidos e os `always` (estes já no 1º render e no SSR, sem medida). */
+  #effectiveOverflow(roving: readonly ToolbarEntry[]): ReadonlySet<string> {
+    const always = roving.filter(entry => entry.kind !== 'content' && entry.inMenu === 'always');
+
+    return always.length ? new Set([...this.#toolbarOverflow, ...always.map(entry => entry.key)]) : this.#toolbarOverflow;
+  }
+
+  /** Barra acima da tabela (frente 18): avulsos, roving (`role="toolbar"`) e o "mais". */
+  #renderToolbar() {
+    const resolved = resolveToolbar(this.#toolbarItems, name => this.#toolbarFeatureOn(name));
+    this.#resolvedToolbar = resolved;
+
+    const status = this.#savingSlow ? this.#translation.saving : this.#editStatus;
+    const roving = [...resolved.start, ...resolved.end];
+
+    if (!roving.length && !resolved.leading.length && !resolved.trailing.length && !status) {
+      return nothing;
+    }
+
+    const overflow = this.#effectiveOverflow(roving);
+    const visible = (entry: ToolbarEntry) => !isCollapsible(entry) || !overflow.has(entry.key);
+    const start = resolved.start.filter(visible);
+    const end = resolved.end.filter(visible);
+    const more = roving.filter(entry => isCollapsible(entry) && overflow.has(entry.key));
+    const groupPanel = start.find(entry => entry.kind === 'built-in' && entry.name === 'groupPanel')
+      ?? end.find(entry => entry.kind === 'built-in' && entry.name === 'groupPanel');
+
+    // Chaves do roving na ordem do DOM (= ordem visual; RTL só inverte as setas).
+    const keys: string[] = [];
+    const pushKeys = (entries: ToolbarEntry[]) => entries.forEach(entry => {
+      if (entry === groupPanel) {
+        this._groupColumns.forEach((_column, index) => keys.push(`chip:${index}`));
+      } else {
+        keys.push(entry.key);
+      }
+    });
+
+    pushKeys(start);
+    pushKeys(end);
+
+    if (more.length) {
+      keys.push('more');
+    }
+
+    const stored = this.#toolbarActiveKey;
+    const active = stored && keys.includes(stored)
+      ? stored
+      : stored && overflow.has(stored) && more.length ? 'more' : keys[Math.min(this.#toolbarActiveIndex, keys.length - 1)] ?? null;
+
+    this.#toolbarActiveKey = active;
+    this.#toolbarActiveIndex = active ? keys.indexOf(active) : 0;
+    this.#toolbarSignature = `${roving.map(entry => entry.key).join()}|${this.#textLanguage}|${status}|${this.#translation === resolveGridTranslation(this.#textLanguage)}`;
+
+    const toolbarRole = keys.length >= 2;
+    const hostName = this.#hostLabel.name;
+    const label = hostName ? `${hostName}, ${this.#translation.toolbarLabel}` : this.#translation.toolbarLabel;
+
+    return html`
+      <div class="header" part="toolbar" ${ref(this.#toolbarRef)}>
+        ${map(resolved.leading, entry => this.#renderStandalone(entry))}
+        <div
+          class="toolbar-roving"
+          role=${ifDefined(toolbarRole ? 'toolbar' : undefined)}
+          aria-label=${ifDefined(toolbarRole ? label : undefined)}
+          ${ref(this.#rovingRef)}
+          @keydown=${this.#onToolbarKeyDown}
+          @focusin=${this.#onToolbarFocusIn}>
+          ${map(start, entry => this.#renderRovingEntry(entry, active))}
+          ${groupPanel ? nothing : html`<div class="toolbar-spacer"></div>`}
+          ${status ? html`<span class="edit-status" lang=${this.#textLanguage}>${status}</span>` : nothing}
+          ${map(end, entry => this.#renderRovingEntry(entry, active))}
+          ${more.length ? this.#renderMoreButton(active) : nothing}
+        </div>
+        ${map(resolved.trailing, entry => this.#renderStandalone(entry))}
+      </div>
+    `;
+  }
+
+  /** Avulsos (fora do roving): a busca e o conteúdo do hospedeiro. */
+  #renderStandalone(entry: ToolbarEntry) {
+    if (entry.kind === 'built-in') {
+      return this.#inTextLanguage(renderSearchPanel(this.#search, this.#translation));
+    }
+
+    if (entry.kind !== 'content') {
+      return nothing;
+    }
+
+    const item: GridToolbarContentItem = entry.item;
+    const renderer = item.renderer;
+    const grid = this;
+
+    return html`<div class="toolbar-content" data-toolbar-key=${entry.key}>${rendererContent({
+      host: this,
+      slotName: `u-grid-internal:toolbar:${entry.key}`,
+      deps: [item, renderer, this.#renderEpoch()],
+      renderer,
+      demote: false,
+      invoke: signal => renderer({
+        toolbarItem: item,
+        grid,
+        get signal() {
+          return signal();
+        },
+      }),
+    })}</div>`;
+  }
+
+  #renderRovingEntry(entry: ToolbarEntry, active: string | null) {
+    if (entry.kind === 'built-in' && entry.name === 'groupPanel') {
+      return this.#renderGroupPanel(active);
+    }
+
+    if (entry.kind === 'button') {
+      const item: GridToolbarButtonItem = entry.item;
+      const iconOnly = item.showText === 'in-menu' && item.icon !== undefined && item.icon !== null;
+
+      return html`<button
+        class="toolbar-button ${iconOnly ? 'icon-only' : ''}"
+        part="toolbar-button"
+        type="button"
+        data-roving=${entry.key}
+        data-toolbar-key=${entry.key}
+        tabindex=${entry.key === active ? 0 : -1}
+        lang=${this.#contentLanguage}
+        aria-label=${ifDefined(iconOnly ? item.text : undefined)}
+        title=${ifDefined(iconOnly ? item.text : undefined)}
+        aria-disabled=${item.disabled ? 'true' : 'false'}
+        @click=${(event: MouseEvent) => this.#activateToolbarEntry(entry, event.currentTarget as HTMLElement)}>${item.icon !== undefined && item.icon !== null
+          ? html`<span class="toolbar-icon" aria-hidden="true">${item.icon}</span>`
+          : nothing}${iconOnly ? nothing : html`<span>${item.text}</span>`}</button>`;
+    }
+
+    if (entry.kind !== 'built-in') {
       return nothing;
     }
 
     const translation = this.#translation;
+    const text = this.#builtInToolbarText(entry);
+    const disabled = this.#builtInDisabled(entry);
+    const lang = this.#isHostText(entry) ? this.#contentLanguage : this.#textLanguage;
+    const common = {
+      key: entry.key,
+      tabindex: entry.key === active ? 0 : -1,
+    };
 
+    switch (entry.name) {
+      case 'columnChooserButton': {
+        const withText = entry.item.showText === 'always';
+
+        return html`<button
+          class="column-chooser-button toolbar-button ${withText ? '' : 'icon-only'}"
+          part="toolbar-button column-chooser-button"
+          type="button"
+          data-roving=${common.key}
+          data-toolbar-key=${common.key}
+          tabindex=${common.tabindex}
+          lang=${lang}
+          aria-label=${ifDefined(withText ? undefined : text)}
+          title=${ifDefined(withText ? undefined : text)}
+          aria-haspopup="dialog"
+          aria-expanded=${this.#chooser.open ? 'true' : 'false'}
+          aria-disabled=${disabled ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => this.#activateToolbarEntry(entry, event.currentTarget as HTMLElement)}>${columnChooserIcon}${withText
+            ? html`<span>${text}</span>`
+            : nothing}</button>`;
+      }
+
+      case 'exportButton': {
+        const entries = this.#exportEntries();
+        const single = entries.length === 1 ? entries[0] : undefined;
+        const withText = entry.item.showText === 'always';
+        const busy = !!this.#exporting;
+        const open = this.#toolbarMenu.open && this.#toolbarMenu.data?.kind === 'export';
+
+        return html`<button
+          class="export-button toolbar-button ${withText ? '' : 'icon-only'}"
+          id="u-grid-export-button"
+          part="toolbar-button export-button"
+          type="button"
+          data-roving=${common.key}
+          data-toolbar-key=${common.key}
+          tabindex=${common.tabindex}
+          lang=${lang}
+          aria-label=${ifDefined(withText ? undefined : single ? single.label : text)}
+          title=${ifDefined(withText ? undefined : single ? single.label : text)}
+          aria-haspopup=${ifDefined(single ? undefined : 'menu')}
+          aria-expanded=${ifDefined(single ? undefined : open ? 'true' : 'false')}
+          aria-disabled=${disabled || busy ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => {
+            const button = event.currentTarget as HTMLElement;
+
+            if (disabled) {
+              return;
+            }
+
+            if (busy) {
+              this.#announce(translation.exportingAnnouncement);
+            } else if (single) {
+              void this.#runExport(single.format, single.selectedOnly);
+            } else if (open) {
+              this.#toolbarMenu.hide(true);
+            } else {
+              this.#openToolbarMenu('export', button);
+            }
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            if (!single && !busy && !disabled && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+              event.preventDefault();
+              this.#openToolbarMenu('export', event.currentTarget as HTMLElement, event.key === 'ArrowUp');
+            }
+          }}>${exportIcon}${withText ? html`<span>${text}</span>` : nothing}</button>`;
+      }
+
+      case 'addRowButton': {
+        const iconOnly = entry.item.showText === 'in-menu';
+
+        return html`<button
+          class="edit-bar-button add-row-button toolbar-button ${iconOnly ? 'icon-only' : ''}"
+          part="toolbar-button add-row-button"
+          type="button"
+          data-roving=${common.key}
+          data-toolbar-key=${common.key}
+          tabindex=${common.tabindex}
+          lang=${lang}
+          aria-label=${ifDefined(iconOnly ? text : undefined)}
+          title=${ifDefined(iconOnly ? text : undefined)}
+          aria-disabled=${disabled ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => this.#activateToolbarEntry(entry, event.currentTarget as HTMLElement)}><svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 -960 960 960"
+            width="18"
+            height="18"
+            fill="currentColor"
+            aria-hidden="true"><path d=${ADD_PATH}/></svg>${iconOnly ? nothing : text}</button>`;
+      }
+
+      case 'saveButton':
+        return html`<button
+          class="edit-bar-button toolbar-button save-button"
+          part="toolbar-button save-button"
+          type="button"
+          data-roving=${common.key}
+          data-toolbar-key=${common.key}
+          tabindex=${common.tabindex}
+          lang=${lang}
+          aria-disabled=${disabled ? 'true' : 'false'}
+          aria-busy=${this.#saving ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => this.#activateToolbarEntry(entry, event.currentTarget as HTMLElement)}>${text}</button>`;
+      case 'discardButton':
+        return html`<button
+          class="edit-bar-button toolbar-button discard-button"
+          part="toolbar-button discard-button"
+          type="button"
+          data-roving=${common.key}
+          data-toolbar-key=${common.key}
+          tabindex=${common.tabindex}
+          lang=${lang}
+          aria-disabled=${disabled ? 'true' : 'false'}
+          @click=${(event: MouseEvent) => this.#activateToolbarEntry(entry, event.currentTarget as HTMLElement)}>${text}</button>`;
+      default:
+        return nothing;
+    }
+  }
+
+  #renderMoreButton(active: string | null) {
+    const label = this.#translation.toolbarMoreButtonLabel;
+    const open = this.#toolbarMenu.open && this.#toolbarMenu.data?.kind === 'more';
+
+    return html`<button
+      class="toolbar-more-button toolbar-button icon-only"
+      id="u-grid-toolbar-more-button"
+      part="toolbar-more-button"
+      type="button"
+      data-roving="more"
+      tabindex=${active === 'more' ? 0 : -1}
+      lang=${this.#textLanguage}
+      aria-label=${label}
+      title=${label}
+      aria-haspopup="menu"
+      aria-expanded=${open ? 'true' : 'false'}
+      @click=${(event: MouseEvent) => {
+        if (open) {
+          this.#toolbarMenu.hide(true);
+        } else {
+          this.#openToolbarMenu('more', event.currentTarget as HTMLElement);
+        }
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          this.#openToolbarMenu('more', event.currentTarget as HTMLElement, event.key === 'ArrowUp');
+        }
+      }}></button>`;
+  }
+
+  #openToolbarMenu(kind: 'more' | 'export', button: HTMLElement, last = false): void {
+    this.#contextMenu.hide();
+    this.#toolbarMenu.show({ returnFocus: button, opener: button, focusLast: last, data: { kind } });
+  }
+
+  /** Entradas do "mais" (recolhidos na ordem da barra; exportar achatado com separador) ou do exportar. */
+  #toolbarMenuEntries(kind: 'more' | 'export'): { entry: MenuEntry; run: (opener: HTMLElement | null) => void }[] {
+    const exportEntries = () => this.#exportEntries().map((option, index) => ({
+      entry: {
+        key: option.key,
+        label: option.label,
+        disabled: option.disabled || !!this.#exporting,
+        separatorBefore: kind === 'more' && index === 0,
+        lang: this.#textLanguage,
+      },
+      run: () => {
+        void this.#runExport(option.format, option.selectedOnly);
+      },
+    }));
+
+    if (kind === 'export') {
+      return exportEntries();
+    }
+
+    const resolved = this.#resolvedToolbar;
+    const roving = resolved ? [...resolved.start, ...resolved.end] : [];
+    const overflow = this.#effectiveOverflow(roving);
+    const result: { entry: MenuEntry; run: (opener: HTMLElement | null) => void }[] = [];
+
+    for (const item of roving) {
+      if (!isCollapsible(item) || !overflow.has(item.key)) {
+        continue;
+      }
+
+      if (item.kind === 'button') {
+        result.push({
+          entry: { key: item.key, label: item.item.text, disabled: !!item.item.disabled, lang: this.#contentLanguage },
+          run: opener => this.#activateToolbarEntry(item, opener),
+        });
+      } else if (item.kind === 'built-in' && item.name === 'exportButton') {
+        result.push(...exportEntries());
+      } else if (item.kind === 'built-in') {
+        const after = result.length > 0 && result[result.length - 1].entry.key.startsWith('export:');
+        result.push({
+          entry: {
+            key: item.key,
+            label: this.#builtInToolbarText(item),
+            disabled: this.#builtInDisabled(item),
+            separatorBefore: after,
+            lang: this.#isHostText(item) ? this.#contentLanguage : this.#textLanguage,
+            hasPopup: item.name === 'columnChooserButton' ? 'dialog' : undefined,
+          },
+          run: opener => this.#activateToolbarEntry(item, opener),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  #renderToolbarMenu() {
+    const state = this.#toolbarMenu.data!;
+    const entries = this.#toolbarMenuEntries(state.kind);
+    const labelledBy = state.kind === 'more' ? 'u-grid-toolbar-more-button' : 'u-grid-export-button';
+
+    return renderMenu({
+      className: 'toolbar-menu',
+      part: 'menu toolbar-menu',
+      labelledBy,
+      entries: entries.map(({ entry }) => entry),
+      onKeyDown: this.#toolbarMenu.onKeyDown,
+      onAction: key => {
+        const found = entries.find(({ entry }) => entry.key === key);
+        const opener = this.#toolbarMenu.opener;
+
+        if (!found) {
+          return;
+        }
+
+        // Seletor e "Adicionar linha" levam o foco (painel, editor); o resto volta ao botão.
+        const movesFocus = key === 'b:columnChooserButton' || key === 'b:addRowButton';
+
+        if (movesFocus) {
+          this.#toolbarMenu.hide();
+        } else {
+          this.#toolbarMenu.hideAndFocus();
+        }
+
+        found.run(opener);
+      },
+    });
+  }
+
+  /** Roving da barra (APG Toolbar): ←/→ (invertidas em RTL), Home/End; o resto segue para o item. */
+  readonly #onToolbarKeyDown = (event: KeyboardEvent): void => {
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+
+    const target = event.composedPath()[0] as HTMLElement;
+    const key = target instanceof HTMLElement ? target.getAttribute('data-roving') : null;
+    const container = this.#rovingRef.value;
+
+    if (!key || !container) {
+      return;
+    }
+
+    const items = [...container.querySelectorAll<HTMLElement>('[data-roving]')];
+    const index = items.indexOf(target);
+    const forward = (event.key === 'ArrowRight') !== this._isRtl();
+    let next: number;
+
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        next = Math.min(Math.max(index + (forward ? 1 : -1), 0), items.length - 1);
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = items.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    this.#focusToolbarItem(items[next]);
+  };
+
+  /** Foco que entra num item do roving: ele passa a ter o ponto de Tab. */
+  readonly #onToolbarFocusIn = (event: FocusEvent): void => {
+    const target = event.composedPath()[0];
+    const key = target instanceof HTMLElement ? target.getAttribute('data-roving') : null;
+
+    if (key && key !== this.#toolbarActiveKey) {
+      this.#setToolbarActive(key);
+      this.requestUpdate();
+    }
+  };
+
+  #setToolbarActive(key: string): void {
+    const container = this.#rovingRef.value;
+    const keys = container ? [...container.querySelectorAll<HTMLElement>('[data-roving]')].map(item => item.getAttribute('data-roving')) : [];
+
+    this.#toolbarActiveKey = key;
+    this.#toolbarActiveIndex = Math.max(keys.indexOf(key), 0);
+  }
+
+  #focusToolbarItem(item: HTMLElement | undefined): void {
+    const key = item?.getAttribute('data-roving');
+
+    if (!item || !key) {
+      return;
+    }
+
+    this.#setToolbarActive(key);
+    // O `tabindex` muda no render; o foco vai já.
+    item.focus();
+    this.requestUpdate();
+  }
+
+  /** Foca o item `key` do roving depois do render (ou o do mesmo índice, se ele saiu). */
+  #focusToolbarKey(key: string): void {
+    this.#setToolbarActive(key);
+    this.#toolbarFocusPending = true;
+    this.requestUpdate();
+  }
+
+  /**
+   * Depois do render: o item focado que saiu (chip desagrupado, recolhido,
+   * recurso desligado) leva o foco ao item com o ponto de Tab; mede o que
+   * cabe se algo mudou.
+   */
+  #afterToolbarRender(): void {
+    const container = this.#rovingRef.value;
+
+    if (this.#toolbarFocusPending || (this.#toolbarHadFocus && !this.shadowRoot?.activeElement)) {
+      const target = container?.querySelector<HTMLElement>('[data-roving][tabindex="0"]');
+
+      if (target) {
+        target.focus();
+        this.#hadFocusBeforeRender = false;
+      }
+    }
+
+    this.#toolbarFocusPending = false;
+    this.#toolbarHadFocus = false;
+
+    if (container && this.#toolbarSignature !== this.#toolbarMeasuredSignature) {
+      this.#measureToolbar();
+    }
+  }
+
+  /**
+   * O que cabe numa linha: mede os itens recolhíveis visíveis (largura +
+   * espaço), o fixo (painel de grupos pela largura mínima, status, botões
+   * que nunca recolhem) e decide o "mais". Só no `ResizeObserver` e quando os
+   * itens/idioma/status mudam (nunca a cada render).
+   */
+  #measureToolbar(): void {
+    const container = this.#rovingRef.value;
+    const resolved = this.#resolvedToolbar;
+
+    if (!container?.isConnected || !resolved) {
+      return;
+    }
+
+    const signature = this.#toolbarSignature;
+
+    if (signature.split('|').slice(0, 3)
+      .join('|') !== this.#toolbarMeasuredSignature.split('|').slice(0, 3)
+      .join('|')) {
+      // Itens ou idioma mudaram: larguras velhas não valem.
+      this.#toolbarWidths.clear();
+    }
+
+    this.#toolbarMeasuredSignature = signature;
+
+    const style = getComputedStyle(container);
+    const gap = parseFloat(style.columnGap) || 0;
+    const collapsible = new Set([...resolved.start, ...resolved.end].filter(isCollapsible).map(entry => entry.key));
+    let fixed = 0;
+    let moreWidth = 40 + gap;
+
+    for (const child of container.children) {
+      if (!(child instanceof HTMLElement)) {
+        continue;
+      }
+
+      const key = child.getAttribute('data-toolbar-key');
+
+      if (key && collapsible.has(key)) {
+        this.#toolbarWidths.set(key, child.offsetWidth + gap);
+      } else if (child.classList.contains('toolbar-more-button')) {
+        moreWidth = child.offsetWidth + gap;
+      } else if (child.classList.contains('group-container')) {
+        const min = parseFloat(getComputedStyle(child).minWidth);
+
+        fixed += (Number.isNaN(min) ? 120 : min) + gap;
+      } else if (!child.classList.contains('toolbar-spacer') && !child.classList.contains('lang-scope')) {
+        fixed += child.offsetWidth + gap;
+      } else if (child.classList.contains('lang-scope')) {
+        fixed += [...child.children].reduce((sum, inner) => sum + (inner as HTMLElement).offsetWidth + gap, 0);
+      }
+    }
+
+    const available = container.clientWidth - (parseFloat(style.paddingInlineStart) || 0) - (parseFloat(style.paddingInlineEnd) || 0) + gap;
+    const next = overflowKeys([...resolved.start, ...resolved.end], available, fixed, moreWidth, key => this.#toolbarWidths.get(key));
+    const current = this.#toolbarOverflow;
+
+    if (next.size !== current.size || [...next].some(key => !current.has(key))) {
+      this.#toolbarOverflow = next;
+
+      // Menu "mais" aberto com itens trocados: fecha e devolve o foco ao "mais".
+      if (this.#toolbarMenu.open && this.#toolbarMenu.data?.kind === 'more') {
+        this.#toolbarMenu.hide(next.size > 0);
+      }
+
+      this.requestUpdate();
+    }
+  }
+
+  /** Painel de grupos: `role="group"` dentro da barra; os chips entram no roving dela. */
+  #renderGroupPanel(active: string | null) {
     return html`
-      <div class="header" ${ref(this.#toolbarRef)}>
-        ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
-        ${editBar ? this.#inTextLanguage(this.#renderEditBar()) : nothing}
-        ${this.#inTextLanguage(this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing)}
-        ${this.columnChooser
+      <div
+        class="group-container"
+        role="group"
+        aria-label=${this.#translation.groupPanelLabel}
+        lang=${this.#textLanguage}
+        ${ref(this._groupContainerRef)}
+        @pointerdown=${this.#onLongPressStart}
+        @click=${this.#longPressClickCapture}
+        @contextmenu=${this.#onGroupPanelContextMenu}>
+        ${this._groupColumns.length
           ? html`
-            <button
-              class="column-chooser-button"
-              type="button"
-              aria-label=${translation.columnChooser}
-              title=${translation.columnChooser}
-              aria-haspopup="dialog"
-              aria-expanded=${this.#chooser.open ? 'true' : 'false'}
-              @click=${() => this.#chooser.toggle()}>${columnChooserIcon}</button>`
-          : nothing}
+            ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index, active))}
+            <div class="group-end-dropzone"></div>`
+          : html`<div class="drag-here">${this.#translation.dragToGroup}</div>`}
       </div>
     `;
   }
 
-  /** Barra da edição: "Adicionar linha", "Salvar"/"Descartar" (lote) e a mensagem persistente. */
-  get #showEditBar(): boolean {
-    return (this.#editingOn && (this.allowAdding || this.#editMode === 'batch')) || !!this.#editStatus || this.#savingSlow;
-  }
-
-  #renderEditBar() {
+  /**
+   * Chip de uma coluna agrupada: arrastável; Enter/Espaço alternam a direção
+   * dos grupos (se ordenável) ou abrem o menu do painel; Shift+F10/tecla de
+   * menu abrem o menu; Alt+Shift+←/→ muda o nível, Ctrl+G/Delete desagrupa.
+   * ←/→/Home/End são do roving da barra.
+   */
+  #renderGroupChip(column: GridColumnDef, index: number, active: string | null) {
+    const sortable = this.#canSortByUser(column);
+    const menu = this.groupPanelMenu;
+    // Só é "botão de menu" quando a ativação abre o menu; no ordenável a ativação ordena.
+    const opensMenu = menu && !sortable;
+    const order = this.#orderOf(column) ?? 'asc';
     const translation = this.#translation;
-    const status = this.#savingSlow ? translation.saving : this.#editStatus;
-    const batch = this.#editingOn && this.#editMode === 'batch';
-    const empty = !this.hasChanges();
-    const saving = !!this.#saving;
+    const key = `chip:${index}`;
 
     return html`
-      <div class="edit-bar">
-        ${this.#editingOn && this.allowAdding
-          ? html`<button
-            class="edit-bar-button add-row-button"
-            part="add-row-button"
-            type="button"
-            aria-disabled=${saving ? 'true' : 'false'}
-            @click=${(event: MouseEvent) => {
-              if (!this.#saving) {
-                this.#addRow({}, 'user', event.currentTarget as HTMLElement);
-              }
-            }}><svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 -960 960 960"
-              width="18"
-              height="18"
-              fill="currentColor"
-              aria-hidden="true"><path d=${ADD_PATH}/></svg>${translation.addRow}</button>`
-          : nothing}
-        ${batch
-          ? html`<button
-              class="edit-bar-button save-button"
-              part="save-button"
-              type="button"
-              aria-disabled=${empty || saving ? 'true' : 'false'}
-              aria-busy=${saving ? 'true' : 'false'}
-              @click=${() => {
-                if (this.hasChanges() && !this.#saving) {
-                  void this.#save('user');
-                }
-              }}>${translation.saveChanges}</button><button
-              class="edit-bar-button discard-button"
-              part="discard-button"
-              type="button"
-              aria-disabled=${empty || saving ? 'true' : 'false'}
-              @click=${() => {
-                if (this.hasChanges() && !this.#saving) {
-                  this.#discard('user');
-                }
-              }}>${translation.discardChanges}</button>`
-          : nothing}
-        ${status ? html`<span class="edit-status">${status}</span>` : nothing}
-      </div>
-    `;
+      <div
+        class="group ${classMap({ sortable })}"
+        part="group-chip"
+        style="--_order: ${index}"
+        role="button"
+        data-roving=${key}
+        tabindex=${key === active ? 0 : -1}
+        lang=${this.#contentLanguage}
+        aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
+        aria-expanded=${ifDefined(opensMenu ? this.#contextMenuOpenFor('group-panel', column) ? 'true' : 'false' : undefined)}
+        aria-keyshortcuts=${`${menu && sortable ? 'Shift+F10 ' : ''}Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G`}
+        aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
+        @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
+        @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
+        @keydown=${(event: KeyboardEvent) => this.#onChipKeyDown(column, index, event)}>
+        <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
+      </div>`;
+  }
+
+  /** Desagrupar tirou o chip focado: o foco vai ao item da barra no mesmo lugar (chip vizinho ou o próximo item). */
+  #focusAfterUngroup(chipIndex: number): void {
+    const chips = this._groupColumns.length;
+    this.#focusToolbarKey(chips ? `chip:${Math.min(chipIndex, chips - 1)}` : `chip:${chipIndex}`);
+  }
+
+  #focusChip(index: number): void {
+    this.#focusToolbarKey(`chip:${index}`);
+  }
+
+  // ---------------------------------------------- menu de contexto (frente 18)
+
+  /** O menu de contexto aberto é este (alvo e coluna)? */
+  #contextMenuOpenFor(target: GridContextMenuTarget, column: GridColumnDef | null): boolean {
+    const open = this.#contextMenu.data;
+    return !!open && this.#contextMenu.open && open.request.target === target && open.request.column === column;
+  }
+
+  /** Clique direito no painel (num chip: com "Desagrupar" desta coluna). */
+  readonly #onGroupPanelContextMenu = (event: MouseEvent): void => {
+    // O hospedeiro pode cancelar na captura e tratar o próprio menu (como no cabeçalho).
+    if (event.defaultPrevented || event.ctrlKey || this.#skipNativeContextMenu(event)) {
+      return;
+    }
+
+    const chip = event.composedPath().find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
+    this.#openGroupPanelMenu(chip ?? null, { x: event.clientX, y: event.clientY }, event);
+  };
+
+  /** Menu do painel de grupos (chip ou área vazia); o foco volta ao chip (ou ao chip ativo da barra). */
+  #openGroupPanelMenu(chip: HTMLElement | null, point: { x: number; y: number } | null, event: Event | null): boolean {
+    const column = chip ? this._nativeColumnMap.get(chip) ?? null : null;
+    // Na área vazia o foco volta ao item ativo da barra (não ao `<body>`; spec 17).
+    const returnFocus = chip ?? this.#rovingRef.value?.querySelector<HTMLElement>('[data-roving][tabindex="0"]') ?? null;
+
+    return this.#openContextMenuWith(
+      { target: 'group-panel', cellType: null, column, item: null, rowKey: null, groupPath: null },
+      { returnFocus, ...point ?? {}, positionTarget: chip },
+      event,
+    );
+  }
+
+  /** Menu do cabeçalho (coluna ou banda); o cabeçalho vira a célula ativa (Esc volta a ele). */
+  #openHeaderMenu(column: GridColumnDef, cell: HTMLElement, anchor: { x?: number; y?: number; opener?: HTMLElement | null; returnFocus?: HTMLElement | null }, event: Event | null): boolean {
+    const position = this.#positionOf(cell);
+
+    if (position) {
+      this.#setActive(position, 'user');
+    }
+
+    return this.#openContextMenuWith(
+      { target: 'header', cellType: 'header', column, item: null, rowKey: null, groupPath: null },
+      { returnFocus: anchor.returnFocus ?? (() => this.#activeCellElement() ?? cell), x: anchor.x, y: anchor.y, opener: anchor.opener, positionTarget: anchor.opener ?? cell },
+      event,
+    );
+  }
+
+  /** Menu de uma linha do corpo (dados ou grupo) a partir da célula `position`. */
+  #openRowMenu(position: CellPosition, cell: HTMLElement | null, point: { x: number; y: number } | null, event: Event | null, positionTarget?: HTMLElement | null): boolean {
+    const request = this.#rowMenuRequest(position);
+
+    if (!request) {
+      return false;
+    }
+
+    this.#setActive(position, 'user');
+
+    return this.#openContextMenuWith(
+      request,
+      { returnFocus: () => this.#activeCellElement(), ...point ?? {}, positionTarget: positionTarget ?? cell },
+      event,
+    );
+  }
+
+  /** Contexto de uma célula do corpo (só linhas de dados carregadas e de grupo). */
+  #rowMenuRequest(position: CellPosition): ContextMenuRequest | null {
+    const row = this.#rowAt(position.row);
+
+    if (!row) {
+      return null;
+    }
+
+    if (row.isGroup) {
+      return { target: 'group-row', cellType: 'group', column: row.column, item: null, rowKey: null, groupPath: Object.freeze([...row.path]), groupRow: row };
+    }
+
+    if (!isDataRow(row)) {
+      return null;
+    }
+
+    const navColumn = this.#currentNavColumns()[position.col];
+    const cellType: GridCellType = navColumn === SELECTION_COLUMN
+      ? 'selection'
+      : navColumn === DETAIL_TOGGLE_COLUMN ? 'detail-toggle' : navColumn === COMMAND_COLUMN ? 'command' : 'data';
+
+    return {
+      target: 'row',
+      cellType,
+      column: cellType === 'data' ? dataColumnOf(navColumn) ?? null : null,
+      item: row.item,
+      rowKey: this.#keyOf(row.item),
+      groupPath: null,
+      rowIndex: position.row,
+    };
+  }
+
+  /**
+   * Abre um menu de contexto: itens embutidos do alvo → `u-grid-context-menu-opening`
+   * (o hospedeiro mexe em `menuItems`) → itens válidos → menu. Cancelado ou
+   * vazio: não abre e não chama `preventDefault` no evento nativo.
+   */
+  #openContextMenuWith(
+    request: ContextMenuRequest,
+    anchor: { returnFocus: HTMLElement | null | (() => HTMLElement | null); x?: number; y?: number; positionTarget?: HTMLElement | null; opener?: HTMLElement | null },
+    event: Event | null,
+  ): boolean {
+    const builtIns = this.#builtInMenuItems(request);
+    const menuItems: GridContextMenuItem[] = builtIns.map(({ name }) => ({ name }));
+    const { groupRow: _groupRow, rowIndex: _rowIndex, ...context } = request;
+    const detail: GridContextMenuOpeningEventDetail = { ...context, grid: this, menuItems };
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-context-menu-opening', { ...this.#eventInit(detail), cancelable: true }))) {
+      return false;
+    }
+
+    const items = this.#validMenuItems(detail.menuItems, request.target);
+
+    if (!items.length) {
+      return false;
+    }
+
+    event?.preventDefault();
+    this.#toolbarMenu.hide();
+    this.#contextMenu.show({ ...anchor, data: { request, items, available: new Map(builtIns.map(item => [item.name, item])) } });
+    return true;
+  }
+
+  /** Itens do hospedeiro sem nome/ação e embutidos de outro alvo saem (com aviso, uma vez por evento). */
+  #validMenuItems(menuItems: unknown, target: GridContextMenuTarget): GridContextMenuItem[] {
+    if (!Array.isArray(menuItems)) {
+      return [];
+    }
+
+    const valid: GridContextMenuItem[] = [];
+    const warn = (message: string) => console.warn(`<u-grid>: ${message}`);
+
+    for (const item of menuItems as unknown[]) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+
+      const menuItem = item as GridContextMenuItem;
+
+      if (typeof menuItem.action === 'function') {
+        if (typeof menuItem.text === 'string' && menuItem.text.trim()) {
+          valid.push({ ...menuItem });
+        } else {
+          warn('context menu item without `text` ignored.');
+        }
+      } else if (typeof menuItem.name === 'string' && CONTEXT_MENU_ITEMS_BY_TARGET[target].has(menuItem.name)) {
+        valid.push({ ...menuItem });
+      } else if (typeof menuItem.name === 'string') {
+        warn(`context menu item "${menuItem.name}" does not apply to "${target}" and was ignored.`);
+      } else {
+        warn('context menu item without `name` or `action` ignored.');
+      }
+    }
+
+    return valid;
+  }
+
+  /** Embutidos de cada alvo que se aplicam agora (texto da i18n; `disabled` no limite). */
+  #builtInMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
+    switch (request.target) {
+      case 'header':
+        return request.column && this.columnHeaderMenu ? this.#headerMenuItems(request.column) : [];
+      case 'group-panel':
+        return this.groupPanelMenu && this._groupColumns.length ? this.#groupPanelMenuItems(request.column) : [];
+      case 'row':
+        return this.rowMenu ? this.#rowMenuItems(request) : [];
+      case 'group-row':
+        return this.rowMenu && request.groupRow ? this.#groupRowMenuItems(request.groupRow) : [];
+    }
+  }
+
+  /**
+   * Itens do cabeçalho que valem para a coluna (spec 17, A1 + frente 18).
+   * "Mover" e "limpar ordenação" ficam visíveis e `aria-disabled` quando não
+   * agem; o resto some. Lados físicos: em RTL "esquerda" vai para o fim.
+   */
+  #headerMenuItems(column: GridColumnDef): BuiltInMenuItem[] {
+    const translation = this.#translation;
+    const items: BuiltInMenuItem[] = [];
+    const band = this._isBand(column);
+    const grouped = this._groupColumns.includes(column);
+
+    if (!band && !grouped && this.#canSortByUser(column)) {
+      const order = this.#orderOf(column);
+      items.push(
+        { name: 'sortColumnAscending', text: translation.sortColumnAscending, disabled: order === 'asc' },
+        { name: 'sortColumnDescending', text: translation.sortColumnDescending, disabled: order === 'desc' },
+        { name: 'clearColumnSorting', text: translation.clearColumnSorting, disabled: !order },
+      );
+    }
+
+    if (!band && !grouped && isColumnGroupable(column)) {
+      items.push({ name: 'groupColumn', text: translation.groupColumn, separatorBefore: items.length > 0 });
+    }
+
+    // Fixar: com o seletor ligado (onde o usuário fixa hoje) e só o nível de cima (a banda leva os filhos).
+    if (this.columnChooser && !grouped && this._isRegularColumn(column) && !this._parentBandOf(column)) {
+      const fixed = this._fixedOf(column);
+      const first = items.length;
+      items.push(
+        { name: 'fixColumnStart', text: translation.fixStart, disabled: fixed === 'start' },
+        { name: 'fixColumnEnd', text: translation.fixEnd, disabled: fixed === 'end' },
+        { name: 'unfixColumn', text: translation.unfix, disabled: !fixed },
+      );
+      items[first].separatorBefore = first > 0;
+    }
+
+    // Irmãs visíveis do mesmo bloco (coluna de banda só se move dentro dela).
+    const movable = this.#movableSiblingsOf(column);
+    const index = movable.indexOf(column);
+    const canMove = (direction: 1 | -1) => !!movable[index + direction];
+    const rtl = this._isRtl() ? -1 : 1;
+
+    if (index >= 0 && (canMove(1) || canMove(-1))) {
+      items.push(
+        { name: 'moveLeft', text: translation.moveLeft, disabled: !canMove(-rtl as 1 | -1), separatorBefore: items.length > 0 },
+        { name: 'moveRight', text: translation.moveRight, disabled: !canMove(rtl) },
+      );
+    }
+
+    if (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
+      items.push(
+        { name: 'autoSizeColumn', text: translation.autoSizeColumn, separatorBefore: items.length > 0 },
+        { name: 'increaseColumnWidth', text: translation.increaseColumnWidth },
+        { name: 'decreaseColumnWidth', text: translation.decreaseColumnWidth },
+      );
+    }
+
+    return items;
+  }
+
+  /** Há o que pôr no menu (sem medir a direção: roda no render, inclusive no SSR). */
+  #hasColumnMenu(column: GridColumnDef): boolean {
+    if (!this.columnHeaderMenu) {
+      return false;
+    }
+
+    const band = this._isBand(column);
+    const grouped = this._groupColumns.includes(column);
+
+    return (!band && !grouped && (this.#canSortByUser(column) || isColumnGroupable(column)))
+      || (this.columnChooser && !grouped && this._isRegularColumn(column) && !this._parentBandOf(column))
+      || this.#hasMovableNeighbor(column)
+      || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
+  }
+
+  /**
+   * Botão "⋮": abre o menu no toque (iOS não tem menu de contexto) e mostra
+   * que ele existe. O ícone é máscara CSS (um nó por cabeçalho; spec 16).
+   */
+  #renderColumnMenuButton(column: GridColumnDef) {
+    if (!this.#hasColumnMenu(column)) {
+      return nothing;
+    }
+
+    const label = formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' });
+    const open = this.#contextMenuOpenFor('header', column);
+
+    return html`<button
+      class="column-header-menu-button"
+      part="column-header-menu-button"
+      type="button"
+      tabindex="-1"
+      aria-haspopup="menu"
+      aria-expanded=${open ? 'true' : 'false'}
+      aria-label=${label}
+      title=${label}
+      @click=${(event: MouseEvent) => {
+        event.stopPropagation();
+
+        // O botão também é alça do arrasto do cabeçalho: o clique que termina um arrasto não abre.
+        if (this.#consumeDrag(event)) {
+          return;
+        }
+
+        if (open) {
+          this.#contextMenu.hide(true);
+          return;
+        }
+
+        const button = event.currentTarget as HTMLElement;
+        this.#openHeaderMenu(column, button.closest('th')!, { opener: button, returnFocus: button }, null);
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        // Enter/Espaço no botão não podem ordenar a coluna.
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.stopPropagation();
+        }
+      }}></button>`;
+  }
+
+  #groupPanelMenuItems(column: GridColumnDef | null): BuiltInMenuItem[] {
+    const translation = this.#translation;
+    const index = column ? this._groupColumns.indexOf(column) : -1;
+    const count = this._groupColumns.length;
+    // Lados físicos: em RTL a esquerda é o fim da barra.
+    const towardLeft = this._isRtl() ? index + 1 < count : index > 0;
+    const towardRight = this._isRtl() ? index > 0 : index + 1 < count;
+
+    return [
+      ...index >= 0
+        ? [
+          { name: 'ungroupColumn' as const, text: translation.ungroupColumn, hiddenSuffix: column!.label ?? '' },
+          { name: 'moveLeft' as const, text: translation.moveLeft, disabled: !towardLeft },
+          { name: 'moveRight' as const, text: translation.moveRight, disabled: !towardRight },
+        ]
+        : [],
+      { name: 'ungroupAll', text: translation.ungroupAll, separatorBefore: index >= 0 },
+      { name: 'expandAllGroups', text: translation.expandAllGroups },
+      { name: 'collapseAllGroups', text: translation.collapseAllGroups },
+    ];
+  }
+
+  #rowMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
+    const translation = this.#translation;
+    const items: BuiltInMenuItem[] = [];
+    const row = request.rowIndex === undefined ? undefined : this.#rowAt(request.rowIndex);
+
+    if (!isDataRow(row)) {
+      return items;
+    }
+
+    const copying = this.clipboardMode !== 'none';
+    const column = request.column;
+
+    if (copying && column && isColumnExportable(column)) {
+      items.push({ name: 'copyCell', text: translation.copyCell });
+    }
+
+    if (copying && this.#selection.size) {
+      items.push({ name: 'copySelectedRows', text: translation.copySelectedRows });
+    }
+
+    if (this.#selection.size) {
+      const first = items.length;
+
+      for (const option of this.#exportEntries()) {
+        if (option.selectedOnly) {
+          items.push({ name: option.format === 'csv' ? 'exportSelectedCsv' : 'exportSelectedXlsx', text: option.label, disabled: !!this.#exporting });
+        }
+      }
+
+      if (items.length > first) {
+        items[first].separatorBefore = first > 0;
+      }
+    }
+
+    const pending = this.#pendingOf(row);
+    const editFirst = items.length;
+
+    if (this.#editingOn && !this.#saving) {
+      if (this.#editMode === 'row') {
+        if (this.#rowEditable(row, pending) && this.#editor?.rowKey !== request.rowKey) {
+          items.push({ name: 'editRow', text: translation.editRow });
+        }
+      } else if (column && this.#cellEditable(row, column, pending)) {
+        items.push({ name: 'editCell', text: translation.editRow });
+      }
+
+      const removed = pending?.type === 'remove';
+      const canRemove = pending?.type === 'add' ? true : this.#canRemoveItem(row.item);
+
+      if (removed && this.allowRemoving) {
+        items.push({ name: 'restoreRow', text: translation.restoreRow });
+      } else if (canRemove && this.allowRemoving) {
+        items.push({ name: 'removeRow', text: translation.removeRow });
+      }
+    }
+
+    if (this.detailRenderer) {
+      const expanded = this.#isRowExpandedKey(request.rowKey);
+      items.push(expanded ? { name: 'collapseRow', text: translation.collapseRow } : { name: 'expandRow', text: translation.expandRow });
+    }
+
+    if (items.length > editFirst && editFirst > 0) {
+      items[editFirst].separatorBefore = true;
+    }
+
+    return items;
+  }
+
+  #groupRowMenuItems(row: GroupRow): BuiltInMenuItem[] {
+    const translation = this.#translation;
+
+    return [
+      row.expanded ? { name: 'collapseGroup', text: translation.collapseGroup } : { name: 'expandGroup', text: translation.expandGroup },
+      { name: 'expandAllGroups', text: translation.expandAllGroups },
+      { name: 'collapseAllGroups', text: translation.collapseAllGroups },
+      { name: 'ungroupColumn', text: translation.ungroupColumn, hiddenSuffix: row.column.label ?? '', separatorBefore: true },
+    ];
+  }
+
+  #renderContextMenu() {
+    const open = this.#contextMenu.data!;
+    const { request, items, available } = open;
+    const translation = this.#translation;
+    const textLanguage = this.#textLanguage;
+    const contentLanguage = this.#contentLanguage;
+
+    const entries: MenuEntry[] = items.map((item, index) => {
+      const builtIn = typeof item.action !== 'function' && item.name ? available.get(item.name) : undefined;
+      const hostText = typeof item.text === 'string' && !!item.text;
+
+      return {
+        key: String(index),
+        label: hostText ? item.text! : builtIn?.text ?? '',
+        // Embutido que não se aplica nunca age (nem com `disabled: false`).
+        disabled: !!item.disabled || (typeof item.action !== 'function' && (!builtIn || !!builtIn.disabled)),
+        separatorBefore: item.separatorBefore ?? (builtIn ? builtIn.separatorBefore : false),
+        hiddenSuffix: !hostText ? builtIn?.hiddenSuffix : undefined,
+        lang: hostText ? contentLanguage : textLanguage,
+      };
+    });
+
+    let label: string;
+    let kind: string;
+
+    switch (request.target) {
+      case 'header':
+        label = formatMessage(translation.columnHeaderMenuLabel, { column: request.column?.label ?? '' });
+        kind = 'column-header-menu';
+        break;
+      case 'group-panel':
+        label = translation.groupPanelMenuLabel;
+        kind = 'group-panel-menu';
+        break;
+
+      case 'group-row': {
+        const row = request.groupRow!;
+        label = formatMessage(translation.groupRowMenuLabel, { value: this.#groupValueText({ column: row.column, value: row.value, firstItem: row.firstItem }) });
+        kind = 'row-menu';
+        break;
+      }
+
+      default:
+        label = translation.rowMenuLabel;
+        kind = 'row-menu';
+        break;
+    }
+
+    return renderMenu({
+      className: `context-menu-panel ${kind}`,
+      part: `menu ${kind}`,
+      label,
+      labelLang: textLanguage,
+      entries,
+      onKeyDown: this.#contextMenu.onKeyDown,
+      onAction: key => this.#onContextMenuAction(Number(key)),
+    });
+  }
+
+  #onContextMenuAction(index: number): void {
+    const open = this.#contextMenu.data;
+    const item = open?.items[index];
+
+    if (!open || !item) {
+      return;
+    }
+
+    if (typeof item.action === 'function') {
+      // Fecha e devolve o foco no mesmo gesto; a ação roda com a ativação do usuário.
+      this.#contextMenu.hideAndFocus();
+      const { groupRow: _groupRow, rowIndex: _rowIndex, ...context } = open.request;
+
+      try {
+        item.action({ ...context, grid: this, menuItem: item });
+      } catch (error) {
+        console.error('<u-grid>: a context menu item action threw.', error);
+      }
+
+      return;
+    }
+
+    const builtIn = item.name ? open.available.get(item.name) : undefined;
+
+    if (builtIn && !builtIn.disabled && !item.disabled) {
+      this.#runBuiltInMenuItem(builtIn.name, open.request);
+    }
+  }
+
+  /** Ações embutidas: as mesmas dos gestos (eventos, anúncios, foco da tabela na spec 18). */
+  #runBuiltInMenuItem(name: GridContextMenuItemName, request: ContextMenuRequest): void {
+    const column = request.column;
+    const menu = this.#contextMenu;
+
+    switch (request.target) {
+      case 'header':
+        if (column) {
+          this.#runHeaderMenuItem(name, column);
+        }
+
+        return;
+      case 'group-panel':
+        this.#runGroupPanelMenuItem(name, column);
+        return;
+      case 'group-row':
+        this.#runGroupRowMenuItem(name, request.groupRow!);
+        return;
+      default:
+        break;
+    }
+
+    const rowKey = request.rowKey;
+    const rowIndex = this.#rowIndexOfKey(rowKey);
+
+    switch (name) {
+      case 'copyCell':
+      case 'copySelectedRows':
+        menu.hideAndFocus();
+        this.#copyFromMenu(name, column, rowIndex);
+        break;
+
+      case 'exportSelectedCsv':
+      case 'exportSelectedXlsx':
+        menu.hideAndFocus();
+        void this.#runExport(name === 'exportSelectedCsv' ? 'csv' : 'xlsx', true);
+        break;
+      case 'editRow':
+        // O foco vai ao editor.
+        menu.hide();
+        this.#startEdit(rowIndex, null, 'user');
+        break;
+      case 'editCell':
+        menu.hide();
+
+        if (column) {
+          this.#startEdit(rowIndex, column, 'user');
+        }
+
+        break;
+      case 'removeRow':
+        // O diálogo (ou a remoção) decide o foco; volta à célula disparadora.
+        menu.hide();
+        void this.#requestRemove(rowKey, this.#activeCellElement());
+        break;
+      case 'restoreRow':
+        menu.hide(true);
+        this.#restoreRow(rowKey, 'user');
+        break;
+      case 'expandRow':
+      case 'collapseRow':
+        menu.hide(true);
+        this.#setRowExpanded(rowKey, name === 'expandRow', 'user');
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** "Copiar" do menu da linha: a célula do menu ou as selecionadas, pela Clipboard API. */
+  #copyFromMenu(name: 'copyCell' | 'copySelectedRows', column: GridColumnDef | null, rowIndex: number): void {
+    const content = name === 'copySelectedRows'
+      ? this.#copySelection()
+      : column && rowIndex >= 0 ? this.#copyCell({ position: { row: rowIndex, col: this.#currentNavColumns().indexOf(column) } }) : undefined;
+
+    if (content) {
+      void this.#writeToClipboard(content, 'user');
+    }
+  }
+
+  #runHeaderMenuItem(name: GridContextMenuItemName, column: GridColumnDef): void {
+    const menu = this.#contextMenu;
+
+    const physical = name === 'moveRight' ? 1 : -1;
+    const order = name === 'clearColumnSorting' ? null : name === 'sortColumnAscending' ? 'asc' : 'desc';
+
+    switch (name) {
+      case 'moveLeft':
+      case 'moveRight':
+        // Como Alt+Shift+←/→: o foco segue a coluna.
+        menu.hide();
+        this.#keyboardMoveColumn(column, (physical * (this._isRtl() ? -1 : 1)) as 1 | -1);
+        break;
+
+      case 'groupColumn':
+        // O cabeçalho sai do DOM: a guarda de foco leva o foco à célula ativa.
+        menu.hide();
+        this._userGroupColumn(column, this._groupColumns.length);
+
+        if (this._groupColumns.includes(column)) {
+          this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+        }
+
+        this.#focusPending = true;
+        break;
+      case 'sortColumnAscending':
+      case 'sortColumnDescending':
+      case 'clearColumnSorting':
+        menu.hide(true);
+
+        if (this.#changeSorting(nextSorting(this.#sorting, column, order, this.#sortingMode === 'multiple', this.#isGrouped), 'user')) {
+          this.#announceSorting(column);
+        }
+
+        break;
+
+      case 'fixColumnStart':
+      case 'fixColumnEnd':
+      case 'unfixColumn':
+        menu.hide(true);
+        this._userSetFixed(column, name === 'fixColumnStart' ? 'start' : name === 'fixColumnEnd' ? 'end' : null);
+        break;
+      case 'autoSizeColumn':
+        menu.hide(true);
+        this.#userAutoSize(column);
+        void this.updateComplete.then(() => this.#announceWidth(column, 0));
+        break;
+      case 'increaseColumnWidth':
+      case 'decreaseColumnWidth':
+        // O menu fica aberto para repetir o passo.
+        this.#resize.step(column, name === 'increaseColumnWidth' ? 1 : -1);
+        void this.updateComplete.then(() => this.#announceWidth(column, 0));
+        break;
+      default:
+        break;
+    }
+  }
+
+  #runGroupPanelMenuItem(name: GridContextMenuItemName, column: GridColumnDef | null): void {
+    const menu = this.#contextMenu;
+    const chipIndex = column ? this._groupColumns.indexOf(column) : 0;
+
+    if ((name === 'moveLeft' || name === 'moveRight') && column) {
+      // Muda o nível do chip (como Alt+Shift+←/→): o foco segue o chip.
+      const forward = (name === 'moveRight') !== this._isRtl();
+      const target = chipIndex + (forward ? 1 : -1);
+      menu.hide();
+
+      if (target >= 0 && target < this._groupColumns.length) {
+        this._userGroupColumn(column, forward ? target + 1 : target);
+        this.#announceGroupLevel(column);
+        this.#focusChip(target);
+      }
+
+      return;
+    }
+
+    const ungroups = name === 'ungroupColumn' || name === 'ungroupAll';
+
+    // Desagrupar tira o chip que tinha o foco: o foco vai ao item da barra no mesmo lugar.
+    menu.hide(!ungroups);
+
+    if (ungroups) {
+      this.#focusAfterUngroup(chipIndex);
+    }
+
+    switch (name) {
+      case 'ungroupColumn':
+        if (column && this._groupColumns.includes(column)) {
+          this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
+          this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
+        }
+
+        break;
+      case 'ungroupAll':
+        this.#ungroupAll('user');
+        this.#announce(this.#translation.groupingClearedAnnouncement);
+        break;
+      case 'expandAllGroups':
+        this.#setAllExpanded(true, undefined, 'user');
+        this.#announce(this.#translation.groupsExpandedAnnouncement);
+        break;
+      case 'collapseAllGroups':
+        this.#setAllExpanded(false, undefined, 'user');
+        this.#announce(this.#translation.groupsCollapsedAnnouncement);
+        break;
+      default:
+        break;
+    }
+  }
+
+  #runGroupRowMenuItem(name: GridContextMenuItemName, row: GroupRow): void {
+    const menu = this.#contextMenu;
+
+    switch (name) {
+      case 'expandGroup':
+      case 'collapseGroup':
+        menu.hide(true);
+        this.#setGroupExpanded(row.groupKey, row.level, Object.freeze([...row.path]), name === 'expandGroup', 'user');
+        break;
+      case 'expandAllGroups':
+        menu.hide(true);
+        this.#setAllExpanded(true, undefined, 'user');
+        this.#announce(this.#translation.groupsExpandedAnnouncement);
+        break;
+
+      case 'collapseAllGroups': {
+        // A linha aninhada some: o foco vai ao grupo de 1º nível que a contém.
+        menu.hide();
+        const top = row.path[0];
+        const column = this._groupColumns[0];
+        this.#setAllExpanded(false, undefined, 'user');
+        this.#announce(this.#translation.groupsCollapsedAnnouncement);
+        void this.updateComplete.then(() => {
+          const topKey = column ? groupKeyOf([top], this._groupColumns) : undefined;
+
+          for (let index = 0; index < this.#rows.length; index++) {
+            const candidate = this.#rowAt(index);
+
+            if (candidate?.isGroup && candidate.level === 0 && candidate.groupKey === topKey) {
+              this.#setActive({ row: index, col: this.#activeCol }, 'user', { focus: true, reveal: true });
+              return;
+            }
+          }
+
+          this.#focusPending = true;
+          this.requestUpdate();
+        });
+        break;
+      }
+
+      case 'ungroupColumn':
+        // Como Ctrl+G na linha de grupo: o foco vai ao cabeçalho da coluna devolvida.
+        menu.hide();
+        this.#userUngroup(row.column);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** `contextmenu` no cabeçalho, no corpo e no painel: fica o menu nativo nesses casos. */
+  #skipNativeContextMenu(event: Event): boolean {
+    // A tecla de menu já tratada no `keydown` (o navegador solta o `contextmenu` no `keyup`).
+    if (performance.now() - this.#contextKeyAt < 1000) {
+      return true;
+    }
+
+    const path = event.composedPath();
+
+    // Campo editável (editor, busca, input do renderer) ou texto selecionado no grid.
+    return path.some(node => node instanceof HTMLElement && (node.isContentEditable || node.matches('input, textarea, select')))
+      || (!!this.shadowRoot && hasGridTextSelection(this.shadowRoot));
+  }
+
+  /**
+   * Momento da última tecla de menu que NÃO abriu menu: o `contextmenu` que o
+   * navegador solta depois dela fica nativo (sem disparar o evento de novo).
+   * Quando abriu, esse `contextmenu` cai no menu focado, que o cancela.
+   */
+  #contextKeyAt = -Infinity;
+
+  #noteContextKey(opened: boolean): void {
+    this.#contextKeyAt = opened ? -Infinity : performance.now();
+  }
+
+  /** `contextmenu` na tabela: cabeçalho (coluna/banda) ou linha do corpo. */
+  readonly #onTableContextMenu = (event: MouseEvent): void => {
+    if (event.defaultPrevented || event.ctrlKey) {
+      return;
+    }
+
+    if (this.#longPress.justFired) {
+      // O `contextmenu` do mesmo toque (Android) não abre outro menu.
+      event.preventDefault();
+      return;
+    }
+
+    this.#longPress.cancel();
+
+    if (this.#skipNativeContextMenu(event)) {
+      return;
+    }
+
+    this.#openMenuAtPath(event.composedPath(), { x: event.clientX, y: event.clientY }, event);
+  };
+
+  /** Abre o menu do cabeçalho ou da linha da célula no caminho do evento. */
+  #openMenuAtPath(path: EventTarget[], point: { x: number; y: number }, event: Event | null): boolean {
+    const cell = this.#navCellOf(path);
+    const position = cell && this.#positionOf(cell);
+
+    if (!cell || !position || cell.closest('tr.filter-row')) {
+      return false;
+    }
+
+    if (position.row < 0) {
+      const column = this.#headerCellAt(position.row, position.col)?.column ?? this.#navColumns[position.col];
+      const def = typeof column === 'object' ? dataColumnOf(column) ?? column : undefined;
+
+      return def ? this.#openHeaderMenu(def, cell, point, event) : false;
+    }
+
+    return this.#openRowMenu(position, cell, point, event);
+  }
+
+  /** `pointerdown` de toque na tabela ou no painel: toque longo abre o menu (iOS). */
+  readonly #onLongPressStart = (event: PointerEvent): void => {
+    this.#longPress.start(event, (path, x, y) => {
+      if (path.some(node => node === this._groupContainerRef.value)) {
+        const chip = path.find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
+        this.#openGroupPanelMenu(chip ?? null, { x, y }, null);
+      } else {
+        this.#openMenuAtPath(path, { x, y }, null);
+      }
+    });
+  };
+
+  /** Engole o `click` que segue o toque longo (captura). */
+  readonly #longPressClickCapture = { handleEvent: (event: Event) => this.#longPress.onClickCapture(event), capture: true };
+
+  // ------------------------------------------------------- área de transferência (API e menu)
+
+  /**
+   * Copies like Ctrl/Cmd+C: the selected rows (current order and filter) or,
+   * without a selection, the active cell — TSV and an HTML table through the
+   * asynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).
+   * Resolves `false` when there is nothing to copy, `clipboardMode` is
+   * `none`, the listener canceled without setting data, or the browser
+   * denied the write. Browsers need a user activation: call it inside the
+   * user's gesture (click or key handler).
+   */
+  async copySelection(): Promise<boolean> {
+    if (this.clipboardMode === 'none') {
+      return false;
+    }
+
+    this.#ensureRows();
+
+    const position = { row: this.#activeRowIndex, col: this.#activeCol };
+    const content = (this.#selection.size ? this.#copySelection() : undefined)
+      ?? (position.row >= 0 ? this.#copyCell({ position }) : undefined);
+
+    return content ? this.#writeToClipboard(content, 'api') : false;
+  }
+
+  /**
+   * Escreve pela Clipboard API (menu e `copySelection`): dispara
+   * `u-grid-copying` com um `DataTransfer` do grid; cancelado, escreve o que o
+   * ouvinte pôs nele (como no `copy` nativo).
+   */
+  async #writeToClipboard(copy: CopyContent, source: GridChangeSource): Promise<boolean> {
+    const clipboardData = new DataTransfer();
+    const detail: GridCopyEventDetail = { ...copy.detail, clipboardData, source };
+    const canceled = !this.dispatchEvent(new CustomEvent('u-grid-copying', { ...this.#eventInit(detail), cancelable: true }));
+    const text = canceled ? clipboardData.getData('text/plain') : copy.detail.text;
+    const htmlText = canceled ? clipboardData.getData('text/html') : copy.detail.html;
+
+    if (!text && !htmlText) {
+      return false;
+    }
+
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+
+    try {
+      if (clipboard && typeof clipboard.write === 'function' && typeof ClipboardItem === 'function') {
+        const parts: Record<string, Blob> = { 'text/plain': new Blob([text], { type: 'text/plain' }) };
+
+        if (htmlText) {
+          parts['text/html'] = new Blob([htmlText], { type: 'text/html' });
+        }
+
+        await clipboard.write([new ClipboardItem(parts)]);
+      } else if (clipboard && typeof clipboard.writeText === 'function') {
+        await clipboard.writeText(text);
+      } else {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    if (!canceled) {
+      this.#announce(copy.announcement);
+    }
+
+    return true;
+  }
+
+  // -------------------------------------------------- menu de contexto (API)
+
+  /**
+   * Opens the context menu (built-in items and `u-grid-context-menu-opening`)
+   * of a data row (`{ rowKey, column? }`), a column header (`{ column }`) or
+   * a group row (`{ groupPath }`) — e.g. from a "⋯" button in a cell
+   * `renderer`. Under `anchor` (or the cell); the focus goes back to `anchor`
+   * (or the cell). Returns `false` when canceled, empty, the row or column is
+   * not shown, or before the first render.
+   */
+  openContextMenu(
+    target: { rowKey: unknown; column?: GridColumnDef } | { column: GridColumnDef } | { groupPath: GridGroupPath },
+    anchor?: HTMLElement | null,
+  ): boolean {
+    if (!this.hasUpdated || !target || typeof target !== 'object') {
+      return false;
+    }
+
+    this.#ensureRows();
+    const navColumns = this.#currentNavColumns();
+
+    if ('groupPath' in target) {
+      const key = Array.isArray(target.groupPath) ? groupKeyOf(target.groupPath, this._groupColumns) : undefined;
+
+      for (let index = 0; key !== undefined && index < this.#rows.length; index++) {
+        const row = this.#rowAt(index);
+
+        if (row?.isGroup && row.groupKey === key && row.level === target.groupPath.length - 1) {
+          return this.#openRowMenuFromApi({ row: index, col: Math.max(this.#activeCol, 0) }, anchor ?? null);
+        }
+      }
+
+      return false;
+    }
+
+    if ('rowKey' in target) {
+      const row = this.#rowIndexOfKey(target.rowKey);
+      const col = target.column ? navColumns.indexOf(target.column) : Math.max(navColumns.findIndex(column => typeof column === 'object'), 0);
+
+      return row >= 0 && col >= 0 ? this.#openRowMenuFromApi({ row, col }, anchor ?? null) : false;
+    }
+
+    const col = navColumns.indexOf(target.column);
+    const isBandColumn = this._isBand(target.column);
+
+    if ((col < 0 && !isBandColumn) || !this.showColumnHeaders) {
+      return false;
+    }
+
+    // A célula do cabeçalho (banda: a dela) vira a ativa; o menu abre sob ela.
+    const cell = this.renderRoot.querySelector<HTMLElement>(`thead [data-col="${col >= 0 ? col : -1}"]`)
+      ?? [...this.renderRoot.querySelectorAll<HTMLElement>('thead th')].find(th => this._nativeColumnMap.get(th) === target.column);
+
+    if (!cell) {
+      return false;
+    }
+
+    return this.#openHeaderMenu(target.column, cell, { opener: anchor ?? null, returnFocus: anchor ?? null }, null);
+  }
+
+  /** Closes the context menu (no focus change). */
+  closeContextMenu(): void {
+    this.#contextMenu.hide();
+  }
+
+  #openRowMenuFromApi(position: CellPosition, anchor: HTMLElement | null): boolean {
+    const request = this.#rowMenuRequest(position);
+
+    if (!request) {
+      return false;
+    }
+
+    this.#setActive(position, 'api');
+
+    return this.#openContextMenuWith(request, { returnFocus: anchor ?? (() => this.#activeCellElement()), positionTarget: anchor, opener: anchor }, null);
   }
 
   /** Confirmação de exclusão (`alertdialog` modal; foco inicial em Cancelar). */
@@ -11064,337 +12940,6 @@ export class DataGrid extends LitElement {
       this.#focusPending = true;
     }
   }
-
-  #renderGroupPanel() {
-    return html`
-      <div
-        class="group-container"
-        role="toolbar"
-        aria-label=${this.#translation.groupPanelLabel}
-        ${ref(this._groupContainerRef)}
-        @contextmenu=${this.#onGroupPanelContextMenu}>
-        ${this._groupColumns.length
-          ? html`
-            ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index))}
-            <div class="group-end-dropzone"></div>`
-          : html`<div class="drag-here" lang=${this.#textLanguage}>${this.#translation.dragToGroup}</div>`}
-      </div>
-    `;
-  }
-
-  /**
-   * Chip de uma coluna agrupada: arrastável; Enter/Espaço alternam a direção
-   * dos grupos (se ordenável) ou abrem o menu do painel; Shift+F10/tecla de
-   * menu abrem o menu; Alt+Shift+←/→ muda o nível, Ctrl+G/Delete desagrupa.
-   * ←/→ andam entre os chips (um ponto de Tab na barra).
-   */
-  #renderGroupChip(column: GridColumnDef, index: number) {
-    const sortable = this.#canSortByUser(column);
-    const menu = this.groupPanelMenu;
-    // Só é "botão de menu" quando a ativação abre o menu; no ordenável a ativação ordena.
-    const opensMenu = menu && !sortable;
-    const order = this.#orderOf(column) ?? 'asc';
-    const translation = this.#translation;
-    const activeChip = Math.min(this.#activeChip, this._groupColumns.length - 1);
-
-    return html`
-      <div
-        class="group ${classMap({ sortable })}"
-        part="group-chip"
-        style="--_order: ${index}"
-        role="button"
-        tabindex=${index === activeChip ? 0 : -1}
-        aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
-        aria-expanded=${ifDefined(opensMenu ? this.#groupMenu.open && this.#groupMenu.column === column ? 'true' : 'false' : undefined)}
-        aria-keyshortcuts=${`${menu && sortable ? 'Shift+F10 ' : ''}Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G`}
-        aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
-        @focus=${() => {
-          this.#activeChip = index;
-        }}
-        @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
-        @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
-        @keydown=${(event: KeyboardEvent) => this.#onChipKeyDown(column, index, event)}>
-        <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
-      </div>`;
-  }
-
-  #focusAfterUngroup(chipIndex: number): void {
-    const chips = [...this.renderRoot.querySelectorAll<HTMLElement>('.group[tabindex]')];
-
-    if (chips.length) {
-      // Roving da barra: o vizinho vira o chip com `tabindex="0"`.
-      this.#focusChip(Math.min(chipIndex, chips.length - 1));
-    } else {
-      this.focus();
-    }
-  }
-
-  /** Clique direito no painel (num chip: com "Desagrupar" desta coluna). */
-  readonly #onGroupPanelContextMenu = (event: MouseEvent): void => {
-    // O hospedeiro pode cancelar na captura e tratar o próprio menu (como no cabeçalho).
-    if (event.defaultPrevented || !this.groupPanelMenu || !this._groupColumns.length) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const chip = event.composedPath().find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
-    const column = chip ? this._nativeColumnMap.get(chip) ?? null : null;
-
-    // Na área vazia o foco volta ao chip ativo da barra (não ao `<body>`; spec 17).
-    const returnFocus = chip ?? this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]');
-    this.#groupMenu.show({ column, returnFocus, x: event.clientX, y: event.clientY });
-  };
-
-  /**
-   * Itens do menu do cabeçalho que valem para a coluna (spec 17, A1). "Mover"
-   * fica visível e \`aria-disabled\` no limite do bloco; o resto some quando
-   * não se aplica. Lados físicos: em RTL "esquerda" vai para o fim.
-   */
-  #columnMenuItems(column: GridColumnDef): MenuItem<ColumnHeaderMenuAction>[] {
-    const translation = this.#translation;
-    const items: MenuItem<ColumnHeaderMenuAction>[] = [];
-
-    const band = this._isBand(column);
-
-    if (!band && !this._groupColumns.includes(column) && isColumnGroupable(column)) {
-      items.push({ action: 'groupColumn', label: translation.groupColumn });
-    }
-
-    // Irmãs visíveis do mesmo bloco (coluna de banda só se move dentro dela).
-    const movable = this.#movableSiblingsOf(column);
-    const index = movable.indexOf(column);
-
-    const canMove = (direction: 1 | -1) => !!movable[index + direction];
-
-    const rtl = this._isRtl() ? -1 : 1;
-
-    if (index >= 0 && (canMove(1) || canMove(-1))) {
-      items.push(
-        { action: 'moveLeft', label: translation.moveLeft, disabled: !canMove(-rtl as 1 | -1) },
-        { action: 'moveRight', label: translation.moveRight, disabled: !canMove(rtl) },
-      );
-    }
-
-    if (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
-      items.push(
-        { action: 'autoSizeColumn', label: translation.autoSizeColumn },
-        { action: 'increaseColumnWidth', label: translation.increaseColumnWidth },
-        { action: 'decreaseColumnWidth', label: translation.decreaseColumnWidth },
-      );
-    }
-
-    return items;
-  }
-
-  /** Há o que pôr no menu (sem medir a direção: roda no render, inclusive no SSR). */
-  #hasColumnMenu(column: GridColumnDef): boolean {
-    if (!this.columnHeaderMenu) {
-      return false;
-    }
-
-    const band = this._isBand(column);
-
-    return (!band && !this._groupColumns.includes(column) && isColumnGroupable(column))
-      || this.#hasMovableNeighbor(column)
-      || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
-  }
-
-  /** Clique direito no cabeçalho: abre o menu se houver o que fazer (senão fica o do navegador). */
-  #onHeaderContextMenu(event: MouseEvent, column: GridColumnDef): void {
-    // O hospedeiro pode cancelar na captura e tratar o próprio menu.
-    if (event.defaultPrevented || !this.#columnMenuItems(column).length) {
-      return;
-    }
-
-    event.preventDefault();
-    const cell = event.currentTarget as HTMLElement;
-    const position = this.#positionOf(cell);
-
-    // O cabeçalho vira a célula ativa: Esc devolve o foco a ele (roving).
-    if (position) {
-      this.#setActive(position, 'user');
-    }
-
-    this.#columnMenu.show({ column, returnFocus: cell, x: event.clientX, y: event.clientY });
-  }
-
-  /**
-   * Botão "⋮": abre o menu no toque (iOS não tem menu de contexto) e mostra
-   * que ele existe. O ícone é máscara CSS (um nó por cabeçalho; spec 16).
-   */
-  #renderColumnMenuButton(column: GridColumnDef) {
-    if (!this.#hasColumnMenu(column)) {
-      return nothing;
-    }
-
-    const label = formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' });
-    const open = this.#columnMenu.open && this.#columnMenu.column === column;
-
-    return html`<button
-      class="column-header-menu-button"
-      part="column-header-menu-button"
-      type="button"
-      tabindex="-1"
-      aria-haspopup="menu"
-      aria-expanded=${open ? 'true' : 'false'}
-      aria-label=${label}
-      title=${label}
-      @click=${(event: MouseEvent) => {
-        event.stopPropagation();
-
-        // O botão também é alça do arrasto do cabeçalho: o clique que termina um arrasto não abre.
-        if (this.#consumeDrag(event)) {
-          return;
-        }
-
-        if (open) {
-          this.#columnMenu.hide(true);
-          return;
-        }
-
-        const button = event.currentTarget as HTMLElement;
-        const position = this.#positionOf(button.closest('th')!);
-
-        if (position) {
-          this.#setActive(position, 'user');
-        }
-
-        this.#columnMenu.show({ column, returnFocus: button });
-      }}
-      @keydown=${(event: KeyboardEvent) => {
-        // Enter/Espaço no botão não podem ordenar a coluna.
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.stopPropagation();
-        }
-      }}></button>`;
-  }
-
-  #renderColumnHeaderMenu() {
-    const column = this.#columnMenu.column!;
-
-    return html`
-      <div
-        class="column-header-menu"
-        part="column-header-menu"
-        .popover=${'manual'}
-        role="menu"
-        aria-label=${formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' })}
-        @contextmenu=${(event: Event) => event.preventDefault()}
-        @keydown=${this.#columnMenu.onKeyDown}>
-        ${renderMenuItems('group-panel-menu-item', this.#columnMenuItems(column), this.#onColumnMenuAction)}
-      </div>`;
-  }
-
-  readonly #onColumnMenuAction = (action: ColumnHeaderMenuAction): void => {
-    const column = this.#columnMenu.column;
-
-    if (!column) {
-      return;
-    }
-
-    if (action === 'moveLeft' || action === 'moveRight') {
-      // Como Alt+Shift+←/→: o foco segue a coluna.
-      this.#columnMenu.hide();
-      const physical = action === 'moveRight' ? 1 : -1;
-      this.#keyboardMoveColumn(column, (physical * (this._isRtl() ? -1 : 1)) as 1 | -1);
-      return;
-    }
-
-    switch (action) {
-      case 'groupColumn':
-        // O cabeçalho sai do DOM: a guarda de foco leva o foco à célula ativa.
-        this.#columnMenu.hide();
-        this._userGroupColumn(column, this._groupColumns.length);
-
-        if (this._groupColumns.includes(column)) {
-          this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
-        }
-
-        this.#focusPending = true;
-        break;
-
-      case 'autoSizeColumn':
-        this.#columnMenu.hide(true);
-        this.#userAutoSize(column);
-        void this.updateComplete.then(() => this.#announceWidth(column, 0));
-        break;
-      case 'increaseColumnWidth':
-      case 'decreaseColumnWidth':
-        // O menu fica aberto para repetir o passo.
-        this.#resize.step(column, action === 'increaseColumnWidth' ? 1 : -1);
-        void this.updateComplete.then(() => this.#announceWidth(column, 0));
-        break;
-    }
-  };
-
-  #renderGroupPanelMenu() {
-    const column = this.#groupMenu.column;
-    const index = column ? this._groupColumns.indexOf(column) : -1;
-    const count = this._groupColumns.length;
-    // Lados físicos: em RTL a esquerda é o fim da barra.
-    const towardLeft = this._isRtl() ? index + 1 < count : index > 0;
-    const towardRight = this._isRtl() ? index > 0 : index + 1 < count;
-
-    return renderGroupPanelMenu({
-      translation: this.#translation,
-      column,
-      canMoveLeft: index >= 0 && towardLeft,
-      canMoveRight: index >= 0 && towardRight,
-      onAction: this.#onGroupMenuAction,
-      onKeyDown: this.#groupMenu.onKeyDown,
-    });
-  }
-
-  readonly #onGroupMenuAction = (action: GroupPanelMenuAction): void => {
-    const column = this.#groupMenu.column;
-    const ungroups = action === 'ungroupColumn' || action === 'ungroupAll';
-    const chipIndex = column ? this._groupColumns.indexOf(column) : 0;
-
-    if ((action === 'moveLeft' || action === 'moveRight') && column) {
-      // Muda o nível do chip (como Alt+Shift+←/→): o foco segue o chip.
-      const forward = (action === 'moveRight') !== this._isRtl();
-      const target = chipIndex + (forward ? 1 : -1);
-      this.#groupMenu.hide();
-
-      if (target >= 0 && target < this._groupColumns.length) {
-        this._userGroupColumn(column, forward ? target + 1 : target);
-        this.#announceGroupLevel(column);
-        this.#focusChip(target);
-      }
-
-      return;
-    }
-
-    // Desagrupar tira o chip que tinha o foco: o foco vai ao chip vizinho (ou ao 1º cabeçalho).
-    this.#groupMenu.hide(!ungroups);
-
-    if (ungroups) {
-      void this.updateComplete.then(() => this.#focusAfterUngroup(chipIndex));
-    }
-
-    switch (action) {
-      case 'ungroupColumn':
-        if (column && this._groupColumns.includes(column)) {
-          this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
-          this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
-        }
-
-        break;
-      case 'ungroupAll':
-        this.#ungroupAll('user');
-        this.#announce(this.#translation.groupingClearedAnnouncement);
-        break;
-      case 'expandAllGroups':
-        this.#setAllExpanded(true, undefined, 'user');
-        this.#announce(this.#translation.groupsExpandedAnnouncement);
-        break;
-      case 'collapseAllGroups':
-        this.#setAllExpanded(false, undefined, 'user');
-        this.#announce(this.#translation.groupsCollapsedAnnouncement);
-        break;
-    }
-  };
 
   #renderColumnChooser() {
     const visibleCount = this._visibleColumns.length;
@@ -11519,5 +13064,9 @@ declare global {
     'u-grid-save': CustomEvent<GridSaveEventDetail>;
     'u-grid-save-error': CustomEvent<GridSaveErrorEventDetail>;
     'u-grid-edit-cancel': CustomEvent<GridEditCancelEventDetail>;
+    'u-grid-context-menu-opening': CustomEvent<GridContextMenuOpeningEventDetail>;
+    'u-grid-exporting': CustomEvent<GridExportingEventDetail>;
+    'u-grid-export': CustomEvent<GridExportingEventDetail>;
+    'u-grid-export-error': CustomEvent<GridExportErrorEventDetail>;
   }
 }

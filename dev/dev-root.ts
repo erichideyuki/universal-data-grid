@@ -3,7 +3,7 @@ import { customElement, property, query } from 'lit/decorators.js';
 import type { GridColumnDef, GridDetailRenderer, GridSummary } from '../src/grid-column-def';
 
 import { LocalDataSource } from '../src/data/local-source';
-import { DataGrid, type GridDataSource } from '../src/grid';
+import { DataGrid, GRID_DEFAULT_TOOLBAR_ITEMS, type GridDataSource } from '../src/grid';
 
 /** "Servidor" do demo (frente 08): os dados do demo com 400 ms de latência; `?fail` falha 1 em 3. */
 const slowSource = (items: readonly unknown[]): GridDataSource => {
@@ -308,6 +308,10 @@ export class DevRoot extends LitElement {
           show-filter-row
           show-search-panel
           header-filter
+          row-menu
+          selection-mode="multiple"
+          .exportFormats=${['csv'] as const}
+          .toolbarItems=${[...GRID_DEFAULT_TOOLBAR_ITEMS, { text: 'Refresh', action: ({ grid }: { grid: DataGrid }) => void grid.refresh() }]}
           .columns=${this.#columns}
           .summary=${demoSummary}
           .items=${this.#items}>

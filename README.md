@@ -27,6 +27,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
+- [Toolbar & context menus](#toolbar--context-menus) (built-in and custom toolbar items, "More actions", export button, context menus)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
 - [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
 - [Editing](#editing) (cell, row and batch modes, editors, validation, add and delete rows)
@@ -78,6 +79,10 @@ React, Vue, Svelte — or with no framework at all.
   selected rows only), an optional Excel adapter with ExcelJS injected by you, export data for any
   other format (PDF…), and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
   by default; a million rows export without freezing the page.
+- **Toolbar & context menus** — a configurable toolbar (built-in items, your buttons and content,
+  overflow into "More actions", export button) and context menus on headers, the group panel and
+  rows with built-in items you can add to, remove or replace; one keyboard model (`Shift+F10`, the
+  menu key, arrows, type-ahead, `Esc`) and touch support (long press).
 - **Templates & master-detail** — Lit templates (also server-rendered), text or elements for
   cells, headers, group rows and the empty state; expandable detail rows of any height (even a
   nested grid) without slowing down scrolling.
@@ -796,8 +801,9 @@ column chooser button are separate stops in the bar above.
 | `Alt`+`Shift`+`←`/`→` on a header | Move the column (same as dragging it; mirrored in RTL). |
 | `Ctrl`+`G` on a header | Group by the column (same as dragging it to the group panel). |
 | `Ctrl`+`G` on a group row | Ungroup that row's column (works without the group panel). |
-| `Shift`+`F10` / menu key on a header | Open the column header menu (group, move left/right, auto-size, widen/narrow). |
-| `←`/`→`, `Home`/`End` in the group panel | Move between the group chips. |
+| `Shift`+`F10` / menu key on a header | Open the column header menu (sort, group, pin, move left/right, auto-size, widen/narrow). |
+| `Shift`+`F10` / menu key on a cell | Open the row menu (built-in items with `row-menu`, or yours). |
+| `←`/`→`, `Home`/`End` in the toolbar | Move between the toolbar buttons and the group chips (one `Tab` stop). |
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
 | `Shift`+`F10` / menu key on a group chip | Open the group panel menu (also moves the chip left/right). |
@@ -1257,6 +1263,9 @@ const blob = await exportXlsx(grid, ExcelJS, {
 });
 ```
 
+For the toolbar Export button, `createXlsxExporter(ExcelJS, options?)` returns the exporter to
+assign to `grid.xlsxExporter` (see [Export button](#export-button)).
+
 Group rows become Excel row outline levels; numbers, dates and booleans are typed cells with a
 number format close to the column `format`; columns with `displayValue`, a `format` function or
 `booleanDisplay` are written as their displayed text. Text is always a text cell (never a
@@ -1279,7 +1288,8 @@ selected with the mouse inside the grid, and copies from the filter row, the sea
 editable control inside a cell, are left to the browser.
 
 `clipboard-mode="none"` turns it off. The cancelable `u-grid-copying` event fires before the grid
-writes; `detail` is `{ items, columns, text, html, clipboardData }`. After `preventDefault()` the
+writes; `detail` is `{ items, columns, text, html, clipboardData, source }` (`source` is `'api'`
+from [`copySelection()`](#copy-by-api)). After `preventDefault()` the
 grid writes nothing and announces nothing — write your own content in `clipboardData`
 (synchronously) and announce the copy in your own live region:
 
@@ -1292,6 +1302,127 @@ grid.addEventListener('u-grid-copying', event => {
 
 The exact markup of `detail.html` may gain attributes in minor versions — don't compare it as a
 fixed string.
+
+---
+
+## Toolbar & context menus
+
+### Toolbar
+
+The bar above the table holds the built-in items whose feature is on — `groupPanel`
+(`show-group-panel`), `addRowButton` (`allow-adding`), `saveButton` and `discardButton`
+(`edit-mode="batch"`), `exportButton` (`export-formats`), `columnChooserButton` (`column-chooser`)
+and `searchPanel` (`show-search-panel`) — in that order (`GRID_DEFAULT_TOOLBAR_ITEMS`). Set
+`toolbarItems` (property only) to choose the items, their order and side, and to add your own:
+
+```js
+import { GRID_DEFAULT_TOOLBAR_ITEMS } from '@universal-material/data-grid';
+
+grid.toolbarItems = [
+  ...GRID_DEFAULT_TOOLBAR_ITEMS,
+  { name: 'searchPanel', location: 'start' },              // configures a built-in (the first one listed wins)
+  { text: 'Refresh', icon: refreshIcon, showText: 'in-menu', action: ({ grid }) => grid.refresh() },
+  { text: 'Print', action: () => print(), locateInMenu: 'always' },
+  { renderer: ({ signal }) => html`<my-view-select></my-view-select>` }, // your own content
+];
+```
+
+| Item option | Default | Description |
+| ----------- | ------- | ----------- |
+| `name` | — | A built-in item. It shows only when its feature is on (a console warning tells you when it doesn't). |
+| `location` | `'end'` (`groupPanel`: `'start'`) | Side of the bar. |
+| `locateInMenu` | `'auto'` for built-in buttons, `'never'` for yours | `auto`: moves to the "More actions" menu when it does not fit (the last ones first); `always`: always there. The group panel, the search panel and `renderer` items never move. |
+| `showText` | `'always'` | `'in-menu'`: only the icon on the bar (the text becomes its accessible name and tooltip). |
+| `disabled` | `false` | Shown and focusable, but does nothing (`aria-disabled`). |
+| `text` | — | Your button's label (required; also the menu text). On a built-in, replaces the translated label. |
+| `icon` | — | Your button's icon (decorative: `aria-hidden`). |
+| `action` | — | `({ toolbarItem, grid }) => void`, from the bar or the "More actions" menu. |
+| `renderer` | — | `({ toolbarItem, grid, signal }) => GridRenderResult`: your own content (its own Tab stops, at the start or the end of the bar). |
+
+`toolbarItems = null` (default) is the automatic bar; `[]` hides it (the editing status text still
+shows). Replace the array instead of mutating it.
+
+**Keyboard.** The bar is one `Tab` stop (`role="toolbar"`): `←`/`→` move between its buttons and
+group chips (mirrored in RTL), `Home`/`End` go to the first/last one. The search field and
+`renderer` content are separate `Tab` stops (they use the arrow keys themselves). Menu buttons
+("More actions", Export) open with `Enter`, `Space` or `↓` (`↑` opens on the last item).
+
+### Export button
+
+```html
+<u-grid export-formats="csv xlsx"></u-grid>
+```
+
+```js
+import ExcelJS from 'exceljs';
+import { createXlsxExporter } from '@universal-material/data-grid/export-xlsx';
+
+grid.xlsxExporter = createXlsxExporter(ExcelJS, { fileName: 'orders.xlsx' }); // without it, no Excel entry
+grid.csvExportOptions = { fileName: 'orders.csv' };
+```
+
+The Export button lists "Export to CSV", "Export to Excel" and — with `selection-mode` on — "Export
+selected rows to …" (disabled while nothing is selected); with a single entry it is a plain button.
+The cancelable `u-grid-exporting` (`{ format, selectedOnly }`) fires first — cancel it to export your
+own way — then `u-grid-export` or `u-grid-export-error` (`{ format, selectedOnly, error }`). Screen
+readers hear "Exporting…" after a second and the result; removing the grid aborts the export (the
+exporter gets an `AbortSignal`). For other formats (PDF), add your own toolbar item that uses
+[`getExportData()`](#export-data-excel-pdf-anything). The export methods do not fire these events.
+
+### Context menus
+
+Right-click, a long press (touch), `Shift+F10` or the context menu key opens the context menu of a
+column header (also its "⋮" button), the group panel (a chip or its empty area), a data row or a
+group row. Built-in items:
+
+| Target | Built-in items (only those that apply) | Turned off by |
+| ------ | -------------------------------------- | ------------- |
+| `header` | Sort ascending / descending / Clear sorting, Group by this column, Pin to start / end / Unpin (with `column-chooser`), Move left / right, Auto-size, Increase / Decrease width | `column-header-menu="false"` |
+| `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
+| `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details | **off by default**: `row-menu` turns them on |
+| `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
+
+Before any context menu opens, the cancelable `u-grid-context-menu-opening` fires — also with no
+built-in item, so you can add menus anywhere. Change `detail.menuItems` in place (synchronously):
+
+```js
+grid.addEventListener('u-grid-context-menu-opening', event => {
+  const { target, item, column, menuItems } = event.detail;
+
+  if (target === 'row') {
+    menuItems.push({ id: 'open', text: 'Open order', separatorBefore: true, action: ({ item }) => openOrder(item) });
+  }
+
+  // Remove or reorder built-ins by `name`; put one back with `{ name: 'copyCell' }`.
+  const sort = menuItems.findIndex(menuItem => menuItem.name === 'clearColumnSorting');
+  if (sort >= 0) menuItems.splice(sort, 1);
+});
+```
+
+`detail` is `{ target, cellType, column, item, rowKey, groupPath, grid, menuItems }`. A menu item
+is `{ name?, id?, text?, disabled?, separatorBefore?, action? }`: with `action` (and `text`) it is
+yours — the action gets the same context plus `menuItem`, after the menu closed and the focus went
+back to where it was opened (still within the user's gesture); with `name` it is a built-in
+(`GridContextMenuItemName`, `text` optional). A built-in of another target, or one that does not
+apply now, never acts. Canceled or empty, no menu opens and the browser menu stays. The browser
+menu also stays with text selected in the grid, on editable fields and with Ctrl+right-click.
+
+`openContextMenu({ rowKey, column? } | { column } | { groupPath }, anchor?)` opens the same menu
+from your own control (e.g. a "⋯" button in a cell `renderer`), returning `false` when nothing
+opened; `closeContextMenu()` closes it.
+
+**Keyboard.** `↑`/`↓` (wrapping), `Home`/`End`, a letter goes to the next item starting with it,
+`Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. On a cell,
+`Shift+F10`/the menu key opens the row menu only when the focus is on the cell itself (inside an
+editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
+after "Delete" in the confirmation dialog; after the other items, back where the menu was opened.
+
+### Copy by API
+
+`copySelection()` copies like `Ctrl+C` (the selected rows or, without a selection, the active
+cell) through the asynchronous Clipboard API and resolves `true` when written. Call it within the
+user's gesture (browsers require it). It fires `u-grid-copying` with `source: 'api'` and a
+`DataTransfer` of the grid: cancel it and `setData` your own content, as with `Ctrl+C`.
 
 ---
 
@@ -1887,6 +2018,11 @@ interface GridI18n {
   // validationRangeMin, validationRangeMax, validationStringLength ({min}, {max}),
   // validationStringLengthMin, validationStringLengthMax, validationPattern, validationEmail,
   // validationNumber, validationDate, validationInvalid
+  // Toolbar and menus: toolbarLabel, toolbarMoreButtonLabel, exportButtonLabel, exportCsv,
+  // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
+  // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
+  // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
+  // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow
 }
 ```
 
@@ -1913,8 +2049,13 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `summary`          | *(property only)*     | `GridSummary \| null` | `null` | Totals and group summaries. See [Summaries](#summaries). |
 | `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default (initial default; changing it resets the expansion state). |
 | `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
-| `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Context menu of the group panel (ungroup, move, expand/collapse all). |
-| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Context menu of the column headers (right-click, "⋮", Shift+F10): group, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
+| `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Built-in items of the group panel menu (ungroup, move, expand/collapse all). See [Context menus](#context-menus). |
+| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, "⋮", Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
+| `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). |
+| `toolbarItems`     | *(property only)*     | `(GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
+| `exportFormats`    | `export-formats`      | `GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
+| `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter(ExcelJS)`). |
+| `csvExportOptions` | *(property only)*     | `GridCsvDownloadOptions \| null` | `null` | Options of the CSV exported from the UI (without `selectedOnly`/`signal`). |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
 | `stateStorage`     | `state-storage`       | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Save and restore the user state. See [State persistence](#state-persistence). |
 | `stateStorageKey`  | `state-storage-key`   | `string`  | `''`    | Key in `localStorage`/`sessionStorage`. |
@@ -2027,6 +2168,8 @@ tint derive from it.
 | `--u-grid-header-filter-button-active-color` | primary token | Funnel of a filtered column. |
 | `--u-grid-header-filter-background-color` | surface-container token | Header filter popover background. |
 | `--u-grid-header-filter-shape` | `12px` | Header filter popover corner radius. |
+| `--u-grid-menu-background-color` | surface-container token | Background of the menus (context, "More actions", Export). |
+| `--u-grid-menu-shape` | `4px` | Corner radius of the menus. |
 | `--u-grid-load-panel-background-color` | surface-container-high token | Background of the load panel. |
 | `--u-grid-skeleton-row-color` | text color at 12% | Placeholders of rows still loading. |
 | `--u-grid-pager-height` | `56px` | Minimum height of the pager (it wraps on narrow grids; the rows take the rest). |
@@ -2070,8 +2213,15 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `group-footer-row` | Group footer rows (summaries with `display: 'footer'`). |
 | `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
 | `group-count` | Count and inline summaries in a group row. |
+| `toolbar` | The bar above the table. |
+| `toolbar-button` | Toolbar buttons, built-in and yours (built-ins also have `add-row-button`, `save-button`, `discard-button`, `export-button` or `column-chooser-button`). |
+| `toolbar-more-button` | The "More actions" button. |
+| `menu` | Every menu (context menus and toolbar menus), with one of `column-header-menu`, `group-panel-menu`, `row-menu`, `toolbar-menu`. |
+| `menu-item` / `menu-separator` | Menu items / separators. |
 | `group-panel-menu` | The group panel context menu. |
 | `column-header-menu` | The column header context menu. |
+| `row-menu` | The context menu of data and group rows. |
+| `toolbar-menu` | The "More actions" and Export menus. |
 | `column-header-menu-button` | The "⋮" button that opens the column header menu. |
 | `filter-row` | The filter row (`<tr>`). |
 | `filter-cell` | Filter row cells. |
@@ -2224,6 +2374,8 @@ CSS property and part for IDEs and tooling.
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
 | `exportCsv(options?)` | `Promise<Blob>`: CSV of what the user sees. |
 | `downloadCsv(options?)` | Build the CSV and download it (`fileName`, default `export.csv`). |
+| `copySelection()` | `Promise<boolean>`: copy like Ctrl+C through the Clipboard API (call it within a user gesture). See [Copy by API](#copy-by-api). |
+| `openContextMenu(target, anchor?)` / `closeContextMenu()` | Open the context menu of a row (`{ rowKey, column? }`), a header (`{ column }`) or a group row (`{ groupPath }`) / close it. See [Context menus](#context-menus). |
 | `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
 | `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
 | `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
@@ -2255,7 +2407,11 @@ All bubble and are `composed`.
 | `u-grid-load` | `GridLoadEventDetail` (`{ options, result }`) | — (every load) | A `load` call resolved (aborted calls fire nothing). |
 | `u-grid-load-error` | `GridLoadErrorEventDetail` (`{ options, error }`) | — (every load) | A `load` call rejected; the error bar is shown. |
 | `u-grid-page-change` | `GridPageChangeEventDetail` | corrections only (not the setters) | The page or page size changed (pager, `PageUp`/`PageDown`, new filter, clamp). |
-| `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
+| `u-grid-copying` | `GridCopyEventDetail` | `copySelection()` | Before Ctrl+C, the row menu "Copy" items or `copySelection()` write to the clipboard. Cancelable. |
+| `u-grid-context-menu-opening` | `GridContextMenuOpeningEventDetail` | `openContextMenu()` | Before a context menu opens; change `menuItems` in place. Cancelable. |
+| `u-grid-exporting` | `GridExportingEventDetail` (`{ format, selectedOnly }`) | no (UI only) | Before an export from the toolbar or the row menu. Cancelable. |
+| `u-grid-export` | `GridExportEventDetail` | no (UI only) | That export finished. |
+| `u-grid-export-error` | `GridExportErrorEventDetail` (`+ error`) | no (UI only) | That export failed. |
 | `u-grid-state-change` | `GridStateChangeEventDetail` (`{ state, sources }`) | yes (also setters and `setState`) | `state-change-delay` ms after the last change of the state, once per burst, only if it really changed; after a restore from `stateStorage` with `sources: ['storage']`. |
 | `u-grid-edit-starting` | `GridEditStartingEventDetail` | yes | Before an editor (or a row) opens. Cancelable. |
 | `u-grid-row-adding` | `GridRowAddingEventDetail` | yes | Before a row is added (initial values in `data`). Cancelable. |
@@ -2356,7 +2512,29 @@ import {
   type GridExportGroupRow,
   type GridExportSummaryRow,
   type GridClipboardMode,   // 'copy' | 'none'
-  type GridCopyEventDetail, // { items, columns, text, html, clipboardData }
+  type GridCopyEventDetail, // { items, columns, text, html, clipboardData, source }
+  GRID_DEFAULT_TOOLBAR_ITEMS, // the automatic toolbar, in order
+  type GridToolbarItemName, // 'groupPanel' | 'searchPanel' | 'columnChooserButton' | 'exportButton' | 'addRowButton' | 'saveButton' | 'discardButton'
+  type GridToolbarItem,     // GridBuiltInToolbarItem | GridHostToolbarItem
+  type GridBuiltInToolbarItem, // { name, location?, locateInMenu?, showText?, disabled?, text? }
+  type GridHostToolbarItem, // GridToolbarButtonItem | GridToolbarContentItem
+  type GridToolbarButtonItem, // { id?, text, icon?, action, location?, locateInMenu?, showText?, disabled? }
+  type GridToolbarContentItem, // { id?, renderer, location? }
+  type GridToolbarItemOptions, // { location?, locateInMenu?, showText?, disabled? }
+  type GridToolbarItemActionContext, // { toolbarItem, grid }
+  type GridToolbarItemRenderContext, // { toolbarItem, grid, signal }
+  type GridToolbarItemRenderer, // (context) => GridRenderResult
+  type GridExportFormat,    // 'csv' | 'xlsx'
+  type GridExporter,        // (grid, { selectedOnly, signal }) => Promise<void>
+  type GridExportingEventDetail, // { format, selectedOnly }
+  type GridExportEventDetail,    // { format, selectedOnly }
+  type GridExportErrorEventDetail, // { format, selectedOnly, error }
+  type GridContextMenuTarget, // 'header' | 'group-panel' | 'row' | 'group-row'
+  type GridContextMenuItem, // { name?, id?, text?, disabled?, separatorBefore?, action? }
+  type GridContextMenuItemName, // the built-in items
+  type GridContextMenuContext, // { target, cellType, column, item, rowKey, groupPath, grid }
+  type GridContextMenuItemActionContext, // + { menuItem }
+  type GridContextMenuOpeningEventDetail, // + { menuItems }
   type GridState,           // { version: 1, columns?, filterValue?, searchText?, groupExpansion?, selectedKeys?, rowExpansion?, pageIndex?, pageSize? }
   type GridColumnState,     // { name, width?, visible?, fixed?, groupIndex?, sortOrder?, sortIndex? }
   type GridGroupExpansionState, // { all, levels, expanded: GridStateGroupPath[], collapsed: GridStateGroupPath[] }
@@ -2387,6 +2565,8 @@ import {
 import {
   exportXlsx,              // (grid, ExcelJS, GridXlsxOptions?) => Promise<Blob>
   downloadXlsx,            // (grid, ExcelJS, GridXlsxDownloadOptions?) => Promise<void>
+  createXlsxExporter,      // (ExcelJS, GridXlsxExporterOptions?) => GridExporter — for grid.xlsxExporter
+  type GridXlsxExporterOptions, // GridXlsxDownloadOptions without selectedOnly and signal
   type GridXlsxOptions,    // GridExportOptions + { sheetName?, includeHeaders?, customize? }
   type GridXlsxDownloadOptions, // + { fileName? }
   type ExcelJSModule,      // the minimal ExcelJS shape the adapter needs ({ Workbook })

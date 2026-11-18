@@ -383,7 +383,7 @@ describe('menu do painel de grupos', () => {
     chip.focus();
     await press(grid, chip, 'F10', { shiftKey: true });
 
-    expect(menu(grid)!.getAttribute('part')).toBe('group-panel-menu');
+    expect(menu(grid)!.getAttribute('part')).toBe('menu group-panel-menu');
     // Fora do role="grid" (que só pode ter linhas).
     expect(menu(grid)!.closest('[role=grid]')).toBeNull();
     expect(items(grid).map(item => item.textContent.trim())).toEqual(['Ungroup Country', 'Move left', 'Move right', 'Ungroup all', 'Expand all groups', 'Collapse all groups']);

@@ -617,12 +617,19 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
     await openByKey(grid, 'Name');
 
     const labels = menuItems(grid).map(item => [item.textContent.trim(), item.getAttribute('aria-disabled')]);
-    expect(labels).toEqual([['Group by this column', 'false'], ['Move left', 'true'], ['Move right', 'false']]);
+    // Frente 18: ordenar entra no menu do cabeçalho ("limpar" desabilitado sem ordenação).
+    expect(labels).toEqual([
+      ['Sort ascending', 'false'],
+      ['Sort descending', 'false'],
+      ['Clear sorting', 'true'],
+      ['Group by this column', 'false'],
+      ['Move left', 'true'],
+      ['Move right', 'false'],
+    ]);
     expect(focused(grid)).toBe(menuItems(grid)[0]);
     expect(root(grid).querySelector('.column-header-menu')!.getAttribute('aria-label')).toBe('Options for Name');
 
-    await press(grid, 'ArrowDown');
-    await press(grid, 'ArrowDown');
+    await press(grid, 'End');
     expect(focused(grid)!.textContent.trim()).toBe('Move right');
     focused(grid)!.click();
     await settle(grid);
@@ -659,7 +666,7 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
 
     th.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 50, clientY: 50 }));
     await settle(grid);
-    menuItems(grid)[0].click();
+    menuItems(grid).find(item => item.textContent.trim() === 'Group by this column')!.click();
     await settle(grid);
 
     expect(grid.getGrouping().map(c => c.path)).toEqual(['city']);
@@ -667,7 +674,7 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
   });
 
   it('sem ações para a coluna: menu do navegador, sem botão e sem Shift+F10', async () => {
-    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name', groupable: false }], items: people() });
+    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name', groupable: false, sortable: false }], items: people() });
     const th = headerCell(grid, 'Name');
     const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
     th.dispatchEvent(event);

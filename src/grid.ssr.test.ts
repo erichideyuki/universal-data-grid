@@ -6,6 +6,7 @@ import { html } from 'lit';
 import { describe, expect, it } from 'vitest';
 
 import type { GridColumnDef, GridDetailRenderer, GridFilterExpression, GridSummary } from './grid-column-def.js';
+import type { GridToolbarItem, GridToolbarItemName } from './grid.js';
 
 import './grid.js';
 
@@ -194,7 +195,7 @@ describe('SSR', () => {
     const adapter = await import('./export-xlsx/index.js');
 
     expect(typeof adapter.exportXlsx).toBe('function');
-    expect(Object.keys(adapter).sort()).toEqual(['downloadXlsx', 'exportXlsx']);
+    expect(Object.keys(adapter).sort()).toEqual(['createXlsxExporter', 'downloadXlsx', 'exportXlsx']);
   });
 
   it('renderiza templates (célula, cabeçalho, grupo, detalhe) no servidor (frente 10)', async () => {
@@ -320,5 +321,30 @@ describe('SSR com bandas e virtualização de colunas (frente 13)', () => {
     // 1920 px ÷ 150 px + folga: só as primeiras colunas.
     expect(wideOutput).not.toContain('Col100');
     expect(wideOutput).toContain('column-spacer');
+  });
+});
+
+describe('SSR da barra (frente 18)', () => {
+  it('barra com embutidos, botão e conteúdo do hospedeiro, sem "mais" (a medida é do cliente)', async () => {
+    const toolbarItems: (GridToolbarItemName | GridToolbarItem)[] = [
+      'groupPanel',
+      'exportButton',
+      'columnChooserButton',
+      'searchPanel',
+      { text: 'Refresh', action: () => undefined },
+      { text: 'Print', action: () => undefined, locateInMenu: 'always' },
+      { renderer: () => html`<span class="host-content">Host</span>` },
+    ];
+    const output = await renderToString(html`
+      <u-grid language="pt" column-chooser show-search-panel .exportFormats=${['csv'] as const} .toolbarItems=${toolbarItems} .columns=${columns} .items=${items}></u-grid>`);
+
+    expect(output).toMatch(/<div[^>]*class="toolbar-roving"[^>]*role="toolbar"/);
+    expect(output).toContain('Barra de ferramentas da grade');
+    expect(output).toContain('Exportar para CSV');
+    expect(output).toContain('Refresh');
+    expect(output).toContain('host-content');
+    // `always` vai ao "mais" já no servidor.
+    expect(output).toContain('toolbar-more-button');
+    expect(output).not.toContain('>Print<');
   });
 });

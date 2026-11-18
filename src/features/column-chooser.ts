@@ -136,6 +136,7 @@ export class ColumnChooserController implements ReactiveController {
   #restoreFocus = false;
   /** Controle focado no painel antes do render (fixar reordena a lista e o `repeat` move o item focado). */
   #focused: { labelId: string; selector: string } | null = null;
+  #anchor: HTMLElement | null = null;
 
   constructor(host: ColumnChooserHost) {
     this.#host = host;
@@ -151,11 +152,13 @@ export class ColumnChooserController implements ReactiveController {
     return this.#open;
   }
 
-  show(): void {
+  /** Abre; `anchor` = botão que abriu (o "mais" quando o botão do seletor está recolhido nele). */
+  show(anchor: HTMLElement | null = null): void {
     if (this.#open) {
       return;
     }
 
+    this.#anchor = anchor;
     this.#open = true;
     this.#shown = false;
     this.#host.requestUpdate();
@@ -173,11 +176,11 @@ export class ColumnChooserController implements ReactiveController {
     this.#host.requestUpdate();
   }
 
-  toggle(): void {
+  toggle(anchor: HTMLElement | null = null): void {
     if (this.#open) {
       this.hide(true);
     } else {
-      this.show();
+      this.show(anchor);
     }
   }
 
@@ -217,8 +220,11 @@ export class ColumnChooserController implements ReactiveController {
       : null;
   }
 
+  /** Botão que abriu (ou o do seletor na barra): âncora da posição e destino do foco ao fechar. */
   get #button(): HTMLElement | null {
-    return this.#host.renderRoot.querySelector<HTMLElement>('.column-chooser-button');
+    return (this.#anchor?.isConnected ? this.#anchor : null)
+      ?? this.#host.renderRoot.querySelector<HTMLElement>('.column-chooser-button')
+      ?? this.#host.renderRoot.querySelector<HTMLElement>('.toolbar-more-button');
   }
 
   hostUpdated(): void {
@@ -261,6 +267,7 @@ export class ColumnChooserController implements ReactiveController {
   }
 
   hostDisconnected(): void {
+    this.#anchor = null;
     this.#dropzones.clear();
     document.removeEventListener('pointerdown', this.#outsidePointerDown, true);
     this.#open = false;
@@ -286,6 +293,7 @@ export class ColumnChooserController implements ReactiveController {
       target instanceof HTMLElement
       && (target.classList.contains('column-chooser')
         || target.classList.contains('column-chooser-button')
+        || target === this.#anchor
         // Arrastar um cabeçalho até o painel não pode fechá-lo.
         || ((target.classList.contains('header-column') || target.classList.contains('band-header')) && this.#host.renderRoot.contains(target))));
 

@@ -5,6 +5,7 @@ import type {
   GridGroupPath,
   GridSummaryValue,
 } from '../grid-column-def.js';
+import type { DataGrid } from '../grid.js';
 
 /** Options of `getExportData()`, `exportCsv()`, `downloadCsv()` and the xlsx adapter. */
 export interface GridExportOptions {
@@ -125,4 +126,32 @@ export interface GridExportData<TItem = any> {
   /** Visible exportable columns in the current order (with `includeGroups: false`, the grouped columns first). */
   columns: GridExportColumn<TItem>[];
   rows: GridExportRow<TItem>[];
+}
+
+/** Formats offered by the export UI (`exportFormats`). May gain members in minor versions. */
+export type GridExportFormat = 'csv' | 'xlsx';
+
+/**
+ * An export run by the grid UI (`xlsxExporter`): build and download the file
+ * of what the user sees. Reject to report an error; honor `signal` (aborted
+ * when the grid disconnects).
+ */
+export type GridExporter = (
+  grid: DataGrid,
+  options: { readonly selectedOnly: boolean; readonly signal: AbortSignal },
+) => Promise<void>;
+
+/** `detail` of `u-grid-exporting` and `u-grid-export`. */
+export interface GridExportingEventDetail {
+  readonly format: GridExportFormat;
+  /** Only the selected rows ("Export selected rows"). */
+  readonly selectedOnly: boolean;
+}
+
+/** `detail` of `u-grid-export`. */
+export type GridExportEventDetail = GridExportingEventDetail;
+
+/** `detail` of `u-grid-export-error`. */
+export interface GridExportErrorEventDetail extends GridExportingEventDetail {
+  readonly error: unknown;
 }

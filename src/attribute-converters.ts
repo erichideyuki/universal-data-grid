@@ -1,5 +1,6 @@
 import type { ComplexAttributeConverter } from 'lit';
 
+import type { GridExportFormat } from './export/types.js';
 import type { GridFilterOperation } from './grid-column-def.js';
 
 /**
@@ -84,3 +85,28 @@ export const numberListAttribute = (defaultValue: readonly number[]) => ({
       .filter(size => Number.isInteger(size) && size > 0);
   },
 });
+
+const EXPORT_FORMAT_TOKENS = new Set(['csv', 'xlsx']);
+
+/**
+ * Formatos da exportação pela interface (`export-formats="csv xlsx"`, frente
+ * 18): palavras separadas por espaço ou vírgula; desconhecida avisa e é
+ * ignorada; repetidas contam uma vez. Só lê (não reflete); sem atributo =
+ * lista vazia. Exceção registrada à regra "array = `attribute: false`".
+ */
+export const exportFormatsAttribute = {
+  fromAttribute: (value: string | null): readonly GridExportFormat[] => {
+    if (value === null) {
+      return [];
+    }
+
+    const tokens = value.split(/[\s,]+/).filter(Boolean);
+    const unknown = tokens.filter(token => !EXPORT_FORMAT_TOKENS.has(token));
+
+    if (unknown.length) {
+      console.warn(`<u-grid>: unknown export format(s) ignored: ${unknown.join(', ')}.`);
+    }
+
+    return [...new Set(tokens.filter(token => EXPORT_FORMAT_TOKENS.has(token)))] as GridExportFormat[];
+  },
+};

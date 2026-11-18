@@ -264,6 +264,14 @@
               "name": "--u-grid-added-row-background-color"
             },
             {
+              "description": "Background of the menus (context menus, \"More actions\", export). Default: surface-container token.",
+              "name": "--u-grid-menu-background-color"
+            },
+            {
+              "description": "Corner radius of the menus. Default `4px`.",
+              "name": "--u-grid-menu-shape"
+            },
+            {
               "description": "Opacity of rows marked for removal (their text is also struck through). Default `0.7`.",
               "name": "--u-grid-removed-row-opacity"
             }
@@ -344,6 +352,46 @@
             {
               "description": "Count and inline summaries in a group row (`\"(3, Sum of Population: 1,234)\"`).",
               "name": "group-count"
+            },
+            {
+              "description": "The bar above the table (group panel, buttons, search).",
+              "name": "toolbar"
+            },
+            {
+              "description": "Toolbar buttons (built-in and host), with `add-row-button`, `save-button`, `discard-button`, `export-button` or `column-chooser-button`.",
+              "name": "toolbar-button"
+            },
+            {
+              "description": "The \"More actions\" button that lists the toolbar items that do not fit.",
+              "name": "toolbar-more-button"
+            },
+            {
+              "description": "The toolbar export button (`exportFormats`).",
+              "name": "export-button"
+            },
+            {
+              "description": "The toolbar column chooser button.",
+              "name": "column-chooser-button"
+            },
+            {
+              "description": "Every menu of the grid (with `column-header-menu`, `group-panel-menu`, `row-menu` or `toolbar-menu`).",
+              "name": "menu"
+            },
+            {
+              "description": "Menu items.",
+              "name": "menu-item"
+            },
+            {
+              "description": "Menu separators.",
+              "name": "menu-separator"
+            },
+            {
+              "description": "The context menu of data and group rows.",
+              "name": "row-menu"
+            },
+            {
+              "description": "The \"More actions\" and export menus.",
+              "name": "toolbar-menu"
             },
             {
               "description": "The group panel context menu.",
@@ -734,7 +782,7 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, move the chip left/right (grouping\nlevel), ungroup all, expand/collapse all groups. Default `true`;\n`group-panel-menu=\"false\"` disables it.",
+              "description": "Built-in items of the group panel context menu (right-click, long press,\nShift+F10 or the context menu key on a group chip): ungroup, move the\nchip left/right (grouping level), ungroup all, expand/collapse all\ngroups. Default `true`; with `group-panel-menu=\"false\"` the host may\nstill add items through `u-grid-context-menu-opening`.",
               "attribute": "group-panel-menu"
             },
             {
@@ -744,8 +792,53 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the column headers (right-click, the \"⋮\" button, Shift+F10\nor the context menu key on a header): group by the column, move it\nleft/right, auto-size or widen/narrow it. It is the single-pointer\nalternative to dragging (WCAG 2.5.7): with `column-header-menu=\"false\"`\nthe host must provide one. Only actions that apply to the column are\nlisted; without any, the browser menu is kept. Default `true`.",
+              "description": "Built-in items of the column header context menu (right-click, long\npress, the \"⋮\" button, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "attribute": "column-header-menu"
+            },
+            {
+              "kind": "field",
+              "name": "rowMenu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "attribute": "row-menu"
+            },
+            {
+              "kind": "field",
+              "name": "toolbarItems",
+              "type": {
+                "text": "readonly (GridToolbarItemName | GridToolbarItem)[] | null"
+              },
+              "description": "Items of the toolbar above the table (property only), in order:\nbuilt-in names (`'searchPanel'`) or objects — `{ name, location,\nlocateInMenu, showText, disabled, text }` configures a built-in, `{ text,\nicon, action }` is a host button and `{ renderer }` host content. A\nbuilt-in shows only with its feature on (`showGroupPanel`,\n`showSearchPanel`, `columnChooser`, `exportFormats`, `allowAdding`,\n`editMode=\"batch\"`). `null` (default) = `GRID_DEFAULT_TOOLBAR_ITEMS`;\n`[]` hides the bar (the editing status text still shows). Replace the\narray instead of mutating it; the getter returns a frozen copy."
+            },
+            {
+              "kind": "field",
+              "name": "exportFormats",
+              "type": {
+                "text": "readonly GridExportFormat[]"
+              },
+              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx\"`). `xlsx` needs\n`xlsxExporter`. Default `[]` (no export UI; the export methods always work).",
+              "attribute": "export-formats"
+            },
+            {
+              "kind": "field",
+              "name": "xlsxExporter",
+              "type": {
+                "text": "GridExporter | null"
+              },
+              "default": "null",
+              "description": "Builds and downloads the Excel file of the export UI (property only):\n`createXlsxExporter(ExcelJS, options)` from\n`@universal-material/data-grid/export-xlsx`. Without it the `xlsx`\nentries are not shown."
+            },
+            {
+              "kind": "field",
+              "name": "csvExportOptions",
+              "type": {
+                "text": "Omit<GridCsvDownloadOptions, 'selectedOnly' | 'signal'> | null"
+              },
+              "default": "null",
+              "description": "Options of the CSV file of the export UI (property only): `fileName`, `separator`, `includeGroups`…"
             },
             {
               "kind": "field",
@@ -1864,6 +1957,51 @@
                 }
               ],
               "description": "Moves the focus to the active cell of the grid (the one keyboard navigation starts from)."
+            },
+            {
+              "kind": "method",
+              "name": "copySelection",
+              "return": {
+                "type": {
+                  "text": "Promise<boolean>"
+                }
+              },
+              "description": "Copies like Ctrl/Cmd+C: the selected rows (current order and filter) or,\nwithout a selection, the active cell — TSV and an HTML table through the\nasynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).\nResolves `false` when there is nothing to copy, `clipboardMode` is\n`none`, the listener canceled without setting data, or the browser\ndenied the write. Browsers need a user activation: call it inside the\nuser's gesture (click or key handler)."
+            },
+            {
+              "kind": "method",
+              "name": "openContextMenu",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "target",
+                  "type": {
+                    "text": "{ rowKey: unknown; column?: GridColumnDef } | { column: GridColumnDef } | { groupPath: GridGroupPath }"
+                  }
+                },
+                {
+                  "name": "anchor",
+                  "optional": true,
+                  "type": {
+                    "text": "HTMLElement | null"
+                  }
+                }
+              ],
+              "description": "Opens the context menu (built-in items and `u-grid-context-menu-opening`)\nof a data row (`{ rowKey, column? }`), a column header (`{ column }`) or\na group row (`{ groupPath }`) — e.g. from a \"⋯\" button in a cell\n`renderer`. Under `anchor` (or the cell); the focus goes back to `anchor`\n(or the cell). Returns `false` when canceled, empty, the row or column is\nnot shown, or before the first render."
+            },
+            {
+              "kind": "method",
+              "name": "closeContextMenu",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Closes the context menu (no focus change)."
             }
           ],
           "events": [
@@ -2022,6 +2160,41 @@
               "description": "The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation)."
             },
             {
+              "name": "u-grid-exporting",
+              "type": {
+                "text": "CustomEvent<GridExportingEventDetail>"
+              },
+              "description": "Before an export started from the UI (toolbar, \"More actions\", row menu). Cancelable: export your own way (e.g. PDF)."
+            },
+            {
+              "name": "u-grid-export",
+              "type": {
+                "text": "CustomEvent<GridExportEventDetail>"
+              },
+              "description": "An export started from the UI finished."
+            },
+            {
+              "name": "u-grid-export-error",
+              "type": {
+                "text": "CustomEvent<GridExportErrorEventDetail>"
+              },
+              "description": "An export started from the UI failed (`detail.error`)."
+            },
+            {
+              "name": "u-grid-context-menu-opening",
+              "type": {
+                "text": "CustomEvent<GridContextMenuOpeningEventDetail>"
+              },
+              "description": "Before a context menu opens (header, group panel, row, group row: right-click, long press, Shift+F10, the context menu key, the header \"⋮\" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays."
+            },
+            {
+              "name": "u-grid-copying",
+              "type": {
+                "text": "CustomEvent<GridCopyEventDetail>"
+              },
+              "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable."
+            },
+            {
               "type": {
                 "text": "CustomEvent<GridSortEventDetail>"
               },
@@ -2034,13 +2207,6 @@
               },
               "description": "Before each call to `dataSource.load` (`dataSource` only). Cancelable: the call is skipped and the rows shown stay.",
               "name": "u-grid-loading"
-            },
-            {
-              "type": {
-                "text": "CustomEvent<GridCopyEventDetail>"
-              },
-              "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.",
-              "name": "u-grid-copying"
             },
             {
               "type": {
@@ -2218,7 +2384,7 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, move the chip left/right (grouping\nlevel), ungroup all, expand/collapse all groups. Default `true`;\n`group-panel-menu=\"false\"` disables it.",
+              "description": "Built-in items of the group panel context menu (right-click, long press,\nShift+F10 or the context menu key on a group chip): ungroup, move the\nchip left/right (grouping level), ungroup all, expand/collapse all\ngroups. Default `true`; with `group-panel-menu=\"false\"` the host may\nstill add items through `u-grid-context-menu-opening`.",
               "fieldName": "groupPanelMenu"
             },
             {
@@ -2227,8 +2393,25 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the column headers (right-click, the \"⋮\" button, Shift+F10\nor the context menu key on a header): group by the column, move it\nleft/right, auto-size or widen/narrow it. It is the single-pointer\nalternative to dragging (WCAG 2.5.7): with `column-header-menu=\"false\"`\nthe host must provide one. Only actions that apply to the column are\nlisted; without any, the browser menu is kept. Default `true`.",
+              "description": "Built-in items of the column header context menu (right-click, long\npress, the \"⋮\" button, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "fieldName": "columnHeaderMenu"
+            },
+            {
+              "name": "row-menu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "fieldName": "rowMenu"
+            },
+            {
+              "name": "export-formats",
+              "type": {
+                "text": "readonly GridExportFormat[]"
+              },
+              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx\"`). `xlsx` needs\n`xlsxExporter`. Default `[]` (no export UI; the export methods always work).",
+              "fieldName": "exportFormats"
             },
             {
               "name": "show-filter-row",

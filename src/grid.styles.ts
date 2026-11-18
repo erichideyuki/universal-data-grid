@@ -95,7 +95,8 @@ export const styles = css`
     align-self: stretch;
     flex: 1 1 200px;
     gap: 8px;
-    min-width: 0;
+    /* O que a barra reserva ao painel antes de recolher botões no "mais" (frente 18). */
+    min-width: min(120px, 100%);
   }
 
   .group-container.drop-target::before {
@@ -708,11 +709,96 @@ export const styles = css`
     justify-content: center;
     width: 40px;
     height: 40px;
-    margin-inline-start: auto;
     border-radius: 50%;
     font-size: 24px;
     cursor: pointer;
     color: var(--_toggle-color);
+  }
+
+  /*
+   * Barra de ferramentas (frente 18): o roving (\`role="toolbar"\`) ocupa o
+   * espaço entre os avulsos (busca, conteúdo do hospedeiro); os botões que não
+   * cabem vão ao "mais". DOM na ordem visual (RTL só inverte as setas).
+   */
+  .toolbar-roving {
+    display: flex;
+    /* Largura dada pelo espaço (não pelo conteúdo): é o que a medida do "mais" usa. */
+    flex: 1 1 200px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: min(200px, 100%);
+  }
+
+  .toolbar-content {
+    display: flex;
+    align-items: center;
+    flex: none;
+    margin-inline-start: 8px;
+  }
+
+  .toolbar-button {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 24px;
+    min-height: 32px;
+    padding-inline: 10px;
+    border-radius: 16px;
+    cursor: pointer;
+    color: var(--u-color-primary, rgb(103, 80, 164));
+    font-size: 0.875rem;
+    font-weight: var(--u-font-weight-medium, 500);
+    white-space: nowrap;
+  }
+
+  .toolbar-button.icon-only,
+  .toolbar-button.column-chooser-button,
+  .toolbar-button.export-button {
+    width: auto;
+    min-width: 40px;
+    height: 40px;
+    padding-inline: 8px;
+    border-radius: 20px;
+    color: var(--_toggle-color);
+  }
+
+  .toolbar-button.icon-only {
+    width: 40px;
+    padding: 0;
+  }
+
+  .toolbar-button:not([aria-disabled="true"]):hover,
+  .toolbar-button[aria-expanded="true"] {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .toolbar-button:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .toolbar-button[aria-disabled="true"] {
+    cursor: default;
+    color: color-mix(in srgb, currentColor 60%, transparent);
+  }
+
+  .toolbar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .toolbar-more-button::before {
+    content: "";
+    width: 24px;
+    height: 24px;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
 
   .column-chooser-button:hover,
@@ -897,19 +983,20 @@ export const styles = css`
     opacity: 0.8;
   }
 
-  /* ------------------------------------------------ menu do painel de grupos */
+  /* --------------------------------- menus: contexto e barra (motor único, frente 18) */
 
-  .group-panel-menu,
-  .column-header-menu {
+  .grid-menu {
     position: fixed;
     inset: auto;
     margin: 0;
     min-width: 200px;
     max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     padding: 8px 0;
     border: none;
-    border-radius: var(--u-shape-corner-extra-small, 4px);
-    background-color: var(--u-color-surface-container, rgb(243, 237, 247));
+    border-radius: var(--u-grid-menu-shape, var(--u-shape-corner-extra-small, 4px));
+    background-color: var(--u-grid-menu-background-color, var(--u-color-surface-container, rgb(243, 237, 247)));
     color: var(--u-color-on-surface, rgb(29, 27, 32));
     box-shadow: 0 2px 6px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 15%, transparent), 0 1px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 30%, transparent);
     font: inherit;
@@ -948,6 +1035,19 @@ export const styles = css`
 
   .group-panel-menu-item[aria-disabled="true"]:hover {
     background: none;
+  }
+
+  .menu-separator {
+    height: 0;
+    margin-block: 8px;
+    border-block-start: 1px solid var(--_border-color);
+  }
+
+  /* Toque: alvos maiores nos menus (WCAG 2.5.8 já atende com 40px; 48px é o do Material). */
+  @media (pointer: coarse) {
+    .menu-item {
+      min-height: 48px;
+    }
   }
 
   /*
@@ -1435,18 +1535,34 @@ export const styles = css`
     }
 
     .column-chooser,
-    .group-panel-menu,
-    .column-header-menu,
+    .grid-menu,
     .filter-menu,
     .header-filter {
       border: 1px solid CanvasText;
     }
 
-    .group-panel-menu-item[aria-disabled="true"] {
+    .group-panel-menu-item[aria-disabled="true"],
+    .toolbar-button[aria-disabled="true"] {
       color: GrayText;
     }
 
-    .column-header-menu-button::before {
+    .menu-item:focus-visible {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .menu-separator {
+      border-block-start-color: CanvasText;
+    }
+
+    .toolbar-button[aria-expanded="true"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
+    .column-header-menu-button::before,
+    .toolbar-more-button::before {
       forced-color-adjust: none;
       background-color: ButtonText;
     }

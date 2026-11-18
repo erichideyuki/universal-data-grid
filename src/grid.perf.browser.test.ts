@@ -1080,6 +1080,77 @@ const horizontalMetrics = async (grid: DataGrid, prefix: string) => {
 };
 
 /**
+ * Frente 18: barra completa (painel, exportar, seletor, busca, itens do
+ * hospedeiro, "mais") e menus de contexto em 1 milhão de linhas — sem custo
+ * por linha: abrir o menu da linha, do cabeçalho e o "mais" mede só o menu.
+ */
+const menusScenario = (rows: number, label: string) => {
+  it(`${label} linhas com barra e menus: 1º render, menu da linha, do cabeçalho e "mais"`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '600px';
+    grid.columns = makeLeanColumns();
+    grid.keyExpr = 'id';
+    grid.rowMenu = true;
+    grid.columnChooser = true;
+    grid.showSearchPanel = true;
+    grid.selectionMode = 'multiple';
+    grid.exportFormats = ['csv'];
+    grid.toolbarItems = [
+      'groupPanel',
+      'exportButton',
+      'columnChooserButton',
+      'searchPanel',
+      { text: 'Refresh', action: () => undefined },
+      { text: 'Print', action: () => undefined, locateInMenu: 'always' },
+    ];
+    grid.items = items;
+
+    perf.recalibrate();
+    const start = performance.now();
+    document.body.append(grid);
+    await updatesDone(grid);
+    grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+    const firstRenderMs = perf.weak(performance.now() - start);
+    await painted(grid);
+
+    const root = grid.shadowRoot!;
+    const cell = () => root.querySelector<HTMLElement>('tbody tr[data-index] td[role=gridcell]')!;
+    const header = () => root.querySelector<HTMLElement>('th.header-column')!;
+    const contextMenu = (target: HTMLElement) =>
+      target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 20, clientY: 20 }));
+
+    const rowMenu = await interaction('rowMenuOpen', grid, () => contextMenu(cell()), () => grid.closeContextMenu());
+    grid.closeContextMenu();
+    await painted(grid);
+    const headerMenu = await interaction('headerMenuOpen', grid, () => contextMenu(header()), () => grid.closeContextMenu());
+    grid.closeContextMenu();
+    await painted(grid);
+    const more = await interaction(
+      'toolbarMoreOpen',
+      grid,
+      () => root.querySelector<HTMLElement>('.toolbar-more-button')!.click(),
+      () => root.querySelector<HTMLElement>('.toolbar-more-button')!.click(),
+    );
+    const menuItems = root.querySelectorAll('[role=menuitem]').length;
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+    grid.remove();
+    items = undefined;
+
+    const metrics = { firstRenderMs, domNodes: nodes, ...rowMenu, ...headerMenu, ...more };
+
+    checkBudgets(rows, metrics, perf.report(`menus-${label}`, metrics));
+    expect(menuItems).toBeGreaterThan(0);
+  });
+};
+
+/**
  * Grid largo (frente 13): 300 colunas (calculadas) × linhas, com e sem
  * bandas, rolando nos dois eixos com a virtualização de colunas (`auto`).
  */
@@ -1133,6 +1204,7 @@ describe('perfil de máquina fraca', () => {
   detailScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');
   editingScenario(1_000_000, '1m');
+  menusScenario(1_000_000, '1m');
   wideScenario(1_000_000, '1m', 0);
   wideScenario(1_000_000, '1m', 10);
 });

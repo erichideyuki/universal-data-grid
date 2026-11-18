@@ -7,7 +7,7 @@
  * genéricos devolvem ao hospedeiro os tipos reais do módulo que ele passou.
  */
 import { downloadBlob } from '../export/download.js';
-import type { GridExportColumn, GridExportOptions, GridExportRow } from '../export/types.js';
+import type { GridExportColumn, GridExporter, GridExportOptions, GridExportRow } from '../export/types.js';
 import type { DataGrid } from '../grid.js';
 import { toDate, toNumber } from '../row-model/format.js';
 import { datePatternOf, numberFormatOf } from './formats.js';
@@ -110,6 +110,20 @@ export const downloadXlsx = async <M extends ExcelJSModule>(
 ): Promise<void> => {
   downloadBlob(await exportXlsx(grid, excelJS, options), options.fileName || 'export.xlsx');
 };
+
+/** Options of `createXlsxExporter()`: those of `downloadXlsx` without `selectedOnly` and `signal` (set by the grid). */
+export type GridXlsxExporterOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = ExcelJSWorksheet> = Omit<GridXlsxDownloadOptions<TWorkbook, TWorksheet>, 'selectedOnly' | 'signal'>;
+
+/**
+ * The Excel entry of the grid export UI: `grid.xlsxExporter =
+ * createXlsxExporter(ExcelJS, options)` (with `export-formats="csv xlsx"`).
+ * The grid passes `selectedOnly` ("Export selected rows") and an
+ * `AbortSignal` (aborted when it disconnects).
+ */
+export const createXlsxExporter = <M extends ExcelJSModule>(
+  excelJS: M,
+  options: GridXlsxExporterOptions<WorkbookOf<M>, WorksheetOf<M>> = {},
+): GridExporter => (grid, { selectedOnly, signal }) => downloadXlsx(grid, excelJS, { ...options, selectedOnly, signal });
 
 // ----------------------------------------------------------------- planilha
 

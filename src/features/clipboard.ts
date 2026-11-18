@@ -23,7 +23,7 @@ const isRange = (selection: Selection | null | undefined): selection is Selectio
  * O usuário selecionou texto DENTRO do grid? Seleção esquecida em outro
  * ponto da página não conta (o Chromium a mantém ao entrar no grid por Tab).
  */
-const hasTextSelection = (root: ShadowRoot): boolean => {
+export const hasTextSelection = (root: ShadowRoot): boolean => {
   if (isRange((root as unknown as SelectionRoot).getSelection?.())) {
     return true;
   }
