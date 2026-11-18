@@ -9,6 +9,11 @@ import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { booleanAttribute, type LegacyAttributes } from './attribute-converters.js';
+import { downloadBlob } from './export/download.js';
+import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
+import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
+import { clipboardContent, collectRows, writeCsv } from './export/write.js';
+import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import { cycleWithin, focusFirstWithin } from './features/cell-content-focus.js';
 import {
   ColumnChooserController,
@@ -78,6 +83,7 @@ import {
   type GridSummary,
   type GridSummaryItem,
   type GridSummaryValue,
+  isColumnExportable,
   isColumnGroupable,
   type GridFilterCondition,
   type GridFilterExpression,
@@ -130,6 +136,7 @@ import { buildGroups, groupKeyOf } from './row-model/group.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
 import type { DataRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
+import { cellValueReader } from './row-model/value.js';
 
 import './grid-column.js';
 
@@ -159,6 +166,18 @@ export type {
 } from './grid-column-def.js';
 export type { GridSortMode, GridSortingMode } from './features/sorting.js';
 export type { GridSelectionMode } from './features/selection.js';
+export type { GridClipboardMode } from './features/clipboard.js';
+export type {
+  GridCsvDownloadOptions,
+  GridCsvOptions,
+  GridExportColumn,
+  GridExportData,
+  GridExportDataRow,
+  GridExportGroupRow,
+  GridExportOptions,
+  GridExportRow,
+  GridExportSummaryRow,
+} from './export/types.js';
 export { DataGridColumn } from './grid-column.js';
 
 /** @deprecated Use `DataGridColumn`. */
@@ -227,6 +246,24 @@ export interface GridSelectionChangeEventDetail {
   source: GridChangeSource;
 }
 
+/** `detail` of `u-grid-copying`. */
+export interface GridCopyEventDetail<TItem = any> {
+  /** Copied rows: the selected rows in the current order, or the row of the focused cell. */
+  items: TItem[];
+  /** Copied columns: the visible exportable columns, or the focused column. */
+  columns: GridColumnDef<TItem>[];
+  /** Tab separated text the grid writes as `text/plain`. */
+  text: string;
+  /** Escaped `<table>` the grid writes as `text/html` (empty above 10,000 rows). */
+  html: string;
+  /**
+   * The clipboard of the native `copy` event. After `preventDefault()` the
+   * grid writes nothing and lets the native copy go on: call `setData` here
+   * to write your own content (synchronously, in the listener).
+   */
+  clipboardData: DataTransfer;
+}
+
 /** Kind of the active cell: column header, data cell, selection checkbox cell, group row or summary row (group footer, totals). */
 export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary';
 
@@ -247,6 +284,12 @@ export interface GridFocusChangeEventDetail {
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n, type GridI18nInput } from './grid-i18n.js';
+
+/** O que o Ctrl+C escreve, antes do `u-grid-copying`. */
+interface CopyContent {
+  detail: Omit<GridCopyEventDetail, 'clipboardData'>;
+  announcement: string;
+}
 
 /** Largura (px) de cada coluna de recuo de grupo; igual ao `--_group-column-width`. */
 const GROUP_COLUMN_WIDTH = 32;
@@ -479,6 +522,7 @@ type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
  * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
+ * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
  *
  * @cssprop --u-grid-background-color - Grid background.
@@ -873,6 +917,14 @@ export class DataGrid extends LitElement {
    * moves the focus and the checkbox (or Space) selects.
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-checkboxes' }) showCheckboxes = false;
+
+  /**
+   * Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected
+   * rows (or, without a selection, the focused cell) as tab separated text
+   * and an HTML table; `none` leaves the clipboard alone. Text selected with
+   * the mouse is copied natively.
+   */
+  @property({ attribute: 'clipboard-mode' }) clipboardMode: GridClipboardMode = 'copy';
 
   readonly #selection = new SelectionModel();
   /** Âncora do Shift+clique/Shift+setas: chave da última linha alternada. */
@@ -1714,6 +1766,174 @@ export class DataGrid extends LitElement {
     return true;
   }
 
+  // ---------------------------------------------------------- exportação
+
+  /**
+   * The columns and rows the user sees, ready to build any file (Excel, PDF):
+   * visible exportable columns in the current order, filter, sorting, groups
+   * (collapsed ones included) and summaries. The state is read when called;
+   * rows are built in time slices, so a million rows do not freeze the page.
+   */
+  async getExportData(options: GridExportOptions = {}): Promise<GridExportData> {
+    const source = this.#exportSource(options);
+    const rows = await collectRows(source, options.signal);
+
+    return { columns: source.columns.map(column => column.info), rows };
+  }
+
+  /**
+   * CSV (RFC 4180) of what the user sees (see `getExportData`): formatted
+   * texts, UTF-8 with BOM, `;` as separator in languages with a decimal
+   * comma, cells that a spreadsheet would run as formulas prefixed with `'`.
+   */
+  async exportCsv(options: GridCsvOptions = {}): Promise<Blob> {
+    return writeCsv(this.#exportSource(options), options, this.language);
+  }
+
+  /** Builds the CSV (`exportCsv`) and downloads it as `fileName` (default `export.csv`). */
+  async downloadCsv(options: GridCsvDownloadOptions = {}): Promise<void> {
+    downloadBlob(await this.exportCsv(options), options.fileName || 'export.csv');
+  }
+
+  /** Instantâneo do que o usuário vê, para os escritores de `src/export/`. */
+  #exportSource(options: GridExportOptions): ExportSource {
+    options.signal?.throwIfAborted();
+    this.#ensureRows();
+
+    const includeGroups = options.includeGroups !== false;
+    const includeSummaries = options.includeSummaries !== false;
+    const columns = [...includeGroups ? [] : this._groupColumns, ...this._visibleColumns]
+      .filter(isColumnExportable)
+      .map(column => this.#exportColumn(column));
+    let items = this.#sortedItems;
+    let groups = this.#groups;
+    let totals = this.#totals;
+
+    if (options.selectedOnly) {
+      // Na ordem e no filtro atuais; grupos e resumos recalculados sobre as selecionadas.
+      items = items.filter(item => this.#selection.has(item));
+      groups = this._groupColumns.length ? this.#buildGroupsOf(items) : [];
+      totals = includeSummaries && this.#totalSpecs.length ? summarize(items, this.#totalSpecs.map(({ spec }) => spec)) : [];
+    }
+
+    const translation = this.#translation;
+    const listSeparator = this.#listSeparatorText;
+    const countFormat = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+
+    return {
+      columns,
+      items,
+      groups,
+      includeGroups,
+      includeSummaries,
+      groupSummaries: this.#groupSpecs.map(summary => this.#exportSummary(summary)),
+      totalSummaries: this.#totalSpecs.map(summary => this.#exportSummary(summary)),
+      totals,
+      listSeparator,
+      groupValueText: node => this.#groupValueText({ column: node.column, value: node.value, firstItem: node.items[0] }),
+      groupLabel: (node, valueText, extra) => {
+        const parts = this.showGroupCount ? [countFormat.format(node.items.length), ...extra] : [...extra];
+        const info = parts.length ? ` ${formatMessage(translation.groupInfoText, { info: parts.join(listSeparator) })}` : '';
+
+        return `${node.column.label ?? ''}${translation.groupLabelSeparator}${valueText}${info}`;
+      },
+    };
+  }
+
+  #exportColumn(column: GridColumnDef): ExportColumnSource {
+    const dataType = this.#dataTypeOf(column);
+    const context = this.#formatContext(column);
+
+    return {
+      info: {
+        column,
+        label: column.label ?? '',
+        dataType,
+        alignment: resolveAlignment(column, dataType),
+        width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
+      },
+      read: cellValueReader(column),
+      text: (value, item) => formatCellValue(value, item, column, context),
+      builtIn: !column.displayValue && typeof column.format !== 'function',
+    };
+  }
+
+  #exportSummary(summary: ResolvedSummary): ExportSummarySource {
+    return {
+      item: summary.item,
+      column: summary.spec.column,
+      value: raw => this.#summaryValue(summary, raw),
+      text: raw => this.#summaryText(summary, raw),
+    };
+  }
+
+  /**
+   * Ctrl/Cmd+C (evento nativo `copy`): linhas selecionadas na ordem atual ou,
+   * sem seleção, a célula ativa. Síncrono — `clipboardData` só aceita
+   * `setData` durante o evento.
+   */
+  readonly #onCopy = (event: ClipboardEvent): void => {
+    const table = this.#tableRef.value;
+
+    if (this.clipboardMode === 'none' || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
+      return;
+    }
+
+    const copy = this.#selection.size ? this.#copySelection() : this.#copyActiveCell();
+
+    if (!copy) {
+      return;
+    }
+
+    const clipboardData = event.clipboardData!;
+    const detail: GridCopyEventDetail = { ...copy.detail, clipboardData };
+
+    if (!this.dispatchEvent(new CustomEvent('u-grid-copying', { ...this.#eventInit(detail), cancelable: true }))) {
+      return;
+    }
+
+    event.preventDefault();
+    writeClipboard(clipboardData, detail);
+    this.#announce(copy.announcement);
+  };
+
+  #copySelection(): CopyContent | undefined {
+    const source = this.#exportSource({ selectedOnly: true, includeGroups: false, includeSummaries: false });
+
+    if (!source.items.length || !source.columns.length) {
+      return undefined;
+    }
+
+    const rows = [...exportRows(source)] as GridExportDataRow[];
+
+    return {
+      detail: {
+        items: rows.map(row => row.item),
+        columns: source.columns.map(column => column.info.column),
+        ...clipboardContent(rows, source.columns),
+      },
+      announcement: formatMessage(this.#translation.rowsCopiedAnnouncement, { count: String(rows.length) }),
+    };
+  }
+
+  #copyActiveCell(): CopyContent | undefined {
+    const row = this.#rowAt(this.#activeRowIndex);
+    const column = this.#activeColumn;
+
+    if (!row || !isDataRow(row) || !column || column === SELECTION_COLUMN || !isColumnExportable(column)) {
+      return undefined;
+    }
+
+    const source = this.#exportColumn(column);
+    const value = source.read(row.item);
+    const cell: GridExportDataRow = { rowType: 'data', level: 0, item: row.item, values: [value], texts: [source.text(value, row.item)] };
+
+    return {
+      detail: { items: [row.item], columns: [column], ...clipboardContent([cell], [source]) },
+      announcement: this.#translation.cellCopiedAnnouncement,
+    };
+  }
+
   /** Moves the focus to the active cell of the grid (the one keyboard navigation starts from). */
   override focus(options?: FocusOptions): void {
     const cell = this.#activeCellElement();
@@ -2529,15 +2749,7 @@ export class DataGrid extends LitElement {
     }
 
     if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
-      const orders = this._groupColumns.map(column => this.#orderOf(column));
-      this.#groups = buildGroups(
-        this.#sortedItems,
-        this._groupColumns,
-        // A faixa (`groupValueGetter`) compara pelo próprio valor, sem o `dataType` da coluna.
-        column => createComparer(language, column.groupValueGetter ? undefined : column.dataType),
-        orders,
-        this.#groupSpecs.map(({ spec }) => spec),
-      );
+      this.#groups = this.#buildGroupsOf(this.#sortedItems);
       this.#groupsDirty = false;
       this.#rowsDirty = true;
     }
@@ -2699,6 +2911,20 @@ export class DataGrid extends LitElement {
 
   // -------------------------------------------------------------- ordenação
 
+  /** Árvore de grupos (com os resumos de grupo) sobre `items`, já filtrados e ordenados. */
+  #buildGroupsOf(items: readonly unknown[]): GroupNode[] {
+    const language = this.language;
+
+    return buildGroups(
+      items,
+      this._groupColumns,
+      // A faixa (`groupValueGetter`) compara pelo próprio valor, sem o `dataType` da coluna.
+      column => createComparer(language, column.groupValueGetter ? undefined : column.dataType),
+      this._groupColumns.map(column => this.#orderOf(column)),
+      this.#groupSpecs.map(({ spec }) => spec),
+    );
+  }
+
   #orderOf(column: GridColumnDef): GridSortOrder | undefined {
     return this.#sorting.find(spec => spec.column === column)?.order;
   }
@@ -2813,7 +3039,7 @@ export class DataGrid extends LitElement {
     return { language: this.language, dataType: this.#dataTypeOf(column), trueText, falseText };
   }
 
-  #groupValueText(row: GroupRow): string {
+  #groupValueText(row: Pick<GroupRow, 'column' | 'value' | 'firstItem'>): string {
     const { column } = row;
 
     // Faixa (`groupValueGetter`): o valor devolvido, sem `format`/`displayValue` da coluna.
@@ -3834,6 +4060,7 @@ export class DataGrid extends LitElement {
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
+            @copy=${this.#onCopy}
             @focusin=${this.#onGridFocusIn}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
@@ -4805,5 +5032,6 @@ declare global {
     'u-grid-filter-change': CustomEvent<GridFilterEventDetail>;
     'u-grid-selection-change': CustomEvent<GridSelectionChangeEventDetail>;
     'u-grid-focus-change': CustomEvent<GridFocusChangeEventDetail>;
+    'u-grid-copying': CustomEvent<GridCopyEventDetail>;
   }
 }

@@ -137,6 +137,12 @@ export interface GridColumnDef<TItem = any> {
    * `groupValueGetter`. Only limits the user: `groupColumn()` still works.
    */
   groupable?: boolean | null;
+  /**
+   * Includes this column in exports (`exportCsv`, `getExportData`, the xlsx
+   * adapter) and in Ctrl+C. Default: `true` when the column has a `path`,
+   * `valueGetter` or `displayValue` (a `renderer`-only column has no text).
+   */
+  exportable?: boolean | null;
 }
 
 /** A column of the grid: its `path` (first column with that path) or the column itself. */
@@ -217,6 +223,13 @@ export const isColumnGroupable = (column: GridColumnDef): boolean =>
  */
 export const isColumnSortable = (column: GridColumnDef): boolean =>
   column.sortable ?? (!!column.path || !!column.valueGetter || !!column.comparator);
+
+/**
+ * A coluna entra na exportação e na área de transferência?
+ * @internal
+ */
+export const isColumnExportable = (column: GridColumnDef): boolean =>
+  column.exportable ?? (!!column.path || !!column.valueGetter || !!column.displayValue);
 
 /**
  * A coluna pode ser filtrada pelo usuário? (a expressão aponta a coluna pelo `path`)

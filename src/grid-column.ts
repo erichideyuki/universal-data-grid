@@ -183,6 +183,14 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   @property({ converter: optionalBoolean }) filterable: boolean | null = null;
 
   /**
+   * Includes this column in exports (`exportCsv`, `getExportData`, the
+   * xlsx adapter) and in Ctrl+C. Default (`null`): `true` when it has a
+   * `path`, `valueGetter` or `displayValue` (a `renderer`-only column has no
+   * text). `exportable="false"` leaves it out.
+   */
+  @property({ converter: optionalBoolean }) exportable: boolean | null = null;
+
+  /**
    * Operations of the filter row operation menu. Attribute: space separated
    * list (`filter-operations="contains startswith ="`); unknown tokens are
    * ignored with a warning. Default by data type.

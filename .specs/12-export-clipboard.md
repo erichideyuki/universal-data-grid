@@ -10,39 +10,135 @@ SelectedData }` com `exportDataGrid` (ExcelJS/jsPDF injetados pelo
 hospedeiro), `onExporting`. AG Grid: `exportDataAsCsv` (Community),
 `exportDataAsExcel` (Enterprise), Ctrl+C.
 
-## Escopo — API
-- `exportCsv({ fileName, selectedOnly, separator, includeGroups,
-  bom: true }): Blob` e `downloadCsv(...)`.
-- `getExportRows()` (linhas já formatadas, com nível de grupo e resumos) —
-  base para o hospedeiro gerar Excel/PDF com a biblioteca que quiser.
-- Adaptador opcional, fora do bundle principal:
-  `@universal-material/data-grid/export-xlsx` (`exportXlsx(grid, ExcelJS)`,
-  ExcelJS injetado — o grid não depende dele).
-- Ctrl+C com seleção: TSV no `text/plain` e tabela no `text/html`.
+## Escopo — API (aprovada pelo usuário em 2026-11-18)
+
+Revisada pelo `webcomponent-api-reviewer` (24 achados, todos aceitos; só
+`copySelection()` fica para a frente de barra/menu).
+
+**`<u-grid>` — métodos (assíncronos: a fonte remota da 08 e 1 milhão de
+linhas em blocos sem travar a interface)**
+- `getExportData(options?: GridExportOptions): Promise<GridExportData>` —
+  `{ columns, rows }` para o hospedeiro gerar Excel/PDF com a biblioteca
+  que quiser (a spec chamava `getExportRows`).
+- `exportCsv(options?: GridCsvOptions): Promise<Blob>` e
+  `downloadCsv(options?: GridCsvDownloadOptions): Promise<void>`.
+
+**Opções**
+- `GridExportOptions`: `selectedOnly` (`false`), `includeGroups` (`true`),
+  `includeSummaries` (`true`), `signal?: AbortSignal` (rejeita com
+  `AbortError`).
+- `GridCsvOptions`: + `separator: 'auto' | (string & {})` (`'auto'`: `;`
+  em idioma com vírgula decimal), `bom` (`true`), `includeHeaders`
+  (`true`), `escapeFormulas` (`true`), `rawValues` (`false`: número com
+  `.`, data ISO 8601, booleano `true`/`false`, vazio `''`).
+- `GridCsvDownloadOptions`: + `fileName` (`'export.csv'`).
+
+**Dados**: `GridExportData<TItem> { columns: GridExportColumn[]; rows:
+GridExportRow<TItem>[] }`; `GridExportColumn { column, label, dataType?,
+alignment, width? }`; linhas com `rowType`:
+- `'data'`: `level`, `item`, `values: unknown[]`, `texts: string[]`;
+- `'group'`: `level`, `groupPath`, `column`, `value`, `text` (valor
+  formatado), `label` (`"País: Brasil (Count: 3)"`), `itemCount`,
+  `summaries: GridSummaryValue[][]` (resumos `display: 'column'`),
+  `texts: string[]`;
+- `'group-footer'` (`groupPath`) e `'total'` (`groupPath: null`): `level`,
+  `summaries`, `texts`.
+
+`summaries[i]`/`texts[i]`/`values[i]` alinhados com `columns[i]`; vários
+resumos na mesma coluna → `texts[i]` unido pelo separador de lista do
+idioma, como na tela. Com `includeGroups: false`, `columns` começa pelas
+agrupadas (ordem de `getGrouping()`) e todas as linhas têm `level` 0.
+
+**Coluna**: `exportable?: boolean | null` no `GridColumnDef` e atributo
+`exportable` no `<u-grid-column>` (tri-estado); padrão `true` quando a
+coluna tem `path`, `valueGetter` ou `displayValue` (só `renderer` fica de
+fora). Vale para exportação e área de transferência.
+
+**Área de transferência**: `clipboardMode: 'copy' | 'none'` (atributo
+`clipboard-mode`, padrão `'copy'`); evento cancelável `u-grid-copying`
+`GridCopyEventDetail<TItem> { items, columns, text, html, clipboardData }`
+— cancelado, o grid não escreve nem chama `preventDefault` no `copy`
+nativo (o hospedeiro pode `setData` em `clipboardData`).
+
+**Adaptador** `@universal-material/data-grid/export-xlsx` (entrada própria
+no `exports` e no build; só `import type` do grid; ExcelJS injetado):
+`exportXlsx(grid, ExcelJS, options?): Promise<Blob>` e
+`downloadXlsx(grid, ExcelJS, options?)`; `GridXlsxOptions` =
+`GridExportOptions` + `sheetName` (`'Sheet1'`), `includeHeaders` (`true`),
+`customize(worksheet, workbook)` tipados pelos genéricos do módulo
+injetado; `fileName` (`'export.xlsx'`) no download.
 
 ## Comportamento
-- CSV RFC 4180 (aspas, quebras de linha), BOM para o Excel abrir UTF-8,
-  separador `;` quando o idioma usa vírgula decimal (opcional `auto`).
-- Valores exportados: `displayValue` (formatado) por padrão, `raw` opcional.
+- Exporta o que o usuário vê: colunas visíveis e exportáveis na ordem
+  atual, filtro, ordenação, grupos e resumos. Grupos RECOLHIDOS saem
+  inteiros (como o DevExtreme). Ordenação, filtro, grupos, colunas e
+  seleção são lidos na chamada (instantâneo); mudanças durante os blocos
+  não se misturam.
+- `selectedOnly`: só as selecionadas, na ordem e filtro atuais (não na
+  ordem de seleção de `getSelectedItems()`); grupos, contagens e resumos
+  recalculados sobre elas (como o DevExtreme).
+- CSV RFC 4180 (aspas, CRLF), BOM, cabeçalho alinhado com os dados. Linha
+  de grupo: rótulo na 1ª célula; recuo por nível só em `level` e no
+  outline do xlsx, nunca como colunas vazias no CSV.
+- Valores: texto formatado (`displayValue`/`format`) por padrão;
+  `rawValues` no CSV. O xlsx grava número/data tipados (`numFmt`
+  aproximado do `format` Intl); vira texto só a coluna com `displayValue`,
+  `format` em função ou `booleanDisplay`.
+- Ctrl/Cmd+C (evento nativo `copy`, também do menu Editar) com o foco numa
+  célula/linha do grid fora de input: com seleção → linhas selecionadas
+  (igual aos `texts` de `getExportData({ selectedOnly: true, includeGroups:
+  false, includeSummaries: false })`); sem seleção → a célula focada. TSV
+  em `text/plain`, `<table>` escapada em `text/html` (até 10 000 linhas;
+  acima, só o TSV). Sem cabeçalho. Com texto selecionado pelo mouse
+  (seleção não colapsada), a cópia nativa segue. Anúncio `aria-live`.
 
 ## Segurança
-**Injeção de fórmula em CSV/planilha**: célula que começa com `=`, `+`, `-`,
-`@`, tab ou CR recebe prefixo `'` (OWASP CSV Injection), ligado por padrão
-(`escapeFormulas: true`). No `text/html` do Ctrl+C, valores escapados.
+**Injeção de fórmula** (OWASP CSV Injection): texto que começa com `=`,
+`+`, `-`, `@`, tab ou CR recebe prefixo `'` (`escapeFormulas: true` no
+CSV; sempre na área de transferência, que o Excel avalia ao colar). Isento:
+valor `number`/`bigint`/`Date` com formatação embutida (sem `displayValue`
+nem `format` em função) e texto que é número puro (`-5`, `-1.234,5`,
+`-$5.00`). No xlsx as strings são células de texto (nunca fórmula), então
+não recebem prefixo. No `text/html`, tudo escapado.
 
 ## i18n
-`exportCsv`, `exportExcel`, `exportSelected`, `copied`.
+`rowsCopiedAnnouncement` ("Copied rows: {count}") e
+`cellCopiedAnnouncement` ("Cell copied"), nos 14 idiomas. As chaves
+`exportCsv`/`exportExcel`/`exportSelected` ficam para a frente da barra de
+ferramentas (sem UI de exportação aqui).
 
 ## Fora de escopo
-PDF embutido (o hospedeiro usa `getExportRows`), impressão.
+PDF embutido (o hospedeiro usa `getExportData`), impressão, botões de
+exportar (barra de ferramentas, Fase D), `copySelection()` por API.
 
 ## Arquivos
-`export/csv.ts`, `export/rows.ts`, `features/clipboard.ts`,
-`export-xlsx/index.ts` (entrada separada no build).
+`export/csv.ts`, `export/rows.ts`, `export/slice.ts`,
+`features/clipboard.ts`, `export-xlsx/index.ts` (entrada separada no build).
 
 ## Testes
 Escapes do CSV; injeção de fórmula; grupos e resumos; idioma pt (`;`);
 Ctrl+C com HTML escapado.
 
 ## Referência medida
-(preencher)
+
+DevExtreme 26.1.6, demo "DataGrid › Export to Excel › Overview"
+(`exportDataGrid` com ExcelJS), medida em 2026-11-18 chamando o exportador
+no console com grupo por `State`, resumo de grupo `count` (na linha do
+grupo) e `max` no rodapé do grupo, total `count`, coluna movida, grupo
+recolhido, seleção e valores `=1+1`, `-5`, `@x`:
+
+- 1ª linha: rótulos das colunas visíveis na ordem atual (a agrupada sai das
+  colunas).
+- Linha de grupo: só o texto do grupo na 1ª célula (mesclada),
+  `"State: Arkansas (Count: 2)"`; nível de outline 0; linhas de dados com
+  outline 1 (um a mais por nível).
+- Grupo RECOLHIDO sai inteiro (filhos incluídos) — exporta os dados, não a
+  janela de linhas.
+- Rodapé de grupo: linha com o texto do resumo sob a coluna dele
+  (`"Max: 3/24/2008"`); totais numa última linha, sob as colunas.
+- `selectedRowsOnly`: grupos, contagens e resumos RECALCULADOS sobre as
+  selecionadas (`"California (Count: 1)"`, total `Count: 2`).
+- Datas saem tipadas (`Date` + `numFmt` `M/d/yyyy`); texto sai como texto.
+- Sem proteção contra fórmula: `=1+1`, `-5`, `@x` saem iguais (no xlsx são
+  células de texto, então não executam; no CSV executariam). Nós protegemos
+  por padrão (seção Segurança).
