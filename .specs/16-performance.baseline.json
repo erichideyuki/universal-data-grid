@@ -1,4 +1,9 @@
 {
+  "apply-changes-1m": {
+    "applyUpdateMs": 199.3,
+    "applyRemoveMs": 209.4,
+    "applyAddMs": 129.4
+  },
   "export-1m": {
     "exportCsvSliceMs": 30.7,
     "exportCsvTotalMs": 12080.6,
@@ -120,6 +125,16 @@
     "grouped.jumpWorstMs": 18.9,
     "domNodes": 223,
     "gridHeapMiB": 47
+  },
+  "remote-5m": {
+    "firstRenderMs": 4.1,
+    "scrollP95Ms": 3.7,
+    "scrollWorstMs": 3.9,
+    "jumpP95Ms": 8.3,
+    "jumpWorstMs": 9.2,
+    "sortRemoteMs": 8.1,
+    "domNodes": 128,
+    "gridHeapMiB": 0.6
   },
   "selection-1m": {
     "selectAllMs": 438.2,

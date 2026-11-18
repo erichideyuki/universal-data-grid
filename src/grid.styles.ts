@@ -42,6 +42,17 @@ export const styles = css`
     --_dir: -1;
   }
 
+  .layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .layout > .container {
+    flex: 1;
+    min-height: 0;
+  }
+
   .container {
     position: relative;
     display: block;
@@ -1385,6 +1396,185 @@ export const styles = css`
       border-color: Highlight;
       background-color: Highlight;
       color: HighlightText;
+    }
+
+    .load-panel,
+    .error-row {
+      border: 1px solid CanvasText;
+    }
+
+    .pager-button[aria-current="page"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
+    .pager-button[disabled] {
+      color: GrayText;
+    }
+
+    .load-spinner {
+      forced-color-adjust: none;
+      border-block-start-color: Highlight;
+    }
+
+    .skeleton {
+      forced-color-adjust: none;
+      background-color: GrayText;
+    }
+  }
+
+  /* ------------------------------------------------ fonte de dados (08) */
+
+
+  .load-panel {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    transform: translate(calc(-50% * var(--_dir)), -50%);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    border-radius: 12px;
+    background-color: var(--u-grid-load-panel-background-color, var(--u-color-surface-container-high, rgb(236, 230, 240)));
+    color: var(--u-color-on-surface, rgb(29, 27, 32));
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 30%, transparent);
+    font-size: 0.875rem;
+    pointer-events: none;
+  }
+
+  .load-spinner {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 25%, transparent);
+    border-block-start-color: var(--u-color-primary, rgb(103, 80, 164));
+    animation: u-grid-spin 0.8s linear infinite;
+  }
+
+  @keyframes u-grid-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .error-row {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px var(--_cell-inline-padding);
+    background-color: var(--u-color-error-container, rgb(249, 222, 220));
+    color: var(--u-color-on-error-container, rgb(65, 14, 11));
+    font-size: 0.875rem;
+  }
+
+  .retry-button,
+  .pager-button {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    padding-inline: 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: var(--u-font-weight-medium, 500);
+  }
+
+  .retry-button {
+    color: inherit;
+    text-decoration: underline;
+  }
+
+  .retry-button:hover,
+  .pager-button:not([disabled]):hover {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .retry-button:focus-visible,
+  .pager-button:focus-visible,
+  .page-size select:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .skeleton {
+    display: block;
+    height: 0.75em;
+    width: 70%;
+    border-radius: 4px;
+    background-color: var(--u-grid-skeleton-row-color, color-mix(in srgb, currentColor 12%, transparent));
+  }
+
+  .pager {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    min-height: var(--u-grid-pager-height, 56px);
+    padding-inline: var(--_cell-inline-padding);
+    background-color: var(--_background-color);
+    border-block-start: var(--_borders-width) solid var(--_border-color);
+    font-size: 0.875rem;
+  }
+
+  .page-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .page-size select {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+    border: 1px solid var(--_variant-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+  }
+
+  .page-info {
+    flex: 1;
+  }
+
+  .pager-buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .pager-button {
+    padding-inline: 8px;
+  }
+
+  .pager-button[disabled] {
+    cursor: default;
+    opacity: 0.38;
+  }
+
+  /* Página atual: não só por cor (peso e sublinhado). */
+  .pager-button[aria-current="page"] {
+    background-color: color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 12%, transparent);
+    color: var(--u-color-primary, rgb(103, 80, 164));
+    font-weight: 700;
+    box-shadow: inset 0 -2px 0 currentColor;
+  }
+
+  :host(:dir(rtl)) .pager-arrow svg {
+    transform: scaleX(-1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .load-spinner {
+      animation: none;
     }
   }
 `;

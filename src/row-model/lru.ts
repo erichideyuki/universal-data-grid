@@ -27,6 +27,22 @@ export class LruCache<K, V> {
     return value;
   }
 
+  /** Entradas da menos para a mais usada, sem mexer na ordem. */
+  entries(): IterableIterator<[K, V]> {
+    return this.#entries.entries();
+  }
+
+  /** Troca o valor de uma entrada existente sem mexer na ordem de uso. */
+  replace(key: K, value: V): void {
+    if (this.#entries.has(key)) {
+      this.#entries.set(key, value);
+    }
+  }
+
+  clear(): void {
+    this.#entries.clear();
+  }
+
   set(key: K, value: V): void {
     this.#entries.delete(key);
     this.#entries.set(key, value);

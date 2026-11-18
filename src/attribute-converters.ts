@@ -66,3 +66,21 @@ export const filterOperationsAttribute = {
     return tokens.filter(token => FILTER_OPERATION_TOKENS.has(token)) as GridFilterOperation[];
   },
 };
+
+/**
+ * Lista de números separada por vírgula ou espaço (`page-size-options="10, 20, 50"`).
+ * Só lê (não reflete); valores que não são inteiros positivos são ignorados;
+ * sem atributo = `defaultValue` (vazio = lista vazia). Exceção registrada à
+ * regra "array = `attribute: false`" (spec 15, frente 08).
+ */
+export const numberListAttribute = (defaultValue: readonly number[]) => ({
+  fromAttribute: (value: string | null): readonly number[] => {
+    if (value === null) {
+      return defaultValue;
+    }
+
+    return value.split(/[\s,]+/).filter(Boolean)
+      .map(Number)
+      .filter(size => Number.isInteger(size) && size > 0);
+  },
+});

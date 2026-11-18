@@ -2,7 +2,25 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
 import type { GridColumnDef, GridDetailRenderer, GridSummary } from '../src/grid-column-def';
 
-import { DataGrid } from '../src/grid';
+import { LocalDataSource } from '../src/data/local-source';
+import { DataGrid, type GridDataSource } from '../src/grid';
+
+/** "Servidor" do demo (frente 08): os dados do demo com 400 ms de latência; `?fail` falha 1 em 3. */
+const slowSource = (items: readonly unknown[]): GridDataSource => {
+  const local = new LocalDataSource(items);
+  let calls = 0;
+
+  return {
+    load: (options, signal) => new Promise((resolve, reject) => {
+      const fail = location.search.includes('fail') && ++calls % 3 === 0;
+      const timer = setTimeout(() => (fail ? reject(new Error('Demo failure')) : resolve(local.query(options))), 400);
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      }, { once: true });
+    }),
+  };
+};
 
 const languages = ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'ru', 'pl', 'tr', 'ja', 'ko', 'zh', 'ar'];
 
@@ -149,9 +167,29 @@ export class DevRoot extends LitElement {
 
   #columns?: GridColumnDef[];
   #items?: any[];
+  #keyed?: any[];
 
   @query('u-grid')
   grid!: DataGrid;
+
+  /** Troca a fonte dos dados do demo (frente 08). */
+  #setData(mode: string): void {
+    const grid = this.grid;
+    const remote = mode.startsWith('remote') || mode === 'infinite';
+
+    // Os dados do demo não têm chave única: `id` = posição.
+    this.#keyed ??= (this.#items ?? []).map((row, id) => ({ id, ...row }));
+    grid.keyExpr = 'id';
+    grid.paging = mode === 'paging' || mode === 'remote-paging';
+    grid.scrollMode = mode === 'infinite' ? 'infinite' : 'virtual';
+    grid.remoteOperations = remote;
+    grid.items = [];
+    grid.dataSource = mode === 'items' || mode === 'paging' ? null : slowSource(this.#keyed);
+
+    if (!grid.dataSource) {
+      grid.items = this.#keyed;
+    }
+  }
 
   override render() {
     if (typeof this.initialData === 'string') {
@@ -205,6 +243,17 @@ export class DevRoot extends LitElement {
             <option value="none">none</option>
             <option value="template">template</option>
             <option value="grid">nested grid</option>
+          </select>
+        </label>
+        <label>
+          Data:
+          <select @change=${(e: Event) => this.#setData((e.target as HTMLSelectElement).value)}>
+            <option value="items">items</option>
+            <option value="paging">items + paging</option>
+            <option value="source">dataSource (single load)</option>
+            <option value="remote">dataSource, remote (virtual)</option>
+            <option value="remote-paging">dataSource, remote + paging</option>
+            <option value="infinite">dataSource, remote (infinite)</option>
           </select>
         </label>
         <label>

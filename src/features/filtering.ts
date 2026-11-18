@@ -172,6 +172,19 @@ export class FilteringController implements ReactiveController {
     return this.#mask;
   }
 
+  /**
+   * Itens trocados por `applyChanges` com a máscara já remapeada: adota sem
+   * refiltrar (devolve se adotou; com o filtro sujo, a próxima `maskFor` refaz).
+   */
+  adopt(items: readonly unknown[], mask: Uint8Array | null): boolean {
+    if (this.#dirty || this.#job) {
+      return false;
+    }
+
+    this.#setMask(mask, items);
+    return true;
+  }
+
   hostDisconnected(): void {
     this.#cancelJob();
     // Volta a calcular ao reconectar (a fatia cancelada não terminou).

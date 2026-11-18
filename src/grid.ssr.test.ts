@@ -220,3 +220,37 @@ describe('SSR', () => {
     expect(empty.replace(/<!--[^>]*-->|<\?>/g, '')).toContain('<em class="none">Nothing here</em>');
   });
 });
+
+describe('SSR — fonte de dados e paginação (frente 08)', () => {
+  it('com dataSource renderiza o painel de carregamento sem chamar a fonte', async () => {
+    let calls = 0;
+    const dataSource = { load: () => {
+      calls++; return Promise.resolve({ data: [] });
+    } };
+    const output = await renderToString(html`
+      <u-grid language="pt" key-expr="id" remote-operations .columns=${columns} .dataSource=${dataSource}></u-grid>`);
+
+    expect(calls).toBe(0);
+    expect(output).toContain('part="load-panel"');
+    expect(output).toContain('aria-busy="true"');
+    expect(output).toContain('Carregando…');
+    expect(output).not.toContain('Sem dados');
+  });
+
+  it('renderiza o pager traduzido (pt e ar/RTL)', async () => {
+    const many = Array.from({ length: 45 }, (_, index) => ({ country: `C${index}`, year: 2000 + index }));
+    const flat: GridColumnDef[] = [{ path: 'country', label: 'Country' }, { path: 'year', label: 'Year' }];
+    const pt = await renderToString(html`
+      <u-grid language="pt" paging page-size="20" page-index="1" .columns=${flat} .items=${many}></u-grid>`);
+
+    expect(pt).toContain('part="pager"');
+    expect(pt).toContain('Página 2 de 3 (45 itens)');
+    expect(pt).toContain('aria-label="Paginação"');
+    expect(pt).toContain('aria-rowindex="22"');
+
+    const ar = await renderToString(html`
+      <u-grid dir="rtl" language="ar" paging .columns=${flat} .items=${many}></u-grid>`);
+
+    expect(ar).toContain('الصفحة 1 من 3');
+  });
+});

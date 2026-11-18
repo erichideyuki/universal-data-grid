@@ -13,7 +13,7 @@ import { html } from 'lit';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { GridColumnDef } from './grid-column-def.js';
-import type { DataGrid } from './grid.js';
+import type { DataGrid, GridDataSource, GridLoadOptions } from './grid.js';
 import { cleanup } from './test/fixture.js';
 import { makeColumns, makeItems, makeLeanColumns, makeLeanItems } from './test/perf-data.js';
 import {
@@ -693,6 +693,162 @@ const detailScenario = (rows: number, label: string) => {
   });
 };
 
+// ------------------------------------------------------- frente 08: fonte
+
+const LEAN_COUNTRIES = Array.from({ length: 16 }, (_, i) => `Country ${String.fromCharCode(65 + i)}`);
+
+/**
+ * "Servidor" sintético de `rows` linhas: gera só o bloco pedido (o custo do
+ * servidor não é do grid) e responde na hora; `desc` em qualquer coluna
+ * inverte a ordem. Conta os pedidos e os abortados.
+ */
+const syntheticSource = (rows: number) => {
+  const stats = { calls: 0, aborted: 0 };
+  const source: GridDataSource = {
+    load: (options: GridLoadOptions, signal: AbortSignal) => {
+      stats.calls++;
+      signal.addEventListener('abort', () => stats.aborted++, { once: true });
+
+      const skip = options.skip ?? 0;
+      const take = Math.min(options.take ?? rows, rows - skip);
+      const desc = options.sort[0]?.order === 'desc';
+      const data = Array.from({ length: Math.max(0, take) }, (_, n) => {
+        const i = desc ? rows - 1 - (skip + n) : skip + n;
+        return { id: i, name: `Item ${(i * 7919) % rows}`, country: LEAN_COUNTRIES[i % 16], quantity: (i * 37) % 100_000 };
+      });
+
+      return Promise.resolve({ data, totalCount: options.requireTotalCount ? rows : undefined });
+    },
+  };
+
+  return { source, stats };
+};
+
+const remoteColumns = (): GridColumnDef[] => makeLeanColumns().filter(column => ['id', 'name', 'country', 'quantity'].includes(column.path!));
+
+/** Espera os blocos pedidos chegarem e o render assentar. */
+const loaded = async (grid: DataGrid) => {
+  for (let i = 0; i < 4; i++) {
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await painted(grid);
+  }
+};
+
+/**
+ * Frente 08: fonte remota simulada de 5 milhões de linhas no modo virtual —
+ * o grid só guarda os blocos vistos (LRU), sem custo por linha; rolar com
+ * linhas-esqueleto, saltar, trocar a ordenação (aborta e recarrega).
+ */
+const remoteScenario = (rows: number, label: string) => {
+  it(`${label} linhas numa fonte remota: render, rolagem com esqueleto, saltos, ordenar no servidor`, async () => {
+    const heapBefore = await heapMiB();
+    const { source, stats } = syntheticSource(rows);
+
+    await perf.throttle();
+
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '600px';
+    grid.columns = remoteColumns();
+    grid.keyExpr = 'id';
+    grid.remoteOperations = true;
+    grid.pageSize = 100;
+    grid.dataSource = source;
+    document.body.append(grid);
+    await loaded(grid);
+
+    perf.recalibrate();
+    const start = performance.now();
+    await grid.refresh();
+    grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+    const firstRenderMs = perf.weak(performance.now() - start);
+    await loaded(grid);
+
+    const scroll = await scrollMetrics(grid);
+    const sortRemote = await interaction(
+      'sortRemote',
+      grid,
+      () => grid.sortColumn(grid.columns[1], 'desc'),
+      () => grid.clearSorting(),
+    );
+    await loaded(grid);
+
+    const nodes = domNodes(grid);
+    const total = grid.getTotalCount();
+    const blocks = grid._memoryStats.cachedBlocks;
+
+    await perf.unthrottle();
+    const heap = await heapMiB();
+    const lastRow = await lastReachableRow(grid);
+
+    grid.remove();
+
+    const metrics = { firstRenderMs, ...scroll, ...sortRemote, domNodes: nodes, gridHeapMiB: heap - heapBefore };
+
+    checkBudgets(rows, metrics, perf.report(`remote-${label}`, metrics));
+    expect(total).toBe(rows);
+    expect(blocks, 'cache de blocos limitado').toBeLessThanOrEqual(200);
+    expect(stats.calls, 'só os blocos vistos são pedidos').toBeLessThan(500);
+    expect(lastRow, 'última linha alcançável').toBe(rows - 1);
+  });
+};
+
+/**
+ * Frente 08: `applyChanges` numa carga única de `rows` linhas ordenadas e
+ * filtradas — atualizar, remover e acrescentar 100 linhas por chave sem
+ * reordenar nem refiltrar tudo.
+ */
+const applyChangesScenario = (rows: number, label: string) => {
+  it(`${label} linhas carregadas de uma vez: applyChanges (atualizar, remover, acrescentar)`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+    const source: GridDataSource = { load: () => Promise.resolve({ data: items! }) };
+
+    await perf.throttle();
+
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '600px';
+    grid.columns = makeLeanColumns();
+    grid.keyExpr = 'id';
+    grid.dataSource = source;
+    document.body.append(grid);
+    await loaded(grid);
+
+    grid.sortColumn(byLabel(grid, 'Country'), 'asc');
+    grid.filterValue = ['status', '<>', 'Archived'];
+    await painted(grid);
+
+    const ids = Array.from({ length: 100 }, (_, n) => n * Math.floor(rows / 100));
+    let version = 0;
+    const updates = () => ids.map(id => ({ ...(items![id] as Record<string, unknown>), quantity: ++version }));
+
+    const update = await interaction('applyUpdate', grid, () => grid.applyChanges({ update: updates() }), () => undefined);
+    const remove = await interaction(
+      'applyRemove',
+      grid,
+      () => grid.applyChanges({ remove: ids }),
+      () => grid.applyChanges({ add: ids.map(id => items![id]) }),
+    );
+    const add = await interaction(
+      'applyAdd',
+      grid,
+      () => grid.applyChanges({ add: ids.map(id => ({ ...(items![id] as Record<string, unknown>), id: rows + id })) }),
+      () => grid.applyChanges({ remove: ids.map(id => rows + id) }),
+    );
+
+    await perf.unthrottle();
+    const total = grid.getTotalCount();
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = { ...update, ...remove, ...add };
+
+    checkBudgets(rows, metrics, perf.report(`apply-changes-${label}`, metrics));
+    expect(total).toBeGreaterThan(rows * 0.7);
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -701,6 +857,8 @@ describe('perfil de máquina fraca', () => {
   summaryScenario(1_000_000, '1m');
   hugeScenario(5_000_000, '5m');
   selectionScenario(1_000_000, '1m');
+  remoteScenario(5_000_000, '5m');
+  applyChangesScenario(1_000_000, '1m');
   exportScenario(1_000_000, '1m');
   detailScenario(1_000_000, '1m');
 });

@@ -116,15 +116,15 @@ export class SelectionModel {
 }
 
 /** Conta quantos de `keys` estão selecionados (para o estado do "selecionar tudo"). */
-export const countSelected = (selection: SelectionModel, keys: readonly unknown[]): number => {
+export const countSelected = (selection: SelectionModel, items: readonly unknown[], keyOf?: (item: unknown) => unknown): number => {
   if (!selection.size) {
     return 0;
   }
 
   let count = 0;
 
-  for (const key of keys) {
-    if (selection.has(key)) {
+  for (const item of items) {
+    if (selection.has(keyOf ? keyOf(item) : item)) {
       count++;
     }
   }

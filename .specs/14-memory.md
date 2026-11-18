@@ -74,6 +74,10 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 32 | Frente 12: exportação em fatias (promessa pendente segura o instantâneo: `items`, grupos, colunas, formatadores) | `export/write.ts` | OK | Termina ou rejeita (`AbortError`) na próxima fatia depois do `signal`; nada de módulo. Grid removido com exportação abortada no meio é coletado (`export.memory.browser.test.ts`). |
 | 33 | Frente 12: download (`URL.createObjectURL` + `setTimeout` de 1 s para revogar) e `<a download>` temporário | `export/download.ts` | OK | O `<a>` sai do DOM na hora; o timer só segura a URL (não o grid) e revoga o `Blob`. |
 | 34 | Frente 12: Ctrl+C — listener `copy` na tabela (binding do Lit) | `grid.ts`, `features/clipboard.ts` | OK | Sai com o DOM do grid; sem listener no `document`. |
+| 35 | Frente 08: pedidos à fonte em voo (`AbortController` + promessa da fonte) | `data/remote-loader.ts` | OK | Abortados ao trocar a consulta (ordenação, filtro, grupo, `refresh`), ao trocar `dataSource` e no `disconnectedCallback` (`RemoteLoader.dispose`); respostas tardias são descartadas. `_memoryStats.pendingLoads`. |
+| 36 | Frente 08: temporizador dos pedidos de blocos (30 ms depois do render) | `grid.ts` | OK | `clearTimeout` no `disconnectedCallback` e a cada render. `_memoryStats.loadTimers`. |
+| 37 | Frente 08: cache de blocos da fonte remota (segura itens do servidor) e grupos carregados | `data/remote-loader.ts` (`LruCache`) | L | Por geração (consulta): no máximo `BLOCK_CACHE_LIMIT` (200) blocos; a geração velha é solta quando a nova responde; trocar `dataSource` solta tudo. Grupos: só listas de grupos expandidos da geração atual. `_memoryStats.cachedBlocks`. Testes em `data-source.memory.browser.test.ts`. |
+| 38 | Frente 08: `keyExpr` (função do hospedeiro) e seleção por chave | `grid.ts` | OK | Por instância. Com `keyExpr`, a seleção guarda as chaves (não os itens): trocar `items` solta os objetos velhos. |
 
 ## Medição (`src/test/leak.ts`)
 

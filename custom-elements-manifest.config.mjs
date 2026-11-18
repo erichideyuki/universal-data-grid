@@ -57,6 +57,15 @@ const LEGACY_ATTRIBUTES = {
 };
 
 /**
+ * Tipo do ATRIBUTO quando difere do da propriedade (frente 08): o atributo
+ * só aceita texto (`key-expr` = path, `page-size-options` = lista) ou é
+ * tudo-ou-nada (`remote-operations`).
+ */
+const ATTRIBUTE_TYPES = {
+  DataGrid: { 'key-expr': 'string', 'remote-operations': 'boolean', 'page-size-options': 'string' },
+};
+
+/**
  * Acabamento do manifesto: caminhos `src/x.ts` → `dist/x.js` (também nos
  * `./x.js` relativos dos `exports`), `exports` só de módulos que estão no
  * manifesto, aliases de atributo como `deprecated` e descrições só com LF
@@ -96,6 +105,14 @@ const finishManifest = () => ({
 
       for (const declaration of module.declarations ?? []) {
         const legacy = LEGACY_ATTRIBUTES[declaration.name];
+
+        for (const [name, text] of Object.entries(ATTRIBUTE_TYPES[declaration.name] ?? {})) {
+          const attribute = declaration.attributes?.find(entry => entry.name === name);
+
+          if (attribute) {
+            attribute.type = { text };
+          }
+        }
 
         for (const [name, replacement] of Object.entries(legacy ?? {})) {
           const current = declaration.attributes?.find(attribute => attribute.name === replacement);

@@ -193,6 +193,28 @@ export interface GridI18n {
   headerFilterSearchAnnouncement: string;
   /** "Select all" checkbox of the header filter while searching. `{count}` = values found. */
   selectAllResults: string;
+  /** Load panel text while a data source loads. */
+  loading: string;
+  /** Message when the data source failed. */
+  loadError: string;
+  /** Button that asks the data source again after an error. */
+  retry: string;
+  /** Pager info. `{page}`, `{pageCount}`, `{count}` = number of rows. */
+  pageInfo: string;
+  /** Pager info when the total is unknown. `{page}`. */
+  pageInfoUnknownCount: string;
+  /** Label of the page size selector. */
+  pageSizeLabel: string;
+  /** Accessible name of the pager. */
+  paginationLabel: string;
+  /** First page button. */
+  firstPage: string;
+  /** Previous page button. */
+  previousPage: string;
+  /** Next page button. */
+  nextPage: string;
+  /** Last page button. */
+  lastPage: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -351,6 +373,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Showing {shown} of {count}',
     headerFilterSearchAnnouncement: 'Values: {count}',
     selectAllResults: 'Select all results ({count})',
+    loading: 'Loading…',
+    loadError: 'Could not load the data.',
+    retry: 'Retry',
+    pageInfo: 'Page {page} of {pageCount} ({count} items)',
+    pageInfoUnknownCount: 'Page {page}',
+    pageSizeLabel: 'Rows per page',
+    paginationLabel: 'Pagination',
+    firstPage: 'First page',
+    previousPage: 'Previous page',
+    nextPage: 'Next page',
+    lastPage: 'Last page',
   },
   es: {
     noData: 'Sin datos',
@@ -447,6 +480,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Mostrando {shown} de {count}',
     headerFilterSearchAnnouncement: 'Valores: {count}',
     selectAllResults: 'Seleccionar todos los resultados ({count})',
+    loading: 'Cargando…',
+    loadError: 'No se pudieron cargar los datos.',
+    retry: 'Reintentar',
+    pageInfo: 'Página {page} de {pageCount} ({count} elementos)',
+    pageInfoUnknownCount: 'Página {page}',
+    pageSizeLabel: 'Filas por página',
+    paginationLabel: 'Paginación',
+    firstPage: 'Primera página',
+    previousPage: 'Página anterior',
+    nextPage: 'Página siguiente',
+    lastPage: 'Última página',
   },
   pt: {
     noData: 'Sem dados',
@@ -543,6 +587,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Mostrando {shown} de {count}',
     headerFilterSearchAnnouncement: 'Valores: {count}',
     selectAllResults: 'Selecionar todos os resultados ({count})',
+    loading: 'Carregando…',
+    loadError: 'Não foi possível carregar os dados.',
+    retry: 'Tentar de novo',
+    pageInfo: 'Página {page} de {pageCount} ({count} itens)',
+    pageInfoUnknownCount: 'Página {page}',
+    pageSizeLabel: 'Linhas por página',
+    paginationLabel: 'Paginação',
+    firstPage: 'Primeira página',
+    previousPage: 'Página anterior',
+    nextPage: 'Próxima página',
+    lastPage: 'Última página',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -639,6 +694,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{shown} affichées sur {count}',
     headerFilterSearchAnnouncement: 'Valeurs : {count}',
     selectAllResults: 'Sélectionner tous les résultats ({count})',
+    loading: 'Chargement…',
+    loadError: 'Impossible de charger les données.',
+    retry: 'Réessayer',
+    pageInfo: 'Page {page} sur {pageCount} ({count} éléments)',
+    pageInfoUnknownCount: 'Page {page}',
+    pageSizeLabel: 'Lignes par page',
+    paginationLabel: 'Pagination',
+    firstPage: 'Première page',
+    previousPage: 'Page précédente',
+    nextPage: 'Page suivante',
+    lastPage: 'Dernière page',
   },
   de: {
     noData: 'Keine Daten',
@@ -735,6 +801,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{shown} von {count} angezeigt',
     headerFilterSearchAnnouncement: 'Werte: {count}',
     selectAllResults: 'Alle Ergebnisse auswählen ({count})',
+    loading: 'Wird geladen…',
+    loadError: 'Die Daten konnten nicht geladen werden.',
+    retry: 'Erneut versuchen',
+    pageInfo: 'Seite {page} von {pageCount} ({count} Einträge)',
+    pageInfoUnknownCount: 'Seite {page}',
+    pageSizeLabel: 'Zeilen pro Seite',
+    paginationLabel: 'Seitennavigation',
+    firstPage: 'Erste Seite',
+    previousPage: 'Vorherige Seite',
+    nextPage: 'Nächste Seite',
+    lastPage: 'Letzte Seite',
   },
   it: {
     noData: 'Nessun dato',
@@ -831,6 +908,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Visualizzati {shown} di {count}',
     headerFilterSearchAnnouncement: 'Valori: {count}',
     selectAllResults: 'Seleziona tutti i risultati ({count})',
+    loading: 'Caricamento…',
+    loadError: 'Impossibile caricare i dati.',
+    retry: 'Riprova',
+    pageInfo: 'Pagina {page} di {pageCount} ({count} elementi)',
+    pageInfoUnknownCount: 'Pagina {page}',
+    pageSizeLabel: 'Righe per pagina',
+    paginationLabel: 'Paginazione',
+    firstPage: 'Prima pagina',
+    previousPage: 'Pagina precedente',
+    nextPage: 'Pagina successiva',
+    lastPage: 'Ultima pagina',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -927,6 +1015,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{shown} van {count} weergegeven',
     headerFilterSearchAnnouncement: 'Waarden: {count}',
     selectAllResults: 'Alle resultaten selecteren ({count})',
+    loading: 'Laden…',
+    loadError: 'De gegevens konden niet worden geladen.',
+    retry: 'Opnieuw proberen',
+    pageInfo: 'Pagina {page} van {pageCount} ({count} items)',
+    pageInfoUnknownCount: 'Pagina {page}',
+    pageSizeLabel: 'Rijen per pagina',
+    paginationLabel: 'Paginering',
+    firstPage: 'Eerste pagina',
+    previousPage: 'Vorige pagina',
+    nextPage: 'Volgende pagina',
+    lastPage: 'Laatste pagina',
   },
   ru: {
     noData: 'Нет данных',
@@ -1023,6 +1122,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Показано {shown} из {count}',
     headerFilterSearchAnnouncement: 'Значения: {count}',
     selectAllResults: 'Выбрать все результаты ({count})',
+    loading: 'Загрузка…',
+    loadError: 'Не удалось загрузить данные.',
+    retry: 'Повторить',
+    pageInfo: 'Страница {page} из {pageCount} (элементов: {count})',
+    pageInfoUnknownCount: 'Страница {page}',
+    pageSizeLabel: 'Строк на странице',
+    paginationLabel: 'Разбиение на страницы',
+    firstPage: 'Первая страница',
+    previousPage: 'Предыдущая страница',
+    nextPage: 'Следующая страница',
+    lastPage: 'Последняя страница',
   },
   pl: {
     noData: 'Brak danych',
@@ -1119,6 +1229,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'Wyświetlono {shown} z {count}',
     headerFilterSearchAnnouncement: 'Wartości: {count}',
     selectAllResults: 'Zaznacz wszystkie wyniki ({count})',
+    loading: 'Wczytywanie…',
+    loadError: 'Nie udało się wczytać danych.',
+    retry: 'Spróbuj ponownie',
+    pageInfo: 'Strona {page} z {pageCount} (elementy: {count})',
+    pageInfoUnknownCount: 'Strona {page}',
+    pageSizeLabel: 'Wierszy na stronie',
+    paginationLabel: 'Stronicowanie',
+    firstPage: 'Pierwsza strona',
+    previousPage: 'Poprzednia strona',
+    nextPage: 'Następna strona',
+    lastPage: 'Ostatnia strona',
   },
   tr: {
     noData: 'Veri yok',
@@ -1215,6 +1336,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{count} değerden {shown} tanesi gösteriliyor',
     headerFilterSearchAnnouncement: 'Değerler: {count}',
     selectAllResults: 'Tüm sonuçları seç ({count})',
+    loading: 'Yükleniyor…',
+    loadError: 'Veriler yüklenemedi.',
+    retry: 'Yeniden dene',
+    pageInfo: 'Sayfa {page} / {pageCount} ({count} öğe)',
+    pageInfoUnknownCount: 'Sayfa {page}',
+    pageSizeLabel: 'Sayfa başına satır',
+    paginationLabel: 'Sayfalandırma',
+    firstPage: 'İlk sayfa',
+    previousPage: 'Önceki sayfa',
+    nextPage: 'Sonraki sayfa',
+    lastPage: 'Son sayfa',
   },
   ja: {
     noData: 'データがありません',
@@ -1311,6 +1443,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{count} 件中 {shown} 件を表示',
     headerFilterSearchAnnouncement: '値: {count}',
     selectAllResults: '検索結果をすべて選択 ({count})',
+    loading: '読み込み中…',
+    loadError: 'データを読み込めませんでした。',
+    retry: '再試行',
+    pageInfo: '{page} / {pageCount} ページ（{count} 件）',
+    pageInfoUnknownCount: '{page} ページ',
+    pageSizeLabel: '1 ページの行数',
+    paginationLabel: 'ページ送り',
+    firstPage: '最初のページ',
+    previousPage: '前のページ',
+    nextPage: '次のページ',
+    lastPage: '最後のページ',
   },
   ko: {
     noData: '데이터 없음',
@@ -1407,6 +1550,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '{count}개 중 {shown}개 표시',
     headerFilterSearchAnnouncement: '값: {count}',
     selectAllResults: '검색 결과 모두 선택 ({count})',
+    loading: '로드 중…',
+    loadError: '데이터를 불러오지 못했습니다.',
+    retry: '다시 시도',
+    pageInfo: '{page}/{pageCount} 페이지({count}개 항목)',
+    pageInfoUnknownCount: '{page} 페이지',
+    pageSizeLabel: '페이지당 행 수',
+    paginationLabel: '페이지 탐색',
+    firstPage: '첫 페이지',
+    previousPage: '이전 페이지',
+    nextPage: '다음 페이지',
+    lastPage: '마지막 페이지',
   },
   zh: {
     noData: '无数据',
@@ -1503,6 +1657,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: '显示 {count} 项中的 {shown} 项',
     headerFilterSearchAnnouncement: '值：{count}',
     selectAllResults: '全选搜索结果（{count}）',
+    loading: '正在加载…',
+    loadError: '无法加载数据。',
+    retry: '重试',
+    pageInfo: '第 {page} 页，共 {pageCount} 页（{count} 项）',
+    pageInfoUnknownCount: '第 {page} 页',
+    pageSizeLabel: '每页行数',
+    paginationLabel: '分页',
+    firstPage: '第一页',
+    previousPage: '上一页',
+    nextPage: '下一页',
+    lastPage: '最后一页',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -1599,6 +1764,17 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     headerFilterTruncated: 'عرض {shown} من {count}',
     headerFilterSearchAnnouncement: 'القيم: {count}',
     selectAllResults: 'تحديد كل النتائج ({count})',
+    loading: 'جارٍ التحميل…',
+    loadError: 'تعذّر تحميل البيانات.',
+    retry: 'إعادة المحاولة',
+    pageInfo: 'الصفحة {page} من {pageCount} ({count} عنصر)',
+    pageInfoUnknownCount: 'الصفحة {page}',
+    pageSizeLabel: 'صفوف في الصفحة',
+    paginationLabel: 'ترقيم الصفحات',
+    firstPage: 'الصفحة الأولى',
+    previousPage: 'الصفحة السابقة',
+    nextPage: 'الصفحة التالية',
+    lastPage: 'الصفحة الأخيرة',
   },
 });
 

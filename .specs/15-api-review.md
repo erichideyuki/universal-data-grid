@@ -101,6 +101,11 @@ novos está no README ("Deprecated names").
 - Revisão da implementação (passo 10): aliases de atributo entram no CEM
   como atributos `deprecated` (plugin do analyzer); descrições do CEM com
   `\n` (fontes em CRLF); `exports` do CEM só com módulos do manifesto.
+- Frente 08: `pageSizeOptions` ↔ `page-size-options` é exceção registrada à
+  regra "array = `attribute: false`": o atributo é uma lista de números
+  (`"10, 20, 50"`, conversor `numberListAttribute`, só leitura, sem
+  reflexão). `remoteOperations` aceita objeto por propriedade; o atributo
+  `remote-operations` é só booleano (tudo ou nada).
 - #33: `u-grid-loading` (08) e `u-grid-row-validating` (09) marcados
   canceláveis pela regra do gerúndio. Na spec 09, `u-grid-editing-start` é cancelável, então pela regra
   virou `u-grid-edit-starting` (não `u-grid-edit-start`).

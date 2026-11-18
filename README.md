@@ -24,6 +24,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Grouping](#grouping)
 - [Summaries](#summaries) (totals and group summaries)
 - [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
+- [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
@@ -62,6 +63,10 @@ React, Vue, Svelte — or with no framework at all.
 - **Selection & keyboard** — single or multiple row selection by key, with checkboxes and "select
   all"; full keyboard navigation (WAI-ARIA APG grid pattern) that survives virtualization; complete
   grid ARIA, checked with `axe-core`.
+- **Data sources & paging** — row keys (`keyExpr`), a `dataSource` whose server can filter, sort,
+  group, summarize and page (only the visible blocks load: millions of rows with skeleton rows), an
+  accessible pager, infinite scrolling, a load panel, an error bar with "Retry", and incremental
+  `applyChanges` that keeps selection, focus and expansion.
 - **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
   columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
 - **Export & clipboard** — CSV of what the user sees (columns, order, filter, groups, summaries,
@@ -721,10 +726,10 @@ grid.summary = {
 - **`show-checkboxes`** (`multiple` only) — adds a checkbox column fixed at the start, with "select
   all" in its header (checked, unchecked or mixed). With checkboxes, a click on a row only moves the
   focus; the checkbox (or `Space`) selects.
-- **By key** — the selection is a set of row keys. Until `keyExpr` exists, the key is the item object
-  itself: the selection survives sorting, grouping, filtering and replacing `items` *with the same
-  objects*; replacing them with new objects loses it. Keys that are not in `items` are kept (and
-  retained) until deselected or `clearSelection()` is called.
+- **By key** — the selection is a set of row keys: the [`keyExpr`](#row-keys-keyexpr) value, or,
+  without it, the item object itself (then replacing `items` with new objects loses the
+  selection). It survives sorting, grouping and filtering. Keys that are not in `items` are kept
+  (and retained) until deselected or `clearSelection()` is called.
 - **Select all** selects every row that passes the filter, including rows inside collapsed groups.
 
 ```ts
@@ -756,7 +761,7 @@ column chooser button are separate stops in the bar above.
 | `←` `→` `↑` `↓` | Neighbor cell (`←`/`→` mirrored in RTL). The header row is the first row. |
 | `Home` / `End` | First / last cell of the row. |
 | `Ctrl`+`Home` / `Ctrl`+`End` | First cell of the first row / last cell of the last row. |
-| `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). |
+| `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). With `paging`, the previous / next page (on the first / last page, the first / last row). |
 | `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons and resize handle. |
 | `Tab` / `Shift`+`Tab` inside a cell | Cycle through the interactive content of that cell. |
 | `Esc` | Back from the content to the cell. |
@@ -853,6 +858,128 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 > names come from `fixStartLabel`/`fixEndLabel`, `searchPanelLabel` and
 > `filterOperationButtonLabel`; languages added with `setGridTranslation` get the new keys in
 > English until translated.
+
+
+## Data sources, keys & paging
+
+### Row keys (`keyExpr`)
+
+```html
+<u-grid key-expr="id"></u-grid>
+```
+
+```ts
+grid.keyExpr = 'id';                                 // a path (dots allowed: 'customer.id')
+grid.keyExpr = (order: Order) => `${order.year}-${order.number}`; // or a function
+```
+
+With a key, `selectedKeys`, `focusedRowKey`, `focusCell(rowKey)`, `isRowSelected(key)` and the
+`rowKey` of events use its value, and replacing `items` with **new objects** keeps the selection,
+the focus and the group expansion. Without it the key is the item object. Keys must be unique and
+not empty (the grid logs an error once otherwise). Changing `keyExpr` converts the selection to the
+new keys (`u-grid-selection-change` with `source: 'api'`).
+
+### Data source
+
+Instead of `items`, give the grid a `dataSource` — an object with a `load(options, signal)` method
+that returns a promise of `{ data, totalCount?, summary?, groupCount? }`. Use one or the other
+(both = console error; the data source wins).
+
+```ts
+grid.keyExpr = 'id';
+grid.remoteOperations = true;      // the server filters, sorts, groups, summarizes and pages
+grid.dataSource = {
+  async load(options, signal) {
+    const response = await fetch('/api/orders/query', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(options), // plain data: skip, take, sort, filter, group, groupPath…
+      signal,                        // aborted when the request is no longer needed
+    });
+
+    return response.json();          // { data, totalCount, summary }
+  },
+};
+```
+
+- **`remoteOperations`** (attribute `remote-operations`) — `false` (default): one `load` call returns
+  every row and the grid does everything else in the browser. `true`: everything on the server.
+  An object picks operations: `{ filtering, sorting, paging, grouping, summary }`. Remote `paging` or
+  `grouping` also turn on remote `filtering`, `sorting` and `summary` (and `paging` turns on
+  `grouping`), with a console warning — the grid cannot group or summarize rows it does not have.
+- **What the grid asks** (`GridLoadOptions`, frozen): `skip`/`take` (absent = all rows), `sort`
+  (`{ path, order }[]`, grouped columns first), `filter` (`filterValue` `and` the search — the same
+  as `getCombinedFilter()`), `filterValue`, `searchText`, `group` (`{ path, order, expanded }[]`),
+  `groupPath`, `requireTotalCount`, `requireGroupCount`, `totalSummary` and `groupSummary`
+  (`{ path, type, name? }[]`).
+- **Groups load lazily** — with remote grouping the first call returns the groups of the first
+  level (`data: [{ key, count, summary }]`, `items: null`). Expanding a group asks for the next level,
+  or for its rows, with `groupPath` = the group values from the outermost level; the server returns
+  groups of level `groupPath.length` while it is shorter than `group`, and rows otherwise. Match
+  `groupPath` with **exact** equality (unlike the `=` of the filter, which ignores case and accents).
+- **Blocks and skeleton rows** — with remote paging the grid asks `pageSize` rows at a time for the
+  rows in view, shows skeleton rows (`::part(skeleton-row)`, `aria-busy`) until they arrive and keeps
+  the last 200 blocks in a cache. Sorting, filtering or grouping again aborts the requests in flight
+  (`signal`) and the answers of an older query are dropped, even if the source ignores the signal.
+  The rows shown stay (with the load panel) until the new answer arrives.
+- **Remote operations use `path`** — columns with `valueGetter`, `comparator` or `groupValueGetter`
+  are not sent (console warning); custom summary functions are computed only for local data. The
+  search becomes `contains` conditions on the raw `path` values — or use `searchText` for your own
+  text search.
+- **Selection with remote rows** — `selectAll()` and `getSelectedItems()` only see the loaded rows,
+  the "select all" checkbox is hidden, and `focusCell` of a row not loaded returns `false`.
+- **Load panel and errors** — while a query loads, a panel ("Loading…", `::part(load-panel)`) covers
+  the rows and the table gets `aria-busy="true"`. A rejected `load` shows an error bar
+  (`::part(error-row)`, `role="alert"`) with a "Retry" button.
+- **Events** — `u-grid-loading` before each call (cancelable: `preventDefault()` skips it and keeps
+  the rows shown), `u-grid-load` with the result, `u-grid-load-error` with the error. Aborted calls
+  fire nothing.
+
+> **Security** — the grid never builds URLs, SQL or any query: it hands you `GridLoadOptions` as data
+> and you make the call. `filter`, `filterValue`, `searchText`, `sort`, `group` and the paths in them
+> come from the user (filter row, header filter, search, clicks), so **validate them on the server**:
+> accept only an allow-list of paths and operations, cap `take`, and use parameterized queries —
+> never concatenate them into SQL or a URL.
+
+A minimal reference of the contract over an array (filtering, sorting, groups, summaries, paging) is
+[`LocalDataSource`](https://github.com/universal-material/data-grid/blob/main/src/data/local-source.ts)
+in the repository (not exported; copy it as a starting point for a server).
+
+### Refreshing and incremental changes
+
+```ts
+await grid.refresh();                     // reload (keeps the rows on screen until the answer)
+
+grid.applyChanges({                       // by key, without reloading everything
+  update: [{ id: 7, status: 'Paid' }],    // replaced in place (no re-sorting or re-filtering)
+  remove: [12],
+  add: [newOrder],                        // appended at the end
+});
+```
+
+`applyChanges` works with `dataSource` (with `items`, set a new array: rows keep their state by
+key). `update` and `remove` need `keyExpr`. Selection, focus and group expansion are kept. With
+remote paging or grouping, `update` patches the loaded blocks and `add`/`remove` reload the rows in
+view. `getTotalCount()` returns the number of data rows (`-1` while unknown).
+
+### Paging and infinite scrolling
+
+```html
+<u-grid paging page-size="20" page-size-options="10, 20, 50"></u-grid>
+```
+
+- **`paging`** shows the pager below the table and only the rows of the current page (group rows
+  count, as in the reference). The pager is a `<nav>` with the page size selector, "Page 2 of 50
+  (1,000 items)" (`aria-live`), and first/previous/page numbers/next/last buttons
+  (`aria-current="page"` on the current one). `PageUp`/`PageDown` in the grid change the page.
+  A new filter goes back to the first page (`u-grid-page-change` after `u-grid-filter-change`); a
+  page past the end is clamped (silently when you set `pageIndex`).
+- **`pageSize`** (default `20`) is also the block size asked to a remote source.
+- **`pageIndex`** is the current page (0-based); `u-grid-page-change` fires for the pager, the
+  keyboard and automatic corrections (not for the setters).
+- **`scroll-mode="infinite"`** (remote paging only; otherwise ignored with a warning) loads the next block when the end is reached,
+  without asking `totalCount` (`aria-rowcount="-1"` until the last block). With `paging` the pager
+  wins.
 
 ---
 
@@ -971,6 +1098,12 @@ nesting level is not written as empty columns.
 
 Leave a column out with `exportable: false` (`exportable="false"` on `<u-grid-column>`); columns that
 only have a `renderer` are left out by default.
+
+With a [`dataSource`](#data-source): a single-load source exports every row like `items`. When the
+server pages or groups (`remoteOperations`), the grid only has the rows it loaded, so only those are
+exported — in screen order, without group rows (grouped columns become columns), with the server
+totals; `selectedOnly` keeps the loaded selected rows (by `keyExpr`). For a full export, ask the
+server for the file with the same `GridLoadOptions`.
 
 ### Export data (Excel, PDF, anything)
 
@@ -1343,6 +1476,17 @@ interface GridI18n {
   headerFilterTruncated: string;    // "Showing {shown} of {count}"
   headerFilterSearchAnnouncement: string;   // after searching the header filter: "Values: {count}"
   selectAllResults: string;         // header filter "select all" while searching: "Select all results ({count})"
+  loading: string;             // load panel: "Loading…"
+  loadError: string;           // error bar: "Could not load the data."
+  retry: string;               // error bar button: "Retry"
+  pageInfo: string;            // pager: "Page {page} of {pageCount} ({count} items)"
+  pageInfoUnknownCount: string; // pager, total unknown: "Page {page}"
+  pageSizeLabel: string;       // page size selector: "Rows per page"
+  paginationLabel: string;     // pager name: "Pagination"
+  firstPage: string;           // pager buttons: "First page", "Previous page", "Next page", "Last page"
+  previousPage: string;
+  nextPage: string;
+  lastPage: string;
 }
 ```
 
@@ -1389,8 +1533,16 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `searchText`       | `search-text`         | `string`  | `''`    | Search panel text. |
 | `selectionMode`    | `selection-mode`      | `'none' \| 'single' \| 'multiple'` | `'none'` | Row selection. See [Selection & keyboard](#selection--keyboard). |
 | `showCheckboxes`   | `show-checkboxes`     | `boolean` | `false` | Checkbox column with "select all" (`multiple` only). |
-| `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (the items, until `keyExpr`). Setting it fires no event. |
+| `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (`keyExpr` values, or the items without it). Setting it fires no event. |
 | `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell. Setting it fires no event. |
+| `keyExpr`          | `key-expr`            | `string \| (item) => GridRowKey \| null` | `null` | Row key. See [Row keys](#row-keys-keyexpr). |
+| `dataSource`       | *(property only)*     | `GridDataSource \| null` | `null` | Data source (alternative to `items`). See [Data source](#data-source). |
+| `remoteOperations` | `remote-operations`   | `boolean \| GridRemoteOperations` | `false` | What the server does (the attribute is all or nothing). |
+| `paging`           | `paging`              | `boolean` | `false` | Pages and the pager. See [Paging](#paging-and-infinite-scrolling). |
+| `pageSize`         | `page-size`           | `number`  | `20`    | Rows per page; block size of a remote source. |
+| `pageIndex`        | `page-index`          | `number`  | `0`     | Current page (0-based, clamped). Setting it fires no event. |
+| `pageSizeOptions`  | `page-size-options`   | `readonly number[]` | `[10, 20, 50, 100]` | Page sizes of the pager (attribute: `"10, 20, 50"`; empty hides the selector). |
+| `scrollMode`       | `scroll-mode`         | `'virtual' \| 'infinite'` | `'virtual'` | Infinite scrolling for a remote source. |
 | `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'none'` | `'copy'` | Ctrl+C copies the selected rows or the focused cell. See [Export & clipboard](#export--clipboard). |
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
@@ -1465,6 +1617,9 @@ tint derive from it.
 | `--u-grid-header-filter-button-active-color` | primary token | Funnel of a filtered column. |
 | `--u-grid-header-filter-background-color` | surface-container token | Header filter popover background. |
 | `--u-grid-header-filter-shape` | `12px` | Header filter popover corner radius. |
+| `--u-grid-load-panel-background-color` | surface-container-high token | Background of the load panel. |
+| `--u-grid-skeleton-row-color` | text color at 12% | Placeholders of rows still loading. |
+| `--u-grid-pager-height` | `56px` | Minimum height of the pager (it wraps on narrow grids; the rows take the rest). |
 
 ```css
 u-grid {
@@ -1515,6 +1670,14 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `detail-row` | Detail rows (with `row`). |
 | `detail-cell` | The full-width cell of a detail row. |
 | `expanded` | Master rows whose detail is expanded (with `row`). |
+| `pager` | The pager (`<nav>`) below the table. |
+| `pager-button` | Pager buttons (first, previous, page numbers, next, last). |
+| `page-size-select` | The page size `<select>`. |
+| `page-info` | The "Page x of y (n items)" text. |
+| `load-panel` | The load panel shown while a data source loads. |
+| `skeleton-row` | Rows of a remote source not loaded yet (with `row`). |
+| `error-row` | The bar shown when the data source failed. |
+| `retry-button` | Its "Retry" button. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -1620,9 +1783,12 @@ CSS property and part for IDEs and tooling.
 | `selectAll()` / `deselectAll()` | Select / deselect every row that passes the filter (`multiple` only). |
 | `clearSelection()` | Deselect every key. |
 | `isRowSelected(key)` | Whether the row of `key` is selected. |
-| `getSelectedItems()` | Selected items present in `items`, in selection order. |
+| `getSelectedItems()` | Selected items that are loaded (all of `items`; the loaded blocks of a remote source), in selection order. |
 | `expandRow(rowKey)` / `collapseRow(rowKey)` | Expand / collapse the detail row of a row (master-detail; nothing without `detailRenderer`). |
 | `isRowExpanded(rowKey)` | Whether the detail of a row is (or would be) expanded. |
+| `refresh()` | Reload the data source (or recompute local data); resolves when done. |
+| `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
+| `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
 | `focusCell(rowKey, column?)` | Scroll to a cell and focus it; `false` if the row or column is not shown (groups are not expanded). |
 | `focus(options?)` | Focus the active cell. |
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
@@ -1647,9 +1813,13 @@ All bubble and are `composed`.
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed. |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
+| `u-grid-loading` | `GridLoadingEventDetail` (`{ options }`) | — (every load: scroll, sort, filter, `refresh()`…) | Before each `dataSource.load` call. Cancelable (the call is skipped). |
+| `u-grid-load` | `GridLoadEventDetail` (`{ options, result }`) | — (every load) | A `load` call resolved (aborted calls fire nothing). |
+| `u-grid-load-error` | `GridLoadErrorEventDetail` (`{ options, error }`) | — (every load) | A `load` call rejected; the error bar is shown. |
+| `u-grid-page-change` | `GridPageChangeEventDetail` | corrections only (not the setters) | The page or page size changed (pager, `PageUp`/`PageDown`, new filter, clamp). |
 | `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
 
-The events that also fire for API calls carry `source: 'user' | 'api'` in `detail`.
+The state-change events that also fire for API calls carry `source: 'user' | 'api'` in `detail`
 
 ### Exports
 
@@ -1710,6 +1880,22 @@ import {
   type GridDetailRenderContext, // { item, rowKey, grid, signal }
   type GridNoDataRenderContext, // { filtered, grid, signal }
   type GridRowExpansionChangeEventDetail, // { rowKey, expanded, source }
+  type GridRowKey,          // string | number
+  type GridKeyExpr,         // string | ((item) => GridRowKey)
+  type GridDataSource,      // { load(options, signal): Promise<GridLoadResult> }
+  type GridLoadOptions,     // { skip?, take?, sort, filter, filterValue, searchText, group, groupPath, … }
+  type GridLoadSort,        // { path, order }
+  type GridLoadGroup,       // { path, order, expanded }
+  type GridLoadSummary,     // { path, type, name? }
+  type GridLoadResult,      // { data, totalCount?, groupCount?, summary? }
+  type GridLoadGroupResult, // { key, count, items, summary? }
+  type GridRemoteOperations, // { filtering?, sorting?, paging?, grouping?, summary? }
+  type GridDataChanges,     // { add?, update?, remove? }
+  type GridScrollMode,      // 'virtual' | 'infinite'
+  type GridLoadingEventDetail, // { options }
+  type GridLoadEventDetail,  // { options, result }
+  type GridLoadErrorEventDetail, // { options, error }
+  type GridPageChangeEventDetail, // { pageIndex, previousPageIndex, pageSize, previousPageSize, source }
   type GridI18n,
   type GridI18nInput,       // Partial<GridI18n> that still accepts the deprecated keys
   type GridExportOptions,   // { selectedOnly?, includeGroups?, includeSummaries?, signal? }

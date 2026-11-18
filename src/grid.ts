@@ -8,7 +8,23 @@ import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
-import { booleanAttribute, type LegacyAttributes } from './attribute-converters.js';
+import { booleanAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';
+import {
+  type GridDataChanges,
+  type GridDataSource,
+  type GridKeyExpr,
+  type GridLoadOptions,
+  type GridLoadResult,
+  type GridLoadSummary,
+  type GridRemoteOperations,
+  type GridScrollMode,
+  keyReader,
+  keyText,
+  NO_REMOTE,
+  normalizeRemoteOperations,
+  type RemoteFlags,
+} from './data/data-source.js';
+import { flattenRemote, type LoaderQuery, remoteGroupNodes, RemoteLoader } from './data/remote-loader.js';
 import { downloadBlob } from './export/download.js';
 import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
 import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
@@ -122,7 +138,7 @@ import {
   replaceColumnCondition,
   searchExpression,
 } from './row-model/filter.js';
-import { type BlockDetails, flattenRows, RowList } from './row-model/flatten.js';
+import { type BlockDetails, flattenRows, RowList, RowPage, type Rows } from './row-model/flatten.js';
 import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
   DEFAULT_DATE,
@@ -139,7 +155,7 @@ import { buildGroups, groupKeyOf } from './row-model/group.js';
 import { LruCache } from './row-model/lru.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
-import type { DataRow, DetailRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
+import { type DataRow, type DetailRow, type GroupFooterRow, type GroupNode, type GroupRow, isLazyItems, type LazyItems, type Row } from './row-model/types.js';
 import { cellValueReader } from './row-model/value.js';
 
 import './grid-column.js';
@@ -182,6 +198,20 @@ export type {
 } from './grid-column-def.js';
 export type { GridSortMode, GridSortingMode } from './features/sorting.js';
 export type { GridSelectionMode } from './features/selection.js';
+export type {
+  GridDataChanges,
+  GridDataSource,
+  GridKeyExpr,
+  GridLoadGroup,
+  GridLoadGroupResult,
+  GridLoadOptions,
+  GridLoadResult,
+  GridLoadSort,
+  GridLoadSummary,
+  GridRemoteOperations,
+  GridRowKey,
+  GridScrollMode,
+} from './data/data-source.js';
 export type { GridClipboardMode } from './features/clipboard.js';
 export type {
   GridCsvDownloadOptions,
@@ -290,6 +320,42 @@ export interface GridCopyEventDetail<TItem = any> {
   readonly clipboardData: DataTransfer;
 }
 
+/** `detail` of `u-grid-loading` (cancelable: `preventDefault()` skips the call and keeps the rows shown). */
+export interface GridLoadingEventDetail {
+  /** What the grid is about to ask the data source (frozen). */
+  options: GridLoadOptions;
+}
+
+/** `detail` of `u-grid-load`. */
+export interface GridLoadEventDetail {
+  /** What the grid asked (frozen). */
+  options: GridLoadOptions;
+  /** What the data source returned. */
+  result: GridLoadResult;
+}
+
+/** `detail` of `u-grid-load-error`. */
+export interface GridLoadErrorEventDetail {
+  /** What the grid asked (frozen). */
+  options: GridLoadOptions;
+  /** What the data source rejected with. */
+  error: unknown;
+}
+
+/** `detail` of `u-grid-page-change`. */
+export interface GridPageChangeEventDetail {
+  /** Page after the change (0-based). */
+  pageIndex: number;
+  /** Page before the change. */
+  previousPageIndex: number;
+  /** Rows per page after the change. */
+  pageSize: number;
+  /** Rows per page before the change. */
+  previousPageSize: number;
+  /** `user` (pager, PageUp/PageDown, or a filter gesture that moved the page) or `api`. */
+  source: GridChangeSource;
+}
+
 /**
  * Kind of the active cell: column header, data cell, selection checkbox
  * cell, group row, summary row (group footer, totals), detail toggle cell or
@@ -388,6 +454,19 @@ export interface GridColumnReorderEventDetail {
   fromIndex: number;
   /** @deprecated Use `index`. */
   toIndex: number;
+}
+
+/** Espera depois do último render antes de pedir os blocos (rolagem rápida pede só onde parou). */
+const FLUSH_DELAY = 30;
+
+/** Carga mais curta que isto não é anunciada (não fala a cada bloco rápido). */
+const LOADING_ANNOUNCE_DELAY = 300;
+
+/** Contexto da consulta remota: colunas de grupo e posição de cada resumo do grid na resposta (`-1` = não remoto). */
+interface RemoteContext {
+  groupColumns: GridColumnDef[];
+  totalSummaryMap: number[];
+  groupSummaryMap: number[];
 }
 
 /** Atributos renomeados na revisão de API (spec 15): antigo → novo. */
@@ -538,27 +617,36 @@ const columnIdOf = (column: GridColumnDef): number => {
   return id;
 };
 
+// Ícones Material Symbols (Apache 2.0): primeira/anterior/próxima/última página.
+const FIRST_PAGE_PATH = 'M240-240v-480h80v480h-80Zm440 0L440-480l240-240 56 56-184 184 184 184-56 56Z';
+const PREVIOUS_PAGE_PATH = 'M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z';
+const NEXT_PAGE_PATH = 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z';
+const LAST_PAGE_PATH = 'm280-240-56-56 184-184-184-184 56-56 240 240-240 240Zm360 0v-480h80v480h-80Z';
+
 // Ícones Material Symbols (Apache 2.0): check e remove (estado misto).
 const CHECK_PATH = 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z';
 const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 
-/** Linha de dados (não grupo nem rodapé de grupo). */
 /** Ações do menu do cabeçalho das colunas (spec 17, A1). */
 type ColumnHeaderMenuAction = 'groupColumn' | 'moveLeft' | 'moveRight' | 'autoSizeColumn' | 'increaseColumnWidth' | 'decreaseColumnWidth';
 
-const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter && !row.isDetail;
+/** Linha de dados ou esqueleto (não grupo, rodapé de grupo nem detalhe). */
+const isDataRowLike = (row: Row): row is DataRow => !row.isGroup && !row.isFooter && !row.isDetail;
 
-/** Índice da linha de detalhe do item ou, recolhido, da linha mestre. */
-const detailOrMaster = (rows: RowList, item: unknown): number => {
-  const detail = rows.indexOfDetail(item);
-  return detail >= 0 ? detail : rows.indexOfItem(item);
+/** Linha de dados carregada (não grupo, rodapé de grupo, detalhe nem esqueleto). */
+const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter && !row.isDetail && !row.skeleton;
+
+/** Índice da linha de detalhe da chave ou, recolhido, da linha mestre (`keyOf` ausente = a chave é o item). */
+const detailOrMaster = (rows: Rows, key: unknown, keyOf?: (item: unknown) => unknown): number => {
+  const detail = rows.indexOfDetailKey(key, keyOf);
+  return detail >= 0 ? detail : rows.indexOfDataKey(key, keyOf);
 };
 
 /** Linha de detalhe (master-detail). */
 const isDetailRow = (row: Row | undefined): row is DetailRow => !!row && !!row.isDetail;
 
 /** Identidade estável da linha ativa: item (dados), detalhe do item, chave (grupo, rodapé de grupo) ou o rodapé de totais. */
-type ActiveRef = { item: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true };
+type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true };
 
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
@@ -580,6 +668,11 @@ type ActiveRef = { item: unknown } | { detailOf: unknown } | { rowKey: string } 
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
  * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
+ * @fires {CustomEvent<GridLoadingEventDetail>} u-grid-loading - Before each call to `dataSource.load` (`dataSource` only). Cancelable: the call is skipped and the rows shown stay.
+ * @fires {CustomEvent<GridLoadEventDetail>} u-grid-load - A `dataSource.load` call resolved (not fired for aborted calls).
+ * @fires {CustomEvent<GridLoadErrorEventDetail>} u-grid-load-error - A `dataSource.load` call rejected (not fired for aborted calls); the grid shows the error bar with "Retry".
+ * @fires {CustomEvent<GridPageChangeEventDetail>} u-grid-page-change - The page or page size changed: pager, PageUp/PageDown, a filter gesture (back to the first page)
+ * or a clamp after the rows shrank (`source` of the change that caused it). Not the `pageIndex`/`pageSize` setters.
  * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
@@ -640,6 +733,9 @@ type ActiveRef = { item: unknown } | { detailOf: unknown } | { rowKey: string } 
  * @cssprop --u-grid-header-filter-button-active-color - Color of the header filter button of a filtered column.
  * @cssprop --u-grid-header-filter-background-color - Header filter popover background.
  * @cssprop --u-grid-header-filter-shape - Header filter popover corner radius. Default `12px`.
+ * @cssprop --u-grid-load-panel-background-color - Background of the load panel.
+ * @cssprop --u-grid-skeleton-row-color - Color of the placeholders in rows still loading.
+ * @cssprop --u-grid-pager-height - Minimum height of the pager. Default `56px`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
  * @csspart group-row - Group header rows.
@@ -674,6 +770,14 @@ type ActiveRef = { item: unknown } | { detailOf: unknown } | { rowKey: string } 
  * @csspart detail-row - Detail rows (with `row`).
  * @csspart detail-cell - The full-width cell of a detail row.
  * @csspart expanded - Master rows whose detail is expanded (with `row`).
+ * @csspart pager - The pager (`<nav>`) below the table (`paging`).
+ * @csspart pager-button - Pager buttons (first, previous, page numbers, next, last).
+ * @csspart page-size-select - The page size `<select>` of the pager.
+ * @csspart page-info - The "Page x of y (n items)" text of the pager.
+ * @csspart load-panel - The load panel shown while a data source loads.
+ * @csspart skeleton-row - Rows of a remote source not loaded yet (with `row`).
+ * @csspart error-row - The bar shown when the data source failed.
+ * @csspart retry-button - The "Retry" button of the error bar.
  * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
  */
 @customElement('u-grid')
@@ -748,14 +852,219 @@ export class DataGrid extends LitElement {
   #detailObserver: ResizeObserver | undefined;
   readonly #observedDetails = new Set<Element>();
 
-  /** Row items (property only). The grid never mutates this array or its items. */
+  // ------------------------------------------------- chave e fonte de dados
+
+  #keyExpr: GridKeyExpr | null = null;
+  /** Chave de linha: `keyExpr` ou o próprio item. */
+  #keyOf: (item: unknown) => unknown = item => item;
+  /** Chave vazia ou repetida nas linhas renderizadas já foi avisada. */
+  #warnedKeys = false;
+
+  /**
+   * Row key: a property `path` (dots allowed, attribute `key-expr`) or a
+   * function returning the key of an item. Selection (`selectedKeys`), focus
+   * (`focusedRowKey`, `focusCell`) and events use it; without it the key is
+   * the item object itself. With a key, replacing `items` with new objects
+   * keeps the selection, the focus and the group expansion. Changing it
+   * converts the selection to the new keys (keys whose row is gone are
+   * dropped, firing `u-grid-selection-change` with `source: 'api'`).
+   * @default null
+   */
+  @property({ attribute: 'key-expr' })
+  get keyExpr(): GridKeyExpr | null {
+    return this.#keyExpr;
+  }
+
+  set keyExpr(value: GridKeyExpr | null | undefined) {
+    const next = value || null;
+
+    if (next === this.#keyExpr) {
+      return;
+    }
+
+    const previousKeyOf = this.#keyOf;
+    const hadRendered = this.hasUpdated;
+
+    this.#keyExpr = next;
+    this.#keyOf = keyReader(next);
+    this.#warnedKeys = false;
+    this.#rowsDirty = true;
+
+    if (this.#activeRef && 'key' in this.#activeRef) {
+      const item = this.#loadedItemByKey(this.#activeRef.key, previousKeyOf);
+      this.#activeRef = item === undefined ? null : { key: this.#keyOf(item) };
+    }
+
+    if (this.#selection.size) {
+      this.#convertSelection(previousKeyOf, hadRendered);
+    }
+
+    this.requestUpdate();
+  }
+
+  /** Texto da chave da linha renderizada (`keyed`), único por linha. */
+  readonly #rowKeyText = (item: unknown): string =>
+    this.#keyExpr ? keyText(this.#keyOf(item)) : rowKeyOf(item);
+
+  #dataSource: GridDataSource | null = null;
+
+  /**
+   * Data source (property only): the grid calls `load(options, signal)` and
+   * shows what it returns — with `remoteOperations`, the server filters,
+   * sorts, groups, summarizes and pages. The grid never builds URLs or
+   * queries: validate the options on the server. Alternative to `items`.
+   * @default null
+   */
+  @property({ attribute: false })
+  get dataSource(): GridDataSource | null {
+    return this.#dataSource;
+  }
+
+  set dataSource(value: GridDataSource | null | undefined) {
+    const next = value && typeof value.load === 'function' ? value : null;
+
+    if (value && !next) {
+      console.error('<u-grid>: "dataSource" needs a load(options, signal) method; ignored.');
+    }
+
+    if (next === this.#dataSource) {
+      return;
+    }
+
+    this.#dataSource = next;
+    this.#loader.dispose();
+    this.#queryKey = undefined;
+    this.#loadedGeneration = undefined;
+    this.#remoteGeneration = undefined;
+
+    if (next && this.#hostItems.length) {
+      console.error('<u-grid>: set either "items" or "dataSource", not both; "dataSource" is used.');
+    }
+
+    this.#setItems(next ? [] : this.#hostItems);
+    this.requestUpdate();
+  }
+
+  /**
+   * What the server does with `dataSource` (attribute `remote-operations`:
+   * all or nothing). `false` (default): one call loads every row and the
+   * grid filters, sorts, groups, summarizes and pages. `true`: everything on
+   * the server. An object picks operations; remote `paging` or `grouping`
+   * also turn on remote `filtering`, `sorting` and `summary` (paging also
+   * grouping), with a console warning. Remote operations use the column
+   * `path` (not `valueGetter`, `comparator` nor `groupValueGetter`).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'remote-operations' })
+  remoteOperations: boolean | GridRemoteOperations = false;
+
+  #remote: RemoteFlags = NO_REMOTE;
+  #remoteSource: boolean | GridRemoteOperations | undefined;
+  readonly #loader = new RemoteLoader({
+    request: (options, signal) => this.#request(options, signal),
+    changed: () => this.requestUpdate(),
+  });
+
+  /** Consulta pendente (calculada no render, pedida depois dele). */
+  #pendingQuery: { query: LoaderQuery; hintRow: number } | undefined;
+  #queryKey: string | undefined;
+  /** `refresh()` força uma consulta nova mesmo igual. */
+  #refreshCount = 0;
+  /** Geração cujos dados estão em `#items` (carga única). */
+  #loadedGeneration: unknown;
+  /** Geração e versão das linhas remotas montadas. */
+  #remoteGeneration: unknown;
+  #remoteVersion = -1;
+  #flushTimer: ReturnType<typeof setTimeout> | undefined;
+  #loadingTimer: ReturnType<typeof setTimeout> | undefined;
+  #loadingAnnounced = false;
+  readonly #warnedColumns = new Set<string>();
+
+  /** Fonte remota com linhas sob demanda (paginação ou agrupamento no servidor). */
+  get #lazy(): boolean {
+    return !!this.#dataSource && (this.#remote.paging || this.#remote.grouping);
+  }
+
+  // ------------------------------------------------------------- paginação
+
+  /** Splits the rows into pages (group rows count) and shows the pager below the table. */
+  @property({ type: Boolean, converter: booleanAttribute(false) }) paging = false;
+
+  /** Rows per page; also the block size asked to a remote source in virtual and infinite scrolling. Default `20`. */
+  @property({ type: Number, attribute: 'page-size' }) pageSize = 20;
+
+  #pageIndex = 0;
+
+  /**
+   * Current page (0-based; with `paging`). The pager writes it; out-of-range
+   * values are clamped. Setting it does not fire `u-grid-page-change`.
+   * @default 0
+   */
+  @property({ type: Number, attribute: 'page-index' })
+  get pageIndex(): number {
+    return this.#pageIndex;
+  }
+
+  set pageIndex(value: number) {
+    const old = this.#pageIndex;
+    this.#pageIndex = Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+    this.requestUpdate('pageIndex', old);
+  }
+
+  /**
+   * Page sizes offered by the pager (attribute: a list, `"10, 20, 50"`);
+   * empty hides the selector. Default `[10, 20, 50, 100]`.
+   */
+  @property({ type: Array, attribute: 'page-size-options', converter: numberListAttribute([10, 20, 50, 100]) })
+  pageSizeOptions: readonly number[] = [10, 20, 50, 100];
+
+  /**
+   * `virtual` (default): every row is in the scroll range and a remote
+   * source loads the visible blocks. `infinite`: the next block loads when
+   * the end is reached (remote paging only; with `paging` the pager wins).
+   */
+  @property({ attribute: 'scroll-mode' }) scrollMode: GridScrollMode = 'virtual';
+
+  /**
+   * Origem da última mudança que pode encolher as linhas (dados, filtro,
+   * agrupamento, expansão): a página limitada por ela dispara
+   * `u-grid-page-change` com essa origem. Sem causa (setters de página), o
+   * limite é silencioso. Consumida a cada render.
+   */
+  #pageCause: GridChangeSource | undefined;
+  /** Linhas inteiras (sem a página); `#rows` é a página com `paging`. */
+  #allRows: Rows = new RowList(rowKeyOf);
+  /** Linhas de dados conhecidas (local: filtradas; remoto: total do servidor; `-1` desconhecido). */
+  #totalCount = 0;
+
+  /** `items` do hospedeiro (o getter devolve este; com `dataSource` os dados vêm de lá). */
+  #hostItems: readonly any[] = [];
+
+  /**
+   * Row items (property only). The grid never mutates this array or its
+   * items. Use either `items` or `dataSource` (both = console error, the
+   * data source wins).
+   */
   @property({ attribute: false })
   get items(): any[] {
-    return this.#items as any[];
+    return this.#hostItems as any[];
   }
 
   set items(items: readonly any[] | null | undefined) {
-    this.#items = items ?? [];
+    this.#hostItems = items ?? [];
+
+    if (this.#dataSource && this.#hostItems.length) {
+      console.error('<u-grid>: set either "items" or "dataSource", not both; "dataSource" is used.');
+    }
+
+    if (!this.#dataSource) {
+      this.#setItems(this.#hostItems);
+    }
+  }
+
+  /** Troca as linhas do pipeline local (`items` ou o que a fonte carregou de uma vez). */
+  #setItems(items: readonly any[]): void {
+    this.#pageCause ??= 'api';
+    this.#items = items;
     this.#sortDirty = true;
     this.#rankCache.clear();
     this.#dataTypes.clear();
@@ -784,7 +1093,7 @@ export class DataGrid extends LitElement {
   /** Postos por coluna para os `items` e o idioma atuais (inverter a direção não reordena textos). */
   readonly #rankCache: RankCache = new Map();
   #groups: GroupNode[] = [];
-  #rows = new RowList(rowKeyOf);
+  #rows: Rows = new RowList(rowKeyOf);
   #sortDirty = true;
   #groupsDirty = true;
   #rowsDirty = true;
@@ -1327,6 +1636,10 @@ export class DataGrid extends LitElement {
       announceTimers: this.#resizeAnnouncer.size,
       headerFilterOpen: this.#headerFilterPopover.open ? 1 : 0,
       selectedKeys: this.#selection.size,
+      // Fonte de dados (frente 08): pedidos em voo, blocos em cache (LRU por geração) e o temporizador dos pedidos.
+      pendingLoads: this.#loader.pending,
+      cachedBlocks: this.#loader.blocksCached,
+      loadTimers: (this.#flushTimer === undefined ? 0 : 1) + (this.#loadingTimer === undefined ? 0 : 1),
       rowExpansion: this.#rowExpansion.size,
       primitiveDetailSizes: this.#primitiveDetailSizes.size,
       observedDetails: this.#observedDetails.size,
@@ -1377,6 +1690,15 @@ export class DataGrid extends LitElement {
     this.#detailObserver?.disconnect();
     this.#detailObserver = undefined;
     this.#observedDetails.clear();
+    // Pedidos em voo e o temporizador da fonte (spec 14): ao reconectar, carrega de novo.
+    clearTimeout(this.#flushTimer);
+    this.#flushTimer = undefined;
+    clearTimeout(this.#loadingTimer);
+    this.#loadingTimer = undefined;
+    this.#loadingAnnounced = false;
+    this.#loader.dispose();
+    this.#queryKey = undefined;
+    this.#pendingQuery = undefined;
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -1406,6 +1728,13 @@ export class DataGrid extends LitElement {
       // A coluna de expansão e as linhas de detalhe aparecem/somem.
       this.#rowsDirty = true;
       this.#layoutDirty = true;
+    }
+
+    if (changed.has('scrollMode') && this.scrollMode !== 'virtual' && !this.#dataSource && !this.#warnedInfinitePaging) {
+      this.#warnedInfinitePaging = true;
+      console.warn(this.scrollMode === 'infinite'
+        ? '<u-grid>: scroll-mode="infinite" needs a dataSource with remote paging; ignored.'
+        : `<u-grid>: unknown scroll-mode "${String(this.scrollMode)}"; "virtual" is used.`);
     }
 
     if (changed.has('autoExpandGroups')) {
@@ -1524,6 +1853,24 @@ export class DataGrid extends LitElement {
       this.#focusPending = true;
       this.#afterActiveRender();
     }
+
+    const correction = this.#pageCorrection;
+
+    if (correction) {
+      this.#pageCorrection = undefined;
+
+      if (correction.pageIndex !== this.#pageIndex) {
+        this.dispatchEvent(new CustomEvent('u-grid-page-change', this.#eventInit<GridPageChangeEventDetail>({
+          pageIndex: this.#pageIndex,
+          previousPageIndex: correction.pageIndex,
+          pageSize: this.#effectivePageSize,
+          previousPageSize: correction.pageSize,
+          source: correction.source,
+        })));
+      }
+    }
+
+    this.#afterRenderLoad();
 
     if (
       this.#dragAndDropDirty
@@ -1670,16 +2017,28 @@ export class DataGrid extends LitElement {
 
   /**
    * Linhas de detalhe de um bloco de itens: posições dos itens cuja expansão
-   * difere do padrão. Poucas chaves: `indexOf` por chave (rápido em array de
-   * objetos); muitas: uma passada com `Set`.
+   * difere do padrão. Poucas chaves sem `keyExpr`: `indexOf` por chave
+   * (rápido em array de objetos); senão uma passada com `Set` (pela chave).
+   * Bloco remoto (frente 08): só as linhas carregadas têm detalhe, listadas
+   * uma a uma (`all: false`).
    */
-  readonly #detailsOf = (items: readonly unknown[]): BlockDetails | undefined => {
+  readonly #detailsOf = (items: readonly unknown[] | LazyItems): BlockDetails | undefined => {
     if (!this.detailRenderer) {
       return undefined;
     }
 
     const all = this.autoExpandRows;
     const keys = this.#rowExpansion;
+    const keyOf = this.#keyOf;
+
+    if (isLazyItems(items)) {
+      if (!all && !keys.size) {
+        return undefined;
+      }
+
+      const loaded = items.loadedPositions(item => all !== keys.has(keyOf(item)));
+      return loaded.length ? { all: false, positions: Int32Array.from(loaded) } : undefined;
+    }
 
     if (!keys.size) {
       return all ? { all, positions: NO_POSITIONS } : undefined;
@@ -1687,7 +2046,7 @@ export class DataGrid extends LitElement {
 
     const positions: number[] = [];
 
-    if (keys.size <= 16) {
+    if (keys.size <= 16 && !this.#keyExpr) {
       for (const key of keys) {
         for (let position = items.indexOf(key); position >= 0; position = items.indexOf(key, position + 1)) {
           positions.push(position);
@@ -1697,7 +2056,7 @@ export class DataGrid extends LitElement {
       positions.sort((a, b) => a - b);
     } else {
       items.forEach((item, position) => {
-        if (keys.has(item)) {
+        if (keys.has(keyOf(item))) {
           positions.push(position);
         }
       });
@@ -1706,15 +2065,33 @@ export class DataGrid extends LitElement {
     return { all, positions: Int32Array.from(positions) };
   };
 
+  /** Altura medida do detalhe: pela chave (`keyExpr`, sobrevive a objetos novos) ou pelo item. */
   #detailSizeOf(item: unknown): number | undefined {
-    return item !== null && typeof item === 'object'
-      ? this.#detailSizes.get(item)
-      : this.#primitiveDetailSizes.get(item);
+    const key = this.#keyOf(item);
+
+    return key !== null && typeof key === 'object'
+      ? this.#detailSizes.get(key)
+      : this.#primitiveDetailSizes.get(key);
   }
+
+  #setDetailSize(item: unknown, size: number): void {
+    const key = this.#keyOf(item);
+
+    if (key !== null && typeof key === 'object') {
+      this.#detailSizes.set(key, size);
+    } else {
+      this.#primitiveDetailSizes.set(key, size);
+    }
+  }
+
+  /** Linhas (página) cujas alturas de detalhe o virtualizador conhece. */
+  #syncedRows: Rows | undefined;
 
   /** Alturas das linhas de detalhe para o virtualizador (as medidas ou a estimativa). */
   #syncDetailSizes(): void {
     const rows = this.#rows;
+
+    this.#syncedRows = rows;
     const indices = rows.detailCount ? rows.detailIndices() : NO_POSITIONS;
     const sizes = new Float64Array(indices.length);
     const estimate = this.#detailEstimate || this.rowHeight * 3;
@@ -1749,11 +2126,7 @@ export class DataGrid extends LitElement {
 
         this.#detailEstimate = size;
 
-        if (detail.item !== null && typeof detail.item === 'object') {
-          this.#detailSizes.set(detail.item, size);
-        } else {
-          this.#primitiveDetailSizes.set(detail.item, size);
-        }
+        this.#setDetailSize(detail.item, size);
       }
     }
 
@@ -1850,6 +2223,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#rowsDirty = true;
+    this.#pageCause ??= source;
     this.requestUpdate();
     this.#dispatchExpansion({ groupPath, groupIndex: level, expanded, source });
   }
@@ -1898,6 +2272,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#rowsDirty = true;
+    this.#pageCause ??= source;
     this.requestUpdate();
 
     if (changed) {
@@ -1959,6 +2334,92 @@ export class DataGrid extends LitElement {
     if (width !== undefined) {
       this.setColumnWidth(column, width);
     }
+  }
+
+  /**
+   * Reloads the data: with `dataSource`, discards the loaded blocks and asks
+   * again (the rows shown stay until the answer); with `items`, recomputes
+   * sorting, filtering, grouping and summaries. Resolves when done (also on
+   * error — see `u-grid-load-error`).
+   */
+  async refresh(): Promise<void> {
+    if (!this.#dataSource) {
+      this.#sortDirty = true;
+      this.#rankCache.clear();
+      this.#dataTypes.clear();
+      this.#allConvert.clear();
+      this.#filtering.invalidate();
+      this.#summaryDirty = true;
+      this.#totalsDirty = true;
+      this.#groupsDirty = true;
+      this.requestUpdate();
+      await this.updateComplete;
+      return;
+    }
+
+    this.#refreshCount++;
+    this.requestUpdate();
+    await this.updateComplete;
+    await this.#loader.whenSettled();
+    await this.updateComplete;
+  }
+
+  /**
+   * Applies changes to the loaded rows of `dataSource` without reloading
+   * everything: `update` replaces items by key in place (no re-sorting nor
+   * re-filtering, as the reference `push`), `remove` takes rows out, `add`
+   * appends at the end. With remote paging or grouping, `update` patches the
+   * loaded blocks and `add`/`remove` reload the shown rows. Selection, focus
+   * and group expansion are kept. `update`/`remove` need `keyExpr`. With
+   * `items` it does nothing (warning): set a new `items` array instead —
+   * rows keep their state by key.
+   */
+  applyChanges<TItem = any>(changes: GridDataChanges<TItem>): void {
+    if (!this.#dataSource) {
+      console.warn('<u-grid>: applyChanges() works with "dataSource"; with "items", set a new array (rows keep their state by keyExpr).');
+      return;
+    }
+
+    const add = changes?.add ?? [];
+    const update = changes?.update ?? [];
+    const remove = changes?.remove ?? [];
+
+    if ((update.length || remove.length) && !this.#keyExpr) {
+      console.error('<u-grid>: applyChanges() needs "keyExpr" to update or remove rows.');
+      return;
+    }
+
+    this.#ensureRows();
+
+    if (!this.#lazy) {
+      this.#applyLocalChanges(add, update, remove);
+      return;
+    }
+
+    const generation = this.#loader.current;
+
+    if (update.length && generation) {
+      const keyOf = this.#keyOf;
+
+      if (generation.updateItems(keyOf, new Map(update.map(item => [keyOf(item), item])))) {
+        this.requestUpdate();
+      }
+    }
+
+    if (add.length || remove.length) {
+      this.#refreshCount++;
+      this.requestUpdate();
+    }
+  }
+
+  /**
+   * Number of data rows: with `items` or a single-load `dataSource`, the
+   * rows that pass the filter; with remote paging or grouping, the server
+   * total (`-1` while unknown, e.g. infinite scrolling).
+   */
+  getTotalCount(): number {
+    this.#ensureRows();
+    return this.#totalCount;
   }
 
   /** Removes every filter: `filterValue` and `searchText`. Fires `u-grid-filter-change` (`source: 'api'`) when something changed. */
@@ -2032,14 +2493,25 @@ export class DataGrid extends LitElement {
     return this.#selection.has(key);
   }
 
-  /** Items of the selected keys that are in `items`, in selection order. */
+  /** Items of the selected keys that are loaded (all of `items`; with a remote source, the loaded blocks), in selection order. */
   getSelectedItems(): any[] {
     if (!this.#selection.size) {
       return [];
     }
 
-    const present = new Set(this.#items);
-    return this.#selection.keys.filter(key => present.has(key));
+    this.#ensureRows();
+
+    const byKey = new Map<unknown, unknown>();
+
+    for (const item of this.#loadedItems()) {
+      const key = this.#keyOf(item);
+
+      if (this.#selection.has(key) && !byKey.has(key)) {
+        byKey.set(key, item);
+      }
+    }
+
+    return this.#selection.keys.filter(key => byKey.has(key)).map(key => byKey.get(key));
   }
 
   /**
@@ -2077,6 +2549,9 @@ export class DataGrid extends LitElement {
    * visible exportable columns in the current order, filter, sorting, groups
    * (collapsed ones included) and summaries. The state is read when called;
    * rows are built in time slices, so a million rows do not freeze the page.
+   * With a `dataSource` whose server pages or groups, only the rows already
+   * loaded are exported (in screen order, without group rows; totals from the
+   * server): ask the server for the full file instead.
    */
   async getExportData(options: GridExportOptions = {}): Promise<GridExportData> {
     const source = this.#exportSource(options);
@@ -2106,17 +2581,23 @@ export class DataGrid extends LitElement {
 
     const includeGroups = options.includeGroups !== false;
     const includeSummaries = options.includeSummaries !== false;
-    const columns = [...includeGroups ? [] : this._groupColumns, ...this._visibleColumns]
+    const lazy = this.#lazy;
+    // Sem linhas de grupo (lista plana ou fonte remota): a coluna agrupada vira coluna.
+    const columns = [...includeGroups && !lazy ? [] : this._groupColumns, ...this._visibleColumns]
       .filter(isColumnExportable)
       .map(column => this.#exportColumn(column));
-    let items = this.#sortedItems;
-    let groups = this.#groups;
+    // Fonte remota com paginação ou grupos no servidor: só as linhas JÁ
+    // carregadas, na ordem da tela e sem linhas de grupo (os grupos remotos
+    // não têm os itens); os totais são os do servidor (os do rodapé).
+    let items: readonly unknown[] = lazy ? this.#loader.current?.loadedInOrder() ?? [] : this.#sortedItems;
+    let groups = lazy ? [] : this.#groups;
     let totals = this.#totals;
 
     if (options.selectedOnly) {
       // Na ordem e no filtro atuais; grupos e resumos recalculados sobre as selecionadas.
-      items = items.filter(item => this.#selection.has(item));
-      groups = this._groupColumns.length ? this.#buildGroupsOf(items) : [];
+      const keyOf = this.#keyOf;
+      items = items.filter(item => this.#selection.has(keyOf(item)));
+      groups = this._groupColumns.length && !lazy ? this.#buildGroupsOf(items) : [];
       totals = includeSummaries && this.#totalSpecs.length ? summarize(items, this.#totalSpecs.map(({ spec }) => spec)) : [];
     }
 
@@ -3013,6 +3494,24 @@ export class DataGrid extends LitElement {
       this.#filtering.invalidate();
     }
 
+    // Antes dos resumos: o tipo de dado das colunas sai das linhas carregadas.
+    this.#syncRemote();
+
+    if (this.#dataSource && !this.#lazy) {
+      this.#adoptLoaded();
+    } else if (this.#lazy) {
+      const generation = this.#loader.current;
+      const version = generation?.version ?? -1;
+
+      // Tipos inferidos das linhas carregadas: refaz com a amostra nova.
+      if (generation !== this.#typesGeneration || version !== this.#typesVersion) {
+        this.#typesGeneration = generation;
+        this.#typesVersion = version;
+        this.#dataTypes.clear();
+        this.#summaryDirty = true;
+      }
+    }
+
     if (this.#summaryDirty || (languageChanged && (this.#totalSpecs.length || this.#groupSpecs.length))) {
       const hadFooters = this.#hasGroupFooters;
       const totalSpecs = this.#resolveSummaries(this.#summary?.total, language);
@@ -3034,6 +3533,14 @@ export class DataGrid extends LitElement {
       this.#rowsDirty ||= hadFooters !== this.#hasGroupFooters;
     }
 
+    if (this.#lazy) {
+      this.#ensureRemoteRows();
+      this.#planQuery();
+      this.#announceFiltered();
+      this.#applyPage();
+      return;
+    }
+
     if (this.#sortDirty || (languageChanged && this.#sorting.length)) {
       this.#sortOrder = undefined;
       this.#sortDirty = false;
@@ -3047,7 +3554,8 @@ export class DataGrid extends LitElement {
       this.#filtering.searchColumnsChanged();
     }
 
-    const mask = this.#filtering.maskFor(this.#items);
+    // Filtrado no servidor: as linhas carregadas já são as que passam.
+    const mask = this.#remote.filtering ? null : this.#filtering.maskFor(this.#items);
 
     if (mask !== this.#appliedMask) {
       this.#appliedMask = mask;
@@ -3058,7 +3566,8 @@ export class DataGrid extends LitElement {
 
     if (this.#viewDirty) {
       if (this.#sortOrder === undefined) {
-        const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+        // Ordenado no servidor: vale a ordem carregada.
+        const rowSorting = this.#remote.sorting ? [] : this.#sorting.filter(spec => !this.#isGrouped(spec.column));
         this.#sortOrder = sortOrder(this.#items, rowSorting, language, this.#rankCache);
       }
 
@@ -3078,11 +3587,6 @@ export class DataGrid extends LitElement {
       this.#totalsDirty = false;
     }
 
-    if (this.#announceFilter && !this.#filtering.pending) {
-      this.#announceFilter = false;
-      this.#announcement = withRepeatMark(formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#sortedItems.length) }), this.#announcement);
-    }
-
     if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
       this.#groups = this.#buildGroupsOf(this.#sortedItems);
       this.#groupsDirty = false;
@@ -3090,12 +3594,533 @@ export class DataGrid extends LitElement {
     }
 
     if (this.#rowsDirty) {
-      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf, this.#hasGroupFooters, this.#detailsOf);
+      this.#allRows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, this.#rowKeyText, this.#hasGroupFooters, this.#detailsOf);
       this.#rowsDirty = false;
       // Alturas medidas (`wrap`) são por índice: outras linhas, outras alturas.
       this.#virtualizer.measure();
+    }
+
+    this.#totalCount = this.#sortedItems.length;
+
+    if (this.#dataSource) {
+      this.#planQuery();
+    }
+
+    this.#announceFiltered();
+    this.#applyPage();
+  }
+
+  /**
+   * Anúncio do gesto de filtro com a contagem nova: espera a filtragem em
+   * fatias e, com fonte de dados, a resposta da consulta nova; total
+   * desconhecido (rolagem infinita) não anuncia contagem.
+   */
+  #announceFiltered(): void {
+    if (!this.#announceFilter || this.#filtering.pending || this.#isLoading) {
+      return;
+    }
+
+    this.#announceFilter = false;
+
+    if (this.#totalCount >= 0) {
+      this.#announcement = withRepeatMark(formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#totalCount) }), this.#announcement);
+    }
+  }
+
+  // ------------------------------------------------------- fonte de dados
+
+  /** Normaliza `remoteOperations` (aviso quando uma operação foi ligada por dependência). */
+  #syncRemote(): void {
+    const value = this.remoteOperations;
+
+    if (value === this.#remoteSource) {
+      return;
+    }
+
+    this.#remoteSource = value;
+
+    const { flags, forced } = normalizeRemoteOperations(value);
+    const changed = JSON.stringify(flags) !== JSON.stringify(this.#remote);
+
+    if (forced.length) {
+      console.warn(`<u-grid>: remoteOperations also needs ${forced.join(', ')} on the server; turned on.`);
+    }
+
+    if (typeof value === 'object' && value?.summary && !flags.summary) {
+      console.warn('<u-grid>: remoteOperations.summary only applies with remote paging or grouping; summaries are computed in the browser.');
+    }
+
+    this.#remote = flags;
+
+    if (changed) {
+      this.#sortDirty = true;
+      this.#filtering.invalidate();
+      this.#groupsDirty = true;
+      this.#totalsDirty = true;
+      this.#rowsDirty = true;
+      this.#queryKey = undefined;
+      this.#loadedGeneration = undefined;
+      this.#remoteGeneration = undefined;
+    }
+  }
+
+  /** Carga única (sem paginação nem grupos no servidor): o que veio vira as linhas do pipeline local. */
+  #adoptLoaded(): void {
+    const generation = this.#loader.current;
+
+    if (generation && generation !== this.#loadedGeneration) {
+      this.#loadedGeneration = generation;
+      this.#setItems(generation.rootItems() ?? []);
+    }
+  }
+
+  /** Linhas da geração remota exibida (grupos carregados + blocos preguiçosos). */
+  #ensureRemoteRows(): void {
+    const generation = this.#loader.current;
+    const version = generation?.version ?? -1;
+
+    if (generation === this.#remoteGeneration && version === this.#remoteVersion && !this.#rowsDirty && !this.#groupsDirty && !this.#totalsDirty) {
+      return;
+    }
+
+    if (generation !== this.#remoteGeneration) {
+      this.#pageCause ??= 'api';
+    }
+
+    this.#remoteGeneration = generation;
+    this.#remoteVersion = version;
+    this.#rowsDirty = false;
+    this.#groupsDirty = false;
+    this.#totalsDirty = false;
+
+    const context = generation?.query.context as RemoteContext | undefined;
+    const groupColumns = context?.groupColumns ?? [];
+    const groupMap = context?.groupSummaryMap ?? [];
+    const totalMap = context?.totalSummaryMap ?? [];
+    const groupSummaries = (summary: readonly unknown[]): unknown[] => groupMap.map(index => index >= 0 ? summary[index] : undefined);
+
+    this.#sortedItems = [];
+    this.#allRows = generation
+      ? flattenRemote(generation, groupColumns, this.#isExpanded, this.#rowKeyText, groupSummaries, this.#hasGroupFooters, this.#detailsOf)
+      : new RowList(this.#rowKeyText);
+    this.#groups = generation ? remoteGroupNodes(generation, groupColumns, groupSummaries) : [];
+    this.#totals = totalMap.map(index => index >= 0 ? generation?.summary[index] : undefined);
+    this.#totalCount = generation?.totalCount ?? (generation ? -1 : 0);
+    this.#virtualizer.measure();
+  }
+
+  #typesGeneration: unknown;
+  #typesVersion = -1;
+
+  /** Itens para inferir o `dataType` das colunas: `items`, ou o que a fonte remota já carregou. */
+  #typeSample(): readonly unknown[] {
+    if (!this.#lazy) {
+      return this.#items;
+    }
+
+    const sample: unknown[] = [];
+
+    for (const item of this.#loader.current?.loadedItems() ?? []) {
+      sample.push(item);
+
+      if (sample.length >= 1000) {
+        break;
+      }
+    }
+
+    return sample;
+  }
+
+  /** `path` da coluna para uma operação remota; sem ele avisa uma vez e a coluna fica de fora. */
+  #remotePath(column: GridColumnDef, operation: string): string | undefined {
+    const unsupported = !column.path
+      || (operation !== 'summary' && !!column.valueGetter)
+      || (operation === 'sorting' && !!column.comparator)
+      || (operation === 'grouping' && !!column.groupValueGetter);
+
+    if (unsupported) {
+      const id = `${operation}:${columnIdOf(column)}`;
+
+      if (!this.#warnedColumns.has(id)) {
+        this.#warnedColumns.add(id);
+        console.warn(`<u-grid>: column "${column.label ?? column.path ?? ''}" needs a plain "path" for remote ${operation}; ignored on the server.`);
+      }
+
+      return undefined;
+    }
+
+    return column.path;
+  }
+
+  #remoteSummaries(specs: readonly ResolvedSummary[], positions: number[]): GridLoadSummary[] {
+    const list: GridLoadSummary[] = [];
+
+    positions.length = 0;
+
+    for (const { item, spec } of specs) {
+      const path = typeof spec.type === 'string' && spec.column ? this.#remotePath(spec.column, 'summary') : undefined;
+
+      if (path === undefined || typeof spec.type !== 'string') {
+        positions.push(-1);
+        continue;
+      }
+
+      positions.push(list.length);
+      list.push(item.name ? { path, type: spec.type, name: item.name } : { path, type: spec.type });
+    }
+
+    return list;
+  }
+
+  /** Monta a consulta do estado atual; se mudou, fica pendente (pedida depois do render). */
+  #planQuery(): void {
+    const remote = this.#remote;
+    const lazy = this.#lazy;
+    const groupColumns = lazy ? this._groupColumns.filter(column => this.#remotePath(column, 'grouping') !== undefined) : [];
+    const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+    const sort = remote.sorting
+      ? [
+        ...groupColumns.map(column => ({ path: column.path!, order: this.#orderOf(column) ?? 'asc' })),
+        ...rowSorting.flatMap(({ column, order }) => {
+          const path = this.#remotePath(column, 'sorting');
+          return path === undefined ? [] : [{ path, order }];
+        }),
+      ]
+      : [];
+    const totalSummaryMap: number[] = [];
+    const groupSummaryMap: number[] = [];
+    const paged = remote.paging;
+    const query: LoaderQuery = {
+      sort,
+      filter: remote.filtering ? this.#filtering.combined() : null,
+      filterValue: remote.filtering ? this.#filtering.filterValue : null,
+      searchText: remote.filtering ? this.#filtering.searchText : '',
+      group: groupColumns.map(column => ({ path: column.path!, order: this.#orderOf(column) ?? 'asc', expanded: false })),
+      totalSummary: remote.summary ? this.#remoteSummaries(this.#totalSpecs, totalSummaryMap) : [],
+      groupSummary: remote.summary && groupColumns.length ? this.#remoteSummaries(this.#groupSpecs, groupSummaryMap) : [],
+      blockSize: paged ? this.#effectivePageSize : Infinity,
+      infinite: paged && this.scrollMode === 'infinite' && !this.paging,
+    };
+    const key = JSON.stringify([query, this.#refreshCount]);
+
+    if (key === this.#queryKey) {
+      return;
+    }
+
+    if (this.scrollMode !== 'virtual' && !this.#warnedInfinitePaging) {
+      const problem = this.scrollMode !== 'infinite'
+        ? `unknown scroll-mode "${String(this.scrollMode)}"; "virtual" is used.`
+        : this.paging
+          ? 'scroll-mode="infinite" is ignored with paging (the pager wins).'
+          : !paged ? 'scroll-mode="infinite" needs a dataSource with remote paging; ignored.' : '';
+
+      if (problem) {
+        this.#warnedInfinitePaging = true;
+        console.warn(`<u-grid>: ${problem}`);
+      }
+    }
+
+    this.#queryKey = key;
+    query.context = { groupColumns, totalSummaryMap, groupSummaryMap } satisfies RemoteContext;
+    this.#pendingQuery = {
+      query,
+      hintRow: this.paging ? this.#pageIndex * this.#effectivePageSize : this.#lastWindowFirst,
+    };
+  }
+
+  #warnedInfinitePaging = false;
+  /** 1ª linha da última janela renderizada (o 1º pedido de uma consulta nova já traz o bloco dela). */
+  #lastWindowFirst = 0;
+
+  get #effectivePageSize(): number {
+    const size = Math.trunc(Number(this.pageSize));
+    return size > 0 ? size : 20;
+  }
+
+  /** Página (com `paging`) sobre as linhas inteiras. */
+  #applyPage(): void {
+    const all = this.#allRows;
+
+    if (!this.paging) {
+      this.#rows = all;
+      this.#syncDetailsIfChanged();
+      return;
+    }
+
+    const size = this.#effectivePageSize;
+    const known = !this.#dataSource || !!this.#loader.current || !this.#lazy;
+    const count = Math.max(1, Math.ceil(all.length / size));
+
+    if (known && this.#pageIndex >= count && !this.#isLoading) {
+      // Sem causa (setter de `pageIndex`/`pageSize`): limita calado.
+      if (this.#pageCause) {
+        this.#pageCorrection ??= { pageIndex: this.#pageIndex, pageSize: size, source: this.#pageCause };
+      }
+
+      this.#pageIndex = count - 1;
+    }
+
+    if (!this.#isLoading) {
+      this.#pageCause = undefined;
+    }
+
+    const offset = this.#pageIndex * size;
+    const page = this.#rows;
+
+    // A mesma página das mesmas linhas: reaproveita (o virtualizador guarda as alturas dela).
+    if (!(page instanceof RowPage && page.source === all && page.offset === Math.min(offset, all.length) && page.size === size)) {
+      this.#rows = new RowPage(all, offset, size);
+    }
+
+    this.#syncDetailsIfChanged();
+  }
+
+  /** Linhas mudaram (refeitas ou outra página): alturas variáveis de novo. */
+  #syncDetailsIfChanged(): void {
+    if (this.#rows !== this.#syncedRows) {
       this.#syncDetailSizes();
     }
+  }
+
+  /** Página limitada num render: o evento sai depois dele (`updated`). */
+  #pageCorrection: { pageIndex: number; pageSize: number; source: GridChangeSource } | undefined;
+
+  /** Número de páginas (`paging`). */
+  #pageCount(): number {
+    return Math.max(1, Math.ceil(this.#allRows.length / this.#effectivePageSize));
+  }
+
+  /** Único ponto que muda a página por gesto ou correção; evento só se mudou. */
+  #setPage(pageIndex: number, pageSize: number, source: GridChangeSource): void {
+    const previousPageIndex = this.#pageIndex;
+    const previousPageSize = this.#effectivePageSize;
+
+    if (pageIndex === previousPageIndex && pageSize === previousPageSize) {
+      return;
+    }
+
+    this.pageSize = pageSize;
+    this.pageIndex = pageIndex;
+
+    // Só a troca pedida pelo usuário fala (a contagem do filtro já é anunciada).
+    if (source === 'user' && this.#allRows.length) {
+      this.#announce(this.#pageInfoText(Math.min(this.#pageIndex, this.#pageCount() - 1)));
+    }
+
+    this.dispatchEvent(new CustomEvent('u-grid-page-change', this.#eventInit<GridPageChangeEventDetail>({
+      pageIndex: this.#pageIndex,
+      previousPageIndex,
+      pageSize: this.#effectivePageSize,
+      previousPageSize,
+      source,
+    })));
+  }
+
+  /** Carga de toda a consulta em andamento (painel de carregamento, `aria-busy`). */
+  get #isLoading(): boolean {
+    return !!this.#dataSource && (!!this.#pendingQuery || this.#loader.loading);
+  }
+
+  /** Chama a fonte, com os eventos de carga; `null` = cancelada pelo hospedeiro. */
+  #request(options: GridLoadOptions, signal: AbortSignal): Promise<GridLoadResult> | null {
+    const source = this.#dataSource;
+
+    if (!source) {
+      return null;
+    }
+
+    const loading = new CustomEvent<GridLoadingEventDetail>('u-grid-loading', { ...this.#eventInit({ options }), cancelable: true });
+
+    if (!this.dispatchEvent(loading)) {
+      return null;
+    }
+
+    let promise: Promise<GridLoadResult>;
+
+    try {
+      promise = Promise.resolve(source.load(options, signal));
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+
+    return promise.then(
+      result => {
+        if (!signal.aborted) {
+          this.dispatchEvent(new CustomEvent('u-grid-load', this.#eventInit<GridLoadEventDetail>({ options, result })));
+        }
+
+        return result;
+      },
+      (error: unknown) => {
+        if (!signal.aborted) {
+          this.dispatchEvent(new CustomEvent('u-grid-load-error', this.#eventInit<GridLoadErrorEventDetail>({ options, error })));
+        }
+
+        throw error;
+      },
+    );
+  }
+
+  /** Depois do render: pede a consulta nova ou os blocos que o render marcou. */
+  #afterRenderLoad(): void {
+    if (!this.#dataSource || !this.isConnected) {
+      return;
+    }
+
+    const pending = this.#pendingQuery;
+
+    if (pending) {
+      this.#pendingQuery = undefined;
+      this.#loader.reset(pending.query, pending.hintRow);
+    }
+
+    // "Carregando…" pela região viva, só se a carga passar de 300 ms.
+    if (!this.#isLoading) {
+      clearTimeout(this.#loadingTimer);
+      this.#loadingTimer = undefined;
+      this.#loadingAnnounced = false;
+    } else if (!this.#loadingTimer && !this.#loadingAnnounced) {
+      this.#loadingTimer = setTimeout(() => {
+        this.#loadingTimer = undefined;
+
+        if (this.#isLoading) {
+          this.#loadingAnnounced = true;
+          this.#announce(this.#translation.loading);
+        }
+      }, LOADING_ANNOUNCE_DELAY);
+    }
+
+    // Rolagem rápida: pede só a janela onde parou.
+    clearTimeout(this.#flushTimer);
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = undefined;
+      this.#loader.flush();
+    }, FLUSH_DELAY);
+  }
+
+  /** Atualizações por chave na carga única: sem reordenar nem refiltrar (como o `push` da referência). */
+  #applyLocalChanges(add: readonly unknown[], update: readonly unknown[], remove: readonly unknown[]): void {
+    const keyOf = this.#keyOf;
+    const updates = new Map<unknown, unknown>();
+    const removals = new Set(remove);
+
+    for (const item of update) {
+      updates.set(keyOf(item), item);
+    }
+
+    const items = this.#items;
+    // Só acréscimos: cópia direta (sem passar item por item).
+    const next: unknown[] = !updates.size && !removals.size ? items.slice() : [];
+    // Identidade do item velho → novo (ou removido), para remapear a vista.
+    const replaced = new Map<unknown, unknown>();
+    const removedItems = new Set<unknown>();
+    const newIndex = removals.size ? new Int32Array(items.length) : undefined;
+
+    for (let index = 0; index < items.length && (updates.size || removals.size); index++) {
+      const item = items[index];
+      const key = keyOf(item);
+
+      if (removals.has(key)) {
+        removedItems.add(item);
+
+        if (newIndex) {
+          newIndex[index] = -1;
+        }
+
+        continue;
+      }
+
+      if (newIndex) {
+        newIndex[index] = next.length;
+      }
+
+      const replacement = updates.get(key);
+
+      if (replacement !== undefined && replacement !== item) {
+        replaced.set(item, replacement);
+        next.push(replacement);
+      } else {
+        next.push(item);
+      }
+    }
+
+    if (!replaced.size && !removedItems.size && !add.length) {
+      return;
+    }
+
+    const firstAdded = next.length;
+
+    for (const item of add) {
+      next.push(item);
+    }
+
+    // Vista (filtrada/ordenada): mesma ordem, sem os removidos; novos no fim.
+    const view: unknown[] = [];
+
+    for (const item of this.#sortedItems) {
+      if (removedItems.has(item)) {
+        continue;
+      }
+
+      view.push(replaced.get(item) ?? item);
+    }
+
+    for (const item of add) {
+      view.push(item);
+    }
+
+    const mask = this.#appliedMask;
+    let nextMask: Uint8Array | null = null;
+
+    if (mask) {
+      nextMask = new Uint8Array(next.length);
+
+      for (let index = 0; index < items.length; index++) {
+        const target = newIndex ? newIndex[index] : index;
+
+        if (target >= 0) {
+          nextMask[target] = mask[index];
+        }
+      }
+
+      nextMask.fill(1, firstAdded);
+    }
+
+    if (this.#sortOrder) {
+      const order: number[] = [];
+
+      for (const index of this.#sortOrder) {
+        const target = newIndex ? newIndex[index] : index;
+
+        if (target >= 0) {
+          order.push(target);
+        }
+      }
+
+      for (let index = firstAdded; index < next.length; index++) {
+        order.push(index);
+      }
+
+      this.#sortOrder = Int32Array.from(order);
+    }
+
+    this.#pageCause ??= 'api';
+    this.#items = next;
+    this.#sortedItems = view;
+    this.#appliedMask = nextMask;
+    this.#filtering.adopt(next, nextMask);
+    // Postos e tipos valiam para os itens velhos (a próxima ordenação refaz).
+    this.#rankCache.clear();
+    this.#allConvert.clear();
+    this.#totalsDirty = true;
+
+    if (this._groupColumns.length) {
+      this.#groupsDirty = true;
+    } else {
+      this.#rowsDirty = true;
+    }
+
+    this.requestUpdate();
   }
 
   // ----------------------------------------------------------------- filtro
@@ -3112,6 +4137,8 @@ export class DataGrid extends LitElement {
       return false;
     }
 
+    this.#pageCause = source;
+
     if (source === 'user') {
       this.#announceFilter = true;
     }
@@ -3123,6 +4150,11 @@ export class DataGrid extends LitElement {
       previousSearchText,
       source,
     })));
+
+    // Filtro novo volta à 1ª página (como a referência), depois do evento do filtro.
+    if (this.paging) {
+      this.#setPage(0, this.#effectivePageSize, source);
+    }
 
     return true;
   }
@@ -3140,7 +4172,7 @@ export class DataGrid extends LitElement {
     const language = this.language;
     const dataTypeOf = (column: GridColumnDef) => known.has(column)
       ? this.#dataTypeOf(column)
-      : resolveDataType(this.#items, column);
+      : resolveDataType(this.#typeSample(), column);
 
     const contextOf = (column: GridColumnDef): FormatContext => {
       let context = contexts.get(column);
@@ -3270,6 +4302,7 @@ export class DataGrid extends LitElement {
    * ANTES e `u-grid-sort-change` depois. Devolve `false` se não mudou.
    */
   #changeSorting(next: GridSort[], source: GridChangeSource): boolean {
+
     if (sameSorting(next, this.#sorting)) {
       return false;
     }
@@ -3363,7 +4396,7 @@ export class DataGrid extends LitElement {
 
   #dataTypeOf(column: GridColumnDef): GridColumnDataType | undefined {
     if (!this.#dataTypes.has(column)) {
-      this.#dataTypes.set(column, resolveDataType(this.#items, column));
+      this.#dataTypes.set(column, resolveDataType(this.#typeSample(), column));
     }
 
     return this.#dataTypes.get(column);
@@ -3538,7 +4571,8 @@ export class DataGrid extends LitElement {
 
     this.#ensureRows();
 
-    const keys = this.#sortedItems;
+    const items = this.#lazy ? this.#loadedItems() : this.#sortedItems;
+    const keys = this.#keyExpr ? items.map(this.#keyOf) : items;
     return this.#applySelection(select ? this.#selection.add(keys) : this.#selection.remove(keys), source);
   }
 
@@ -3558,7 +4592,7 @@ export class DataGrid extends LitElement {
 
   /** Clique na caixa ou Espaço: alterna a linha (em `single`, substitui). */
   #toggleRow(row: DataRow): void {
-    const key = row.item;
+    const key = this.#keyOf(row.item);
     const selected = this.#selection.has(key);
 
     this.#selectionAnchor = key;
@@ -3590,13 +4624,13 @@ export class DataGrid extends LitElement {
 
     if (anchor < 0) {
       anchor = rowIndex;
-      this.#selectionAnchor = target.item;
+      this.#selectionAnchor = this.#keyOf(target.item);
     }
 
     const keys = rangeBetween(anchor, rowIndex)
       .map(index => this.#rows.at(index))
       .filter(isDataRow)
-      .map(row => row.item);
+      .map(row => this.#keyOf(row.item));
 
     const changed = this.#applySelection(append ? this.#selection.add(keys) : this.#selection.replace(keys), 'user');
 
@@ -3607,6 +4641,11 @@ export class DataGrid extends LitElement {
 
   /** Caixa "selecionar tudo": desmarca se todas as filtradas estão marcadas; senão marca todas. */
   #toggleAll(): void {
+    // Fonte remota: não há "selecionar tudo" (só as linhas carregadas existem).
+    if (this.#lazy) {
+      return;
+    }
+
     const all = this.#sortedItems.length > 0 && this.#selectedInViewCount() === this.#sortedItems.length;
 
     if (this.#selectAll(!all, 'user')) {
@@ -3630,7 +4669,7 @@ export class DataGrid extends LitElement {
     if (cache.version !== this.#selection.version || cache.items !== this.#sortedItems) {
       cache.version = this.#selection.version;
       cache.items = this.#sortedItems;
-      cache.count = countSelected(this.#selection, this.#sortedItems);
+      cache.count = countSelected(this.#selection, this.#sortedItems, this.#keyExpr ? this.#keyOf : undefined);
     }
 
     return cache.count;
@@ -3679,8 +4718,8 @@ export class DataGrid extends LitElement {
     } else if (ctrl) {
       this.#toggleRow(row);
     } else {
-      this.#selectionAnchor = row.item;
-      this.#select([row.item], false, 'user');
+      this.#selectionAnchor = this.#keyOf(row.item);
+      this.#select([this.#selectionAnchor], false, 'user');
     }
   };
 
@@ -3692,11 +4731,49 @@ export class DataGrid extends LitElement {
 
     const active = this.#rowAt(this.#activeRowIndex);
 
-    if (isDataRow(active) && active.item === key) {
+    if (isDataRow(active) && this.#keyOf(active.item) === key) {
       return this.#activeRowIndex;
     }
 
-    return this.#rows.indexOfItem(key);
+    return this.#rows.indexOfDataKey(key, this.#keyExpr ? this.#keyOf : undefined);
+  }
+
+  /** Linhas de dados carregadas (local: todas; remoto: os blocos em cache). */
+  #loadedItems(): readonly unknown[] {
+    if (this.#lazy) {
+      const generation = this.#loader.current;
+      return generation ? [...generation.loadedItems()] : [];
+    }
+
+    return this.#items;
+  }
+
+  /** Item carregado de chave `key` (pela função de chave dada). */
+  #loadedItemByKey(key: unknown, keyOf: (item: unknown) => unknown): unknown {
+    return this.#loadedItems().find(item => keyOf(item) === key);
+  }
+
+  /** `keyExpr` mudou: converte as chaves selecionadas (o que não resolve sai). */
+  #convertSelection(previousKeyOf: (item: unknown) => unknown, notify: boolean): void {
+    const byPreviousKey = new Map<unknown, unknown>();
+    const selection = this.#selection;
+
+    for (const item of this.#loadedItems()) {
+      const key = previousKeyOf(item);
+
+      if (selection.has(key) && !byPreviousKey.has(key)) {
+        byPreviousKey.set(key, this.#keyOf(item));
+      }
+    }
+
+    const keys = selection.keys.filter(key => byPreviousKey.has(key)).map(key => byPreviousKey.get(key));
+    const change = selection.replace(keys);
+
+    this.#selectionAnchor = undefined;
+
+    if (notify) {
+      this.#applySelection(change, 'api');
+    }
   }
 
   /** Linha `index` (ou `undefined` fora da lista). */
@@ -3721,7 +4798,7 @@ export class DataGrid extends LitElement {
       return null;
     }
 
-    return isDataRow(row) ? { item: row.item } : isDetailRow(row) ? { detailOf: row.item } : { rowKey: row.key };
+    return isDataRow(row) ? { key: this.#keyOf(row.item) } : isDetailRow(row) ? { detailOf: this.#keyOf(row.item) } : { rowKey: row.key };
   }
 
   #isRefAt(index: number, target: ActiveRef): boolean {
@@ -3736,10 +4813,10 @@ export class DataGrid extends LitElement {
     }
 
     if ('detailOf' in target) {
-      return isDetailRow(row) && row.item === target.detailOf;
+      return isDetailRow(row) && this.#keyOf(row.item) === target.detailOf;
     }
 
-    return 'item' in target ? isDataRow(row) && row.item === target.item : row.key === target.rowKey;
+    return 'key' in target ? isDataRow(row) && this.#keyOf(row.item) === target.key : row.key === target.rowKey;
   }
 
   #currentNavColumns(): NavColumn[] {
@@ -3774,16 +4851,18 @@ export class DataGrid extends LitElement {
     }
 
     if (row.isDetail) {
-      return { rowKey: row.item, column: null, cellType: 'detail' };
+      return { rowKey: this.#keyOf(row.item), column: null, cellType: 'detail' };
     }
 
     if (column === DETAIL_TOGGLE_COLUMN) {
-      return { rowKey: row.item, column: null, cellType: 'detail-toggle' };
+      return { rowKey: this.#keyOf(row.item), column: null, cellType: 'detail-toggle' };
     }
 
+    const rowKey = row.skeleton ? null : this.#keyOf(row.item);
+
     return column === SELECTION_COLUMN || !column
-      ? { rowKey: row.item, column: null, cellType: column ? 'selection' : 'data' }
-      : { rowKey: row.item, column, cellType: 'data' };
+      ? { rowKey, column: null, cellType: column ? 'selection' : 'data' }
+      : { rowKey, column, cellType: 'data' };
   }
 
   #revealAttempts = 0;
@@ -3851,8 +4930,8 @@ export class DataGrid extends LitElement {
       const found = 'totals' in active
         ? this.#hasTotals ? rows.length : -1
         : 'detailOf' in active
-          ? detailOrMaster(rows, active.detailOf)
-          : 'item' in active ? rows.indexOfItem(active.item) : rows.indexOfKey(active.rowKey);
+          ? detailOrMaster(rows, active.detailOf, this.#keyExpr ? this.#keyOf : undefined)
+          : 'key' in active ? rows.indexOfDataKey(active.key, this.#keyExpr ? this.#keyOf : undefined) : rows.indexOfKey(active.rowKey);
       index = found >= 0 ? found : index;
     }
 
@@ -4142,7 +5221,7 @@ export class DataGrid extends LitElement {
     if (column === DETAIL_TOGGLE_COLUMN) {
       if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
         event.preventDefault();
-        this.#setRowExpanded(row.item, !this.#isRowExpandedKey(row.item), 'user');
+        this.#setRowExpanded(this.#keyOf(row.item), !this.#isRowExpandedKey(this.#keyOf(row.item)), 'user');
       }
 
       return;
@@ -4264,6 +5343,17 @@ export class DataGrid extends LitElement {
       }
 
       return;
+    }
+
+    // Com paginação, PageUp/PageDown no corpo trocam de página (como a referência).
+    if (this.paging && (key === 'pageUp' || key === 'pageDown') && position.row >= 0 && !event.shiftKey) {
+      const target = this.#pageIndex + (key === 'pageDown' ? 1 : -1);
+
+      if (target >= 0 && target < this.#pageCount()) {
+        this.#setPage(target, this.#effectivePageSize, 'user');
+        this.#setActive({ row: position.row, col: position.col }, 'user', { focus: true });
+        return;
+      }
     }
 
     const next = nextCell({ row: position.row, col: row?.isGroup || row?.isDetail ? this.#activeCol : position.col }, key, {
@@ -4430,6 +5520,7 @@ export class DataGrid extends LitElement {
     // Antes de medir (1º render, SSR, contêiner sem altura) a janela são as
     // primeiras linhas, em vez de "sem dados".
     const window = virtualizer.renderWindow();
+    this.#lastWindowFirst = rows.offset + window.first;
 
     const navColumns = this.#currentNavColumns();
     this.#resolveActive(navColumns);
@@ -4452,9 +5543,13 @@ export class DataGrid extends LitElement {
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
     const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
     const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
-    const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`;
+    // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
+    const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
+      + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
 
+    // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
     return html`
+      <div class="layout">
       <div
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}>
@@ -4463,10 +5558,10 @@ export class DataGrid extends LitElement {
           <table
             class=${fit ? 'grid-table fit' : 'grid-table'}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
-            aria-rowcount="${rows.length + headerRows + footerRows}"
+            aria-rowcount="${this.#unknownRowCount ? -1 : this.#allRows.length + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
-            aria-busy=${ifDefined(this.#filtering.pending ? 'true' : undefined)}
+            aria-busy=${ifDefined(this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
@@ -4480,14 +5575,17 @@ export class DataGrid extends LitElement {
               ${this.#renderBody(window, headerRows, layout)}
               <tr role="presentation"></tr>
             </tbody>
-            ${footerRows ? this.#renderTotalFooter(layout, rows.length + headerRows + 1) : nothing}
+            ${footerRows ? this.#renderTotalFooter(layout, this.#allRows.length + headerRows + 1) : nothing}
           </table>
         </div>
+        ${this.#inTextLanguage(this.#renderLoadState())}
         ${this.#inTextLanguage(this.#chooser.open ? this.#renderColumnChooser() : nothing)}
         ${this.#inTextLanguage(this.headerFilter ? renderHeaderFilter(this.#headerFilterPopover, this.#translation) : nothing)}
         ${this.#inTextLanguage(this.#filterRow.menuColumn
           ? renderFilterMenu(this.#filterRow, this.#filterRow.menuColumn, this.#dataTypeOf(this.#filterRow.menuColumn), this.#translation)
           : nothing)}
+      </div>
+      ${this.#inTextLanguage(this.paging ? this.#renderPager() : nothing)}
       </div>
       ${this.#inTextLanguage(this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing)}
       ${this.#inTextLanguage(this.#columnMenu.open ? this.#renderColumnHeaderMenu() : nothing)}
@@ -4621,7 +5719,9 @@ export class DataGrid extends LitElement {
                 data-col=${selectionCol}
                 tabindex=${this.#isActive(HEADER_ROW, selectionCol) ? 0 : -1}
                 style="inset-inline-start: ${this.#selectionInset}px"
-                @click=${() => this.#toggleAll()}>${this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`
+                @click=${() => this.#toggleAll()}>${this.#lazy
+                  ? html`<span class="visually-hidden">${translation.selectRow}</span>`
+                  : this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`
             : nothing}
           ${map(layout, (cell, index) => {
             const { column } = cell;
@@ -4757,6 +5857,11 @@ export class DataGrid extends LitElement {
   #renderBody(window: VirtualWindow, headerRows: number, layout: ColumnLayout[]) {
 
     if (!this.#rows.length) {
+      // Carregando pela 1ª vez: o painel fala; "sem dados" só depois da resposta.
+      if (this.#dataSource && !this.#loader.current) {
+        return nothing;
+      }
+
       return html`
         <tr role="row" class="no-data-row">
           <td role="gridcell" part="no-data" lang=${ifDefined(this.noDataRenderer ? undefined : this.#textLanguage)} colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.noDataRenderer
@@ -4774,6 +5879,10 @@ export class DataGrid extends LitElement {
     // `sticky` (spec 16).
     const { first, end } = window;
     const entries = this.#rows.slice(first, end).map((row, i) => ({ row, index: first + i, pinned: false }));
+
+    if (this.#keyExpr && !this.#warnedKeys) {
+      this.#checkKeys(entries.map(entry => entry.row));
+    }
 
     // A linha da célula ativa fica no DOM mesmo fora da janela virtual
     // (invisível, fora do fluxo): o foco não se perde ao rolar e o Tab volta
@@ -4796,6 +5905,150 @@ export class DataGrid extends LitElement {
       entry => entry.row.key,
       entry => this.#renderRow(entry.index, entry.row, headerRows, layout, entry.pinned),
     );
+  }
+
+  /** Total de linhas desconhecido (rolagem infinita antes do fim): `aria-rowcount="-1"`. */
+  get #unknownRowCount(): boolean {
+    return this.#lazy && this.#totalCount < 0;
+  }
+
+  /** `keyExpr` com chave vazia ou repetida nas linhas renderizadas: erro uma vez por grid. */
+  #checkKeys(rows: readonly Row[]): void {
+    const seen = new Set<unknown>();
+
+    for (const row of rows) {
+      if (!isDataRow(row)) {
+        continue;
+      }
+
+      const key = this.#keyOf(row.item);
+
+      if (key === undefined || key === null || key === '' || seen.has(key)) {
+        this.#warnedKeys = true;
+        console.error(`<u-grid>: keyExpr returned an empty or duplicate key (${String(key)}); keys must be unique.`);
+        return;
+      }
+
+      seen.add(key);
+    }
+  }
+
+  /** Painel de carregamento (consulta inteira) e barra de erro com "tentar de novo". */
+  #renderLoadState() {
+    if (!this.#dataSource) {
+      return nothing;
+    }
+
+    const translation = this.#translation;
+    const failure = this.#loader.error;
+
+    return html`
+      ${this.#isLoading
+        ? html`<div class="load-panel" part="load-panel" aria-hidden="true">
+          <span class="load-spinner" aria-hidden="true"></span><span>${translation.loading}</span>
+        </div>`
+        : nothing}
+      ${failure
+        ? html`<div class="error-row" part="error-row" role="alert">
+          <span>${translation.loadError}</span>
+          <button type="button" part="retry-button" class="retry-button" @click=${this.#retry}>${translation.retry}</button>
+        </div>`
+        : nothing}
+    `;
+  }
+
+  readonly #retry = (): void => {
+    this.#loader.retry();
+    this.requestUpdate();
+  };
+
+  /** "Página x de y (n itens)" (ou só "Página x" com total desconhecido). */
+  #pageInfoText(page = Math.min(this.#pageIndex, this.#pageCount() - 1), pageCount = this.#pageCount()): string {
+    const translation = this.#translation;
+    const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+
+    return this.#totalCount < 0
+      ? formatMessage(translation.pageInfoUnknownCount, { page: format.format(page + 1) })
+      : formatMessage(translation.pageInfo, {
+        page: format.format(page + 1),
+        pageCount: format.format(pageCount),
+        count: format.format(this.#totalCount),
+      });
+  }
+
+  /** Pager: tamanho da página, "Página x de y (n itens)", primeira/anterior/números/próxima/última. */
+  #renderPager() {
+    const translation = this.#translation;
+    const size = this.#effectivePageSize;
+    const pageCount = this.#pageCount();
+    const page = Math.min(this.#pageIndex, pageCount - 1);
+    const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
+    const info = this.#pageInfoText(page, pageCount);
+    const options = [...new Set([...this.pageSizeOptions ?? []].filter(option => Number.isInteger(option) && option > 0))];
+
+    if (options.length && !options.includes(size)) {
+      options.push(size);
+      options.sort((a, b) => a - b);
+    }
+
+    // Até 5 números em volta da atual.
+    const first = Math.max(0, Math.min(page - 2, pageCount - 5));
+    const numbers = Array.from({ length: Math.min(5, pageCount) }, (_, index) => first + index);
+
+    // Depois do clique o foco fica na página atual: o número clicado muda de lugar
+    // quando a janela de números anda, e o botão de seta pode ficar desabilitado.
+    const go = (target: number) => (event: Event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      const next = Math.max(0, Math.min(target, pageCount - 1));
+
+      this.#setPage(next, size, 'user');
+
+      if (button.matches(':focus') || this.shadowRoot?.activeElement === button) {
+        void this.updateComplete.then(() => {
+          const lastOrFirst = next === 0 || next === pageCount - 1;
+
+          if (button.classList.contains('pager-number') || (lastOrFirst && button.disabled)) {
+            this.renderRoot.querySelector<HTMLElement>('.pager-number[aria-current="page"]')?.focus();
+          }
+        });
+      }
+    };
+
+    const button = (target: number, label: string, path: string, disabled: boolean, extra = '') => html`<button
+      type="button"
+      part="pager-button"
+      class="pager-button pager-arrow ${extra}"
+      aria-label=${label}
+      title=${label}
+      ?disabled=${disabled}
+      @click=${go(target)}><svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor" aria-hidden="true"><path d=${path}/></svg></button>`;
+
+    return html`
+      <nav class="pager" part="pager" aria-label=${translation.paginationLabel}>
+        ${options.length
+          ? html`<label class="page-size">
+            <span>${translation.pageSizeLabel}</span>
+            <select part="page-size-select" @change=${(event: Event) => this.#setPage(0, Number((event.target as HTMLSelectElement).value), 'user')}>
+              ${options.map(option => html`<option value=${option} ?selected=${option === size}>${format.format(option)}</option>`)}
+            </select>
+          </label>`
+          : nothing}
+        <span class="page-info" part="page-info">${info}</span>
+        <span class="pager-buttons">
+          ${button(0, translation.firstPage, FIRST_PAGE_PATH, page === 0)}
+          ${button(page - 1, translation.previousPage, PREVIOUS_PAGE_PATH, page === 0)}
+          ${numbers.map(index => html`<button
+            type="button"
+            part="pager-button"
+            class="pager-button pager-number"
+            aria-label=${formatMessage(translation.pageInfoUnknownCount, { page: format.format(index + 1) })}
+            aria-current=${ifDefined(index === page ? 'page' : undefined)}
+            @click=${go(index)}>${format.format(index + 1)}</button>`)}
+          ${button(page + 1, translation.nextPage, NEXT_PAGE_PATH, page >= pageCount - 1)}
+          ${button(pageCount - 1, translation.lastPage, LAST_PAGE_PATH, page >= pageCount - 1)}
+        </span>
+      </nav>
+    `;
   }
 
   #totalColumns(layout: ColumnLayout[]): number {
@@ -4823,13 +6076,14 @@ export class DataGrid extends LitElement {
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
     const selectable = isDataRow(row) && this.#selectionMode !== 'none';
-    const selected = selectable && this.#selection.has(row.item);
-    const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(row.item);
+    const selected = selectable && this.#selection.has(this.#keyOf(row.item));
+    const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
       'group-footer-row': !!row.isFooter,
       'summary-row': !!row.isFooter,
+      'skeleton-row': isDataRowLike(row) && !!row.skeleton,
       last: index === this.#rows.length - 1,
       selected,
       expanded,
@@ -4840,7 +6094,7 @@ export class DataGrid extends LitElement {
       classes[parity] = true;
     }
 
-    const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : parity];
+    const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : row.skeleton ? 'skeleton-row' : parity];
 
     if (selected) {
       parts.push('selected');
@@ -4856,7 +6110,8 @@ export class DataGrid extends LitElement {
         style="height: ${this.rowHeight}px;"
         data-index=${index}
         role="row"
-        aria-rowindex="${index + 1 + headerRows}"
+        aria-rowindex="${index + 1 + headerRows + this.#rows.offset}"
+        aria-busy=${ifDefined(isDataRowLike(row) && row.skeleton ? 'true' : undefined)}
         aria-level=${this.#ariaLevelOf(row)}
         aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : undefined)}
         aria-selected=${ifDefined(selectable ? (selected ? 'true' : 'false') : undefined)}
@@ -5091,7 +6346,7 @@ export class DataGrid extends LitElement {
               @click=${(event: MouseEvent) => {
                 // O foco fica na célula (ativa), não no botão: as setas seguem andando.
                 (event.currentTarget as HTMLElement).closest('td')?.focus();
-                this.#setRowExpanded(row.item, !expanded, 'user');
+                this.#setRowExpanded(this.#keyOf(row.item), !expanded, 'user');
               }}><span class="toggle-icon"><svg
                 xmlns="http://www.w3.org/2000/svg"
                 height="1em"
@@ -5109,7 +6364,9 @@ export class DataGrid extends LitElement {
             aria-colindex=${selectionCol + 1}
             data-col=${selectionCol}
             tabindex=${this.#isActive(rowIndex, selectionCol) ? 0 : -1}
-            style="inset-inline-start: ${this.#selectionInset}px">${this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
+            style="inset-inline-start: ${this.#selectionInset}px">${row.skeleton
+              ? nothing
+              : this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
       ${map(layout, (cell, index) => html`
         <td
@@ -5119,7 +6376,9 @@ export class DataGrid extends LitElement {
           role="gridcell"
           aria-colindex="${index + 1 + offset}"
           data-col=${index + offset}
-          tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`)}
+          tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${row.skeleton
+            ? html`<span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span>`
+            : this.#renderCellContent(row, cell, matcher)}</td>`)}
     `;
   }
 
@@ -5672,6 +6931,10 @@ declare global {
     'u-grid-selection-change': CustomEvent<GridSelectionChangeEventDetail>;
     'u-grid-focus-change': CustomEvent<GridFocusChangeEventDetail>;
     'u-grid-copying': CustomEvent<GridCopyEventDetail>;
+    'u-grid-loading': CustomEvent<GridLoadingEventDetail>;
+    'u-grid-load': CustomEvent<GridLoadEventDetail>;
+    'u-grid-load-error': CustomEvent<GridLoadErrorEventDetail>;
+    'u-grid-page-change': CustomEvent<GridPageChangeEventDetail>;
     'u-grid-row-expansion-change': CustomEvent<GridRowExpansionChangeEventDetail>;
   }
 }

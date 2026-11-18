@@ -234,6 +234,18 @@
             {
               "description": "Header filter popover corner radius. Default `12px`.",
               "name": "--u-grid-header-filter-shape"
+            },
+            {
+              "description": "Background of the load panel.",
+              "name": "--u-grid-load-panel-background-color"
+            },
+            {
+              "description": "Color of the placeholders in rows still loading.",
+              "name": "--u-grid-skeleton-row-color"
+            },
+            {
+              "description": "Minimum height of the pager. Default `56px`.",
+              "name": "--u-grid-pager-height"
             }
           ],
           "cssParts": [
@@ -370,6 +382,38 @@
               "name": "expanded"
             },
             {
+              "description": "The pager (`<nav>`) below the table (`paging`).",
+              "name": "pager"
+            },
+            {
+              "description": "Pager buttons (first, previous, page numbers, next, last).",
+              "name": "pager-button"
+            },
+            {
+              "description": "The page size `<select>` of the pager.",
+              "name": "page-size-select"
+            },
+            {
+              "description": "The \"Page x of y (n items)\" text of the pager.",
+              "name": "page-info"
+            },
+            {
+              "description": "The load panel shown while a data source loads.",
+              "name": "load-panel"
+            },
+            {
+              "description": "Rows of a remote source not loaded yet (with `row`).",
+              "name": "skeleton-row"
+            },
+            {
+              "description": "The bar shown when the data source failed.",
+              "name": "error-row"
+            },
+            {
+              "description": "The \"Retry\" button of the error bar.",
+              "name": "retry-button"
+            },
+            {
               "description": "Search matches (`<mark>`) in native cells (not in `renderer` cells).",
               "name": "search-highlight"
             }
@@ -429,11 +473,90 @@
             },
             {
               "kind": "field",
+              "name": "keyExpr",
+              "type": {
+                "text": "GridKeyExpr | null"
+              },
+              "description": "Row key: a property `path` (dots allowed, attribute `key-expr`) or a\nfunction returning the key of an item. Selection (`selectedKeys`), focus\n(`focusedRowKey`, `focusCell`) and events use it; without it the key is\nthe item object itself. With a key, replacing `items` with new objects\nkeeps the selection, the focus and the group expansion. Changing it\nconverts the selection to the new keys (keys whose row is gone are\ndropped, firing `u-grid-selection-change` with `source: 'api'`).",
+              "default": "null",
+              "attribute": "key-expr"
+            },
+            {
+              "kind": "field",
+              "name": "dataSource",
+              "type": {
+                "text": "GridDataSource | null"
+              },
+              "description": "Data source (property only): the grid calls `load(options, signal)` and\nshows what it returns — with `remoteOperations`, the server filters,\nsorts, groups, summarizes and pages. The grid never builds URLs or\nqueries: validate the options on the server. Alternative to `items`.",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "remoteOperations",
+              "type": {
+                "text": "boolean | GridRemoteOperations"
+              },
+              "default": "false",
+              "description": "What the server does with `dataSource` (attribute `remote-operations`:\nall or nothing). `false` (default): one call loads every row and the\ngrid filters, sorts, groups, summarizes and pages. `true`: everything on\nthe server. An object picks operations; remote `paging` or `grouping`\nalso turn on remote `filtering`, `sorting` and `summary` (paging also\ngrouping), with a console warning. Remote operations use the column\n`path` (not `valueGetter`, `comparator` nor `groupValueGetter`).",
+              "attribute": "remote-operations"
+            },
+            {
+              "kind": "field",
+              "name": "paging",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Splits the rows into pages (group rows count) and shows the pager below the table.",
+              "attribute": "paging"
+            },
+            {
+              "kind": "field",
+              "name": "pageSize",
+              "type": {
+                "text": "number"
+              },
+              "default": "20",
+              "description": "Rows per page; also the block size asked to a remote source in virtual and infinite scrolling. Default `20`.",
+              "attribute": "page-size"
+            },
+            {
+              "kind": "field",
+              "name": "pageIndex",
+              "type": {
+                "text": "number"
+              },
+              "description": "Current page (0-based; with `paging`). The pager writes it; out-of-range\nvalues are clamped. Setting it does not fire `u-grid-page-change`.",
+              "default": "0",
+              "attribute": "page-index"
+            },
+            {
+              "kind": "field",
+              "name": "pageSizeOptions",
+              "type": {
+                "text": "readonly number[]"
+              },
+              "default": "[10, 20, 50, 100]",
+              "description": "Page sizes offered by the pager (attribute: a list, `\"10, 20, 50\"`);\nempty hides the selector. Default `[10, 20, 50, 100]`.",
+              "attribute": "page-size-options"
+            },
+            {
+              "kind": "field",
+              "name": "scrollMode",
+              "type": {
+                "text": "GridScrollMode"
+              },
+              "default": "'virtual'",
+              "description": "`virtual` (default): every row is in the scroll range and a remote\nsource loads the visible blocks. `infinite`: the next block loads when\nthe end is reached (remote paging only; with `paging` the pager wins).",
+              "attribute": "scroll-mode"
+            },
+            {
+              "kind": "field",
               "name": "items",
               "type": {
                 "text": "any[]"
               },
-              "description": "Row items (property only). The grid never mutates this array or its items."
+              "description": "Row items (property only). The grid never mutates this array or its\nitems. Use either `items` or `dataSource` (both = console error, the\ndata source wins)."
             },
             {
               "kind": "field",
@@ -1080,6 +1203,44 @@
             },
             {
               "kind": "method",
+              "name": "refresh",
+              "return": {
+                "type": {
+                  "text": "Promise<void>"
+                }
+              },
+              "description": "Reloads the data: with `dataSource`, discards the loaded blocks and asks\nagain (the rows shown stay until the answer); with `items`, recomputes\nsorting, filtering, grouping and summaries. Resolves when done (also on\nerror — see `u-grid-load-error`)."
+            },
+            {
+              "kind": "method",
+              "name": "applyChanges",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "changes",
+                  "type": {
+                    "text": "GridDataChanges<TItem>"
+                  }
+                }
+              ],
+              "description": "Applies changes to the loaded rows of `dataSource` without reloading\neverything: `update` replaces items by key in place (no re-sorting nor\nre-filtering, as the reference `push`), `remove` takes rows out, `add`\nappends at the end. With remote paging or grouping, `update` patches the\nloaded blocks and `add`/`remove` reload the shown rows. Selection, focus\nand group expansion are kept. `update`/`remove` need `keyExpr`. With\n`items` it does nothing (warning): set a new `items` array instead —\nrows keep their state by key."
+            },
+            {
+              "kind": "method",
+              "name": "getTotalCount",
+              "return": {
+                "type": {
+                  "text": "number"
+                }
+              },
+              "description": "Number of data rows: with `items` or a single-load `dataSource`, the\nrows that pass the filter; with remote paging or grouping, the server\ntotal (`-1` while unknown, e.g. infinite scrolling)."
+            },
+            {
+              "kind": "method",
               "name": "clearFilter",
               "return": {
                 "type": {
@@ -1227,7 +1388,7 @@
                   "text": "any[]"
                 }
               },
-              "description": "Items of the selected keys that are in `items`, in selection order."
+              "description": "Items of the selected keys that are loaded (all of `items`; with a remote source, the loaded blocks), in selection order."
             },
             {
               "kind": "method",
@@ -1271,7 +1432,7 @@
                   }
                 }
               ],
-              "description": "The columns and rows the user sees, ready to build any file (Excel, PDF):\nvisible exportable columns in the current order, filter, sorting, groups\n(collapsed ones included) and summaries. The state is read when called;\nrows are built in time slices, so a million rows do not freeze the page."
+              "description": "The columns and rows the user sees, ready to build any file (Excel, PDF):\nvisible exportable columns in the current order, filter, sorting, groups\n(collapsed ones included) and summaries. The state is read when called;\nrows are built in time slices, so a million rows do not freeze the page.\nWith a `dataSource` whose server pages or groups, only the rows already\nloaded are exported (in screen order, without group rows; totals from the\nserver): ask the server for the full file instead."
             },
             {
               "kind": "method",
@@ -1333,6 +1494,13 @@
           ],
           "events": [
             {
+              "name": "u-grid-page-change",
+              "type": {
+                "text": "CustomEvent<GridPageChangeEventDetail>"
+              },
+              "description": "The page or page size changed: pager, PageUp/PageDown, a filter gesture (back to the first page) or a clamp after the rows shrank (`source` of the change that caused it). Not the `pageIndex`/`pageSize` setters."
+            },
+            {
               "name": "u-grid-row-expansion-change",
               "type": {
                 "text": "CustomEvent<GridRowExpansionChangeEventDetail>"
@@ -1382,6 +1550,20 @@
               "description": "The user finished resizing a column (pointer release, keyboard, double-click auto-size or the column header menu)."
             },
             {
+              "name": "u-grid-load",
+              "type": {
+                "text": "CustomEvent<GridLoadEventDetail>"
+              },
+              "description": "A `dataSource.load` call resolved (not fired for aborted calls)."
+            },
+            {
+              "name": "u-grid-load-error",
+              "type": {
+                "text": "CustomEvent<GridLoadErrorEventDetail>"
+              },
+              "description": "A `dataSource.load` call rejected (not fired for aborted calls); the grid shows the error bar with \"Retry\"."
+            },
+            {
               "name": "u-grid-filter-change",
               "type": {
                 "text": "CustomEvent<GridFilterEventDetail>"
@@ -1418,6 +1600,13 @@
             },
             {
               "type": {
+                "text": "CustomEvent<GridLoadingEventDetail>"
+              },
+              "description": "Before each call to `dataSource.load` (`dataSource` only). Cancelable: the call is skipped and the rows shown stay.",
+              "name": "u-grid-loading"
+            },
+            {
+              "type": {
                 "text": "CustomEvent<GridCopyEventDetail>"
               },
               "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.",
@@ -1442,6 +1631,69 @@
               "default": "false",
               "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
               "fieldName": "autoExpandRows"
+            },
+            {
+              "name": "key-expr",
+              "type": {
+                "text": "string"
+              },
+              "description": "Row key: a property `path` (dots allowed, attribute `key-expr`) or a\nfunction returning the key of an item. Selection (`selectedKeys`), focus\n(`focusedRowKey`, `focusCell`) and events use it; without it the key is\nthe item object itself. With a key, replacing `items` with new objects\nkeeps the selection, the focus and the group expansion. Changing it\nconverts the selection to the new keys (keys whose row is gone are\ndropped, firing `u-grid-selection-change` with `source: 'api'`).",
+              "default": "null",
+              "fieldName": "keyExpr"
+            },
+            {
+              "name": "remote-operations",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "What the server does with `dataSource` (attribute `remote-operations`:\nall or nothing). `false` (default): one call loads every row and the\ngrid filters, sorts, groups, summarizes and pages. `true`: everything on\nthe server. An object picks operations; remote `paging` or `grouping`\nalso turn on remote `filtering`, `sorting` and `summary` (paging also\ngrouping), with a console warning. Remote operations use the column\n`path` (not `valueGetter`, `comparator` nor `groupValueGetter`).",
+              "fieldName": "remoteOperations"
+            },
+            {
+              "name": "paging",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Splits the rows into pages (group rows count) and shows the pager below the table.",
+              "fieldName": "paging"
+            },
+            {
+              "name": "page-size",
+              "type": {
+                "text": "number"
+              },
+              "default": "20",
+              "description": "Rows per page; also the block size asked to a remote source in virtual and infinite scrolling. Default `20`.",
+              "fieldName": "pageSize"
+            },
+            {
+              "name": "page-index",
+              "type": {
+                "text": "number"
+              },
+              "description": "Current page (0-based; with `paging`). The pager writes it; out-of-range\nvalues are clamped. Setting it does not fire `u-grid-page-change`.",
+              "default": "0",
+              "fieldName": "pageIndex"
+            },
+            {
+              "name": "page-size-options",
+              "type": {
+                "text": "string"
+              },
+              "default": "[10, 20, 50, 100]",
+              "description": "Page sizes offered by the pager (attribute: a list, `\"10, 20, 50\"`);\nempty hides the selector. Default `[10, 20, 50, 100]`.",
+              "fieldName": "pageSizeOptions"
+            },
+            {
+              "name": "scroll-mode",
+              "type": {
+                "text": "GridScrollMode"
+              },
+              "default": "'virtual'",
+              "description": "`virtual` (default): every row is in the scroll range and a remote\nsource loads the visible blocks. `infinite`: the next block loads when\nthe end is reached (remote paging only; with `paging` the pager wins).",
+              "fieldName": "scrollMode"
             },
             {
               "name": "sort-mode",
@@ -1698,6 +1950,10 @@
           "summary": "Data grid web component.",
           "tagName": "u-grid",
           "customElement": true
+        },
+        {
+          "kind": "variable",
+          "name": "sort"
         }
       ],
       "exports": [

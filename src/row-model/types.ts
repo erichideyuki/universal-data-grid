@@ -56,7 +56,33 @@ export interface DataRow {
   item: any;
   /** Posição da linha dentro do bloco de dados (do grupo ou do grid) — define a listra. */
   index: number;
+  /** Linha de fonte remota ainda não carregada (esqueleto; `item` indefinido). */
+  skeleton?: true;
 }
+
+/** Item de bloco remoto ainda não carregado (linha-esqueleto). */
+export const MISSING: unique symbol = Symbol('missing');
+
+/**
+ * Bloco de linhas carregado sob demanda (fonte remota, frente 08). `get`
+ * marca o pedaço que falta como desejado; `peek` só olha. Item ausente =
+ * `MISSING`.
+ */
+export interface LazyItems {
+  readonly lazy: true;
+  /** Identidade estável do bloco (chave das linhas-esqueleto). */
+  readonly id: string;
+  readonly length: number;
+  get(position: number): unknown;
+  peek(position: number): unknown;
+  /** Posição do 1º item CARREGADO que satisfaz `match` (sem varrer o que falta); `-1` se nenhum. */
+  find(match: (item: unknown) => boolean): number;
+  /** Posições (crescentes) dos itens CARREGADOS que satisfazem `match` (linhas de detalhe). */
+  loadedPositions(match: (item: unknown) => boolean): number[];
+}
+
+/** Bloco preguiçoso (fonte remota), e não um array de itens. */
+export const isLazyItems = (items: readonly unknown[] | LazyItems): items is LazyItems => (items as LazyItems).lazy === true;
 
 /** Linha de detalhe (master-detail) logo depois da linha de dados do item. */
 export interface DetailRow {
