@@ -378,6 +378,7 @@ describe('linha inteira: roteiros extras', () => {
       g.fixedTopItems = rows(3).map(row => ({ ...row, id: -10 - row.id, banner: false }));
       g.fixedBottomItems = rows(3).map(row => ({ ...row, id: -20 - row.id, banner: false }));
     }, '1000px');
+
     const visible = (): boolean => {
       const element = active(grid);
       const rect = element.getBoundingClientRect();
