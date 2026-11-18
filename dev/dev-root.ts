@@ -257,6 +257,22 @@ export class DevRoot extends LitElement {
           </select>
         </label>
         <label>
+          Editing:
+          <select @change=${(e: Event) => {
+            const value = (e.target as HTMLSelectElement).value;
+            const on = value !== 'none';
+            this.grid.editMode = on ? value as DataGrid['editMode'] : 'cell';
+            this.grid.allowEditing = on;
+            this.grid.allowAdding = on;
+            this.grid.allowRemoving = on;
+          }}>
+            <option value="none">none</option>
+            <option value="cell">cell</option>
+            <option value="row">row</option>
+            <option value="batch">batch</option>
+          </select>
+        </label>
+        <label>
           Resize mode:
           <select @change=${(e: Event) => this.grid.resizeMode = (e.target as HTMLSelectElement).value as DataGrid['resizeMode']}>
             <option value="widget">widget</option>

@@ -4,15 +4,6 @@
     "applyRemoveMs": 209.4,
     "applyAddMs": 129.4
   },
-  "export-1m": {
-    "exportCsvSliceMs": 30.7,
-    "exportCsvTotalMs": 12080.6,
-    "exportDataSliceMs": 45,
-    "exportDataTotalMs": 6343.9,
-    "exportGroupedCsvSliceMs": 34.7,
-    "exportGroupedCsvTotalMs": 12269.1,
-    "copy10kMs": 210.7
-  },
   "detail-1m": {
     "firstRenderMs": 18.9,
     "enableDetailMs": 6.5,
@@ -23,6 +14,21 @@
     "detail.jumpWorstMs": 15.5,
     "collapseRowsMs": 9.9,
     "domNodes": 315
+  },
+  "editing-1m": {
+    "editOpenMs": 6.5,
+    "editCommitMs": 6.3,
+    "editSave100Ms": 30.7,
+    "editCellSaveMs": 13.6
+  },
+  "export-1m": {
+    "exportCsvSliceMs": 30.7,
+    "exportCsvTotalMs": 12080.6,
+    "exportDataSliceMs": 45,
+    "exportDataTotalMs": 6343.9,
+    "exportGroupedCsvSliceMs": 34.7,
+    "exportGroupedCsvTotalMs": 12269.1,
+    "copy10kMs": 210.7
   },
   "filter-100k": {
     "filterTextMs": 37.1,
