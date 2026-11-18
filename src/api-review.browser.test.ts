@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import type { GridColumnDef } from './grid-column-def.js';
-import { setGridTranslation } from './grid-i18n.js';
+import { resolveGridTranslation, setGridTranslation } from './grid-i18n.js';
 import type {
   DataGrid,
   GridColumnFixedChangeEventDetail,
@@ -300,6 +300,16 @@ describe('i18n', () => {
     const pinEnd = root(grid).querySelector<HTMLButtonElement>('.column-chooser .pin-end')!;
     expect([pinStart.title, pinEnd.title]).toEqual(['P0', 'F1']);
     expect(warned('"pinStart" is deprecated, use "fixStart"')).toBe(1);
+  });
+
+  it('groupPanelMenu → groupPanelMenuLabel: alias com aviso; a nova vence', () => {
+    setGridTranslation('x-legacy-menu', { groupPanelMenu: 'Old menu' });
+    setGridTranslation('x-legacy-menu-both', { groupPanelMenu: 'Old', groupPanelMenuLabel: 'New' });
+
+    expect(resolveGridTranslation('x-legacy-menu').groupPanelMenuLabel).toBe('Old menu');
+    expect(resolveGridTranslation('x-legacy-menu-both').groupPanelMenuLabel).toBe('New');
+    expect('groupPanelMenu' in resolveGridTranslation('x-legacy-menu')).toBe(false);
+    expect(warned('"groupPanelMenu" is deprecated, use "groupPanelMenuLabel"')).toBe(1);
   });
 });
 

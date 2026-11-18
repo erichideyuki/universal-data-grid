@@ -62,7 +62,7 @@ export interface GridI18n {
   /** Group panel menu: collapses every group. */
   collapseAllGroups: string;
   /** Accessible name of the group panel menu. */
-  groupPanelMenu: string;
+  groupPanelMenuLabel: string;
   /** Filter operation `=` (operation menu). */
   filterEquals: string;
   /** Filter operation `<>`. */
@@ -223,6 +223,7 @@ const LEGACY_I18N_KEYS: Readonly<Record<string, keyof GridI18n>> = {
   pinStart: 'fixStart',
   pinEnd: 'fixEnd',
   unpin: 'unfix',
+  groupPanelMenu: 'groupPanelMenuLabel',
 };
 
 const warnedLegacyKeys = new Set<string>();
@@ -237,6 +238,8 @@ export type GridI18nInput = Partial<GridI18n> & {
   pinEnd?: string;
   /** @deprecated Use `unfix`. */
   unpin?: string;
+  /** @deprecated Use `groupPanelMenuLabel`. */
+  groupPanelMenu?: string;
 };
 
 /** Troca as chaves antigas pelas novas (aviso uma vez por chave). */
@@ -307,7 +310,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Ungroup all',
     expandAllGroups: 'Expand all groups',
     collapseAllGroups: 'Collapse all groups',
-    groupPanelMenu: 'Group options',
+    groupPanelMenuLabel: 'Group options',
     filterEquals: 'Equals',
     filterNotEquals: 'Does not equal',
     filterLessThan: 'Less than',
@@ -414,7 +417,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Desagrupar todo',
     expandAllGroups: 'Expandir todos los grupos',
     collapseAllGroups: 'Contraer todos los grupos',
-    groupPanelMenu: 'Opciones de grupo',
+    groupPanelMenuLabel: 'Opciones de grupo',
     filterEquals: 'Igual a',
     filterNotEquals: 'Distinto de',
     filterLessThan: 'Menor que',
@@ -521,7 +524,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Desagrupar tudo',
     expandAllGroups: 'Expandir todos os grupos',
     collapseAllGroups: 'Recolher todos os grupos',
-    groupPanelMenu: 'Opções de grupo',
+    groupPanelMenuLabel: 'Opções de grupo',
     filterEquals: 'Igual a',
     filterNotEquals: 'Diferente de',
     filterLessThan: 'Menor que',
@@ -628,7 +631,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Tout dégrouper',
     expandAllGroups: 'Développer tous les groupes',
     collapseAllGroups: 'Réduire tous les groupes',
-    groupPanelMenu: 'Options de groupe',
+    groupPanelMenuLabel: 'Options de groupe',
     filterEquals: 'Égal à',
     filterNotEquals: 'Différent de',
     filterLessThan: 'Inférieur à',
@@ -735,7 +738,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Alle Gruppierungen aufheben',
     expandAllGroups: 'Alle Gruppen erweitern',
     collapseAllGroups: 'Alle Gruppen reduzieren',
-    groupPanelMenu: 'Gruppenoptionen',
+    groupPanelMenuLabel: 'Gruppenoptionen',
     filterEquals: 'Gleich',
     filterNotEquals: 'Ungleich',
     filterLessThan: 'Kleiner als',
@@ -842,7 +845,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Separa tutto',
     expandAllGroups: 'Espandi tutti i gruppi',
     collapseAllGroups: 'Comprimi tutti i gruppi',
-    groupPanelMenu: 'Opzioni di gruppo',
+    groupPanelMenuLabel: 'Opzioni di gruppo',
     filterEquals: 'Uguale a',
     filterNotEquals: 'Diverso da',
     filterLessThan: 'Minore di',
@@ -949,7 +952,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Alle groeperingen opheffen',
     expandAllGroups: 'Alle groepen uitvouwen',
     collapseAllGroups: 'Alle groepen samenvouwen',
-    groupPanelMenu: 'Groepsopties',
+    groupPanelMenuLabel: 'Groepsopties',
     filterEquals: 'Is gelijk aan',
     filterNotEquals: 'Is niet gelijk aan',
     filterLessThan: 'Kleiner dan',
@@ -1056,7 +1059,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Разгруппировать все',
     expandAllGroups: 'Развернуть все группы',
     collapseAllGroups: 'Свернуть все группы',
-    groupPanelMenu: 'Параметры группировки',
+    groupPanelMenuLabel: 'Параметры группировки',
     filterEquals: 'Равно',
     filterNotEquals: 'Не равно',
     filterLessThan: 'Меньше',
@@ -1163,7 +1166,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Rozgrupuj wszystko',
     expandAllGroups: 'Rozwiń wszystkie grupy',
     collapseAllGroups: 'Zwiń wszystkie grupy',
-    groupPanelMenu: 'Opcje grupowania',
+    groupPanelMenuLabel: 'Opcje grupowania',
     filterEquals: 'Równe',
     filterNotEquals: 'Różne od',
     filterLessThan: 'Mniejsze niż',
@@ -1270,7 +1273,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'Tüm gruplamaları kaldır',
     expandAllGroups: 'Tüm grupları genişlet',
     collapseAllGroups: 'Tüm grupları daralt',
-    groupPanelMenu: 'Grup seçenekleri',
+    groupPanelMenuLabel: 'Grup seçenekleri',
     filterEquals: 'Eşittir',
     filterNotEquals: 'Eşit değildir',
     filterLessThan: 'Küçüktür',
@@ -1377,7 +1380,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'すべてのグループ解除',
     expandAllGroups: 'すべてのグループを展開',
     collapseAllGroups: 'すべてのグループを折りたたむ',
-    groupPanelMenu: 'グループのオプション',
+    groupPanelMenuLabel: 'グループのオプション',
     filterEquals: '等しい',
     filterNotEquals: '等しくない',
     filterLessThan: 'より小さい',
@@ -1484,7 +1487,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: '모든 그룹 해제',
     expandAllGroups: '모든 그룹 펼치기',
     collapseAllGroups: '모든 그룹 접기',
-    groupPanelMenu: '그룹 옵션',
+    groupPanelMenuLabel: '그룹 옵션',
     filterEquals: '같음',
     filterNotEquals: '같지 않음',
     filterLessThan: '보다 작음',
@@ -1591,7 +1594,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: '全部取消分组',
     expandAllGroups: '展开所有分组',
     collapseAllGroups: '折叠所有分组',
-    groupPanelMenu: '分组选项',
+    groupPanelMenuLabel: '分组选项',
     filterEquals: '等于',
     filterNotEquals: '不等于',
     filterLessThan: '小于',
@@ -1698,7 +1701,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ungroupAll: 'إلغاء كل التجميعات',
     expandAllGroups: 'توسيع كل المجموعات',
     collapseAllGroups: 'طي كل المجموعات',
-    groupPanelMenu: 'خيارات التجميع',
+    groupPanelMenuLabel: 'خيارات التجميع',
     filterEquals: 'يساوي',
     filterNotEquals: 'لا يساوي',
     filterLessThan: 'أصغر من',
@@ -1806,7 +1809,7 @@ export const resolveGridTranslation = (language?: string): GridI18n =>
 /**
  * Overrides part (or all) of a built-in translation. Missing keys keep their
  * previous value, so a partial object is enough. The deprecated key names
- * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`) are still accepted, with a
+ * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`) are still accepted, with a
  * console warning.
  */
 export const setGridTranslation = (language: string, translation: GridI18nInput): void => {

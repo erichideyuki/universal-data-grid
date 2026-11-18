@@ -240,7 +240,7 @@ export const renderGroupPanelMenu = ({ translation, column, canMoveLeft = false,
       part="group-panel-menu"
       .popover=${'manual'}
       role="menu"
-      aria-label=${translation.groupPanelMenu}
+      aria-label=${translation.groupPanelMenuLabel}
       @contextmenu=${(event: Event) => event.preventDefault()}
       @keydown=${onKeyDown}>
       ${renderMenuItems('group-panel-menu-item', items, onAction)}
