@@ -204,7 +204,10 @@ describe('memória: recursos de coluna', () => {
       await settle(grid);
     };
 
-    for (let i = 0; i < 3; i++) {
+    // Aquecimento: 6 rodadas (eram 3). Com as bandas (frente 13) o caminho de
+    // \`columns = [...]\` compila mais código no 1º terço; medido na main e aqui,
+    // a inclinação por rodada é a mesma (~2 KiB, JIT/IC), só o degrau inicial mudou.
+    for (let i = 0; i < 6; i++) {
       await round();
     }
 
