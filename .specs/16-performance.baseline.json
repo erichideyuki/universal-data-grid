@@ -187,6 +187,16 @@
     "domNodes": 128,
     "gridHeapMiB": 0.6
   },
+  "responsive-1m": {
+    "firstRenderMs": 32.6,
+    "resizeHideMs": 13.1,
+    "resizeShowMs": 18,
+    "adaptive.scrollP95Ms": 6.5,
+    "adaptive.scrollWorstMs": 8.8,
+    "adaptive.jumpP95Ms": 12.7,
+    "adaptive.jumpWorstMs": 14.9,
+    "domNodes": 208
+  },
   "selection-1m": {
     "selectAllMs": 438.2,
     "clearSelectionMs": 44.3,
