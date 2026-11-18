@@ -25,22 +25,33 @@ testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
 3. **Row model** — a parte de dados entra como função pura em
    `src/row-model/` (filtrar → ordenar → agrupar → resumir → achatar), com
    teste unitário antes da UI.
-4. **API** — propriedades/atributos, métodos e eventos no `<u-grid>` e, quando
-   for por coluna, no `GridColumnDef` e no `<u-grid-column>`. Eventos são
-   `CustomEvent` com prefixo `u-grid-`, `bubbles` e `composed`, e os
-   cancelláveis disparam ANTES da mudança.
-5. **Revisão da API proposta** — antes de mostrar a API ao usuário, rodar o
-   subagente `webcomponent-api-reviewer` (`.claude/agents/`) sobre a
-   proposta, aplicar os achados aceitos e levar ao usuário já a versão
-   revisada (com os achados recusados e o porquê, em uma linha cada). Nome
-   de API pública só entra com o aval do usuário.
+4. **API e desenho de acessibilidade** — propriedades/atributos, métodos e
+   eventos no `<u-grid>` e, quando for por coluna, no `GridColumnDef` e no
+   `<u-grid-column>`. Eventos são `CustomEvent` com prefixo `u-grid-`,
+   `bubbles` e `composed`, e os cancelláveis disparam ANTES da mudança. Na
+   mesma proposta, a seção "Acessibilidade" da spec: mapa de teclado (LTR e
+   RTL; todo gesto de mouse com equivalente), papéis e propriedades ARIA,
+   foco (para onde vai ao abrir, fechar, remover) e anúncios `aria-live`
+   (o quê, quando, sem excesso).
+5. **Revisão do desenho** — antes de mostrar a proposta ao usuário, rodar
+   em paralelo os subagentes `webcomponent-api-reviewer` e `a11y-reviewer`
+   (`.claude/agents/`) sobre ela, aplicar os achados aceitos e levar ao
+   usuário já a versão revisada (com os achados recusados e o porquê, em
+   uma linha cada). Nome de API pública e comportamento visível ao
+   hospedeiro só entram com o aval do usuário.
 6. **Interface** — render no `src/render/` ou num controller em
    `src/features/`; textos novos na tabela de `grid-i18n.ts` (14 idiomas);
    CSS por custom property `--u-grid-*` e `::part`.
-7. **Acessibilidade** — teclado completo (todo gesto de mouse tem
-   equivalente), ARIA conforme o padrão "grid" da APG, foco visível, RTL.
+7. **Acessibilidade** — implementar o desenho aprovado: teclado completo
+   (todo gesto de mouse tem equivalente), ARIA conforme o padrão "grid" da
+   APG, foco visível e não obscurecido, retorno do foco, anúncios, RTL,
+   `forced-colors` e `prefers-reduced-motion`; decisões em
+   `.specs/17-accessibility.md`.
 8. **Testes** — unitários do row model, de componente no navegador (Vitest
-   browser), SSR (renderiza no `@lit-labs/ssr` sem erro) e conferência manual
+   browser), `axe-core` sem violações nos estados do recurso (aberto/
+   fechado, agrupado, RTL), roteiro de teclado automatizado no navegador
+   (operar só por teclado e conferir para onde volta o foco), SSR
+   (renderiza no `@lit-labs/ssr` sem erro) e conferência manual
    no demo (`npm run dev`) em `en`, `pt` e `ar` (RTL). Suíte verde, lint e
    `tsc` limpos. Todo listener/observer/timer/cache global novo libera no
    `disconnectedCallback` (ou é limitado) e ganha teste de vazamento com
@@ -55,7 +66,12 @@ testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
     README, `custom-elements.json`); corrigir o que for ALTA/MÉDIA ou
     justificar no relato de entrega. Divergência do que o usuário aprovou
     volta para ele.
-11. **Entrega** — commits no branch da frente, `git rebase main`, testes de
+11. **Revisão de acessibilidade do implementado** — rodar de novo o
+    `a11y-reviewer` sobre o implementado (código, estilos, i18n), com o
+    `axe-core` e o roteiro de teclado do passo 8 verdes; corrigir o que for
+    ALTA/MÉDIA ou justificar no relato. Correção que muda API ou
+    comportamento visível ao hospedeiro volta para o usuário.
+12. **Entrega** — commits no branch da frente, `git rebase main`, testes de
     novo; avisar a coordenadora com resumo e print. Não editar este arquivo.
 
 **Sessão coordenadora** (a que abre as frentes): faz o merge fast-forward de
@@ -136,6 +152,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
 | Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | feito |
 | Desempenho em máquina fraca | `16-performance.md` | perfil fraco calibrado (`npm run test:perf`); orçamentos e linha de base de 100 mil a 5 milhões de linhas; virtualizador próprio com escala; row model sem objeto por linha; postos rápidos | feito |
+| Revisão de acessibilidade | `17-accessibility.md` | subagente `a11y-reviewer` no fluxo (desenho e entrega); auditoria WCAG 2.2 AA do grid atual; correções sem mudança de API; as que mudam API/comportamento aguardam aval | em curso |
 
 ### Fase A — o dia a dia de qualquer grid
 

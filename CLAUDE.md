@@ -47,6 +47,18 @@ Decisões de nomenclatura já tomadas ficam em `.specs/15-api-review.md`.
 Mudança de API pública só com aval do usuário; renomear exige alias com
 aviso de deprecação.
 
+## Revisão de acessibilidade
+
+Todo recurso visível passa pelo subagente `a11y-reviewer`
+(`.claude/agents/`, WCAG 2.2 AA + padrão "Data Grid" da APG) duas vezes:
+no desenho, junto com o `webcomponent-api-reviewer` e ANTES de levar a
+proposta ao usuário (mapa de teclado, papéis ARIA, foco, anúncios), e na
+entrega, sobre o implementado, com `axe-core` sem violações e roteiro de
+teclado automatizado no navegador (passos 5, 8 e 11 do fluxo no
+`BACKLOG.md`). Auditoria e decisões de a11y em `.specs/17-accessibility.md`.
+Correção de a11y que muda API ou comportamento visível ao hospedeiro (tecla,
+texto, token padrão) só com aval do usuário.
+
 ## Comportamento de referência
 
 O "oráculo" do projeto é o comportamento do **DevExtreme DataGrid** (demos
