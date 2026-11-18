@@ -246,7 +246,7 @@ describe('eventos', () => {
 
     grid._userMoveColumn(grid.columns[2], 0);
 
-    expect(details).toEqual([{ column: grid.columns[2], index: 0, previousIndex: 2, fromIndex: 2, toIndex: 0 }]);
+    expect(details).toEqual([{ column: grid.columns[2], band: null, index: 0, previousIndex: 2, fromIndex: 2, toIndex: 0 }]);
   });
 });
 

@@ -23,6 +23,7 @@ const focusedLabel = (grid: DataGrid) =>
   ?? (root(grid).activeElement as HTMLElement | null)?.textContent?.trim();
 const key = (target: Element, keyName: string, init: KeyboardEventInit = {}) =>
   target.dispatchEvent(new KeyboardEvent('keydown', { key: keyName, bubbles: true, composed: true, cancelable: true, ...init }));
+
 const pressOnActive = async (grid: DataGrid, keyName: string, init: KeyboardEventInit = {}) => {
   key(root(grid).activeElement!, keyName, init);
   await settle(grid);
@@ -97,7 +98,9 @@ describe('cabeçalho em bandas', () => {
 
   it('posição nativa de cada cabeçalho folha = a da célula do corpo', async () => {
     const c = makeColumns();
-    const grid = await createGrid({ columns: c.all, items, configure: g => { g.selectionMode = 'multiple'; g.showCheckboxes = true; } });
+    const grid = await createGrid({ columns: c.all, items, configure: g => {
+      g.selectionMode = 'multiple'; g.showCheckboxes = true;
+    } });
     // Mapa nativo do cabeçalho (colspan/rowspan) → coluna de cada folha.
     const occupied: boolean[][] = [];
     const positions = new Map<string, number>();
@@ -168,7 +171,7 @@ describe('cabeçalho em bandas', () => {
     expect(describeHeader(grid)).toEqual(['Country^2 Population/3', 'Total Urban Gdp']);
 
     // Mudança numa coluna aninhada chega ao grid.
-    (band.columns![0]).visible = false;
+    band.columns![0].visible = false;
     await settle(grid);
     expect(describeHeader(grid)).toEqual(['Country^2 Population/2', 'Urban Gdp']);
   });
@@ -190,7 +193,7 @@ describe('reordenar com bandas', () => {
     grid.moveColumn(c.gdp, 0);
     await settle(grid);
     expect(describeHeader(grid)[0]).toBe('Gdp/4 Country^3 Population/2');
-    expect(bodyRows(grid)[0].querySelector('td[aria-colindex="1"]')!.textContent!.trim()).toBe('3');
+    expect(bodyRows(grid)[0].querySelector('td[aria-colindex="1"]')!.textContent.trim()).toBe('3');
   });
 
   it('Alt+Shift+→ na banda move o bloco e anuncia; na folha só dentro da banda', async () => {
@@ -225,7 +228,7 @@ describe('reordenar com bandas', () => {
     await pressOnActive(grid, 'F10', { shiftKey: true });
 
     const menu = root(grid).querySelector('.column-header-menu')!;
-    expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.textContent!.trim())).toEqual(['Move left', 'Move right']);
+    expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.textContent.trim())).toEqual(['Move left', 'Move right']);
   });
 });
 
@@ -320,10 +323,10 @@ describe('fixar, ocultar e seletor', () => {
     bandBox().click();
     await settle(grid);
     expect(describeHeader(grid)).toEqual(['Country']);
-    expect([...nested.querySelectorAll('input')].map(input => (input as HTMLInputElement).checked)).toEqual([false, false]);
+    expect([...nested.querySelectorAll('input')].map(input => input.checked)).toEqual([false, false]);
 
     // Marcar uma filha com a banda oculta mostra a banda.
-    (nested.querySelector('input') as HTMLInputElement).click();
+    (nested.querySelector('input')!).click();
     await settle(grid);
     expect(describeHeader(grid)).toEqual(['Country^2 Population/2', 'PopTotal Urban']);
     expect(events.slice(-1).map(e => [e.column.label, e.visible])).toEqual([['Population', true]]);
@@ -364,7 +367,7 @@ describe('virtualização de colunas', () => {
   const wide = (count: number, width = 100): GridColumnDef[] =>
     Array.from({ length: count }, (_, i) => ({ path: `c${i}`, label: `C${i}`, width }));
   const wideItems = (count: number, rows = 30) =>
-    Array.from({ length: rows }, (_, r) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`c${i}`, `${r}-${i}`])));
+    Array.from({ length: rows }, (_row, r) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`c${i}`, `${r}-${i}`])));
 
   it('auto: virtual com mais de 50 colunas; aria-colcount total e espaçadoras sem índice', async () => {
     const grid = await createGrid({ columns: wide(300), items: wideItems(300) });
@@ -396,7 +399,7 @@ describe('virtualização de colunas', () => {
     expect(indexes[1]).toBeGreaterThan(140);
     expect(indexes).toContain(151);
     const cell = bodyRows(grid)[0].querySelector('td[aria-colindex="151"]')!;
-    expect(cell.textContent!.trim()).toBe('0-150');
+    expect(cell.textContent.trim()).toBe('0-150');
   });
 
   it('←/→ até coluna fora do DOM: ela entra, recebe o foco e a rolagem a mostra', async () => {
@@ -410,7 +413,7 @@ describe('virtualização de colunas', () => {
 
     const active = root(grid).activeElement as HTMLElement;
     expect(active.getAttribute('aria-colindex')).toBe('300');
-    expect(active.textContent!.trim()).toBe('0-299');
+    expect(active.textContent.trim()).toBe('0-299');
 
     // Não fica sob a coluna fixa (2.4.11).
     const fixed = bodyRows(grid)[0].querySelector<HTMLElement>('td[aria-colindex="1"]')!;

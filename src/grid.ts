@@ -5,8 +5,8 @@ import { customElement, property, state as internalState } from 'lit/decorators.
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
-import { repeat } from 'lit/directives/repeat.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
+import { repeat } from 'lit/directives/repeat.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { booleanAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';

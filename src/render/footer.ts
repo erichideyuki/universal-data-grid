@@ -72,6 +72,7 @@ export const renderSummaryCells = (
           data-col=${ifDefined(tabIndexOf ? col : undefined)}
           tabindex=${ifDefined(tabIndexOf?.(col))}></td>`}`;
   };
+
   const cells = layout.slice(from);
 
   // Virtualização de colunas: cada célula segue a sua coluna (o foco não troca de coluna ao rolar).
