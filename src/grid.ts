@@ -20,6 +20,12 @@ import { releaseInteractions } from './features/drag-helper.js';
 import { isRtl } from './features/drop-position.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
 import {
+  type GroupPanelMenuAction,
+  GroupPanelMenuController,
+  isContextMenuKey,
+  renderGroupPanelMenu,
+} from './features/group-panel-menu.js';
+import {
   clampWidth,
   ColumnResizeController,
   DEFAULT_MIN_COLUMN_WIDTH,
@@ -42,8 +48,15 @@ import {
   type GridColumnDataType,
   type GridColumnDef,
   type GridColumnFixed,
+  type GridColumnRef,
+  type GridGroupPath,
+  type GridGroupSummaryItem,
   type GridSort,
   type GridSortOrder,
+  type GridSummary,
+  type GridSummaryItem,
+  type GridSummaryValue,
+  isColumnGroupable,
   isColumnSortable,
 } from './grid-column-def.js';
 import { type DataGridColumn, type GridColumnChange } from './grid-column.js';
@@ -56,16 +69,26 @@ import {
 } from './grid-i18n.js';
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
+import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
 import { renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { createComparer } from './row-model/compare.js';
 import { flattenRows, RowList } from './row-model/flatten.js';
-import { type FormatContext, formatCellValue, resolveAlignment, resolveDataType } from './row-model/format.js';
-import { buildGroups } from './row-model/group.js';
+import {
+  DEFAULT_DATE,
+  type FormatContext,
+  formatCellValue,
+  getDateTimeFormat,
+  getNumberFormat,
+  resolveAlignment,
+  resolveDataType,
+} from './row-model/format.js';
+import { buildGroups, groupKeyOf } from './row-model/group.js';
 import { type RankCache, sortItems } from './row-model/sort.js';
-import type { DataRow, GroupNode, GroupRow, Row } from './row-model/types.js';
+import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
+import type { DataRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
 
 import './grid-column.js';
 
@@ -78,8 +101,17 @@ export type {
   GridColumnFixed,
   GridColumnFormat,
   GridColumnFormatter,
+  GridColumnRef,
+  GridGroupPath,
+  GridGroupSummaryItem,
   GridSort,
   GridSortOrder,
+  GridSummary,
+  GridSummaryAggregator,
+  GridSummaryFormat,
+  GridSummaryItem,
+  GridSummaryType,
+  GridSummaryValue,
 } from './grid-column-def.js';
 export type { GridSortMode, GridSortingMode } from './features/sorting.js';
 export { DataGridColumn } from './grid-column.js';
@@ -107,6 +139,18 @@ export interface GridGroupEventDetail {
   /** Grouped columns before the change (a copy). */
   previous: GridColumnDef[];
   /** `user` (drag and drop) or `api` (`groupColumn`, `ungroupColumn`, `moveColumn`). */
+  source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-group-expansion-change`. */
+export interface GridGroupExpansionChangeEventDetail {
+  /** Values of the group from the outermost level; `null` when several groups changed (`expandAllGroups`/`collapseAllGroups`). */
+  groupPath: GridGroupPath | null;
+  /** Grouping level (0-based); `null` = every level. */
+  groupIndex: number | null;
+  /** New state. */
+  expanded: boolean;
+  /** `user` (toggle button, group panel menu) or `api`. */
   source: GridChangeSource;
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
@@ -153,6 +197,47 @@ const LEGACY_ATTRIBUTES: LegacyAttributes = {
   showrowlines: 'show-row-lines',
   showcolumnlines: 'show-column-lines',
 };
+
+/**
+ * Separador de itens de lista do idioma (`", "`, `"、"`, `"، "`), tirado do
+ * `Intl.ListFormat`: o 1º separador de pontuação entre dois itens, sem a
+ * conjunção (o árabe só pontua no tipo `unit`).
+ */
+const listSeparatorOf = (language: string): string => {
+  const options: Intl.ListFormatOptions[] = [{ type: 'conjunction', style: 'long' }, { type: 'unit', style: 'short' }];
+
+  for (const option of options) {
+    try {
+      const text = new Intl.ListFormat(language, option).format(['\u0001', '\u0002', '\u0003']);
+      const match = (/^\s*\p{P}\s*/u).exec(text.slice(text.indexOf('\u0001') + 1, text.indexOf('\u0002')));
+
+      if (match) {
+        return match[0];
+      }
+    } catch {
+      // idioma inválido: tenta o próximo / padrão
+    }
+  }
+
+  return ', ';
+};
+
+/** Mesmos resumos (item, coluna, tipo de dado), na mesma ordem? */
+const sameSummaries = (a: readonly ResolvedSummary[], b: readonly ResolvedSummary[]): boolean =>
+  a.length === b.length && a.every((summary, index) => {
+    const other = b[index];
+
+    return summary.item === other.item
+      && summary.spec.column === other.spec.column
+      && summary.spec.type === other.spec.type
+      && summary.spec.dataType === other.spec.dataType;
+  });
+
+/** Resumo com a coluna resolvida e pronto para calcular. */
+interface ResolvedSummary<T extends GridSummaryItem = GridSummaryItem> {
+  item: T;
+  spec: SummarySpec;
+}
 
 /** Opções do hospedeiro vistas por último — mudança nelas vence o estado do usuário. */
 interface HostColumnOptions {
@@ -257,6 +342,7 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @fires {CustomEvent<GridSortEventDetail>} u-grid-sorting - Before the sorting changes (user or API). Cancelable.
  * @fires {CustomEvent<GridSortEventDetail>} u-grid-sort-change - After the sorting changed (user or API).
  * @fires {CustomEvent<GridGroupEventDetail>} u-grid-group-change - After the grouping changed (user or API).
+ * @fires {CustomEvent<GridGroupExpansionChangeEventDetail>} u-grid-group-expansion-change - After groups were expanded or collapsed (user or API).
  * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard or double-click auto-size).
  * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
@@ -305,8 +391,10 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
  * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
+ * @cssprop --u-grid-summary-background-color - Background of the totals footer and group footers. Default: the header background.
+ * @cssprop --u-grid-summary-cell-font-weight - Font weight of summary cells. Default `500`.
  *
- * @csspart row - Every rendered row (`<tr>`).
+ * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
  * @csspart group-row - Group header rows.
  * @csspart odd - Data rows in odd positions (the first data row is `odd`).
  * @csspart even - Data rows in even positions.
@@ -316,6 +404,12 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @csspart sort-indicator - The sort arrow (and priority number) in headers and group chips.
  * @csspart group-chip - Group chips in the group panel.
  * @csspart column-chooser - The column chooser popover.
+ * @csspart summary-row - Rows with summaries: the totals footer and group footers.
+ * @csspart total-row - The totals footer row.
+ * @csspart group-footer-row - Group footer rows (summaries with `display: 'footer'`).
+ * @csspart summary-cell - Cells with summaries (footers and `display: 'column'` in group rows).
+ * @csspart group-count - Count and inline summaries in a group row (`"(3, Sum of Population: 1,234)"`).
+ * @csspart group-panel-menu - The group panel context menu.
  */
 @customElement('u-grid')
 export class DataGrid extends LitElement {
@@ -329,8 +423,27 @@ export class DataGrid extends LitElement {
 
   #items: readonly any[] = [];
 
-  /** Groups start expanded. */
+  /**
+   * Groups start expanded. INITIAL default: afterwards expansion is grid
+   * state (`expandGroup`, `expandAllGroups`…); changing it resets that state.
+   */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-groups' }) autoExpandGroups = false;
+
+  /**
+   * Totals (footer fixed at the bottom) and group summaries (property only).
+   * Recomputed when the data, the grouping or the summary changes.
+   */
+  @property({ attribute: false })
+  get summary(): GridSummary | null {
+    return this.#summary;
+  }
+
+  set summary(value: GridSummary | null | undefined) {
+    this.#summary = value ?? null;
+    this.#summaryDirty = true;
+  }
+
+  #summary: GridSummary | null = null;
 
   /** Row items (property only). The grid never mutates this array or its items. */
   @property({ attribute: false })
@@ -343,6 +456,10 @@ export class DataGrid extends LitElement {
     this.#sortDirty = true;
     this.#rankCache.clear();
     this.#dataTypes.clear();
+    this.#summaryDirty = true;
+    // Totais acompanham o conjunto de linhas (o filtro da frente 04 também
+    // tem de ligar isto); a ordem não muda o resultado.
+    this.#totalsDirty = true;
     this.#autoWidthDirty = true;
     this.#layoutDirty = true;
   }
@@ -361,8 +478,25 @@ export class DataGrid extends LitElement {
   readonly #dataTypes = new Map<GridColumnDef, GridColumnDataType | undefined>();
   #hasWrap = false;
   #measuredWrap = false;
-  /** Expansão escolhida pelo usuário, por chave de grupo (sobrevive a troca de dados). */
-  readonly #expansion = new Map<string, boolean>();
+  /**
+   * Expansão de grupos por chave (sobrevive a troca de dados, ordenação e
+   * filtro). Só guarda o que difere do padrão do nível — o mapa não cresce
+   * com grupos que voltaram ao padrão.
+   */
+  readonly #expansion = new Map<string, { expanded: boolean; level: number }>();
+  /** Padrão por nível vindo de `expandAllGroups(n)`/`collapseAllGroups(n)`. */
+  #levelExpansion: (boolean | undefined)[] = [];
+  /** Padrão de todos os níveis vindo de `expandAllGroups()`/`collapseAllGroups()`. */
+  #allExpansion: boolean | undefined;
+
+  // --------------------------------------------------------------- resumos
+
+  #summaryDirty = true;
+  #totalsDirty = true;
+  #totalSpecs: ResolvedSummary[] = [];
+  #groupSpecs: ResolvedSummary<GridGroupSummaryItem>[] = [];
+  #totals: unknown[] = [];
+  #listSeparator: { language: string; separator: string } | undefined;
 
   // -------------------------------------------------------------- colunas
 
@@ -469,6 +603,16 @@ export class DataGrid extends LitElement {
 
   /** Vertical column separators. */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-column-lines' }) showColumnLines = false;
+
+  /** Shows the number of rows in group rows (`"Country: Brazil (3)"`). Default `true`; `show-group-count="false"` hides it. */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-group-count' }) showGroupCount = true;
+
+  /**
+   * Context menu of the group panel (right-click, Shift+F10 or the context
+   * menu key on a group chip): ungroup, ungroup all, expand/collapse all
+   * groups. Default `true`; `group-panel-menu="false"` disables it.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'group-panel-menu' }) groupPanelMenu = true;
 
   // -------------------------------------------------------- recursos de coluna
 
@@ -605,6 +749,7 @@ export class DataGrid extends LitElement {
 
   readonly #resize = new ColumnResizeController(this);
   readonly #chooser = new ColumnChooserController(this);
+  readonly #groupMenu = new GroupPanelMenuController(this);
   #resizeObserver: ResizeObserver | undefined;
 
   /**
@@ -674,7 +819,22 @@ export class DataGrid extends LitElement {
 
   override willUpdate(changed: PropertyValues<this>) {
     if (changed.has('autoExpandGroups')) {
+      // Opção do hospedeiro vence o estado do usuário (como nas colunas).
+      if (changed.get('autoExpandGroups') !== undefined) {
+        this.#resetExpansion();
+      }
+
       this.#rowsDirty = true;
+    }
+
+    const menuColumn = this.#groupMenu.column;
+
+    if (this.#groupMenu.open && (
+      !this.groupPanelMenu
+      || !this.showGroupPanel
+      || !this._groupColumns.length
+      || (menuColumn && !this._groupColumns.includes(menuColumn)))) {
+      this.#groupMenu.hide();
     }
 
     if (changed.has('columnAutoWidth')) {
@@ -794,6 +954,185 @@ export class DataGrid extends LitElement {
   }
 
   /**
+   * Expands every group of grouping level `groupIndex` (0-based), or of
+   * every level without it. Also applies to groups that appear later
+   * (new data, filter), until the next `expandAllGroups`/`collapseAllGroups`
+   * call or a change of `autoExpandGroups` (which fires no event).
+   */
+  expandAllGroups(groupIndex?: number): void {
+    this.#setAllExpanded(true, groupIndex, 'api');
+  }
+
+  /** Collapses every group of level `groupIndex`, or of every level without it. See `expandAllGroups`. */
+  collapseAllGroups(groupIndex?: number): void {
+    this.#setAllExpanded(false, groupIndex, 'api');
+  }
+
+  /**
+   * Expands one group (not its parents). `groupPath` = the group values from
+   * the outermost level, e.g. `['Brazil', 'SP']`, compared as when grouping.
+   * Needs the grouping set (at least `groupPath.length` grouped columns),
+   * otherwise it is ignored; a group that has no rows yet keeps the state
+   * (and the event fires) for when it appears.
+   */
+  expandGroup(groupPath: GridGroupPath): void {
+    this.#setPathExpanded(groupPath, true);
+  }
+
+  /** Collapses one group (`groupPath` as in `expandGroup`). */
+  collapseGroup(groupPath: GridGroupPath): void {
+    this.#setPathExpanded(groupPath, false);
+  }
+
+  /** Whether the group of `groupPath` is (or would be) expanded. */
+  isGroupExpanded(groupPath: GridGroupPath): boolean {
+    const key = Array.isArray(groupPath) ? groupKeyOf(groupPath, this._groupColumns) : undefined;
+
+    return key !== undefined && this.#isExpanded(key, groupPath.length - 1);
+  }
+
+  /**
+   * Computed summaries: the totals (`summary.total`) or, with `groupPath`,
+   * the summaries of that group (`summary.group`; empty if the group does
+   * not exist).
+   */
+  getSummaryValues(groupPath?: GridGroupPath): GridSummaryValue[] {
+    this.#ensureRows();
+
+    if (groupPath === undefined) {
+      return this.#totalSpecs.map((summary, index) => this.#summaryValue(summary, this.#totals[index]));
+    }
+
+    const node = this.#findGroup(groupPath);
+
+    return node
+      ? this.#groupSpecs.map((summary, index) => this.#summaryValue(summary, node.summaries[index]))
+      : [];
+  }
+
+  #summaryValue({ item, spec }: ResolvedSummary, value: unknown): GridSummaryValue {
+    return { item, value: value ?? null, text: formatSummaryValue(value, spec, item.format, this.#summaryFormatContext) };
+  }
+
+  #findGroup(groupPath: GridGroupPath): GroupNode | undefined {
+    if (!Array.isArray(groupPath)) {
+      return undefined;
+    }
+
+    let nodes: readonly GroupNode[] = this.#groups;
+    let node: GroupNode | undefined;
+
+    for (let level = 0; level < groupPath.length; level++) {
+      const key = groupKeyOf(groupPath.slice(0, level + 1), this._groupColumns);
+      node = key === undefined ? undefined : nodes.find(candidate => candidate.key === key);
+
+      if (!node) {
+        return undefined;
+      }
+
+      nodes = node.children;
+    }
+
+    return node;
+  }
+
+  #setPathExpanded(groupPath: GridGroupPath, expanded: boolean): void {
+    const key = Array.isArray(groupPath) ? groupKeyOf(groupPath, this._groupColumns) : undefined;
+
+    if (key !== undefined) {
+      this.#setGroupExpanded(key, groupPath.length - 1, Object.freeze([...groupPath]), expanded, 'api');
+    }
+  }
+
+  /** Único ponto que muda a expansão de UM grupo; evento só se mudou. */
+  #setGroupExpanded(key: string, level: number, groupPath: GridGroupPath, expanded: boolean, source: GridChangeSource): void {
+    if (this.#isExpanded(key, level) === expanded) {
+      return;
+    }
+
+    if (expanded === this.#defaultExpanded(level)) {
+      this.#expansion.delete(key);
+    } else {
+      this.#expansion.set(key, { expanded, level });
+    }
+
+    this.#rowsDirty = true;
+    this.requestUpdate();
+    this.#dispatchExpansion({ groupPath, groupIndex: level, expanded, source });
+  }
+
+  /** Expandir/recolher tudo (um nível ou todos); evento só se algum grupo existente mudou. */
+  #setAllExpanded(expanded: boolean, groupIndex: number | undefined, source: GridChangeSource): void {
+    if (groupIndex !== undefined && (!Number.isInteger(groupIndex) || groupIndex < 0)) {
+      return;
+    }
+
+    this.#ensureRows();
+
+    let changed = false;
+
+    const visit = (nodes: readonly GroupNode[]): void => {
+      for (const node of nodes) {
+        if (changed) {
+          return;
+        }
+
+        if ((groupIndex === undefined || node.level === groupIndex) && this.#isExpanded(node.key, node.level) !== expanded) {
+          changed = true;
+          return;
+        }
+
+        if (groupIndex === undefined || node.level < groupIndex) {
+          visit(node.children);
+        }
+      }
+    };
+
+    visit(this.#groups);
+
+    if (groupIndex === undefined) {
+      this.#expansion.clear();
+      this.#levelExpansion = [];
+      this.#allExpansion = expanded;
+    } else {
+      for (const [key, entry] of this.#expansion) {
+        if (entry.level === groupIndex) {
+          this.#expansion.delete(key);
+        }
+      }
+
+      this.#levelExpansion[groupIndex] = expanded;
+    }
+
+    this.#rowsDirty = true;
+    this.requestUpdate();
+
+    if (changed) {
+      this.#dispatchExpansion({ groupPath: null, groupIndex: groupIndex ?? null, expanded, source });
+    }
+  }
+
+  #dispatchExpansion(detail: GridGroupExpansionChangeEventDetail): void {
+    this.dispatchEvent(new CustomEvent('u-grid-group-expansion-change', this.#eventInit(detail)));
+  }
+
+  /** Desagrupa todas as colunas de uma vez (um só `u-grid-group-change`). */
+  #ungroupAll(source: GridChangeSource): void {
+    const previous = this.getGrouping();
+
+    if (!previous.length) {
+      return;
+    }
+
+    this.#setColumnState([...this._regularColumns, ...previous], []);
+    this.dispatchEvent(new CustomEvent('u-grid-group-change', this.#eventInit<GridGroupEventDetail>({
+      grouping: [],
+      previous,
+      source,
+    })));
+  }
+
+  /**
    * Moves a column to `targetIndex` among the regular (non-grouped) columns.
    * The column stays in its block: fixed at the start, free, or fixed at the
    * end. A grouped column is ungrouped.
@@ -877,6 +1216,10 @@ export class DataGrid extends LitElement {
     }
 
     if (change === 'value') {
+      this.#summaryDirty = true;
+      // Mesmo resumo, valores novos: recalcula.
+      this.#totalsDirty = true;
+      this.#groupsDirty ||= this.#groupSpecs.length > 0;
       this.#dataTypes.delete(column);
       this.#rankCache.delete(column);
       this.#sortDirty ||= grouped || this.#sorting.some(spec => spec.column === column);
@@ -995,6 +1338,7 @@ export class DataGrid extends LitElement {
 
   #setColumnState(regular: GridColumnDef[], group: GridColumnDef[]): void {
     this.#dataTypes.clear();
+    this.#summaryDirty = true;
 
     if (!sameItems(group, this._groupColumns)) {
       this._groupColumns = group;
@@ -1126,6 +1470,11 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _userGroupColumn(column: GridColumnDef, targetIndex: number): void {
+    // `groupable: false` só barra o usuário (reordenar o que já está agrupado continua).
+    if (!this._groupColumns.includes(column) && !isColumnGroupable(column)) {
+      return;
+    }
+
     this.#moveColumnTo(true, column, targetIndex, 'user');
   }
 
@@ -1456,10 +1805,54 @@ export class DataGrid extends LitElement {
 
   // -------------------------------------------------------------- row model
 
-  readonly #isExpanded = (key: string): boolean =>
-    this.#expansion.get(key) ?? this.autoExpandGroups;
+  /** Padrão de um nível: `*AllGroups(nível)` → `*AllGroups()` → `autoExpandGroups`. */
+  #defaultExpanded(level: number): boolean {
+    return this.#levelExpansion[level] ?? this.#allExpansion ?? this.autoExpandGroups;
+  }
 
-  /** items → ordenar → agrupar → achatar; cada etapa só refaz o que sujou. */
+  readonly #isExpanded = (key: string, level: number): boolean =>
+    this.#expansion.get(key)?.expanded ?? this.#defaultExpanded(level);
+
+  #resetExpansion(): void {
+    this.#expansion.clear();
+    this.#levelExpansion = [];
+    this.#allExpansion = undefined;
+    this.#rowsDirty = true;
+  }
+
+  /** Resolve a coluna de um resumo: `path` (1ª coluna com ele) ou a própria coluna, se definida. */
+  #resolveColumn(columnRef: GridColumnRef | undefined): GridColumnDef | undefined {
+    const columns = this.columns;
+
+    if (typeof columnRef === 'string') {
+      return columns.find(column => column.path === columnRef);
+    }
+
+    return columnRef && columns.includes(columnRef) ? columnRef : undefined;
+  }
+
+  #resolveSummaries<T extends GridSummaryItem>(items: readonly T[] | undefined, language: string | undefined): ResolvedSummary<T>[] {
+    return (items ?? []).filter(item => !!item).map(item => {
+      const column = this.#resolveColumn(item.column);
+      const dataType = column ? this.#dataTypeOf(column) : undefined;
+
+      return {
+        item,
+        spec: {
+          column,
+          type: item.type,
+          dataType,
+          compare: item.type === 'min' || item.type === 'max' ? createComparer(language, dataType) : undefined,
+        },
+      };
+    });
+  }
+
+  get #hasGroupFooters(): boolean {
+    return this.#groupSpecs.some(({ item }) => item.display === 'footer');
+  }
+
+  /** items → ordenar → agrupar (+ resumos de grupo) → achatar; totais à parte. Cada etapa só refaz o que sujou. */
   #ensureRows(): void {
     const language = this.#effectiveLanguage;
     const languageChanged = language !== this.#modelLanguage;
@@ -1469,6 +1862,27 @@ export class DataGrid extends LitElement {
       this.#rankCache.clear();
     }
 
+    if (this.#summaryDirty || (languageChanged && (this.#totalSpecs.length || this.#groupSpecs.length))) {
+      const hadFooters = this.#hasGroupFooters;
+      const totalSpecs = this.#resolveSummaries(this.#summary?.total, language);
+      const groupSpecs = this.#resolveSummaries(this.#summary?.group, language);
+
+      // Agrupar/reordenar colunas suja a resolução, mas raramente muda os
+      // resumos: só recalcula (1 mi de linhas) o que mudou de fato.
+      if (languageChanged || !sameSummaries(totalSpecs, this.#totalSpecs)) {
+        this.#totalSpecs = totalSpecs;
+        this.#totalsDirty = true;
+      }
+
+      if (languageChanged || !sameSummaries(groupSpecs, this.#groupSpecs)) {
+        this.#groupSpecs = groupSpecs;
+        this.#groupsDirty = true;
+      }
+
+      this.#summaryDirty = false;
+      this.#rowsDirty ||= hadFooters !== this.#hasGroupFooters;
+    }
+
     if (this.#sortDirty || (languageChanged && this.#sorting.length)) {
       const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
       this.#sortedItems = sortItems(this.#items, rowSorting, language, this.#rankCache);
@@ -1476,20 +1890,28 @@ export class DataGrid extends LitElement {
       this.#groupsDirty = true;
     }
 
+    if (this.#totalsDirty) {
+      // Sobre as linhas que o grid mostra (a ordem não muda o resultado).
+      this.#totals = summarize(this.#sortedItems, this.#totalSpecs.map(({ spec }) => spec));
+      this.#totalsDirty = false;
+    }
+
     if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
       const orders = this._groupColumns.map(column => this.#orderOf(column));
       this.#groups = buildGroups(
         this.#sortedItems,
         this._groupColumns,
-        column => createComparer(language, column.dataType),
+        // A faixa (`groupValueGetter`) compara pelo próprio valor, sem o `dataType` da coluna.
+        column => createComparer(language, column.groupValueGetter ? undefined : column.dataType),
         orders,
+        this.#groupSpecs.map(({ spec }) => spec),
       );
       this.#groupsDirty = false;
       this.#rowsDirty = true;
     }
 
     if (this.#rowsDirty) {
-      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf);
+      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf, this.#hasGroupFooters);
       this.#rowsDirty = false;
       // Alturas medidas (`wrap`) são por índice: outras linhas, outras alturas.
       this.#virtualizer.measure();
@@ -1609,7 +2031,117 @@ export class DataGrid extends LitElement {
   }
 
   #groupValueText(row: GroupRow): string {
-    return formatCellValue(row.value, row.firstItem, row.column, this.#formatContext(row.column));
+    const { column } = row;
+
+    // Faixa (`groupValueGetter`): o valor devolvido, sem `format`/`displayValue` da coluna.
+    if (column.groupValueGetter) {
+      const value = row.value;
+
+      if (value === null || value === undefined) {
+        return column.emptyText ?? '';
+      }
+
+      // Número sem separador de milhar (como nas células: 1990 não vira "1,990").
+      if (typeof value === 'number') {
+        return getNumberFormat(this.language).format(value);
+      }
+
+      return value instanceof Date
+        ? getDateTimeFormat(this.language, DEFAULT_DATE).format(value)
+        : String(value);
+    }
+
+    return formatCellValue(row.value, row.firstItem, column, this.#formatContext(column));
+  }
+
+  // ---------------------------------------------------------------- resumos
+
+  get #summaryFormatContext(): SummaryFormatContext {
+    const { trueText, falseText } = this.#translation;
+
+    return { language: this.language, trueText, falseText };
+  }
+
+  #summaryTypeName(item: GridSummaryItem): string | undefined {
+    if (item.label) {
+      return item.label;
+    }
+
+    const translation = this.#translation;
+
+    switch (item.type) {
+      case 'sum':
+        return translation.summarySum;
+      case 'min':
+        return translation.summaryMin;
+      case 'max':
+        return translation.summaryMax;
+      case 'avg':
+        return translation.summaryAvg;
+      case 'count':
+        return translation.summaryCount;
+      default:
+        return undefined;
+    }
+  }
+
+  /** Texto da célula (`"Sum: 1,234"`) e rótulo completo (`"Sum of Population: 1,234"`). */
+  #summaryText({ item, spec }: ResolvedSummary, value: unknown): SummaryText {
+    const translation = this.#translation;
+    const valueText = formatSummaryValue(value, spec, item.format, this.#summaryFormatContext);
+    const type = this.#summaryTypeName(item);
+    const column = spec.column?.label ?? '';
+    const text = type ? formatMessage(translation.summaryText, { type, value: valueText }) : valueText;
+
+    if (!column) {
+      return { text, label: text };
+    }
+
+    return {
+      text,
+      label: type
+        ? formatMessage(translation.summaryColumnText, { type, column, value: valueText })
+        : `${column}${translation.groupLabelSeparator}${valueText}`,
+    };
+  }
+
+  /** Resumos agrupados pela coluna onde aparecem. */
+  #textsByColumn(summaries: readonly ResolvedSummary[], values: readonly unknown[], include: (summary: ResolvedSummary, index: number) => boolean): Map<GridColumnDef, SummaryText[]> {
+    const texts = new Map<GridColumnDef, SummaryText[]>();
+
+    summaries.forEach((summary, index) => {
+      const { column } = summary.spec;
+
+      if (!column || !include(summary, index)) {
+        return;
+      }
+
+      let list = texts.get(column);
+
+      if (!list) {
+        list = [];
+        texts.set(column, list);
+      }
+
+      list.push(this.#summaryText(summary, values[index]));
+    });
+
+    return texts;
+  }
+
+  /** Separador de lista do idioma (sem "e"/"and"), calculado uma vez por idioma. */
+  get #listSeparatorText(): string {
+    const language = this.language;
+
+    if (this.#listSeparator?.language !== language) {
+      this.#listSeparator = { language, separator: listSeparatorOf(language) };
+    }
+
+    return this.#listSeparator.separator;
+  }
+
+  #formatList(parts: string[]): string {
+    return parts.join(this.#listSeparatorText);
   }
 
   /**
@@ -1631,9 +2163,7 @@ export class DataGrid extends LitElement {
   };
 
   readonly #toggleGroup = (row: GroupRow): void => {
-    this.#expansion.set(row.groupKey, !row.expanded);
-    this.#rowsDirty = true;
-    this.requestUpdate();
+    this.#setGroupExpanded(row.groupKey, row.level, row.path, !row.expanded, 'user');
   };
 
   // ----------------------------------------------------------------- render
@@ -1654,6 +2184,7 @@ export class DataGrid extends LitElement {
 
     const layout = this.#columnLayout();
     const headerRows = this.showColumnHeaders ? 1 : 0;
+    const footerRows = this.#totalSpecs.length ? 1 : 0;
     const classes = {
       striped: this.striped,
       'row-lines': this.showRowLines,
@@ -1670,7 +2201,7 @@ export class DataGrid extends LitElement {
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}
         role="grid"
-        aria-rowcount="${rows.length + headerRows}"
+        aria-rowcount="${rows.length + headerRows + footerRows}"
         aria-colcount="${layout.length}">
         <div class="scroll-container" ${ref(this._scrollContainerRef)}>
           ${this.#renderToolbar()}
@@ -1682,10 +2213,12 @@ export class DataGrid extends LitElement {
               ${this.#renderBody(window, headerRows, layout)}
               <tr></tr>
             </tbody>
+            ${footerRows ? this.#renderTotalFooter(layout, rows.length + headerRows + 1) : nothing}
           </table>
         </div>
         ${this.#chooser.open ? this.#renderColumnChooser() : nothing}
       </div>
+      ${this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">${this.#announcement}</div>
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
@@ -1807,12 +2340,14 @@ export class DataGrid extends LitElement {
   }
 
   #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[]) {
-    const parity = row.isGroup
+    const parity = row.isGroup || row.isFooter
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
+      'group-footer-row': !!row.isFooter,
+      'summary-row': !!row.isFooter,
       last: index === this.#rows.length - 1,
     };
 
@@ -1828,27 +2363,99 @@ export class DataGrid extends LitElement {
         aria-rowindex="${index + 1 + headerRows}"
         aria-level=${row.isGroup ? row.level + 1 : nothing}
         class="${classMap(classes)}"
-        part="row ${row.isGroup ? 'group-row' : parity}">
+        part="row ${row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : parity}">
         ${row.isGroup
-          ? renderGroupRowCells({
-            row,
-            totalColumns: this._groupColumns.length + layout.length,
-            separator: this.#translation.groupLabelSeparator,
-            valueText: this.#groupValueText(row),
-            onToggle: this.#toggleGroup,
-          })
-          : this.#renderDataRowCells(row, layout)}
+          ? this.#renderGroupRowCells(row, layout)
+          : row.isFooter
+            ? this.#renderGroupFooterCells(row, layout)
+            : this.#renderDataRowCells(row, layout)}
       </tr>
     `;
   }
 
+  /**
+   * Linha de grupo: rótulo, contagem e resumos `inline` no texto; resumos
+   * `column` em células próprias a partir da 1ª coluna com resumo (o rótulo
+   * ocupa as anteriores, como na referência).
+   */
+  #renderGroupRowCells(row: GroupRow, layout: ColumnLayout[]) {
+    const groupColumns = this._groupColumns.length;
+    const totalColumns = groupColumns + layout.length;
+    // Colunas depois do botão: recuos dos níveis internos + colunas comuns.
+    const base = groupColumns - row.level - 1;
+    const specs = this.#groupSpecs;
+    let alignedFrom = layout.length;
+
+    const indexOf = (column: GridColumnDef | undefined): number =>
+      column ? layout.findIndex(cell => cell.column === column) : -1;
+
+    for (const { item, spec } of specs) {
+      const index = indexOf(spec.column);
+
+      if (item.display === 'column' && index >= 0 && base + index >= 1) {
+        alignedFrom = Math.min(alignedFrom, index);
+      }
+    }
+
+    const isAligned = ({ spec }: ResolvedSummary, display?: string): boolean => {
+      const index = indexOf(spec.column);
+      return display === 'column' && index >= alignedFrom;
+    };
+
+    const parts: string[] = [];
+
+    if (this.showGroupCount) {
+      parts.push(getNumberFormat(this.language, { maximumFractionDigits: 0 }).format(row.itemCount));
+    }
+
+    specs.forEach((summary, index) => {
+      const display = summary.item.display ?? 'inline';
+
+      if (display !== 'footer' && !isAligned(summary, display)) {
+        parts.push(this.#summaryText(summary, row.summaries[index]).label);
+      }
+    });
+
+    const info = parts.length ? formatMessage(this.#translation.groupInfoText, { info: this.#formatList(parts) }) : '';
+    const aligned = alignedFrom < layout.length
+      ? renderSummaryCells(layout, this.#textsByColumn(specs, row.summaries, summary => isAligned(summary, (summary.item as GridGroupSummaryItem).display)), alignedFrom, this.#listSeparatorText)
+      : nothing;
+
+    return renderGroupRowCells({
+      row,
+      totalColumns,
+      separator: this.#translation.groupLabelSeparator,
+      valueText: this.#groupValueText(row),
+      info,
+      labelSpan: base + alignedFrom,
+      trailing: aligned,
+      onToggle: this.#toggleGroup,
+    });
+  }
+
+  #renderGroupFooterCells(row: GroupFooterRow, layout: ColumnLayout[]) {
+    const texts = this.#textsByColumn(this.#groupSpecs, row.summaries, ({ item }) => (item as GridGroupSummaryItem).display === 'footer');
+
+    return html`
+      ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
+      ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText)}
+    `;
+  }
+
+  #renderTotalFooter(layout: ColumnLayout[], rowIndex: number) {
+    return renderTotalFooter({
+      layout,
+      texts: this.#textsByColumn(this.#totalSpecs, this.#totals, () => true),
+      groupColumns: this._groupColumns.length,
+      groupColumnWidth: GROUP_COLUMN_WIDTH,
+      rowIndex,
+      separator: this.#listSeparatorText,
+    });
+  }
+
   #renderDataRowCells(row: DataRow, layout: ColumnLayout[]) {
     return html`
-      ${map(this._groupColumns, (_, index) => html`
-        <td
-          role="presentation"
-          class="group-column sticky-cell"
-          style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+      ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
       ${map(layout, (cell, index) => html`
         <td
           part="cell"
@@ -1887,7 +2494,7 @@ export class DataGrid extends LitElement {
 
   #renderGroupPanel() {
     return html`
-      <div class="group-container" ${ref(this._groupContainerRef)}>
+      <div class="group-container" ${ref(this._groupContainerRef)} @contextmenu=${this.#onGroupPanelContextMenu}>
         ${this._groupColumns.length
           ? html`
             ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index))}
@@ -1897,33 +2504,108 @@ export class DataGrid extends LitElement {
     `;
   }
 
-  /** Chip de uma coluna agrupada: arrastável e, se ordenável, alterna a direção dos grupos. */
+  /**
+   * Chip de uma coluna agrupada: arrastável; se ordenável, alterna a direção
+   * dos grupos. Com o menu do painel, sempre focável: Shift+F10/tecla de
+   * menu abrem o menu (Enter/Espaço também, se não ordenar).
+   */
   #renderGroupChip(column: GridColumnDef, index: number) {
     const sortable = this.#canSortByUser(column);
+    const menu = this.groupPanelMenu;
+    const focusable = sortable || menu;
+    // Só é "botão de menu" quando a ativação abre o menu; no ordenável a ativação ordena.
+    const opensMenu = menu && !sortable;
     const order = this.#orderOf(column) ?? 'asc';
     const translation = this.#translation;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (menu && (isContextMenuKey(event) || (!sortable && isActivationKey(event)))) {
+        event.preventDefault();
+        this.#groupMenu.show({ column, returnFocus: event.currentTarget as HTMLElement });
+      } else if (sortable && isActivationKey(event) && !event.repeat) {
+        event.preventDefault();
+        this.#onGroupChipActivate(column, event);
+      }
+    };
 
     return html`
       <div
         class="group ${classMap({ sortable })}"
         part="group-chip"
         style="--_order: ${index}"
-        role=${ifDefined(sortable ? 'button' : undefined)}
-        tabindex=${ifDefined(sortable ? 0 : undefined)}
+        role=${ifDefined(focusable ? 'button' : undefined)}
+        tabindex=${ifDefined(focusable ? 0 : undefined)}
+        aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
+        aria-expanded=${ifDefined(opensMenu ? this.#groupMenu.open && this.#groupMenu.column === column ? 'true' : 'false' : undefined)}
+        aria-keyshortcuts=${ifDefined(menu && sortable ? 'Shift+F10' : undefined)}
         aria-label=${ifDefined(sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : undefined)}
         @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
         @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
-        @keydown=${sortable
-          ? (event: KeyboardEvent) => {
-            if (isActivationKey(event) && !event.repeat) {
-              event.preventDefault();
-              this.#onGroupChipActivate(column, event);
-            }
-          }
-          : nothing}>
+        @keydown=${focusable ? onKeyDown : nothing}>
         <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
       </div>`;
   }
+
+  #focusAfterUngroup(chipIndex: number): void {
+    const chips = [...this.renderRoot.querySelectorAll<HTMLElement>('.group[tabindex]')];
+    const target = chips[Math.min(chipIndex, chips.length - 1)]
+      ?? this.renderRoot.querySelector<HTMLElement>('th.header-column[tabindex]');
+
+    target?.focus();
+  }
+
+  /** Clique direito no painel (num chip: com "Desagrupar" desta coluna). */
+  readonly #onGroupPanelContextMenu = (event: MouseEvent): void => {
+    if (!this.groupPanelMenu || !this._groupColumns.length) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const chip = event.composedPath().find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
+    const column = chip ? this._nativeColumnMap.get(chip) ?? null : null;
+
+    this.#groupMenu.show({ column, returnFocus: chip ?? null, x: event.clientX, y: event.clientY });
+  };
+
+  #renderGroupPanelMenu() {
+    return renderGroupPanelMenu({
+      translation: this.#translation,
+      column: this.#groupMenu.column,
+      onAction: this.#onGroupMenuAction,
+      onKeyDown: this.#groupMenu.onKeyDown,
+    });
+  }
+
+  readonly #onGroupMenuAction = (action: GroupPanelMenuAction): void => {
+    const column = this.#groupMenu.column;
+    const ungroups = action === 'ungroupColumn' || action === 'ungroupAll';
+    const chipIndex = column ? this._groupColumns.indexOf(column) : 0;
+    // Desagrupar tira o chip que tinha o foco: o foco vai ao chip vizinho (ou ao 1º cabeçalho).
+    this.#groupMenu.hide(!ungroups);
+
+    if (ungroups) {
+      void this.updateComplete.then(() => this.#focusAfterUngroup(chipIndex));
+    }
+
+    switch (action) {
+      case 'ungroupColumn':
+        if (column && this._groupColumns.includes(column)) {
+          this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
+        }
+
+        break;
+      case 'ungroupAll':
+        this.#ungroupAll('user');
+        break;
+      case 'expandAllGroups':
+        this.#setAllExpanded(true, undefined, 'user');
+        break;
+      case 'collapseAllGroups':
+        this.#setAllExpanded(false, undefined, 'user');
+        break;
+    }
+  };
 
   #renderColumnChooser() {
     const visibleCount = this._visibleColumns.length;
@@ -2007,5 +2689,6 @@ declare global {
     'u-grid-column-reorder': CustomEvent<GridColumnReorderEventDetail>;
     'u-grid-column-fixed-change': CustomEvent<GridColumnFixedChangeEventDetail>;
     'u-grid-group-change': CustomEvent<GridGroupEventDetail>;
+    'u-grid-group-expansion-change': CustomEvent<GridGroupExpansionChangeEventDetail>;
   }
 }

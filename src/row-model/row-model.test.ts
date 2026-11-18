@@ -100,7 +100,7 @@ describe('flattenRows', () => {
 
   it('sem grupos: uma linha por item, com índice para a listra', () => {
     const rows = flattenRows([{ id: 1 }, { id: 2 }], [], () => true, keyOf).slice();
-    expect(rows.map(r => [r.key, !r.isGroup && r.index])).toEqual([['d:1', 0], ['d:2', 1]]);
+    expect(rows.map(r => [r.key, !r.isGroup && !r.isFooter && r.index])).toEqual([['d:1', 0], ['d:2', 1]]);
   });
 
   it('respeita a expansão por chave e reinicia o índice em cada grupo', () => {
@@ -110,7 +110,7 @@ describe('flattenRows', () => {
 
     const rows = flattenRows(items, groups, key => expanded.has(key), keyOf).slice();
 
-    expect(rows.map(r => r.isGroup ? `G${r.value}` : `${r.item.id}/${r.index}`))
+    expect(rows.map(r => r.isGroup ? `G${r.value}` : r.isFooter ? 'F' : `${r.item.id}/${r.index}`))
       .toEqual(['Ga', 'Gb', '2/0', '3/1']);
   });
 
@@ -129,7 +129,7 @@ describe('flattenRows', () => {
 
     expect(rows.length).toBe(100_003);
     expect(rows.at(0).isGroup).toBe(true);
-    expect(last.isGroup || [last.item.id, last.index]).toEqual([99_998, 33_332]);
+    expect(last.isGroup || last.isFooter || [last.item.id, last.index]).toEqual([99_998, 33_332]);
     expect(rows.at(33_335).isGroup).toBe(true);
   });
 });

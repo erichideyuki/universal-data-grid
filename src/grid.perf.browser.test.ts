@@ -394,10 +394,83 @@ const hugeScenario = (rows: number, label: string) => {
   });
 };
 
+/**
+ * Frente 07: resumos (totais + 3 de grupo, um por posição) e agrupar por
+ * faixa (`groupValueGetter`); expandir/recolher tudo pela API nova.
+ */
+const summaryScenario = (rows: number, label: string) => {
+  it(`${label} linhas com resumos e faixa: resumir, agrupar, expandir/recolher tudo, rolar`, async () => {
+    let items: object[] | undefined = makeItems(rows);
+    const heapBefore = await heapMiB();
+    const columns = makeColumns().map(column => column.path === 'amount'
+      ? { ...column, groupValueGetter: (item: { amount: number }) => Math.floor(item.amount / 1000) * 1000 }
+      : column);
+    const summary = {
+      total: [
+        { column: 'amount', type: 'sum' as const },
+        { column: 'amount', type: 'avg' as const },
+        { column: 'id', type: 'count' as const },
+        { column: 'date', type: 'max' as const },
+      ],
+      group: [
+        { column: 'amount', type: 'sum' as const },
+        { column: 'quantity', type: 'max' as const, display: 'column' as const },
+        { column: 'price', type: 'avg' as const, display: 'footer' as const },
+      ],
+    };
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, columns);
+    const column = (name: string) => byLabel(grid, name);
+
+    const summarize = await interaction('summary', grid, () => grid.summary = { ...summary }, () => grid.summary = null);
+    const group = await interaction('groupSummary', grid, () => grid.groupColumn(column('Country')), () => grid.ungroupColumn(column('Country')));
+    const range = await interaction(
+      'groupRange',
+      grid,
+      () => grid.groupColumn(column('Amount'), 1),
+      () => grid.ungroupColumn(column('Amount')),
+    );
+    const expand = await interaction('expandAllGroups', grid, () => grid.expandAllGroups(), () => grid.collapseAllGroups());
+    const scroll = await scrollMetrics(grid);
+    const nodes = domNodes(grid);
+    const collapse = await interaction('collapseAllGroups', grid, () => grid.collapseAllGroups(), () => grid.expandAllGroups());
+    const replace = await interaction('replaceItems', grid, () => grid.items = [...items!], () => undefined);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+    const [sum, , count] = grid.getSummaryValues();
+
+    expect(count.value).toBe(rows);
+    expect(sum.value).toBeGreaterThan(0);
+    expect(grid.shadowRoot!.querySelector('tfoot .total-row')).not.toBeNull();
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...summarize,
+      ...group,
+      ...range,
+      ...expand,
+      ...scroll,
+      ...collapse,
+      ...replace,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`summaries-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
   flatScenario(1_000_000, '1m');
   groupedScenario(1_000_000, '1m');
+  summaryScenario(1_000_000, '1m');
   hugeScenario(5_000_000, '5m');
 });

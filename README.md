@@ -21,6 +21,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Data types & formatting](#data-types--formatting)
 - [Sorting](#sorting)
 - [Grouping](#grouping)
+- [Summaries](#summaries) (totals and group summaries)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Custom cell rendering](#custom-cell-rendering)
 - [Internationalization (i18n)](#internationalization-i18n)
@@ -40,8 +41,13 @@ React, Vue, Svelte — or with no framework at all.
   maximum element height, the scroll range is scaled).
 - **Sorting** — click a header to sort, Shift+click to sort by several columns, stable and fast
   (100,000 rows in under 200 ms), with keyboard and screen reader support.
-- **Grouping** — group by one or more columns, with expand/collapse, multi-level nesting and an
-  optional auto-expand mode. Group interactively by dragging a column header into the header bar.
+- **Grouping** — group by one or more columns (or by ranges: decade, initial letter), with
+  expand/collapse (also all at once, by API or from the group panel menu), row counts,
+  multi-level nesting and an expansion state that survives new data. Group interactively by
+  dragging a column header into the header bar.
+- **Summaries** — totals in a footer fixed at the bottom and per-group summaries (`sum`, `min`,
+  `max`, `avg`, `count` or your own function), in the group row, under the columns or in a group
+  footer. Computed in the same pass as the grouping (a million rows in a few hundred ms).
 - **Data types & formatting** — number, date, date-time and boolean columns formatted with `Intl`
   in the grid's language, with per-column `format`, `alignment`, computed values and empty text.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
@@ -261,6 +267,10 @@ interface GridColumnDef<TItem = any> {
   visible?: boolean | null;
   /** `false` hides the column from the column chooser. Default `true`. */
   showInChooser?: boolean | null;
+  /** Value to GROUP by instead of the cell value (a range: decade, initial letter) — see "Grouping". */
+  groupValueGetter?: ((item: TItem) => unknown) | null;
+  /** Lets the user group by this column. Default: true when it has a `path`, `valueGetter` or `groupValueGetter`. */
+  groupable?: boolean | null;
 }
 ```
 
@@ -269,8 +279,8 @@ interface GridColumnDef<TItem = any> {
 `<u-grid-column>` (class `DataGridColumn`) has the same options with the same property names. The
 primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
 is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
-with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `show-in-chooser="false"`,
-`wrap="false"`.
+with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `groupable="false"`,
+`show-in-chooser="false"`, `wrap="false"`.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -440,15 +450,35 @@ grid.columns = [
   order for the grid language (`item 2` before `item 10`); empty values come first. Click the group
   chip to reverse the order — see [Sorting](#sorting).
 - **Expand / collapse** — click the chevron on a group row (it is a button, so `Tab` + `Enter`/`Space`
-  work too). The expanded state survives replacing `items`. Use the `auto-expand-groups` attribute
-  to render groups expanded by default:
+  work too), or use the group panel menu (below). The expanded state is kept per group (by its
+  values) when `items` are replaced or sorted. `auto-expand-groups` renders groups expanded by
+  default; it is the *initial* default — changing it later resets the expansion state:
 
   ```html
   <u-grid auto-expand-groups></u-grid>
   ```
 
-- **Group row label** — rendered as `` `${columnLabel}${separator}${value}` ``. The separator is
-  translatable (`groupLabelSeparator`), e.g. `": "` in English, `"：" ` in Japanese.
+- **Group row label** — rendered as `` `${columnLabel}${separator}${value} (${count})` ``. The
+  separator is translatable (`groupLabelSeparator`), e.g. `": "` in English, `"：" ` in Japanese.
+  The count (`show-group-count="false"` hides it) and the inline group summaries go inside
+  `groupInfoText` (`"(3, Sum of Population: 1,234)"`, `::part(group-count)`).
+- **Group by range** — `groupValueGetter(item)` returns the value to group by (a decade, the
+  initial letter, a size bucket). Groups are identified, sorted and shown by that value; the
+  column `dataType`, `comparator`, `format` and `displayValue` do not apply to it (numbers are
+  shown without thousands separators, so a year stays `1990`):
+
+  ```ts
+  { path: 'year', label: 'Year', groupValueGetter: item => Math.floor(item.year / 10) * 10 }
+  { path: 'name', label: 'Name', groupValueGetter: item => item.name[0].toUpperCase() }
+  ```
+
+- **Group panel menu** — right-click a group chip (or focus it and press `Shift+F10` / the context
+  menu key; `Enter` too when the chip does not sort) for *Ungroup*, *Ungroup all*, *Expand all
+  groups* and *Collapse all groups*. Arrow keys and `Home`/`End` move, `Esc` closes and returns
+  the focus. `group-panel-menu="false"` disables it.
+- **Who can group** — `groupable: false` (attribute `groupable="false"`) keeps the user from
+  dropping a column on the group panel; `groupColumn()` still works. By default columns without a
+  value (no `path`, `valueGetter` or `groupValueGetter` — e.g. action columns) are not groupable.
 
 ### Programmatic grouping / reordering
 
@@ -462,9 +492,80 @@ grid.moveColumn(column, targetIndex);  // reorder a regular column (ungroups a g
 
 All accept a `GridColumnDef` (or a `<u-grid-column>` element) already known to the grid.
 
+### Expanding groups
+
+A group is identified by its *group path*: its values from the outermost level, compared as when
+grouping (`10` and `"10"` are the same group in a column with `dataType: 'number'`; with
+`groupValueGetter`, the range value).
+
+```ts
+grid.expandGroup(['Brazil']);          // one group (not its parents)
+grid.expandGroup(['Brazil', 'SP']);    // a nested group
+grid.collapseGroup(['Brazil']);
+grid.isGroupExpanded(['Brazil']);      // true / false
+grid.expandAllGroups();                // every level…
+grid.collapseAllGroups(1);             // …or one grouping level (0 = outermost)
+```
+
+`expandAllGroups`/`collapseAllGroups` also apply to groups that appear later (new `items`), until
+the next `expandAllGroups`/`collapseAllGroups` call or a change of `auto-expand-groups` (which
+fires no event). `expandGroup`/`collapseGroup` need the grouping set (at least as many grouped
+columns as values in the path; otherwise they are ignored); for a group with no rows yet the state
+is kept — and the event fires — for when it appears.
+
+`u-grid-group-expansion-change` fires when a group's state changed, by the chevron, the menu or
+these methods: `detail` is `{ groupPath, groupIndex, expanded, source }`; `groupPath` is `null`
+for `expandAllGroups`/`collapseAllGroups` (`groupIndex` `null` = every level).
+
 `u-grid-group-change` fires after the grouping changed, by drag and drop or by these methods:
 `detail` is `{ grouping: GridColumnDef[]; previous: GridColumnDef[]; source: 'user' | 'api' }`.
 Initial grouping (and changing `groupIndex` on a column) fires nothing.
+
+---
+
+## Summaries
+
+Set `summary` (property only) with `total` items (a footer fixed at the bottom of the grid, under
+their columns) and/or `group` items (per group):
+
+```ts
+grid.summary = {
+  total: [
+    { column: 'country', type: 'count' },
+    { column: 'population', type: 'sum' },
+    { column: 'updatedAt', type: 'max', label: 'Last update' },
+  ],
+  group: [
+    { column: 'population', type: 'sum' },                       // in the group row text
+    { column: 'population', type: 'max', display: 'column' },    // in the group row, under the column
+    { column: 'population', type: 'avg', display: 'footer' },    // in a footer row after the group
+  ],
+};
+```
+
+| Option | Description |
+| ------ | ----------- |
+| `column` | The column: its `path` (first column with it) or the column object / `<u-grid-column>`. Values are read like the cells (`valueGetter` or `path`), and the summary is shown under it. |
+| `type` | `'sum'`, `'min'`, `'max'`, `'avg'`, `'count'` or `(values, items) => unknown`. `sum`/`avg` ignore empty and non-numeric values (the average divides by the values, not the rows); `min`/`max` compare in the column type (dates, text in the grid language); `count` counts rows. Without values: `sum` is `0`, the others empty. |
+| `label` | Replaces the aggregate name: `"Total: 1,234"`. A custom function without `label` shows the value alone (and `"{column}: {value}"` in the group row text). |
+| `format` | `Intl` options or `(value) => string`. Default: the column `format` when it is `Intl` options (a formatter function is not inherited); `count` uses the integer format. `min`/`max` look like the cells; `sum`/`avg` use thousands separators and up to 2 decimals. |
+| `name` | Identifies the item in `getSummaryValues()`. |
+| `display` | Group items only: `'inline'` (default, in the group row text), `'column'` (in the group row under its column; the label spans the columns before it) or `'footer'` (a footer row after the group items, while expanded). |
+
+- Totals and group summaries are recomputed when `items`, the grouping or `summary` change, over
+  the rows the grid shows. Group summaries are computed in the same pass that builds the groups.
+- A summary whose column is hidden or grouped gets no cell: `inline`/`column` group items fall
+  back to the group row text; `footer` items and totals are not shown.
+- Text: `summaryText` (`"Sum: 1,234"`) in cells; `summaryColumnText` (`"Sum of Population:
+  1,234"`) in the group row text and as the accessible label of every summary cell. Names come from
+  `summarySum`, `summaryMin`, … — all translated in the 14 languages.
+- `getSummaryValues()` returns the totals and `getSummaryValues(groupPath)` the summaries of a
+  group, as `{ item, value, text }[]` (empty if the group does not exist).
+- Styling: `::part(summary-row)` (totals footer and group footers), `::part(total-row)`,
+  `::part(group-footer-row)`, `::part(summary-cell)`, `--u-grid-summary-background-color` and
+  `--u-grid-summary-cell-font-weight`.
+- Accessibility: the totals footer is a `rowgroup` of its own (`<tfoot>`) with a `row`, counted
+  in `aria-rowcount`; every summary cell is a `gridcell` with the full label.
 
 ---
 
@@ -676,6 +777,19 @@ interface GridI18n {
   fixEnd: string;              // "fix to the end" toggle in the chooser
   unfix: string;               // hint of a pressed fix toggle
   autoSize: string;            // resize handle hint (double-click to auto-size)
+  summarySum: string;          // "Sum"
+  summaryMin: string;          // "Min"
+  summaryMax: string;          // "Max"
+  summaryAvg: string;          // "Avg"
+  summaryCount: string;        // "Count"
+  summaryText: string;         // summary cell: "{type}: {value}"
+  summaryColumnText: string;   // group row text / accessible label: "{type} of {column}: {value}"
+  groupInfoText: string;       // count and inline summaries in the group row: "({info})"
+  ungroupColumn: string;       // group panel menu: "Ungroup"
+  ungroupAll: string;          // "Ungroup all"
+  expandAllGroups: string;     // "Expand all groups"
+  collapseAllGroups: string;   // "Collapse all groups"
+  groupPanelMenu: string;      // accessible name of the group panel menu
 }
 ```
 
@@ -698,7 +812,10 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `items`            | *(property only)*     | `any[]`   | `[]`    | Row data (never mutated). |
 | `columns`          | *(property only)*     | `GridColumnDef[]` | `[]` | Column definitions (alternative to `<u-grid-column>`). |
 | `language`         | `language`            | `string`  | *auto*  | i18n language. See [i18n](#internationalization-i18n). |
-| `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default. |
+| `summary`          | *(property only)*     | `GridSummary \| null` | `null` | Totals and group summaries. See [Summaries](#summaries). |
+| `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default (initial default; changing it resets the expansion state). |
+| `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
+| `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Context menu of the group panel (ungroup, expand/collapse all). |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
 | `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
@@ -764,6 +881,8 @@ blends into that design system automatically when present.
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
+| `--u-grid-summary-background-color` | header background | Background of the totals footer and group footers (opaque: the footer covers the rows). |
+| `--u-grid-summary-cell-font-weight` | `500` | Font weight of summary cells. |
 
 ```css
 u-grid {
@@ -781,7 +900,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 
 | Part | Description |
 | ---- | ----------- |
-| `row` | Every rendered row (`<tr>`). |
+| `row` | Every body row (`<tr>`; not the header nor the totals footer). |
 | `group-row` | Group header rows. |
 | `odd` / `even` | Data rows, by parity (the first data row is `odd`; useful with striping). |
 | `cell` | Data cells (`<td>`). |
@@ -790,6 +909,12 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
 | `group-chip` | Group chips in the grouping bar. |
 | `column-chooser` | The column chooser popover. |
+| `summary-row` | Rows with summaries: the totals footer and group footers. |
+| `total-row` | The totals footer row. |
+| `group-footer-row` | Group footer rows (summaries with `display: 'footer'`). |
+| `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
+| `group-count` | Count and inline summaries in a group row. |
+| `group-panel-menu` | The group panel context menu. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -868,7 +993,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -880,6 +1005,10 @@ CSS property and part for IDEs and tooling.
 | `groupColumn(column, targetIndex?)` | Group by `column` at level `targetIndex` (default: innermost); moves an already grouped column. |
 | `ungroupColumn(column)` | Remove `column` from the grouping (it goes to the end of the regular columns). |
 | `getGrouping()` | Grouped columns, outermost first. |
+| `expandAllGroups(groupIndex?)` / `collapseAllGroups(groupIndex?)` | Expand / collapse every group of a level (every level without it), also groups that appear later. |
+| `expandGroup(groupPath)` / `collapseGroup(groupPath)` | Expand / collapse one group (`['Brazil', 'SP']`). |
+| `isGroupExpanded(groupPath)` | Whether a group is (or would be) expanded. |
+| `getSummaryValues(groupPath?)` | Computed totals, or the summaries of a group: `{ item, value, text }[]`. |
 | `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex` (kept inside its fixed/regular block); ungroups a grouped column. |
 | `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
 | `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
@@ -894,6 +1023,7 @@ All bubble and are `composed`.
 | `u-grid-sorting` | `GridSortEventDetail` | yes | Before the sort changes. Cancelable. |
 | `u-grid-sort-change` | `GridSortEventDetail` | yes | After the sort changed. |
 | `u-grid-group-change` | `GridGroupEventDetail` | yes | After the grouping changed. |
+| `u-grid-group-expansion-change` | `GridGroupExpansionChangeEventDetail` | yes | After groups were expanded or collapsed (chevron, menu or API); only when the state changed. |
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
@@ -925,6 +1055,16 @@ import {
   type GridChangeSource,    // 'user' | 'api'
   type GridSortEventDetail, // { sorting, previous, source }
   type GridGroupEventDetail, // { grouping, previous, source }
+  type GridGroupExpansionChangeEventDetail, // { groupPath, groupIndex, expanded, source }
+  type GridGroupPath,       // readonly unknown[] — group values from the outermost level
+  type GridColumnRef,       // string (path) | GridColumnDef
+  type GridSummary,         // { total?: GridSummaryItem[]; group?: GridGroupSummaryItem[] }
+  type GridSummaryItem,     // { column, type, label?, format?, name? }
+  type GridGroupSummaryItem, // GridSummaryItem + display?: 'inline' | 'column' | 'footer'
+  type GridSummaryType,     // 'sum' | 'min' | 'max' | 'avg' | 'count'
+  type GridSummaryAggregator, // (values, items) => unknown
+  type GridSummaryFormat,   // Intl options or (value) => string
+  type GridSummaryValue,    // { item, value, text }
   type GridColumnResizeEventDetail,
   type GridColumnVisibilityChangeEventDetail,
   type GridColumnFixedChangeEventDetail,

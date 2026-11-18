@@ -1,6 +1,6 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
-import type { GridColumnDef } from '../src/grid-column-def';
+import type { GridColumnDef, GridSummary } from '../src/grid-column-def';
 
 import { DataGrid } from '../src/grid';
 
@@ -44,6 +44,20 @@ const baseColumns: GridColumnDef[] = [
     dataType: 'boolean',
   },
 ];
+
+/** Totais no rodapé e resumos por grupo (frente 07). */
+const demoSummary: GridSummary = {
+  total: [
+    { column: 'code', type: 'count' },
+    { column: 'population', type: 'sum' },
+    { column: 'year', type: 'max' },
+  ],
+  group: [
+    { column: 'population', type: 'max', display: 'column' },
+    { column: 'year', type: 'min' },
+    { column: 'population', type: 'sum', display: 'footer' },
+  ],
+};
 
 /** Demo largo: 2 colunas fixas no início, 1 no fim e métricas sintéticas. */
 const wideColumns = (count: number): GridColumnDef[] => [
@@ -168,6 +182,7 @@ export class DevRoot extends LitElement {
           column-resizing
           column-chooser
           .columns=${this.#columns}
+          .summary=${demoSummary}
           .items=${this.#items}>
         </u-grid>
       </div>

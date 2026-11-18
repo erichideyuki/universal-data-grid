@@ -63,14 +63,24 @@ const root = (grid: DataGrid): ShadowRoot => grid.shadowRoot!;
 export const headerLabels = (grid: DataGrid): string[] =>
   [...root(grid).querySelectorAll('th.header-column')].map(th => th.textContent.trim());
 
+/** Rótulo das linhas de grupo, sem a contagem/resumos (`groupInfos`). */
 export const groupLabels = (grid: DataGrid): string[] =>
-  [...root(grid).querySelectorAll('.grouping-cell')].map(td => td.textContent.trim());
+  [...root(grid).querySelectorAll('.grouping-cell')].map(td => {
+    const info = td.querySelector('.group-info')?.textContent ?? '';
+    const text = td.textContent;
+
+    return (info ? text.slice(0, text.lastIndexOf(info)) : text).trim();
+  });
+
+/** Contagem e resumos `inline` das linhas de grupo (`"(3)"`). */
+export const groupInfos = (grid: DataGrid): string[] =>
+  [...root(grid).querySelectorAll('.grouping-cell')].map(td => td.querySelector('.group-info')?.textContent.trim() ?? '');
 
 export const bodyRows = (grid: DataGrid): HTMLTableRowElement[] =>
   [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr[role=row]')];
 
 export const dataRows = (grid: DataGrid): HTMLTableRowElement[] =>
-  bodyRows(grid).filter(tr => !tr.classList.contains('group-row'));
+  bodyRows(grid).filter(tr => !tr.classList.contains('group-row') && !tr.classList.contains('summary-row'));
 
 export const groupToggles = (grid: DataGrid): HTMLElement[] =>
   [...root(grid).querySelectorAll<HTMLElement>('button.group-toggle')];

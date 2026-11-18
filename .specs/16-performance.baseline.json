@@ -86,5 +86,20 @@
     "grouped.jumpWorstMs": 18.9,
     "domNodes": 223,
     "gridHeapMiB": 47
+  },
+  "summaries-1m": {
+    "firstRenderMs": 45.5,
+    "summaryMs": 301.1,
+    "groupSummaryMs": 379.5,
+    "groupRangeMs": 625.7,
+    "expandAllGroupsMs": 21.6,
+    "scrollP95Ms": 9.4,
+    "scrollWorstMs": 9.9,
+    "jumpP95Ms": 31.1,
+    "jumpWorstMs": 32.1,
+    "collapseAllGroupsMs": 15.6,
+    "replaceItemsMs": 956.1,
+    "domNodes": 619,
+    "gridHeapMiB": 14.3
   }
 }

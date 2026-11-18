@@ -182,11 +182,19 @@
             {
               "description": "Column chooser corner radius. Default `12px`.",
               "name": "--u-grid-column-chooser-shape"
+            },
+            {
+              "description": "Background of the totals footer and group footers. Default: the header background.",
+              "name": "--u-grid-summary-background-color"
+            },
+            {
+              "description": "Font weight of summary cells. Default `500`.",
+              "name": "--u-grid-summary-cell-font-weight"
             }
           ],
           "cssParts": [
             {
-              "description": "Every rendered row (`<tr>`).",
+              "description": "Every body row (`<tr>`; not the header nor the totals footer).",
               "name": "row"
             },
             {
@@ -224,6 +232,30 @@
             {
               "description": "The column chooser popover.",
               "name": "column-chooser"
+            },
+            {
+              "description": "Rows with summaries: the totals footer and group footers.",
+              "name": "summary-row"
+            },
+            {
+              "description": "The totals footer row.",
+              "name": "total-row"
+            },
+            {
+              "description": "Group footer rows (summaries with `display: 'footer'`).",
+              "name": "group-footer-row"
+            },
+            {
+              "description": "Cells with summaries (footers and `display: 'column'` in group rows).",
+              "name": "summary-cell"
+            },
+            {
+              "description": "Count and inline summaries in a group row (`\"(3, Sum of Population: 1,234)\"`).",
+              "name": "group-count"
+            },
+            {
+              "description": "The group panel context menu.",
+              "name": "group-panel-menu"
             }
           ],
           "slots": [
@@ -240,8 +272,16 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Groups start expanded.",
+              "description": "Groups start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandGroup`, `expandAllGroups`…); changing it resets that state.",
               "attribute": "auto-expand-groups"
+            },
+            {
+              "kind": "field",
+              "name": "summary",
+              "type": {
+                "text": "GridSummary | null"
+              },
+              "description": "Totals (footer fixed at the bottom) and group summaries (property only).\nRecomputed when the data, the grouping or the summary changes."
             },
             {
               "kind": "field",
@@ -337,6 +377,26 @@
               "default": "false",
               "description": "Vertical column separators.",
               "attribute": "show-column-lines"
+            },
+            {
+              "kind": "field",
+              "name": "showGroupCount",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Shows the number of rows in group rows (`\"Country: Brazil (3)\"`). Default `true`; `show-group-count=\"false\"` hides it.",
+              "attribute": "show-group-count"
+            },
+            {
+              "kind": "field",
+              "name": "groupPanelMenu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
+              "attribute": "group-panel-menu"
             },
             {
               "kind": "field",
@@ -542,6 +602,117 @@
             },
             {
               "kind": "method",
+              "name": "expandAllGroups",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupIndex",
+                  "optional": true,
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ],
+              "description": "Expands every group of grouping level `groupIndex` (0-based), or of\nevery level without it. Also applies to groups that appear later\n(new data, filter), until the next `expandAllGroups`/`collapseAllGroups`\ncall or a change of `autoExpandGroups` (which fires no event)."
+            },
+            {
+              "kind": "method",
+              "name": "collapseAllGroups",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupIndex",
+                  "optional": true,
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ],
+              "description": "Collapses every group of level `groupIndex`, or of every level without it. See `expandAllGroups`."
+            },
+            {
+              "kind": "method",
+              "name": "expandGroup",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupPath",
+                  "type": {
+                    "text": "GridGroupPath"
+                  }
+                }
+              ],
+              "description": "Expands one group (not its parents). `groupPath` = the group values from\nthe outermost level, e.g. `['Brazil', 'SP']`, compared as when grouping.\nNeeds the grouping set (at least `groupPath.length` grouped columns),\notherwise it is ignored; a group that has no rows yet keeps the state\n(and the event fires) for when it appears."
+            },
+            {
+              "kind": "method",
+              "name": "collapseGroup",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupPath",
+                  "type": {
+                    "text": "GridGroupPath"
+                  }
+                }
+              ],
+              "description": "Collapses one group (`groupPath` as in `expandGroup`)."
+            },
+            {
+              "kind": "method",
+              "name": "isGroupExpanded",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupPath",
+                  "type": {
+                    "text": "GridGroupPath"
+                  }
+                }
+              ],
+              "description": "Whether the group of `groupPath` is (or would be) expanded."
+            },
+            {
+              "kind": "method",
+              "name": "getSummaryValues",
+              "return": {
+                "type": {
+                  "text": "GridSummaryValue[]"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "groupPath",
+                  "optional": true,
+                  "type": {
+                    "text": "GridGroupPath"
+                  }
+                }
+              ],
+              "description": "Computed summaries: the totals (`summary.total`) or, with `groupPath`,\nthe summaries of that group (`summary.group`; empty if the group does\nnot exist)."
+            },
+            {
+              "kind": "method",
               "name": "moveColumn",
               "return": {
                 "type": {
@@ -639,6 +810,13 @@
           ],
           "events": [
             {
+              "name": "u-grid-group-expansion-change",
+              "type": {
+                "text": "CustomEvent<GridGroupExpansionChangeEventDetail>"
+              },
+              "description": "After groups were expanded or collapsed (user or API)."
+            },
+            {
               "name": "u-grid-group-change",
               "type": {
                 "text": "CustomEvent<GridGroupEventDetail>"
@@ -695,7 +873,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Groups start expanded.",
+              "description": "Groups start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandGroup`, `expandAllGroups`…); changing it resets that state.",
               "fieldName": "autoExpandGroups"
             },
             {
@@ -768,6 +946,24 @@
               "default": "false",
               "description": "Vertical column separators.",
               "fieldName": "showColumnLines"
+            },
+            {
+              "name": "show-group-count",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Shows the number of rows in group rows (`\"Country: Brazil (3)\"`). Default `true`; `show-group-count=\"false\"` hides it.",
+              "fieldName": "showGroupCount"
+            },
+            {
+              "name": "group-panel-menu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
+              "fieldName": "groupPanelMenu"
             },
             {
               "name": "column-resizing",
@@ -933,6 +1129,30 @@
         },
         {
           "kind": "js",
+          "name": "GridColumnRef",
+          "declaration": {
+            "name": "GridColumnRef",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridGroupPath",
+          "declaration": {
+            "name": "GridGroupPath",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridGroupSummaryItem",
+          "declaration": {
+            "name": "GridGroupSummaryItem",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
           "name": "GridSort",
           "declaration": {
             "name": "GridSort",
@@ -944,6 +1164,54 @@
           "name": "GridSortOrder",
           "declaration": {
             "name": "GridSortOrder",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummary",
+          "declaration": {
+            "name": "GridSummary",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummaryAggregator",
+          "declaration": {
+            "name": "GridSummaryAggregator",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummaryFormat",
+          "declaration": {
+            "name": "GridSummaryFormat",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummaryItem",
+          "declaration": {
+            "name": "GridSummaryItem",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummaryType",
+          "declaration": {
+            "name": "GridSummaryType",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridSummaryValue",
+          "declaration": {
+            "name": "GridSummaryValue",
             "module": "dist/grid-column-def.js"
           }
         },
@@ -1243,6 +1511,25 @@
             },
             {
               "kind": "field",
+              "name": "groupValueGetter",
+              "type": {
+                "text": "((item: any) => unknown) | null"
+              },
+              "default": "null",
+              "description": "Value used to GROUP by this column (a range or bucket: decade, initial\nletter), property only. Groups are identified, sorted and shown by the\nreturned value; `dataType`, `comparator`, `format` and `displayValue` do\nnot apply to it."
+            },
+            {
+              "kind": "field",
+              "name": "groupable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows the user to group by this column (`groupable=\"false\"` prevents\nit). Default: `true` when it has a `path`, `valueGetter` or\n`groupValueGetter`. Only limits the user: `groupColumn()` still works.",
+              "attribute": "groupable"
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
@@ -1402,6 +1689,15 @@
               "default": "null",
               "description": "Priority of the initial sort among columns (lower first).",
               "fieldName": "sortIndex"
+            },
+            {
+              "name": "groupable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows the user to group by this column (`groupable=\"false\"` prevents\nit). Default: `true` when it has a `path`, `valueGetter` or\n`groupValueGetter`. Only limits the user: `groupColumn()` still works.",
+              "fieldName": "groupable"
             },
             {
               "name": "data-type",

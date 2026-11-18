@@ -52,7 +52,7 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 13 | `WeakMap`s de módulo: chave de linha por objeto (`objectKeys`) e id de coluna (`columnIds`); `_nativeColumnMap` por instância | `grid.ts` | OK | Fracas: somem com o item/coluna/elemento. Os contadores (`nextObjectKey`, `nextColumnId`) são números. |
 | 14 | `div`s das células customizadas no light DOM do grid + `queueMicrotask` | `grid-custom-cell.ts` | OK | A célula que sai do DOM remove o próprio `div` no microtask seguinte (se não foi reconectada pelo `repeat`/`keyedRows`). O microtask é transitório. |
 | 15 | `#groups`/`#rows`/`#dataTypes`/`#columnViews` (seguram `items` e colunas) | `grid.ts` | OK | Refeitos no render seguinte à troca de `items`/`columns` (o Lit continua atualizando depois de desconectado); `#dataTypes` é limpo a cada troca. |
-| 16 | `#expansion` (estado de expansão por chave de grupo, sobrevive à troca de dados — B14) | `grid.ts` | L | Só cresce com cliques do usuário em grupos distintos; não cresce com dados. Some com o grid. |
+| 16 | `#expansion` (estado de expansão por chave de grupo, sobrevive à troca de dados — B14) | `grid.ts` | L | Frente 07: só guarda grupos fora do padrão do nível (voltar ao padrão apaga a entrada); `expandAllGroups`/`collapseAllGroups` limpam o nível (ou tudo) e mudar `autoExpandGroups` zera. Some com o grid. |
 | 17 | `setGridTranslation` (tabela de traduções) | `grid-i18n.ts` | L | Só cresce quando o hospedeiro chama, com idiomas que ele escolhe. |
 | 18 | Closures de eventos (`@pointerover`, `@slotchange`, `onToggle`, listeners do interactjs que capturam o grid) | vários | OK | Ficam em elementos do próprio grid ou em `Interactable`s soltos no `unset`. |
 | 19 | Avisos de depreciação (`#warnedDeprecations`) | `grid.ts` | OK | Por instância. |
@@ -64,6 +64,8 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 23 | Frente 06: sessão de redimensionar (listeners na alça, captura do ponteiro, colunas) | `features/resize.ts` | OK | Solta no `pointerup`/`pointercancel` e em `cancel()`, chamado no `disconnectedCallback` antes do `super` (o `ref` do contêiner ainda existe). |
 | 24 | Frente 06: `ResizeObserver` do contêiner de rolagem e listener de `scroll` (sombras das fixas) | `grid.ts` | OK | Observer desconectado no `disconnectedCallback` e recriado ao reconectar; o `scroll` fica no próprio shadow root. |
 | 25 | Frente 06: estado por coluna (`#userWidths`, `#userVisible`, `#userFixed`, `#autoWidths`, `#renderedWidths`, `#hostOptions`) — seguram colunas | `grid.ts` | L | No máximo uma entrada por coluna definida; colunas que saem de `columns` são podadas em `#syncColumns`. `_memoryStats.columnState`. |
+| 26 | Frente 07: listener `pointerdown` (captura) no `document` do menu do painel de grupos | `features/group-panel-menu.ts` | OK | Só com o menu aberto; removido ao fechar e no `hostDisconnected`. Teste em `summaries.memory.browser.test.ts` (grid removido com o menu aberto é coletado). |
+| 27 | Frente 07: resumos (`#totalSpecs`/`#groupSpecs` seguram `summary`, colunas e funções próprias; `#totals` e `GroupNode.summaries` os valores) e o separador de lista do idioma | `grid.ts`, `row-model/summary.ts` | OK | Por instância; refeitos ao trocar `summary`, `items` ou colunas. O separador é uma entrada por instância (idioma atual). |
 
 ## Medição (`src/test/leak.ts`)
 

@@ -37,6 +37,32 @@ export interface GridI18n {
   unfix: string;
   /** Tooltip of the column resize handle (double-click auto-sizes). */
   autoSize: string;
+  /** Name of the `sum` summary. */
+  summarySum: string;
+  /** Name of the `min` summary. */
+  summaryMin: string;
+  /** Name of the `max` summary. */
+  summaryMax: string;
+  /** Name of the `avg` summary. */
+  summaryAvg: string;
+  /** Name of the `count` summary. */
+  summaryCount: string;
+  /** Summary text in a cell. `{type}` = summary name (or `label`), `{value}` = formatted value. */
+  summaryText: string;
+  /** Summary text with its column (group row text and accessible label of every summary). `{type}`, `{column}`, `{value}`. */
+  summaryColumnText: string;
+  /** Count and inline summaries after the group value. `{info}` = the items joined as a list of the language. */
+  groupInfoText: string;
+  /** Group panel menu: removes the column from the grouping. */
+  ungroupColumn: string;
+  /** Group panel menu: removes every column from the grouping. */
+  ungroupAll: string;
+  /** Group panel menu: expands every group. */
+  expandAllGroups: string;
+  /** Group panel menu: collapses every group. */
+  collapseAllGroups: string;
+  /** Accessible name of the group panel menu. */
+  groupPanelMenu: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -117,6 +143,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Pin to end',
     unfix: 'Unpin',
     autoSize: 'Double-click to auto-size',
+    summarySum: 'Sum',
+    summaryMin: 'Min',
+    summaryMax: 'Max',
+    summaryAvg: 'Avg',
+    summaryCount: 'Count',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} of {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Ungroup',
+    ungroupAll: 'Ungroup all',
+    expandAllGroups: 'Expand all groups',
+    collapseAllGroups: 'Collapse all groups',
+    groupPanelMenu: 'Group options',
   },
   es: {
     noData: 'Sin datos',
@@ -135,6 +174,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Fijar al final',
     unfix: 'Desfijar',
     autoSize: 'Doble clic para ajustar al contenido',
+    summarySum: 'Suma',
+    summaryMin: 'Mín.',
+    summaryMax: 'Máx.',
+    summaryAvg: 'Prom.',
+    summaryCount: 'Recuento',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} de {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Desagrupar',
+    ungroupAll: 'Desagrupar todo',
+    expandAllGroups: 'Expandir todos los grupos',
+    collapseAllGroups: 'Contraer todos los grupos',
+    groupPanelMenu: 'Opciones de grupo',
   },
   pt: {
     noData: 'Sem dados',
@@ -153,6 +205,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Fixar no fim',
     unfix: 'Desafixar',
     autoSize: 'Clique duplo para ajustar ao conteúdo',
+    summarySum: 'Soma',
+    summaryMin: 'Mín.',
+    summaryMax: 'Máx.',
+    summaryAvg: 'Média',
+    summaryCount: 'Contagem',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} de {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Desagrupar',
+    ungroupAll: 'Desagrupar tudo',
+    expandAllGroups: 'Expandir todos os grupos',
+    collapseAllGroups: 'Recolher todos os grupos',
+    groupPanelMenu: 'Opções de grupo',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -171,6 +236,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Épingler à la fin',
     unfix: 'Désépingler',
     autoSize: 'Double-cliquez pour ajuster au contenu',
+    summarySum: 'Somme',
+    summaryMin: 'Min',
+    summaryMax: 'Max',
+    summaryAvg: 'Moy.',
+    summaryCount: 'Nombre',
+    summaryText: '{type} : {value}',
+    summaryColumnText: '{type} de {column} : {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Dégrouper',
+    ungroupAll: 'Tout dégrouper',
+    expandAllGroups: 'Développer tous les groupes',
+    collapseAllGroups: 'Réduire tous les groupes',
+    groupPanelMenu: 'Options de groupe',
   },
   de: {
     noData: 'Keine Daten',
@@ -189,6 +267,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Am Ende fixieren',
     unfix: 'Fixierung aufheben',
     autoSize: 'Doppelklicken, um die Breite anzupassen',
+    summarySum: 'Summe',
+    summaryMin: 'Min.',
+    summaryMax: 'Max.',
+    summaryAvg: 'Mittelw.',
+    summaryCount: 'Anzahl',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} von {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Gruppierung aufheben',
+    ungroupAll: 'Alle Gruppierungen aufheben',
+    expandAllGroups: 'Alle Gruppen erweitern',
+    collapseAllGroups: 'Alle Gruppen reduzieren',
+    groupPanelMenu: 'Gruppenoptionen',
   },
   it: {
     noData: 'Nessun dato',
@@ -207,6 +298,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Blocca alla fine',
     unfix: 'Sblocca',
     autoSize: 'Doppio clic per adattare al contenuto',
+    summarySum: 'Somma',
+    summaryMin: 'Min',
+    summaryMax: 'Max',
+    summaryAvg: 'Media',
+    summaryCount: 'Conteggio',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} di {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Separa',
+    ungroupAll: 'Separa tutto',
+    expandAllGroups: 'Espandi tutti i gruppi',
+    collapseAllGroups: 'Comprimi tutti i gruppi',
+    groupPanelMenu: 'Opzioni di gruppo',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -225,6 +329,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Vastzetten aan het einde',
     unfix: 'Losmaken',
     autoSize: 'Dubbelklik om aan de inhoud aan te passen',
+    summarySum: 'Som',
+    summaryMin: 'Min.',
+    summaryMax: 'Max.',
+    summaryAvg: 'Gem.',
+    summaryCount: 'Aantal',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} van {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Groepering opheffen',
+    ungroupAll: 'Alle groeperingen opheffen',
+    expandAllGroups: 'Alle groepen uitvouwen',
+    collapseAllGroups: 'Alle groepen samenvouwen',
+    groupPanelMenu: 'Groepsopties',
   },
   ru: {
     noData: 'Нет данных',
@@ -243,6 +360,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Закрепить в конце',
     unfix: 'Открепить',
     autoSize: 'Дважды щёлкните, чтобы подогнать ширину',
+    summarySum: 'Сумма',
+    summaryMin: 'Мин.',
+    summaryMax: 'Макс.',
+    summaryAvg: 'Сред.',
+    summaryCount: 'Количество',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} ({column}): {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Разгруппировать',
+    ungroupAll: 'Разгруппировать все',
+    expandAllGroups: 'Развернуть все группы',
+    collapseAllGroups: 'Свернуть все группы',
+    groupPanelMenu: 'Параметры группировки',
   },
   pl: {
     noData: 'Brak danych',
@@ -261,6 +391,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Przypnij na końcu',
     unfix: 'Odepnij',
     autoSize: 'Kliknij dwukrotnie, aby dopasować szerokość',
+    summarySum: 'Suma',
+    summaryMin: 'Min.',
+    summaryMax: 'Maks.',
+    summaryAvg: 'Średnia',
+    summaryCount: 'Liczba',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} ({column}): {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Rozgrupuj',
+    ungroupAll: 'Rozgrupuj wszystko',
+    expandAllGroups: 'Rozwiń wszystkie grupy',
+    collapseAllGroups: 'Zwiń wszystkie grupy',
+    groupPanelMenu: 'Opcje grupowania',
   },
   tr: {
     noData: 'Veri yok',
@@ -279,6 +422,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'Sona sabitle',
     unfix: 'Sabitlemeyi kaldır',
     autoSize: 'İçeriğe sığdırmak için çift tıklayın',
+    summarySum: 'Toplam',
+    summaryMin: 'En küçük',
+    summaryMax: 'En büyük',
+    summaryAvg: 'Ortalama',
+    summaryCount: 'Sayı',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{column} {type}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'Gruplamayı kaldır',
+    ungroupAll: 'Tüm gruplamaları kaldır',
+    expandAllGroups: 'Tüm grupları genişlet',
+    collapseAllGroups: 'Tüm grupları daralt',
+    groupPanelMenu: 'Grup seçenekleri',
   },
   ja: {
     noData: 'データがありません',
@@ -297,6 +453,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: '末尾に固定',
     unfix: '固定を解除',
     autoSize: 'ダブルクリックで幅を自動調整',
+    summarySum: '合計',
+    summaryMin: '最小',
+    summaryMax: '最大',
+    summaryAvg: '平均',
+    summaryCount: '件数',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{column}の{type}: {value}',
+    groupInfoText: '（{info}）',
+    ungroupColumn: 'グループ解除',
+    ungroupAll: 'すべてのグループ解除',
+    expandAllGroups: 'すべてのグループを展開',
+    collapseAllGroups: 'すべてのグループを折りたたむ',
+    groupPanelMenu: 'グループのオプション',
   },
   ko: {
     noData: '데이터 없음',
@@ -315,6 +484,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: '끝 부분에 고정',
     unfix: '고정 해제',
     autoSize: '두 번 클릭하여 너비 자동 맞춤',
+    summarySum: '합계',
+    summaryMin: '최소',
+    summaryMax: '최대',
+    summaryAvg: '평균',
+    summaryCount: '개수',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{column} {type}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: '그룹 해제',
+    ungroupAll: '모든 그룹 해제',
+    expandAllGroups: '모든 그룹 펼치기',
+    collapseAllGroups: '모든 그룹 접기',
+    groupPanelMenu: '그룹 옵션',
   },
   zh: {
     noData: '无数据',
@@ -333,6 +515,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: '固定到末尾',
     unfix: '取消固定',
     autoSize: '双击自动调整宽度',
+    summarySum: '合计',
+    summaryMin: '最小值',
+    summaryMax: '最大值',
+    summaryAvg: '平均值',
+    summaryCount: '计数',
+    summaryText: '{type}：{value}',
+    summaryColumnText: '{column}{type}：{value}',
+    groupInfoText: '（{info}）',
+    ungroupColumn: '取消分组',
+    ungroupAll: '全部取消分组',
+    expandAllGroups: '展开所有分组',
+    collapseAllGroups: '折叠所有分组',
+    groupPanelMenu: '分组选项',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -351,6 +546,19 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixEnd: 'تثبيت في النهاية',
     unfix: 'إلغاء التثبيت',
     autoSize: 'انقر نقرًا مزدوجًا لملاءمة العرض',
+    summarySum: 'المجموع',
+    summaryMin: 'الحد الأدنى',
+    summaryMax: 'الحد الأقصى',
+    summaryAvg: 'المتوسط',
+    summaryCount: 'العدد',
+    summaryText: '{type}: {value}',
+    summaryColumnText: '{type} {column}: {value}',
+    groupInfoText: '({info})',
+    ungroupColumn: 'إلغاء التجميع',
+    ungroupAll: 'إلغاء كل التجميعات',
+    expandAllGroups: 'توسيع كل المجموعات',
+    collapseAllGroups: 'طي كل المجموعات',
+    groupPanelMenu: 'خيارات التجميع',
   },
 });
 

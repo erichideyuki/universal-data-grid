@@ -1,4 +1,4 @@
-import type { DataRow, GroupNode, Row } from './types.js';
+import type { DataRow, GroupFooterRow, GroupNode, Row } from './types.js';
 
 export type RowKeyOf = (item: unknown) => string;
 
@@ -93,13 +93,15 @@ export class RowList {
 
 /**
  * Lista de linhas visíveis: grupos e, nos expandidos, os subgrupos ou os
- * itens. `isExpanded` decide por chave do grupo.
+ * itens (e, com `groupFooters`, o rodapé do grupo depois deles).
+ * `isExpanded` decide por chave e nível do grupo.
  */
 export const flattenRows = (
   items: readonly unknown[],
   groups: readonly GroupNode[],
-  isExpanded: (key: string) => boolean,
+  isExpanded: (key: string, level: number) => boolean,
   keyOf: RowKeyOf,
+  groupFooters = false,
 ): RowList => {
   const rows = new RowList(keyOf);
 
@@ -110,7 +112,7 @@ export const flattenRows = (
 
   const visit = (nodes: readonly GroupNode[]) => {
     for (const node of nodes) {
-      const expanded = isExpanded(node.key);
+      const expanded = isExpanded(node.key, node.level);
 
       rows.push({
         isGroup: true,
@@ -122,6 +124,8 @@ export const flattenRows = (
         expanded,
         itemCount: node.items.length,
         firstItem: node.items[0],
+        path: node.path,
+        summaries: node.summaries,
       });
 
       if (!expanded) {
@@ -132,6 +136,18 @@ export const flattenRows = (
         visit(node.children);
       } else {
         rows.pushItems(node.items);
+      }
+
+      if (groupFooters) {
+        rows.push({
+          isGroup: false,
+          isFooter: true,
+          key: `f:${node.key}`,
+          groupKey: node.key,
+          level: node.level,
+          path: node.path,
+          summaries: node.summaries,
+        } satisfies GroupFooterRow);
       }
     }
   };

@@ -7,14 +7,19 @@ export interface GroupNode {
   level: number;
   column: GridColumnDef;
   value: unknown;
+  /** Valores do grupo desde o 1º nível (`GridGroupPath`). */
+  path: readonly unknown[];
   /** Itens do grupo, na ordem original de `items`. */
   items: readonly unknown[];
   /** Subgrupos (vazio no último nível). */
   children: GroupNode[];
+  /** Valores dos resumos de grupo, na ordem de `summary.group`. */
+  summaries: readonly unknown[];
 }
 
 export interface GroupRow {
   isGroup: true;
+  isFooter?: false;
   key: string;
   /** Chave do nó (`GroupNode.key`), usada no estado de expansão. */
   groupKey: string;
@@ -25,14 +30,29 @@ export interface GroupRow {
   itemCount: number;
   /** 1º item do grupo — passado a `displayValue` no texto do grupo. */
   firstItem: unknown;
+  /** Valores do grupo desde o 1º nível. */
+  path: readonly unknown[];
+  summaries: readonly unknown[];
+}
+
+/** Rodapé de um grupo expandido (resumos `display: 'footer'`). */
+export interface GroupFooterRow {
+  isGroup: false;
+  isFooter: true;
+  key: string;
+  groupKey: string;
+  level: number;
+  path: readonly unknown[];
+  summaries: readonly unknown[];
 }
 
 export interface DataRow {
   isGroup: false;
+  isFooter?: false;
   key: string;
   item: any;
   /** Posição da linha dentro do bloco de dados (do grupo ou do grid) — define a listra. */
   index: number;
 }
 
-export type Row = GroupRow | DataRow;
+export type Row = GroupRow | GroupFooterRow | DataRow;

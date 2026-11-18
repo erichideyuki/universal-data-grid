@@ -159,6 +159,21 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** Custom ascending comparator: `(valueA, valueB, itemA, itemB) => number`. */
   @property({ attribute: false }) comparator: GridColumnComparator | null = null;
 
+  /**
+   * Value used to GROUP by this column (a range or bucket: decade, initial
+   * letter), property only. Groups are identified, sorted and shown by the
+   * returned value; `dataType`, `comparator`, `format` and `displayValue` do
+   * not apply to it.
+   */
+  @property({ attribute: false }) groupValueGetter: ((item: any) => unknown) | null = null;
+
+  /**
+   * Allows the user to group by this column (`groupable="false"` prevents
+   * it). Default: `true` when it has a `path`, `valueGetter` or
+   * `groupValueGetter`. Only limits the user: `groupColumn()` still works.
+   */
+  @property({ converter: optionalBoolean }) groupable: boolean | null = null;
+
   override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
     const renamed = LEGACY_ATTRIBUTES[name];
 
@@ -178,7 +193,7 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
       return;
     }
 
-    if (changed.has('path') || changed.has('valueGetter') || changed.has('dataType') || changed.has('comparator')) {
+    if (changed.has('path') || changed.has('valueGetter') || changed.has('dataType') || changed.has('comparator') || changed.has('groupValueGetter')) {
       this.#notify('value');
     } else if (changed.size) {
       this.#notify('display');

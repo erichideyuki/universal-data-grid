@@ -5,7 +5,7 @@ import { html } from 'lit';
 
 import { describe, expect, it } from 'vitest';
 
-import type { GridColumnDef } from './grid-column-def.js';
+import type { GridColumnDef, GridSummary } from './grid-column-def.js';
 
 import './grid.js';
 
@@ -54,6 +54,28 @@ describe('SSR', () => {
     expect(output).toContain('fixed-end');
     expect(output).toContain('منتقي الأعمدة');
     expect(output.match(/role="columnheader"/g)).toHaveLength(2);
+  });
+
+  it('renderiza totais, resumos e rodapé de grupo (pt e ar/RTL)', async () => {
+    const summary: GridSummary = {
+      total: [{ column: 'year', type: 'max' }, { column: 'year', type: 'count' }],
+      group: [{ column: 'year', type: 'sum' }, { column: 'year', type: 'min', display: 'footer' }],
+    };
+
+    const output = await renderToString(html`
+      <u-grid language="pt" auto-expand-groups .columns=${columns} .items=${items} .summary=${summary}></u-grid>`);
+
+    expect(output).toContain('role="rowgroup"');
+    expect(output).toContain('total-row');
+    expect(output).toContain('Contagem: 2');
+    expect(output).toContain('Máx.: 2021');
+    expect(output).toContain('Soma de Year: 2.020');
+    expect(output).toContain('group-footer-row');
+
+    const rtl = await renderToString(html`
+      <u-grid dir="rtl" language="ar" .columns=${columns} .items=${items} .summary=${summary}></u-grid>`);
+
+    expect(rtl).toContain('المجموع');
   });
 
   it('não altera os dados do hospedeiro', async () => {

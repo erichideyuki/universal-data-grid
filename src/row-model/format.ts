@@ -145,8 +145,8 @@ export const resolveAlignment = (column: GridColumnDef, dataType: GridColumnData
 // ---------------------------------------------------------------- formatadores
 
 const DEFAULT_NUMBER: Intl.NumberFormatOptions = { useGrouping: false, maximumFractionDigits: 20 };
-const DEFAULT_DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'numeric', day: 'numeric' };
-const DEFAULT_DATETIME: Intl.DateTimeFormatOptions = { ...DEFAULT_DATE, hour: 'numeric', minute: '2-digit' };
+export const DEFAULT_DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'numeric', day: 'numeric' };
+export const DEFAULT_DATETIME: Intl.DateTimeFormatOptions = { ...DEFAULT_DATE, hour: 'numeric', minute: '2-digit' };
 
 /**
  * Limite do cache de formatadores (spec 14): a chave inclui idioma e opções

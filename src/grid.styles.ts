@@ -193,7 +193,7 @@ export const styles = css`
   }
 
   /* Realce da linha de dados sob o ponteiro (\`--u-grid-row-hover-opacity: 0%\` desliga). */
-  tbody tr[role=row]:not(.group-row):hover {
+  tbody tr[role=row]:not(.group-row):not(.summary-row):hover {
     --_row-tint: color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent);
     background-color: var(--_row-tint);
   }
@@ -624,5 +624,92 @@ export const styles = css`
     border-radius: inherit;
     background-color: color-mix(in srgb, var(--u-grid-column-chooser-background-color, var(--u-color-surface-container, rgb(243, 237, 247))) 85%, transparent);
     font-weight: var(--u-font-weight-medium, 500);
+  }
+
+  /* ------------------------------------------------------------- resumos */
+
+  /* Fundo opaco: o rodapé fixo cobre as linhas que rolam por baixo. */
+  .summary-row {
+    --_summary-background: var(--u-grid-summary-background-color, var(--u-grid-header-background-color, var(--_background-color)));
+    background-color: var(--_summary-background);
+  }
+
+  .summary-row > td.fixed,
+  .summary-row > td.sticky-cell {
+    background: var(--_summary-background);
+  }
+
+  .summary-cell {
+    font-weight: var(--u-grid-summary-cell-font-weight, var(--u-font-weight-medium, 500));
+  }
+
+  /* Na linha virtual a altura é fixa: vários resumos da mesma coluna lado a lado. */
+  .summary-item + .summary-item {
+    margin-inline-start: 12px;
+  }
+
+  /* No rodapé de totais (fora do virtualizador) um por linha, como na referência. */
+  .total-footer .summary-item {
+    display: block;
+  }
+
+  .total-footer .summary-item + .summary-item {
+    margin-inline-start: 0;
+  }
+
+  .total-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+  }
+
+  .total-row {
+    box-shadow: inset 0 var(--_row-lines-height) 0 0 var(--_border-color);
+  }
+
+  .group-info {
+    opacity: 0.8;
+  }
+
+  /* ------------------------------------------------ menu do painel de grupos */
+
+  .group-panel-menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 200px;
+    max-width: calc(100vw - 16px);
+    padding: 8px 0;
+    border: none;
+    border-radius: var(--u-shape-corner-extra-small, 4px);
+    background-color: var(--u-color-surface-container, rgb(243, 237, 247));
+    color: var(--u-color-on-surface, rgb(29, 27, 32));
+    box-shadow: 0 2px 6px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 15%, transparent), 0 1px 2px color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 30%, transparent);
+    font: inherit;
+    z-index: 2100;
+  }
+
+  .group-panel-menu-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 40px;
+    padding-inline: 16px;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .group-panel-menu-item:hover,
+  .group-panel-menu-item:focus-visible {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .group-panel-menu-item:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
   }
 `;
