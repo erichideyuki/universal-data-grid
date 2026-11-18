@@ -26,7 +26,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
-- [Custom cell rendering](#custom-cell-rendering)
+- [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Appearance & behavior](#appearance--behavior)
 - [Theming (CSS custom properties & parts)](#theming)
@@ -68,7 +68,9 @@ React, Vue, Svelte — or with no framework at all.
   selected rows only), an optional Excel adapter with ExcelJS injected by you, export data for any
   other format (PDF…), and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
   by default; a million rows export without freezing the page.
-- **Custom cell renderers** — return any `HTMLElement` per column to fully control a cell.
+- **Templates & master-detail** — Lit templates (also server-rendered), text or elements for
+  cells, headers, group rows and the empty state; expandable detail rows of any height (even a
+  nested grid) without slowing down scrolling.
 - **Internationalization** — a `language` property with built-in translations for 14 languages,
   automatic language detection, and hooks to override strings or set a global default.
 - **Server-side rendering** — compatible with `@lit-labs/ssr` and client hydration.
@@ -86,7 +88,8 @@ npm i @universal-material/data-grid
 The package is published on npm as modern **ESM** with TypeScript declarations. `lit`,
 `@lit/context` and `interactjs` are regular dependencies, so your bundler
 deduplicates them with the rest of your app. Importing the package registers the custom elements as
-a side effect.
+a side effect. To write templates for renderers, add `lit` (any 3.x) to your own dependencies
+(`npm i lit`).
 
 > Prefer no build step? See [Use in the browser (no build step)](#use-in-the-browser-no-build-step)
 > to drop the grid into a plain HTML page with a `<script>` and an import map.
@@ -261,8 +264,12 @@ interface GridColumnDef<TItem = any> {
   wrap?: boolean;
   /** Text shown for `null`/`undefined` values. Default: empty. */
   emptyText?: string | null;
-  /** Custom cell renderer — see "Custom cell rendering". `null` renders an empty cell. */
-  renderer?: ((item: TItem) => HTMLElement | null) | null;
+  /** Cell content: (item, ctx) => template | string | element — see "Templates & master-detail". */
+  renderer?: GridCellRenderer<TItem> | null;
+  /** Header label content: (ctx) => template | string | element. `label` is still required. */
+  headerRenderer?: GridHeaderRenderer<TItem> | null;
+  /** Group row label content for this column: (ctx) => template | string | element. */
+  groupRenderer?: GridGroupRenderer<TItem> | null;
   /** Lets the user sort by this column. Default: true when it has a `path`, `valueGetter` or `comparator`. */
   sortable?: boolean | null;
   /** Initial sort direction — see "Sorting". */
@@ -792,8 +799,9 @@ grid.focusedRowKey = null;             // back to the first header (ignored with
 when `focusedRowKey` is set, nor when the active cell moves because its row or column left the grid
 (read `focusedRowKey` then): `detail` is
 `{ rowKey, column, cellType, previousRowKey, previousColumn, source }`, where `cellType` is
-`'header' | 'data' | 'selection' | 'group' | 'summary'` and `column` is `null` in the checkbox column
-and in group rows.
+`'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail'` and `column` is
+`null` in the checkbox and detail toggle columns, in detail rows and in group rows (in a detail row,
+`rowKey` is the key of its master row).
 
 Group footers and the totals footer ([Summaries](#summaries)) are rows of the navigation too (the
 totals footer is the last row, `cellType: 'summary'`). A group row is a single stop: summaries shown
@@ -1036,44 +1044,150 @@ grid.addEventListener('u-grid-copying', event => {
 
 ---
 
-## Custom cell rendering
+## Templates & master-detail
 
-Provide a `renderer` that receives the row item and returns any `HTMLElement` (or `null` for an empty
-cell). The grid slots the returned element into the cell, so your element keeps its own styles and
-event listeners. The renderer runs again whenever the cell shows a different row or column.
+Renderers customize the content of data cells, headers, group rows, the empty state and the detail
+row. Every renderer may return:
 
-> **Light DOM:** to be slotted, each rendered cell lives in a `<div slot="cell:…">` that the grid
-> appends as a **child of `<u-grid>`** (next to your `<u-grid-column>` elements). Don't remove or
-> reorder those nodes, and filter them out if you walk `grid.children`. Frameworks that render the
-> grid's children (React, Vue, Angular templates with `<u-grid-column>`) leave unknown nodes alone,
-> but don't let them re-create the whole children list on every render — prefer the `columns`
-> property when columns are data-driven.
+- a Lit **`TemplateResult`** (`html\`…\``) — **recommended**: rendered directly inside the grid's
+  shadow DOM, fast, and also rendered on the server (SSR). Event listeners (`@click=${…}`) work
+  (use `ctx.grid` to reach the grid). Style it through the `part` names your template declares
+  (`u-grid::part(app-badge)`), inherited properties and CSS custom properties. Unprefixed part
+  names (`row`, `cell`, `expanded`…) belong to the grid — prefix yours (`app-…`);
+- a **string** — always rendered as text, never parsed as HTML;
+- an **`HTMLElement`** — placed in the grid's light DOM and projected into the cell by a slot:
+  page styles apply, but it only renders in the browser (see the light DOM note below);
+- `null`, `undefined` or Lit's `nothing` — empty content.
 
-> **Security:** the grid does not sanitize what the renderer returns. Build the element with
-> `textContent` (as below) — never assign row data to `innerHTML`.
+Return the same kind of result on the server and on the client (don't branch on
+`typeof document`). A renderer that throws leaves its content empty and logs one `console.error`.
+
+> **Security:** the grid does not sanitize what a renderer returns. Lit templates and strings bind
+> row data as text — never use `unsafeHTML` with row data, nor assign it to `innerHTML`.
+
+<a id="custom-cell-rendering"></a>
+
+### Cell renderer
+
+`renderer(item, ctx)` receives the row item and a context
+(`GridCellRenderContext`: `item`, `value`, `text` — what the native cell would show —, `column`,
+`rowKey`, `grid` and `signal`).
 
 ```ts
+import { html } from 'lit';
+
 grid.columns = [
   { path: 'country', label: 'Country' },
   {
     path: 'population',
     label: 'Population',
-    renderer: (item) => {
-      const el = document.createElement('span');
-      el.textContent = item.population.toLocaleString();
-      el.style.fontVariantNumeric = 'tabular-nums';
-      return el;
-    },
+    dataType: 'number',
+    renderer: (item, { text }) => html`<span part="app-population">${text}</span>`,
   },
 ];
 ```
+
+```css
+u-grid::part(app-population) { font-variant-numeric: tabular-nums; }
+```
+
+A renderer is a pure function of the item and the column: it runs again when the item, the column
+object or the language change and when the row comes back into the virtual window (so it may run
+several times for the same item), never when selecting, focusing or sorting, nor when an item is
+mutated in place (assign a new `items` array). The row index is deliberately not in the context: it
+changes while scrolling and sorting.
+
+**`ctx.signal`** is an `AbortSignal` aborted when the grid discards that content — the row leaves
+the virtual window, the detail is collapsed, the column or renderer changes, or the grid is
+disconnected. Use it to unmount framework roots you created:
+
+```ts
+renderer: (item, ctx) => {
+  const host = document.createElement('div');
+  const root = createRoot(host);                 // React, Vue's createApp, Angular's createComponent…
+  root.render(<Badge item={item} />);
+  ctx.signal.addEventListener('abort', () => root.unmount());
+  return host;
+},
+```
+
+> **Light DOM (`HTMLElement` results only):** to be slotted, each element lives in a
+> `<div slot="…">` that the grid appends as a **child of `<u-grid>`** (next to your
+> `<u-grid-column>` elements). Don't remove or reorder those nodes, and filter them out if you walk
+> `grid.children`. Frameworks that render the grid's children (React, Vue, Angular templates with
+> `<u-grid-column>`) leave unknown nodes alone, but don't let them re-create the whole children list
+> on every render — prefer the `columns` property when columns are data-driven. Templates and
+> strings add nothing to the light DOM.
 
 With the declarative API, set the property on the element:
 
 ```ts
 const col = document.querySelector('u-grid-column')!;
-col.renderer = (item) => { /* ... */ return el; };
+col.renderer = (item) => html`<b>${item.name}</b>`;
 ```
+
+### Header, group row and empty state
+
+- `headerRenderer(ctx)` (column) replaces the header label (`ctx`: `column`, `grid`, `signal`).
+  The sort arrow, the header filter button and the resize handle stay; clicks and keys on
+  interactive content of the template (buttons, links, inputs) do not sort. `label` is still
+  required: the column chooser, group chips, announcements and filter labels use it. The header's
+  accessible name comes from the rendered content.
+- `groupRenderer(ctx)` (column) replaces the label and count of the group rows of that column
+  (`ctx`: `column`, `value`, `text` — the formatted value —, `groupPath`, `groupIndex`, `itemCount`,
+  `expanded`, `summaries` — the inline ones —, `defaultText` — the label the grid would show —,
+  `grid`, `signal`). The expand button and the summaries aligned under columns stay.
+- `noDataRenderer(ctx)` (grid) builds the empty state (`ctx.filtered` is `true` when a filter or
+  the search hides every item).
+
+```ts
+grid.noDataRenderer = ({ filtered }) => filtered
+  ? html`No rows match. <button @click=${() => grid.clearFilter()}>Clear filter</button>`
+  : html`No orders yet.`;
+```
+
+### Master-detail
+
+Set `detailRenderer(item, ctx)` (`ctx`: `item`, `rowKey`, `grid`, `signal`) to add a toggle column
+at the start (after the group indents, before the selection checkboxes). An expanded row is followed
+by a **full-width detail row** whose height is measured (and measured again when its content
+grows), so details of any height scroll smoothly; with no detail open, scrolling costs the same as
+without master-detail. A detail can hold anything — including another `<u-grid>`:
+
+```ts
+grid.detailRenderer = (order: Order) => html`
+  <u-grid style="height: 240px" .columns=${lineColumns} .items=${order.lines}></u-grid>`;
+
+grid.expandRow(orders[0]);           // by row key (without keyExpr, the item itself)
+grid.collapseRow(orders[0]);
+grid.isRowExpanded(orders[0]);       // false
+```
+
+- `auto-expand-rows` starts every row expanded (changing it resets the expansion state, without an
+  event). Expansion is grid state, kept across sorting, filtering and new `items` (by key). A key
+  that is not in the rows keeps its state — and is retained — until it is collapsed.
+- `u-grid-row-expansion-change` (`{ rowKey, expanded, source }`) fires for the toggle button, the
+  keyboard and `expandRow`/`collapseRow`, not for `auto-expand-rows`.
+- Without `detailRenderer`, `expandRow`/`collapseRow` do nothing and `isRowExpanded` is `false`.
+  Returning `null` from it renders an empty detail row.
+- **Keyboard:** `Enter`/`Space` on the toggle cell expands or collapses (`Space` does not select
+  there; clicking the button keeps the focus on the cell); the detail row is one cell — `↑`/`↓` move into and out of it, `Enter`/`F2` move the focus
+  into its content (the first focusable element, or a nested grid) and `Esc` returns to the cell.
+  A nested grid keeps its own keyboard navigation: keys it handles never move the outer grid.
+- **Accessibility:** the toggle is a `<button aria-expanded>` named "Row details" (`rowDetails` in
+  `GridI18n`), and its cell carries the same `aria-expanded`; the detail row is labelled by its
+  master row (`aria-labelledby`) and keeps the master's `aria-level` in a grouped grid. The detail
+  content is kept within the visible width while scrolling horizontally. Interactive content of
+  any renderer leaves the Tab order (one Tab stop per grid): `Enter`/`F2` on a cell, `F2` on a
+  header or group row reach it, `Esc` comes back — except the empty state, which is not part of the
+  navigation and stays reachable with `Tab`. Content added later (after an async fetch) is not
+  taken out of the Tab order: render it with the data already loaded or set `tabindex="-1"`.
+- **Nested grids:** a grid returned in a template lives in the outer grid's shadow DOM, so page CSS
+  reaches it only through inheritance and `--u-grid-*` custom properties (return an `HTMLElement`
+  to style it with page selectors). Their `u-grid-*` events bubble (`composed`) through the outer grid. Listen on
+  the inner grid, or check `event.composedPath()[0] === grid`.
+- Style with the `detail-toggle-cell`, `detail-toggle-button`, `detail-row`, `detail-cell` and
+  `expanded` parts.
 
 ---
 
@@ -1194,6 +1308,7 @@ interface GridI18n {
   cancel: string;
   filteredAnnouncement: string; // after a user filter: "Rows: {count}"
   selectRow: string;           // row checkbox label: "Select row"
+  rowDetails: string;          // master-detail toggle button and column: "Row details"
   selectAllRows: string;       // "select all" checkbox label: "Select all rows"
   rowsSelectedAnnouncement: string; // after a bulk selection: "Selected rows: {count}"
   rowsCopiedAnnouncement: string;   // after Ctrl+C: "Copied rows: {count}"
@@ -1277,6 +1392,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (the items, until `keyExpr`). Setting it fires no event. |
 | `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell. Setting it fires no event. |
 | `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'none'` | `'copy'` | Ctrl+C copies the selected rows or the focused cell. See [Export & clipboard](#export--clipboard). |
+| `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
+| `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
+| `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
 
 ```html
 <u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
@@ -1392,6 +1510,11 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `header-filter-button` | The funnel button in a header. |
 | `header-filter` | The header filter popover. |
 | `search-highlight` | Search matches (`<mark>`) in native cells. |
+| `detail-toggle-cell` | Cells and header of the master-detail toggle column. |
+| `detail-toggle-button` | The expand/collapse button of a master row. |
+| `detail-row` | Detail rows (with `row`). |
+| `detail-cell` | The full-width cell of a detail row. |
+| `expanded` | Master rows whose detail is expanded (with `row`). |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -1452,8 +1575,8 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` and call
 
 (Register `u-grid` as a custom element with your bundler/compiler options as needed.)
 
-Columns with a `renderer` add nodes to the grid's light DOM — see the
-[light DOM note](#custom-cell-rendering) before letting a framework manage the grid's children.
+Renderers that return an `HTMLElement` add nodes to the grid's light DOM — see the
+[light DOM note](#cell-renderer) before letting a framework manage the grid's children.
 
 TypeScript users get typed events through `HTMLElementEventMap`
 (`grid.addEventListener('u-grid-sort-change', e => e.detail.sorting)`), and
@@ -1470,7 +1593,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -1498,6 +1621,8 @@ CSS property and part for IDEs and tooling.
 | `clearSelection()` | Deselect every key. |
 | `isRowSelected(key)` | Whether the row of `key` is selected. |
 | `getSelectedItems()` | Selected items present in `items`, in selection order. |
+| `expandRow(rowKey)` / `collapseRow(rowKey)` | Expand / collapse the detail row of a row (master-detail; nothing without `detailRenderer`). |
+| `isRowExpanded(rowKey)` | Whether the detail of a row is (or would be) expanded. |
 | `focusCell(rowKey, column?)` | Scroll to a cell and focus it; `false` if the row or column is not shown (groups are not expanded). |
 | `focus(options?)` | Focus the active cell. |
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
@@ -1520,6 +1645,7 @@ All bubble and are `composed`.
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
 | `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
+| `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed. |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
 | `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
 
@@ -1549,7 +1675,7 @@ import {
   type GridChangeSource,    // 'user' | 'api'
   type GridSelectionMode,   // 'none' | 'single' | 'multiple'
   type GridSelectionChangeEventDetail, // { selectedKeys, previous, added, removed, source }
-  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary'
+  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail'
   type GridFocusChangeEventDetail, // { rowKey, column, cellType, previousRowKey, previousColumn, source }
   type GridSortEventDetail, // { sorting, previous, source }
   type GridGroupEventDetail, // { grouping, previous, source }
@@ -1571,6 +1697,19 @@ import {
   type GridColumnVisibilityChangeEventDetail,
   type GridColumnFixedChangeEventDetail,
   type GridColumnReorderEventDetail,
+  type GridRenderResult,    // TemplateResult | HTMLElement | string | nothing | null | undefined
+  type GridCellRenderer,    // (item, GridCellRenderContext) => GridRenderResult
+  type GridHeaderRenderer,  // (GridHeaderRenderContext) => GridRenderResult
+  type GridGroupRenderer,   // (GridGroupRenderContext) => GridRenderResult
+  type GridDetailRenderer,  // (item, GridDetailRenderContext) => GridRenderResult
+  type GridNoDataRenderer,  // (GridNoDataRenderContext) => GridRenderResult
+  type GridRenderContextBase, // { grid, signal } — shared by every context
+  type GridCellRenderContext, // { item, value, text, column, rowKey, grid, signal }
+  type GridHeaderRenderContext, // { column, grid, signal }
+  type GridGroupRenderContext, // { column, value, text, groupPath, groupIndex, itemCount, expanded, summaries, defaultText, grid, signal }
+  type GridDetailRenderContext, // { item, rowKey, grid, signal }
+  type GridNoDataRenderContext, // { filtered, grid, signal }
+  type GridRowExpansionChangeEventDetail, // { rowKey, expanded, source }
   type GridI18n,
   type GridI18nInput,       // Partial<GridI18n> that still accepts the deprecated keys
   type GridExportOptions,   // { selectedOnly?, includeGroups?, includeSummaries?, signal? }

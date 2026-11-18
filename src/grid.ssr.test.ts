@@ -5,7 +5,7 @@ import { html } from 'lit';
 
 import { describe, expect, it } from 'vitest';
 
-import type { GridColumnDef, GridFilterExpression, GridSummary } from './grid-column-def.js';
+import type { GridColumnDef, GridDetailRenderer, GridFilterExpression, GridSummary } from './grid-column-def.js';
 
 import './grid.js';
 
@@ -174,5 +174,49 @@ describe('SSR', () => {
 
     expect(typeof adapter.exportXlsx).toBe('function');
     expect(Object.keys(adapter).sort()).toEqual(['downloadXlsx', 'exportXlsx']);
+  });
+
+  it('renderiza templates (célula, cabeçalho, grupo, detalhe) no servidor (frente 10)', async () => {
+    const templated: GridColumnDef[] = [
+      { path: 'country', label: 'Country', groupIndex: 0, groupRenderer: ctx => html`<b class="g">${ctx.text}·${ctx.itemCount}</b>` },
+      {
+        path: 'year',
+        label: 'Year',
+        headerRenderer: ({ column }) => html`<i class="h">${column.label}?</i>`,
+        renderer: (item: { year: number }, ctx) => html`<span class="y" part="year">${item.year}/${ctx.text}</span>`,
+      },
+    ];
+    const detail: GridDetailRenderer = (item: { country: string }) => html`<p class="d">About ${item.country}</p>`;
+    const output = await renderToString(html`
+      <u-grid language="en" auto-expand-groups auto-expand-rows
+        .detailRenderer=${detail}
+        .columns=${templated} .items=${items}></u-grid>`);
+    const plain = output.replace(/<!--[^>]*-->|<\?>/g, '');
+
+    expect(plain).toContain('<i class="h">Year?</i>');
+    expect(plain).toContain('<b class="g">Argentina·1</b>');
+    expect(plain).toContain('<span class="y" part="year">2021/2021</span>');
+    expect(plain).toContain('<p class="d">About Brazil</p>');
+    expect(output).toContain('part="row detail-row"');
+    expect(output).toContain('aria-label="Row details"');
+    expect(output).toContain('aria-expanded="true"');
+  });
+
+  it('renderer que monta DOM vira o slot no servidor, sem erro; vazio por renderer', async () => {
+    const domColumns: GridColumnDef[] = [
+      {
+        path: 'year',
+        label: 'Year',
+        renderer: () => document.createElement('b'),
+      },
+    ];
+    const output = await renderToString(html`<u-grid .columns=${domColumns} .items=${items}></u-grid>`);
+
+    expect(output).toMatch(/<slot name="u-grid-internal:cell:[^"]+"><\/slot>/);
+
+    const empty = await renderToString(html`<u-grid .columns=${domColumns} .items=${[]}
+      .noDataRenderer=${() => html`<em class="none">Nothing here</em>`}></u-grid>`);
+
+    expect(empty.replace(/<!--[^>]*-->|<\?>/g, '')).toContain('<em class="none">Nothing here</em>');
   });
 });

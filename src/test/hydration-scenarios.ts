@@ -1,10 +1,12 @@
-import type { GridColumnDef, GridFilterExpression } from '../grid-column-def.js';
+import { html } from 'lit';
+
+import type { GridColumnDef, GridDetailRenderer, GridFilterExpression } from '../grid-column-def.js';
 
 /**
  * Cenários de hidratação: o mesmo `<u-grid>` renderizado no servidor
  * (`ssr-render.ts`, via comando do Vitest em Node) e hidratado no navegador
- * (`grid.hydration.browser.test.ts`). Só dados: este módulo roda dos dois
- * lados.
+ * (`grid.hydration.browser.test.ts`). Só dados (e renderers puros): este
+ * módulo roda dos dois lados.
  */
 export interface HydrationScenario {
   language: string;
@@ -13,6 +15,8 @@ export interface HydrationScenario {
   items: Record<string, unknown>[];
   /** Linha de filtro, busca e funil ligados, com `filterValue`/`searchText` iniciais. */
   filter?: { filterValue: GridFilterExpression; searchText: string };
+  /** Master-detail com tudo expandido (`auto-expand-rows`). */
+  detailRenderer?: GridDetailRenderer;
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -41,12 +45,36 @@ const fixedColumns: GridColumnDef[] = [
   { path: 'population', label: 'Population', width: 160, fixed: 'end', dataType: 'number' },
 ];
 
+/** Frente 10: templates em célula, cabeçalho e grupo; uma coluna `HTMLElement` (só no cliente). */
+const templateColumns: GridColumnDef[] = [
+  { path: 'country', label: 'Country', groupIndex: 0, width: 200, groupRenderer: ctx => html`<b class="g">${ctx.text} (${ctx.itemCount})</b>` },
+  { path: 'code', label: 'Code', width: 100, renderer: (item: { code: string }) => html`<span class="code" part="code">${item.code}</span>` },
+  { path: 'year', label: 'Year', width: 100, headerRenderer: ({ column }) => html`<i class="h">${column.label}</i>` },
+  {
+    path: 'population',
+    label: 'Population',
+    width: 160,
+    renderer: (item: { population: number }) => {
+      const element = document.createElement('b');
+      element.className = 'dom';
+      element.textContent = String(item.population);
+      return element;
+    },
+  },
+];
+
 export const hydrationScenarios = {
   en: { language: 'en', columns, items },
   pt: { language: 'pt', columns, items },
   ar: { language: 'ar', dir: 'rtl', columns: fixedColumns, items },
   empty: { language: 'pt', columns, items: [] },
   filtered: { language: 'en', columns, items, filter: { filterValue: ['year', '>=', 1990], searchText: 'bra' } },
+  templates: {
+    language: 'en',
+    columns: templateColumns,
+    items,
+    detailRenderer: (item: { country: string; year: number }) => html`<p class="detail">${item.country} ${item.year}</p>`,
+  },
 } satisfies Record<string, HydrationScenario>;
 
 export type HydrationScenarioName = keyof typeof hydrationScenarios;

@@ -13,7 +13,7 @@ import { downloadBlob } from './export/download.js';
 import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
 import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
 import { clipboardContent, collectRows, writeCsv } from './export/write.js';
-import { cycleWithin, focusFirstWithin } from './features/cell-content-focus.js';
+import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
 import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
   ColumnChooserController,
@@ -75,6 +75,8 @@ import {
   type GridColumnDataType,
   type GridColumnDef,
   type GridColumnFixed,
+  type GridDetailRenderer,
+  type GridNoDataRenderer,
   type GridColumnRef,
   type GridGroupPath,
   type GridGroupSummaryItem,
@@ -100,6 +102,7 @@ import {
 } from './grid-i18n.js';
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
+import { rendererContent } from './render/content.js';
 import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
 import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
@@ -119,7 +122,7 @@ import {
   replaceColumnCondition,
   searchExpression,
 } from './row-model/filter.js';
-import { flattenRows, RowList } from './row-model/flatten.js';
+import { type BlockDetails, flattenRows, RowList } from './row-model/flatten.js';
 import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
   DEFAULT_DATE,
@@ -133,14 +136,27 @@ import {
   resolveDataType,
 } from './row-model/format.js';
 import { buildGroups, groupKeyOf } from './row-model/group.js';
+import { LruCache } from './row-model/lru.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
-import type { DataRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
+import type { DataRow, DetailRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
 import { cellValueReader } from './row-model/value.js';
 
 import './grid-column.js';
 
 export type {
+  GridCellRenderContext,
+  GridCellRenderer,
+  GridDetailRenderContext,
+  GridDetailRenderer,
+  GridGroupRenderContext,
+  GridGroupRenderer,
+  GridHeaderRenderContext,
+  GridHeaderRenderer,
+  GridNoDataRenderContext,
+  GridNoDataRenderer,
+  GridRenderContextBase,
+  GridRenderResult,
   GridColumnAlignment,
   GridColumnBooleanDisplay,
   GridColumnComparator,
@@ -218,6 +234,16 @@ export interface GridGroupExpansionChangeEventDetail {
   source: GridChangeSource;
 }
 
+/** `detail` of `u-grid-row-expansion-change`. */
+export interface GridRowExpansionChangeEventDetail {
+  /** Key of the master row (without `keyExpr`, the item itself). */
+  rowKey: unknown;
+  /** New state. */
+  expanded: boolean;
+  /** `user` (toggle button, keyboard) or `api` (`expandRow`/`collapseRow`). */
+  source: GridChangeSource;
+}
+
 /** `detail` of `u-grid-filter-change`. */
 export interface GridFilterEventDetail {
   /** Column filter after the change (read-only copy). */
@@ -264,14 +290,22 @@ export interface GridCopyEventDetail<TItem = any> {
   readonly clipboardData: DataTransfer;
 }
 
-/** Kind of the active cell: column header, data cell, selection checkbox cell, group row or summary row (group footer, totals). */
-export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary';
+/**
+ * Kind of the active cell: column header, data cell, selection checkbox
+ * cell, group row, summary row (group footer, totals), detail toggle cell or
+ * detail row (master-detail). May gain members in minor versions.
+ */
+export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail';
 
 /** `detail` of `u-grid-focus-change`. */
 export interface GridFocusChangeEventDetail {
-  /** Key of the data row of the active cell (the item without `keyExpr`); `null` in headers, group and summary rows. */
+  /**
+   * Key of the data row of the active cell (the item without `keyExpr`; in a
+   * detail row, the key of its master row); `null` in headers, group and
+   * summary rows.
+   */
   rowKey: unknown;
-  /** Column of the active cell; `null` in the selection column and in group rows. */
+  /** Column of the active cell; `null` in the selection and detail toggle columns, in detail rows and in group rows. */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
   cellType: GridCellType;
@@ -297,10 +331,25 @@ const GROUP_COLUMN_WIDTH = 32;
 /** Largura (px) da coluna de caixas de seleção; igual ao `--_selection-column-width`. */
 const SELECTION_COLUMN_WIDTH = 48;
 
+/** Largura (px) da coluna de expansão do master-detail; igual ao `--_detail-toggle-width`. */
+const DETAIL_TOGGLE_WIDTH = 40;
+
 /** Coluna de caixas de seleção entre as navegáveis (não é `GridColumnDef`). */
 const SELECTION_COLUMN = 'selection' as const;
 
-type NavColumn = GridColumnDef | typeof SELECTION_COLUMN;
+/** Coluna de expansão do master-detail entre as navegáveis. */
+const DETAIL_TOGGLE_COLUMN = 'detail-toggle' as const;
+
+type NavColumn = GridColumnDef | typeof SELECTION_COLUMN | typeof DETAIL_TOGGLE_COLUMN;
+
+/** Coluna de dados (ou `null` nas colunas do grid: caixas, expansão). */
+const dataColumnOf = (column: NavColumn | undefined): GridColumnDef | null =>
+  typeof column === 'object' ? column : null;
+
+const NO_POSITIONS = new Int32Array(0);
+
+// Ícone Material Symbols (Apache 2.0): chevron_right.
+const CHEVRON_PATH = 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z';
 
 /** Célula ativa como o hospedeiro a vê (eventos). */
 interface PublicFocus {
@@ -497,10 +546,19 @@ const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 /** Ações do menu do cabeçalho das colunas (spec 17, A1). */
 type ColumnHeaderMenuAction = 'groupColumn' | 'moveLeft' | 'moveRight' | 'autoSizeColumn' | 'increaseColumnWidth' | 'decreaseColumnWidth';
 
-const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter;
+const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter && !row.isDetail;
 
-/** Identidade estável da linha ativa: item (dados), chave (grupo, rodapé de grupo) ou o rodapé de totais. */
-type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
+/** Índice da linha de detalhe do item ou, recolhido, da linha mestre. */
+const detailOrMaster = (rows: RowList, item: unknown): number => {
+  const detail = rows.indexOfDetail(item);
+  return detail >= 0 ? detail : rows.indexOfItem(item);
+};
+
+/** Linha de detalhe (master-detail). */
+const isDetailRow = (row: Row | undefined): row is DetailRow => !!row && !!row.isDetail;
+
+/** Identidade estável da linha ativa: item (dados), detalhe do item, chave (grupo, rodapé de grupo) ou o rodapé de totais. */
+type ActiveRef = { item: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true };
 
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
@@ -523,6 +581,7 @@ type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
  * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
  * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.
+ * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
  *
  * @cssprop --u-grid-background-color - Grid background.
@@ -610,6 +669,11 @@ type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
  * @csspart search-input - The search panel input.
  * @csspart header-filter-button - The funnel button in a column header (`header-filter`).
  * @csspart header-filter - The header filter popover.
+ * @csspart detail-toggle-cell - Cells and header of the master-detail toggle column.
+ * @csspart detail-toggle-button - The expand/collapse button of a master row.
+ * @csspart detail-row - Detail rows (with `row`).
+ * @csspart detail-cell - The full-width cell of a detail row.
+ * @csspart expanded - Master rows whose detail is expanded (with `row`).
  * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
  */
 @customElement('u-grid')
@@ -645,6 +709,44 @@ export class DataGrid extends LitElement {
   }
 
   #summary: GridSummary | null = null;
+
+  // ------------------------------------------------------------- templates
+
+  /**
+   * Builds the empty state (property only) shown when there are no rows to
+   * show; `ctx.filtered` tells a filter/search hid every item. Without it,
+   * the translated "No data" text.
+   */
+  @property({ attribute: false }) noDataRenderer: GridNoDataRenderer | null = null;
+
+  /**
+   * Builds the detail of a row (master-detail; property only). With it, a
+   * toggle column appears at the start and each expanded row is followed by
+   * a full-width detail row (variable height). Returning `null` renders an
+   * empty detail row.
+   */
+  @property({ attribute: false }) detailRenderer: GridDetailRenderer | null = null;
+
+  /**
+   * Detail rows start expanded. INITIAL default: afterwards expansion is grid
+   * state (`expandRow`, `collapseRow`); changing it resets that state (no
+   * event).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-rows' }) autoExpandRows = false;
+
+  /**
+   * Chaves de linha cuja expansão difere do padrão (`autoExpandRows`). Retém
+   * a chave até voltar ao padrão (como `selectedKeys`).
+   */
+  readonly #rowExpansion = new Set<unknown>();
+  /** Altura medida do detalhe por item (objetos: fraca; primitivos: limitada). */
+  readonly #detailSizes = new WeakMap<object, number>();
+  readonly #primitiveDetailSizes = new LruCache<unknown, number>(256);
+  /** Altura suposta de um detalhe ainda não medido: a última medida. */
+  #detailEstimate = 0;
+  /** Observa as linhas de detalhe renderizadas (o conteúdo cresce depois: grid aninhado, imagens). */
+  #detailObserver: ResizeObserver | undefined;
+  readonly #observedDetails = new Set<Element>();
 
   /** Row items (property only). The grid never mutates this array or its items. */
   @property({ attribute: false })
@@ -957,6 +1059,26 @@ export class DataGrid extends LitElement {
     return this.showCheckboxes && this.#selectionMode === 'multiple';
   }
 
+  /** Coluna de expansão do master-detail (antes da de caixas). */
+  get #showDetailColumn(): boolean {
+    return !!this.detailRenderer;
+  }
+
+  /** Colunas navegáveis do grid antes das colunas comuns (expansão, caixas). */
+  get #leadingColumns(): number {
+    return (this.#showDetailColumn ? 1 : 0) + (this.#showSelectionColumn ? 1 : 0);
+  }
+
+  /** Índice navegável (0-based) da coluna de caixas. */
+  get #selectionCol(): number {
+    return this.#showDetailColumn ? 1 : 0;
+  }
+
+  /** Deslocamento `sticky` da coluna de caixas. */
+  get #selectionInset(): number {
+    return this._groupColumns.length * GROUP_COLUMN_WIDTH + (this.#showDetailColumn ? DETAIL_TOGGLE_WIDTH : 0);
+  }
+
   /** Célula ativa (roving tabindex): identidade da linha (`null` = cabeçalho). */
   #activeRef: ActiveRef | null = null;
   /** Último índice conhecido da linha ativa (`HEADER_ROW` = cabeçalho). */
@@ -1133,7 +1255,7 @@ export class DataGrid extends LitElement {
     overscan: 3,
     getScrollMargin: () => {
       const scroller = this._scrollContainerRef.value;
-      const table = scroller?.querySelector('table');
+      const table = scroller?.querySelector<HTMLTableElement>('table.grid-table');
 
       return scroller && table
         ? table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (table.tHead?.offsetHeight ?? 0)
@@ -1205,6 +1327,9 @@ export class DataGrid extends LitElement {
       announceTimers: this.#resizeAnnouncer.size,
       headerFilterOpen: this.#headerFilterPopover.open ? 1 : 0,
       selectedKeys: this.#selection.size,
+      rowExpansion: this.#rowExpansion.size,
+      primitiveDetailSizes: this.#primitiveDetailSizes.size,
+      observedDetails: this.#observedDetails.size,
     };
   }
 
@@ -1249,6 +1374,9 @@ export class DataGrid extends LitElement {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
     this.#observedToolbar = null;
+    this.#detailObserver?.disconnect();
+    this.#detailObserver = undefined;
+    this.#observedDetails.clear();
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -1264,6 +1392,20 @@ export class DataGrid extends LitElement {
       if (this.hasUpdated && normalizeSelectionMode(changed.get('selectionMode')) === 'multiple') {
         this.#applySelection(change, 'api');
       }
+    }
+
+    if (changed.has('autoExpandRows')) {
+      if (changed.get('autoExpandRows') !== undefined) {
+        this.#rowExpansion.clear();
+      }
+
+      this.#rowsDirty = true;
+    }
+
+    if (changed.has('detailRenderer') && !changed.get('detailRenderer') !== !this.detailRenderer) {
+      // A coluna de expansão e as linhas de detalhe aparecem/somem.
+      this.#rowsDirty = true;
+      this.#layoutDirty = true;
     }
 
     if (changed.has('autoExpandGroups')) {
@@ -1335,6 +1477,8 @@ export class DataGrid extends LitElement {
     if (this.#hasWrap) {
       virtualizer.measureRows(this.renderRoot.querySelectorAll<HTMLElement>('tbody tr[data-index]'));
     }
+
+    this.#measureDetails(!this.#hasWrap);
 
     if (this.#layoutDirty) {
       this.#layoutDirty = false;
@@ -1478,6 +1622,166 @@ export class DataGrid extends LitElement {
     const key = Array.isArray(groupPath) ? groupKeyOf(groupPath, this._groupColumns) : undefined;
 
     return key !== undefined && this.#isExpanded(key, groupPath.length - 1);
+  }
+
+  /**
+   * Expands the detail of the row `rowKey` (master-detail; without
+   * `detailRenderer` it does nothing). A key not in the rows (filtered out,
+   * in a collapsed group, not in `items`) keeps the state — and the key —
+   * until collapsed; parent groups are not expanded.
+   */
+  expandRow(rowKey: unknown): void {
+    this.#setRowExpanded(rowKey, true, 'api');
+  }
+
+  /** Collapses the detail of the row `rowKey` (see `expandRow`). */
+  collapseRow(rowKey: unknown): void {
+    this.#setRowExpanded(rowKey, false, 'api');
+  }
+
+  /** Whether the detail of the row `rowKey` is (or would be) expanded; `false` without `detailRenderer`. */
+  isRowExpanded(rowKey: unknown): boolean {
+    return !!this.detailRenderer && this.#isRowExpandedKey(rowKey);
+  }
+
+  #isRowExpandedKey(key: unknown): boolean {
+    return this.autoExpandRows !== this.#rowExpansion.has(key);
+  }
+
+  #setRowExpanded(key: unknown, expanded: boolean, source: GridChangeSource): void {
+    if (!this.detailRenderer || key === undefined || this.#isRowExpandedKey(key) === expanded) {
+      return;
+    }
+
+    if (expanded === this.autoExpandRows) {
+      this.#rowExpansion.delete(key);
+    } else {
+      this.#rowExpansion.add(key);
+    }
+
+    this.#rowsDirty = true;
+    this.requestUpdate();
+    this.dispatchEvent(new CustomEvent('u-grid-row-expansion-change', this.#eventInit<GridRowExpansionChangeEventDetail>({
+      rowKey: key,
+      expanded,
+      source,
+    })));
+  }
+
+  /**
+   * Linhas de detalhe de um bloco de itens: posições dos itens cuja expansão
+   * difere do padrão. Poucas chaves: `indexOf` por chave (rápido em array de
+   * objetos); muitas: uma passada com `Set`.
+   */
+  readonly #detailsOf = (items: readonly unknown[]): BlockDetails | undefined => {
+    if (!this.detailRenderer) {
+      return undefined;
+    }
+
+    const all = this.autoExpandRows;
+    const keys = this.#rowExpansion;
+
+    if (!keys.size) {
+      return all ? { all, positions: NO_POSITIONS } : undefined;
+    }
+
+    const positions: number[] = [];
+
+    if (keys.size <= 16) {
+      for (const key of keys) {
+        for (let position = items.indexOf(key); position >= 0; position = items.indexOf(key, position + 1)) {
+          positions.push(position);
+        }
+      }
+
+      positions.sort((a, b) => a - b);
+    } else {
+      items.forEach((item, position) => {
+        if (keys.has(item)) {
+          positions.push(position);
+        }
+      });
+    }
+
+    return { all, positions: Int32Array.from(positions) };
+  };
+
+  #detailSizeOf(item: unknown): number | undefined {
+    return item !== null && typeof item === 'object'
+      ? this.#detailSizes.get(item)
+      : this.#primitiveDetailSizes.get(item);
+  }
+
+  /** Alturas das linhas de detalhe para o virtualizador (as medidas ou a estimativa). */
+  #syncDetailSizes(): void {
+    const rows = this.#rows;
+    const indices = rows.detailCount ? rows.detailIndices() : NO_POSITIONS;
+    const sizes = new Float64Array(indices.length);
+    const estimate = this.#detailEstimate || this.rowHeight * 3;
+
+    indices.forEach((index, i) => {
+      sizes[i] = this.#detailSizeOf((rows.at(index) as DetailRow).item) ?? estimate;
+    });
+
+    this.#virtualizer.count = rows.length;
+    this.#virtualizer.setVariableRows(indices, sizes);
+  }
+
+  /** Mede as linhas de detalhe renderizadas e observa as que crescem depois. */
+  #measureDetails(measure: boolean): void {
+    const rows = [...this.renderRoot.querySelectorAll<HTMLElement>('tbody > tr.detail-row:not(.pinned)')];
+    const observed = this.#observedDetails;
+
+    if (!rows.length && !observed.size) {
+      return;
+    }
+
+    if (measure) {
+      this.#virtualizer.measureRows(rows, false);
+    }
+
+    for (const row of rows) {
+      const index = Number(row.getAttribute('data-index'));
+      const detail = this.#rowAt(index);
+
+      if (isDetailRow(detail)) {
+        const size = this.#virtualizer.sizeOf(index);
+
+        this.#detailEstimate = size;
+
+        if (detail.item !== null && typeof detail.item === 'object') {
+          this.#detailSizes.set(detail.item, size);
+        } else {
+          this.#primitiveDetailSizes.set(detail.item, size);
+        }
+      }
+    }
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    this.#detailObserver ??= new ResizeObserver(() => {
+      if (this.isConnected) {
+        this.#measureDetails(true);
+      }
+    });
+
+    const current = new Set<Element>(rows);
+
+    for (const row of observed) {
+      if (!current.has(row)) {
+        this.#detailObserver.unobserve(row);
+        observed.delete(row);
+      }
+    }
+
+    for (const row of rows) {
+      if (!observed.has(row)) {
+        this.#detailObserver.observe(row);
+        observed.add(row);
+      }
+    }
   }
 
   /**
@@ -1947,9 +2251,9 @@ export class DataGrid extends LitElement {
   /** A célula de onde veio o Ctrl+C (só célula de dados de coluna exportável). */
   #copyCell({ position }: { position: CellPosition }): CopyContent | undefined {
     const row = this.#rowAt(position.row);
-    const column = this.#currentNavColumns()[position.col];
+    const column = dataColumnOf(this.#currentNavColumns()[position.col]);
 
-    if (!row || !isDataRow(row) || !column || column === SELECTION_COLUMN || !isColumnExportable(column)) {
+    if (!row || !isDataRow(row) || !column || !isColumnExportable(column)) {
       return undefined;
     }
 
@@ -2412,9 +2716,9 @@ export class DataGrid extends LitElement {
       return undefined;
     }
 
-    const colIndex = index + 1 + (this.#showSelectionColumn ? 1 : 0);
+    const colIndex = index + 1 + this.#leadingColumns;
     const cells = this.renderRoot.querySelectorAll<HTMLElement>(
-      `th.header-column[aria-colindex="${colIndex}"], tbody tr:not(.group-row) > td[aria-colindex="${colIndex}"]`,
+      `th.header-column[aria-colindex="${colIndex}"], tbody tr:not(.group-row):not(.detail-row) > td[aria-colindex="${colIndex}"]`,
     );
 
     let width: number | undefined;
@@ -2496,6 +2800,8 @@ export class DataGrid extends LitElement {
     this.#resizeObserver = new ResizeObserver(entries => {
       if (entries.some(entry => entry.target === scroller)) {
         this.#layoutDirty = true;
+        // Largura visível: o conteúdo do detalhe não passa dela (WCAG 1.4.10).
+        scroller.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
         this.requestUpdate();
       }
 
@@ -2638,7 +2944,7 @@ export class DataGrid extends LitElement {
 
   /** Largura presa no início antes das colunas fixas: recuos de grupo e caixas de seleção. */
   #stickyStart(): number {
-    return this._groupColumns.length * GROUP_COLUMN_WIDTH + (this.#showSelectionColumn ? SELECTION_COLUMN_WIDTH : 0);
+    return this.#selectionInset + (this.#showSelectionColumn ? SELECTION_COLUMN_WIDTH : 0);
   }
 
   // -------------------------------------------------------------- row model
@@ -2784,10 +3090,11 @@ export class DataGrid extends LitElement {
     }
 
     if (this.#rowsDirty) {
-      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf, this.#hasGroupFooters);
+      this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf, this.#hasGroupFooters, this.#detailsOf);
       this.#rowsDirty = false;
       // Alturas medidas (`wrap`) são por índice: outras linhas, outras alturas.
       this.#virtualizer.measure();
+      this.#syncDetailSizes();
     }
   }
 
@@ -3335,11 +3642,17 @@ export class DataGrid extends LitElement {
     }
 
     const path = event.composedPath();
-    const tr = path.find((node): node is HTMLTableRowElement => node instanceof HTMLTableRowElement);
+    // A linha deste corpo (não a de uma tabela no conteúdo de um detalhe).
+    const tr = path.find((node): node is HTMLTableRowElement => node instanceof HTMLTableRowElement && node.parentElement === event.currentTarget);
     const index = Number(tr?.getAttribute('data-index') ?? NaN);
     const row = this.#rowAt(index);
 
     if (!isDataRow(row)) {
+      return;
+    }
+
+    // O botão de expandir não seleciona (como a referência).
+    if (path.some(node => node instanceof HTMLElement && node.classList.contains('detail-toggle-cell'))) {
       return;
     }
 
@@ -3408,7 +3721,7 @@ export class DataGrid extends LitElement {
       return null;
     }
 
-    return isDataRow(row) ? { item: row.item } : { rowKey: row.key };
+    return isDataRow(row) ? { item: row.item } : isDetailRow(row) ? { detailOf: row.item } : { rowKey: row.key };
   }
 
   #isRefAt(index: number, target: ActiveRef): boolean {
@@ -3422,11 +3735,25 @@ export class DataGrid extends LitElement {
       return false;
     }
 
+    if ('detailOf' in target) {
+      return isDetailRow(row) && row.item === target.detailOf;
+    }
+
     return 'item' in target ? isDataRow(row) && row.item === target.item : row.key === target.rowKey;
   }
 
   #currentNavColumns(): NavColumn[] {
-    return this.#showSelectionColumn ? [SELECTION_COLUMN, ...this._visibleColumns] : [...this._visibleColumns];
+    const leading: NavColumn[] = [];
+
+    if (this.#showDetailColumn) {
+      leading.push(DETAIL_TOGGLE_COLUMN);
+    }
+
+    if (this.#showSelectionColumn) {
+      leading.push(SELECTION_COLUMN);
+    }
+
+    return [...leading, ...this._visibleColumns];
   }
 
   #publicFocus(): PublicFocus {
@@ -3435,7 +3762,7 @@ export class DataGrid extends LitElement {
 
     if (!row) {
       const cellType = this.#activeRowIndex === HEADER_ROW ? 'header' : 'summary';
-      return { rowKey: null, column: column && column !== SELECTION_COLUMN ? column : null, cellType };
+      return { rowKey: null, column: dataColumnOf(column), cellType };
     }
 
     if (row.isGroup) {
@@ -3443,7 +3770,15 @@ export class DataGrid extends LitElement {
     }
 
     if (row.isFooter) {
-      return { rowKey: null, column: column && column !== SELECTION_COLUMN ? column : null, cellType: 'summary' };
+      return { rowKey: null, column: dataColumnOf(column), cellType: 'summary' };
+    }
+
+    if (row.isDetail) {
+      return { rowKey: row.item, column: null, cellType: 'detail' };
+    }
+
+    if (column === DETAIL_TOGGLE_COLUMN) {
+      return { rowKey: row.item, column: null, cellType: 'detail-toggle' };
     }
 
     return column === SELECTION_COLUMN || !column
@@ -3512,9 +3847,12 @@ export class DataGrid extends LitElement {
     const active = this.#activeRef;
 
     if (active && !this.#isRefAt(index, active)) {
+      // Detalhe recolhido com o foco nele: o foco volta à linha mestre.
       const found = 'totals' in active
         ? this.#hasTotals ? rows.length : -1
-        : 'item' in active ? rows.indexOfItem(active.item) : rows.indexOfKey(active.rowKey);
+        : 'detailOf' in active
+          ? detailOrMaster(rows, active.detailOf)
+          : 'item' in active ? rows.indexOfItem(active.item) : rows.indexOfKey(active.rowKey);
       index = found >= 0 ? found : index;
     }
 
@@ -3556,7 +3894,8 @@ export class DataGrid extends LitElement {
   }
 
   #activeCellElement(): HTMLElement | null {
-    return this.#tableRef.value?.querySelector<HTMLElement>(':scope > thead [tabindex="0"], :scope > tbody [tabindex="0"], :scope > tfoot [tabindex="0"]') ?? null;
+    // Só células do próprio grid (não o conteúdo de renderers, com seus `tabindex`).
+    return this.#tableRef.value?.querySelector<HTMLElement>(':scope > thead > tr > [tabindex="0"], :scope > tbody > tr > [tabindex="0"], :scope > tfoot > tr > [tabindex="0"]') ?? null;
   }
 
   /** Depois do render: foco do DOM e rolagem até a célula ativa. */
@@ -3644,7 +3983,13 @@ export class DataGrid extends LitElement {
         return undefined;
       }
 
-      if (node instanceof HTMLElement && node.hasAttribute('data-col') && (node.tagName === 'TD' || node.tagName === 'TH')) {
+      // Só células desta tabela (não as de um grid aninhado no detalhe).
+      if (
+        node instanceof HTMLElement
+        && node.hasAttribute('data-col')
+        && (node.tagName === 'TD' || node.tagName === 'TH')
+        && node.parentElement?.parentElement?.parentElement === table
+      ) {
         return node;
       }
     }
@@ -3683,7 +4028,9 @@ export class DataGrid extends LitElement {
 
     const sameRow = position.row === this.#activeRowIndex;
 
-    if (!sameRow || (position.col !== this.#activeCol && !this.#rowAt(position.row)?.isGroup)) {
+    const singleCell = this.#rowAt(position.row);
+
+    if (!sameRow || (position.col !== this.#activeCol && !singleCell?.isGroup && !singleCell?.isDetail)) {
       this.#setActive(position, 'user');
     } else if (path[0] === cell && cell.closest('tr')?.classList.contains('pinned')) {
       // Tab de volta para a célula ativa que está fora da tela: traz a linha.
@@ -3718,7 +4065,7 @@ export class DataGrid extends LitElement {
         }
       } else if (event.key === 'F2' && position.row === HEADER_ROW) {
         // F2 percorre o conteúdo do cabeçalho (spec 05: funil, depois a alça) e volta à célula.
-        const controls = [...cell.querySelectorAll<HTMLElement>('.header-filter-button, .column-header-menu-button, .resize-handle')];
+        const controls = this.#headerControls(cell);
         const next = controls[controls.indexOf(path[0] as HTMLElement) + 1] ?? cell;
         event.preventDefault();
         next.focus();
@@ -3765,6 +4112,11 @@ export class DataGrid extends LitElement {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         this.#toggleGroup(row);
+      } else if (event.key === 'F2') {
+        // Conteúdo interativo do `groupRenderer` (o botão de expandir está fora da célula).
+        if (focusFirstWithin(cell)) {
+          event.preventDefault();
+        }
       } else if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
         // Ctrl+G na linha de grupo desagrupa a coluna dela (spec 17, A8): sem o
         // painel de grupos é o único caminho de volta do Ctrl+G do cabeçalho.
@@ -3775,7 +4127,24 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    if (row.isDetail) {
+      if ((event.key === 'Enter' || event.key === 'F2') && focusFirstWithin(cell)) {
+        event.preventDefault();
+      }
+
+      return;
+    }
+
     if (!isDataRow(row)) {
+      return;
+    }
+
+    if (column === DETAIL_TOGGLE_COLUMN) {
+      if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+        event.preventDefault();
+        this.#setRowExpanded(row.item, !this.#isRowExpandedKey(row.item), 'user');
+      }
+
       return;
     }
 
@@ -3794,6 +4163,16 @@ export class DataGrid extends LitElement {
     }
   };
 
+  /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, menu, alça. */
+  #headerControls(cell: HTMLElement): (HTMLElement | SVGElement)[] {
+    const label = cell.querySelector<HTMLElement>('.header-text');
+
+    return [
+      ...label ? focusTargetsWithin(label) : [],
+      ...cell.querySelectorAll<HTMLElement>('.header-filter-button, .column-header-menu-button, .resize-handle'),
+    ];
+  }
+
   /** Teclas próprias do cabeçalho; `true` = tratada. */
   #onHeaderKeyDown(event: KeyboardEvent, cell: HTMLElement, column: NavColumn | undefined): boolean {
     if (column === SELECTION_COLUMN) {
@@ -3806,7 +4185,7 @@ export class DataGrid extends LitElement {
       return false;
     }
 
-    if (!column) {
+    if (!column || column === DETAIL_TOGGLE_COLUMN) {
       return false;
     }
 
@@ -3843,10 +4222,8 @@ export class DataGrid extends LitElement {
     }
 
     if (event.key === 'F2') {
-      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): funil, menu, alça.
-      const target = cell.querySelector<HTMLElement>('.header-filter-button')
-        ?? cell.querySelector<HTMLElement>('.column-header-menu-button')
-        ?? cell.querySelector<HTMLElement>('.resize-handle');
+      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): o do `headerRenderer`, funil, menu, alça.
+      const target = this.#headerControls(cell)[0];
 
       if (target) {
         event.preventDefault();
@@ -3889,12 +4266,16 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const next = nextCell({ row: position.row, col: row?.isGroup ? this.#activeCol : position.col }, key, {
+    const next = nextCell({ row: position.row, col: row?.isGroup || row?.isDetail ? this.#activeCol : position.col }, key, {
       rowCount: this.#rows.length + (this.#hasTotals ? 1 : 0),
       colCount: this.#navColumns.length,
       hasHeader: this.showColumnHeaders,
       pageSize: this.#pageSize(),
-      isGroupRow: index => !!this.#rowAt(index)?.isGroup,
+      // Linha de grupo e de detalhe: uma célula só.
+      isGroupRow: index => {
+        const target = this.#rowAt(index);
+        return !!target?.isGroup || !!target?.isDetail;
+      },
     });
 
     this.#setActive(next, 'user', { focus: true });
@@ -4080,7 +4461,7 @@ export class DataGrid extends LitElement {
         <div class="scroll-container" style=${scrollPadding} ${ref(this._scrollContainerRef)}>
           ${this.#renderToolbar()}
           <table
-            class=${fit ? 'fit' : ''}
+            class=${fit ? 'grid-table fit' : 'grid-table'}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
             aria-rowcount="${rows.length + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
@@ -4119,6 +4500,7 @@ export class DataGrid extends LitElement {
     return html`
       ${map(this._groupColumns, () => html`
         <col class="group-column"/>`)}
+      ${this.#showDetailColumn ? html`<col class="detail-toggle-column"/>` : nothing}
       ${this.#showSelectionColumn ? html`<col class="selection-column"/>` : nothing}
       ${map(layout, ({ column }) => {
         const width = this.#widthOf(column);
@@ -4181,13 +4563,14 @@ export class DataGrid extends LitElement {
             role="presentation"
             class="group-column sticky-cell"
             style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+        ${this.#renderEmptyDetailToggleCell(null)}
         ${this.#showSelectionColumn
           ? html`<td
             class="selection-cell sticky-cell"
             part="selection-cell"
             role="gridcell"
-            aria-colindex="1"
-            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"></td>`
+            aria-colindex=${this.#selectionCol + 1}
+            style="inset-inline-start: ${this.#selectionInset}px"></td>`
           : nothing}
         ${map(layout, (cell, index) => renderFilterCell({
           controller: this.#filterRow,
@@ -4197,7 +4580,7 @@ export class DataGrid extends LitElement {
           translation,
           className: cell.className,
           style: cell.style,
-          colIndex: index + 1 + (this.#showSelectionColumn ? 1 : 0),
+          colIndex: index + 1 + this.#leadingColumns,
         }))}
       </tr>`;
   }
@@ -4206,7 +4589,8 @@ export class DataGrid extends LitElement {
     const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
     const showIndex = rowSorting.length > 1;
     const filterValue = this.#filtering.filterValue;
-    const offset = this.#showSelectionColumn ? 1 : 0;
+    const offset = this.#leadingColumns;
+    const selectionCol = this.#selectionCol;
     const translation = this.#translation;
 
     return html`
@@ -4216,16 +4600,27 @@ export class DataGrid extends LitElement {
               role="presentation"
               class="group-column sticky-cell"
               style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)}
-          ${offset
+          ${this.#showDetailColumn
+            ? html`
+              <th
+                class="detail-toggle-cell sticky-cell"
+                part="detail-toggle-cell"
+                role="columnheader"
+                aria-colindex="1"
+                data-col="0"
+                tabindex=${this.#isActive(HEADER_ROW, 0) ? 0 : -1}
+                style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span></th>`
+            : nothing}
+          ${this.#showSelectionColumn
             ? html`
               <th
                 class="selection-cell sticky-cell"
                 part="selection-cell"
                 role="columnheader"
-                aria-colindex="1"
-                data-col="0"
-                tabindex=${this.#isActive(HEADER_ROW, 0) ? 0 : -1}
-                style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"
+                aria-colindex=${selectionCol + 1}
+                data-col=${selectionCol}
+                tabindex=${this.#isActive(HEADER_ROW, selectionCol) ? 0 : -1}
+                style="inset-inline-start: ${this.#selectionInset}px"
                 @click=${() => this.#toggleAll()}>${this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`
             : nothing}
           ${map(layout, (cell, index) => {
@@ -4261,6 +4656,7 @@ export class DataGrid extends LitElement {
               onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
               menuButton: this.#renderColumnMenuButton(column),
               keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
+              label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
             });
           })}
         </tr>`;
@@ -4363,7 +4759,9 @@ export class DataGrid extends LitElement {
     if (!this.#rows.length) {
       return html`
         <tr role="row" class="no-data-row">
-          <td role="gridcell" part="no-data" lang=${this.#textLanguage} colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.#translation.noData}</td>
+          <td role="gridcell" part="no-data" lang=${ifDefined(this.noDataRenderer ? undefined : this.#textLanguage)} colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.noDataRenderer
+            ? this.#renderNoDataContent(this.noDataRenderer)
+            : this.#translation.noData}</td>
         </tr>
       `;
     }
@@ -4401,7 +4799,7 @@ export class DataGrid extends LitElement {
   }
 
   #totalColumns(layout: ColumnLayout[]): number {
-    return this._groupColumns.length + (this.#showSelectionColumn ? 1 : 0) + layout.length;
+    return this._groupColumns.length + this.#leadingColumns + layout.length;
   }
 
   /**
@@ -4417,11 +4815,16 @@ export class DataGrid extends LitElement {
   }
 
   #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[], pinned: boolean) {
+    if (row.isDetail) {
+      return this.#renderDetailRow(index, row, headerRows, layout, pinned);
+    }
+
     const parity = row.isGroup || row.isFooter
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
     const selectable = isDataRow(row) && this.#selectionMode !== 'none';
     const selected = selectable && this.#selection.has(row.item);
+    const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(row.item);
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
@@ -4429,6 +4832,7 @@ export class DataGrid extends LitElement {
       'summary-row': !!row.isFooter,
       last: index === this.#rows.length - 1,
       selected,
+      expanded,
       pinned,
     };
 
@@ -4442,8 +4846,13 @@ export class DataGrid extends LitElement {
       parts.push('selected');
     }
 
+    if (expanded) {
+      parts.push('expanded');
+    }
+
     return html`
       <tr
+        id=${ifDefined(this.#showDetailColumn && isDataRow(row) ? `row-${index}` : undefined)}
         style="height: ${this.rowHeight}px;"
         data-index=${index}
         role="row"
@@ -4457,7 +4866,56 @@ export class DataGrid extends LitElement {
           ? this.#renderGroupRowCells(row, index, layout)
           : row.isFooter
             ? this.#renderGroupFooterCells(row, index, layout)
-            : this.#renderDataRowCells(row, index, layout, selected)}
+            : this.#renderDataRowCells(row, index, layout, selected, expanded)}
+      </tr>
+    `;
+  }
+
+  /**
+   * Linha de detalhe: uma célula de largura total com o conteúdo do
+   * `detailRenderer`. A altura de 1px é mínima (o conteúdo a aumenta): sem
+   * altura declarada a tabela daria a ela a sobra do `<tbody>` (que tem a
+   * altura virtual inteira), em vez de à linha final de preenchimento.
+   */
+  #renderDetailRow(index: number, row: DetailRow, headerRows: number, layout: ColumnLayout[], pinned: boolean) {
+    const renderer = this.detailRenderer;
+    const grid = this;
+    const { item } = row;
+
+    return html`
+      <tr
+        data-index=${index}
+        role="row"
+        aria-rowindex="${index + 1 + headerRows}"
+        aria-labelledby=${`row-${index - 1}`}
+        aria-level=${this.#ariaLevelOf(row)}
+        style="height: 1px;"
+        class=${classMap({ 'detail-row': true, last: index === this.#rows.length - 1, pinned })}
+        part="row detail-row">
+        <td
+          class="detail-cell"
+          part="detail-cell"
+          role="gridcell"
+          aria-colindex="1"
+          data-col="detail"
+          colspan=${Math.max(this.#totalColumns(layout), 1)}
+          aria-colspan=${Math.max(this.#navColumns.length, 1)}
+          tabindex=${this.#isActive(index, -1) ? 0 : -1}><div class="detail-content">${renderer
+            ? rendererContent({
+              host: this,
+              slotName: `u-grid-internal:detail:${row.masterKey}`,
+              deps: [item, renderer, this.#renderEpoch()],
+              renderer,
+              invoke: signal => renderer(item, {
+                item,
+                rowKey: item,
+                grid,
+                get signal() {
+                  return signal();
+                },
+              }),
+            })
+            : nothing}</div></td>
       </tr>
     `;
   }
@@ -4469,7 +4927,7 @@ export class DataGrid extends LitElement {
    */
   #renderGroupRowCells(row: GroupRow, rowIndex: number, layout: ColumnLayout[]) {
     const groupColumns = this._groupColumns.length;
-    const offset = this.#showSelectionColumn ? 1 : 0;
+    const offset = this.#leadingColumns;
     const totalColumns = groupColumns + offset + layout.length;
     // Colunas depois do botão: recuos dos níveis internos, caixas e colunas comuns.
     const base = groupColumns - row.level - 1 + offset;
@@ -4514,12 +4972,23 @@ export class DataGrid extends LitElement {
     // A linha de grupo é um ponto só da navegação: os resumos alinhados entram no rótulo dela.
     const alignedLabels = [...alignedTexts.values()].flat().map(text => text.label);
     const valueText = this.#groupValueText(row);
-    const ariaLabel = alignedLabels.length
-      ? [`${groupRowLabel(row, this.#translation.groupLabelSeparator, valueText)}${info ? ` ${info}` : ''}`, ...alignedLabels].join(this.#listSeparatorText)
+    const labelText = `${groupRowLabel(row, this.#translation.groupLabelSeparator, valueText)}${info ? ` ${info}` : ''}`;
+    const custom = !!row.column.groupRenderer;
+    // Com `groupRenderer` o nome acessível vem do conteúdo do hospedeiro.
+    const ariaLabel = alignedLabels.length && !custom
+      ? [labelText, ...alignedLabels].join(this.#listSeparatorText)
       : undefined;
+    const inlineSummaries = (): GridSummaryValue[] => specs
+      .map((summary, index) => ({ summary, index }))
+      .filter(({ summary }) => (summary.item.display ?? 'inline') === 'inline')
+      .map(({ summary, index }) => this.#summaryValue(summary, row.summaries[index]));
 
     return renderGroupRowCells({
       row,
+      content: custom ? this.#renderGroupContent(row, valueText, inlineSummaries, labelText) : undefined,
+      alignedSummaries: custom && alignedLabels.length
+        ? { text: alignedLabels.join(this.#listSeparatorText), id: `group-${rowIndex}` }
+        : undefined,
       totalColumns,
       separator: this.#translation.groupLabelSeparator,
       valueText,
@@ -4534,10 +5003,11 @@ export class DataGrid extends LitElement {
 
   #renderGroupFooterCells(row: GroupFooterRow, rowIndex: number, layout: ColumnLayout[]) {
     const texts = this.#textsByColumn(this.#groupSpecs, row.summaries, ({ item }) => (item as GridGroupSummaryItem).display === 'footer');
-    const offset = this.#showSelectionColumn ? 1 : 0;
+    const offset = this.#leadingColumns;
 
     return html`
       ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
+      ${this.#renderEmptyDetailToggleCell(rowIndex)}
       ${this.#renderEmptySelectionCell(rowIndex)}
       ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText, offset, col => this.#isActive(rowIndex, col) ? 0 : -1)}
     `;
@@ -4545,14 +5015,30 @@ export class DataGrid extends LitElement {
 
   /** Célula da coluna de caixas nas linhas de resumo (vazia, mas navegável). */
   #renderEmptySelectionCell(rowIndex: number) {
+    const col = this.#selectionCol;
+
     return this.#showSelectionColumn
       ? html`<td
         class="selection-cell sticky-cell"
         part="selection-cell"
         role="gridcell"
+        aria-colindex=${col + 1}
+        data-col=${col}
+        tabindex=${this.#isActive(rowIndex, col) ? 0 : -1}
+        style="inset-inline-start: ${this.#selectionInset}px"></td>`
+      : nothing;
+  }
+
+  /** Célula da coluna de expansão nas linhas sem detalhe (resumos; `null` = linha de filtro, fora da navegação). */
+  #renderEmptyDetailToggleCell(rowIndex: number | null) {
+    return this.#showDetailColumn
+      ? html`<td
+        class="detail-toggle-cell sticky-cell"
+        part="detail-toggle-cell"
+        role="gridcell"
         aria-colindex="1"
-        data-col="0"
-        tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
+        data-col=${ifDefined(rowIndex === null ? undefined : 0)}
+        tabindex=${ifDefined(rowIndex === null ? undefined : this.#isActive(rowIndex, 0) ? 0 : -1)}
         style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"></td>`
       : nothing;
   }
@@ -4567,14 +5053,15 @@ export class DataGrid extends LitElement {
       groupColumnWidth: GROUP_COLUMN_WIDTH,
       rowIndex: ariaRowIndex,
       separator: this.#listSeparatorText,
-      leading: this.#renderEmptySelectionCell(rowIndex),
-      colOffset: this.#showSelectionColumn ? 1 : 0,
+      leading: html`${this.#renderEmptyDetailToggleCell(rowIndex)}${this.#renderEmptySelectionCell(rowIndex)}`,
+      colOffset: this.#leadingColumns,
       tabIndexOf: col => this.#isActive(rowIndex, col) ? 0 : -1,
     });
   }
 
-  #renderDataRowCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean) {
-    const offset = this.#showSelectionColumn ? 1 : 0;
+  #renderDataRowCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean, expanded: boolean) {
+    const offset = this.#leadingColumns;
+    const selectionCol = this.#selectionCol;
     const matcher = this.#highlightMatcher();
 
     return html`
@@ -4583,16 +5070,46 @@ export class DataGrid extends LitElement {
           role="presentation"
           class="group-column sticky-cell"
           style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
-      ${offset
+      ${this.#showDetailColumn
+        ? html`
+          <td
+            class="detail-toggle-cell sticky-cell"
+            part="detail-toggle-cell"
+            role="gridcell"
+            aria-colindex="1"
+            data-col="0"
+            aria-expanded=${expanded ? 'true' : 'false'}
+            tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
+            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><button
+              class="detail-toggle"
+              part="detail-toggle-button"
+              type="button"
+              tabindex="-1"
+              aria-expanded=${expanded ? 'true' : 'false'}
+              aria-label=${this.#translation.rowDetails}
+              @mousedown=${(event: MouseEvent) => event.preventDefault()}
+              @click=${(event: MouseEvent) => {
+                // O foco fica na célula (ativa), não no botão: as setas seguem andando.
+                (event.currentTarget as HTMLElement).closest('td')?.focus();
+                this.#setRowExpanded(row.item, !expanded, 'user');
+              }}><span class="toggle-icon"><svg
+                xmlns="http://www.w3.org/2000/svg"
+                height="1em"
+                width="1em"
+                viewBox="0 -960 960 960"
+                fill="currentColor"
+                aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span></button></td>`
+        : nothing}
+      ${this.#showSelectionColumn
         ? html`
           <td
             class="selection-cell sticky-cell"
             part="selection-cell"
             role="gridcell"
-            aria-colindex="1"
-            data-col="0"
-            tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
-            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px">${this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
+            aria-colindex=${selectionCol + 1}
+            data-col=${selectionCol}
+            tabindex=${this.#isActive(rowIndex, selectionCol) ? 0 : -1}
+            style="inset-inline-start: ${this.#selectionInset}px">${this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
       ${map(layout, (cell, index) => html`
         <td
@@ -4606,9 +5123,101 @@ export class DataGrid extends LitElement {
     `;
   }
 
+  /** Rótulo do cabeçalho pelo `headerRenderer` da coluna. */
+  #renderHeaderContent(column: GridColumnDef, columnId: number) {
+    const renderer = column.headerRenderer!;
+    const grid = this;
+
+    return rendererContent({
+      host: this,
+      slotName: `u-grid-internal:header:${columnId}`,
+      deps: [column, renderer, this.#renderEpoch()],
+      renderer,
+      invoke: signal => renderer.call(column, {
+        column,
+        grid,
+        get signal() {
+          return signal();
+        },
+      }),
+    });
+  }
+
+  /** Rótulo da linha de grupo pelo `groupRenderer` da coluna agrupada. */
+  #renderGroupContent(row: GroupRow, text: string, summaries: () => readonly GridSummaryValue[], defaultText: string) {
+    const { column } = row;
+    const renderer = column.groupRenderer!;
+    const grid = this;
+
+    return rendererContent({
+      host: this,
+      slotName: `u-grid-internal:group:${row.key}`,
+      deps: [row.groupKey, column, renderer, this.#renderEpoch(), row.value, row.expanded, row.itemCount, row.summaries, defaultText],
+      renderer,
+      invoke: signal => renderer.call(column, {
+        column,
+        value: row.value,
+        text,
+        groupPath: row.path,
+        groupIndex: row.level,
+        itemCount: row.itemCount,
+        expanded: row.expanded,
+        get summaries() {
+          return summaries();
+        },
+        defaultText,
+        grid,
+        get signal() {
+          return signal();
+        },
+      }),
+    });
+  }
+
+  /** Estado vazio pelo `noDataRenderer`. */
+  #renderNoDataContent(renderer: GridNoDataRenderer) {
+    const filtered = this.#items.length > 0;
+    const grid = this;
+
+    return rendererContent({
+      host: this,
+      slotName: 'u-grid-internal:no-data',
+      deps: [renderer, filtered, this.#renderEpoch()],
+      renderer,
+      // A linha vazia não está na navegação: o Tab chega ao conteúdo.
+      demote: false,
+      invoke: signal => renderer({
+        filtered,
+        grid,
+        get signal() {
+          return signal();
+        },
+      }),
+    });
+  }
+
+  #epoch: { language: string | undefined; translation: GridI18n } | undefined;
+
+  /**
+   * Identidade do idioma e da tradução atuais: entra nas dependências dos
+   * renderers do hospedeiro (trocar o idioma os roda de novo).
+   */
+  #renderEpoch(): object {
+    const language = this.#effectiveLanguage;
+    const translation = this.#translation;
+
+    let epoch = this.#epoch;
+
+    if (!epoch || epoch.language !== language || epoch.translation !== translation) {
+      epoch = this.#epoch = { language, translation };
+    }
+
+    return epoch;
+  }
+
   /** Conteúdo da célula, com os trechos da busca destacados (só texto nativo). */
   #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null) {
-    const content = renderDataCell(this, row, cell.column, cell.id, cell.format);
+    const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch());
 
     return matcher && typeof content === 'string' && isColumnFilterable(cell.column)
       ? renderHighlighted(content, matcher)
@@ -5063,5 +5672,6 @@ declare global {
     'u-grid-selection-change': CustomEvent<GridSelectionChangeEventDetail>;
     'u-grid-focus-change': CustomEvent<GridFocusChangeEventDetail>;
     'u-grid-copying': CustomEvent<GridCopyEventDetail>;
+    'u-grid-row-expansion-change': CustomEvent<GridRowExpansionChangeEventDetail>;
   }
 }

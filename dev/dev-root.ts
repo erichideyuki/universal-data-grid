@@ -1,6 +1,6 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
-import type { GridColumnDef, GridSummary } from '../src/grid-column-def';
+import type { GridColumnDef, GridDetailRenderer, GridSummary } from '../src/grid-column-def';
 
 import { DataGrid } from '../src/grid';
 
@@ -83,6 +83,27 @@ const withMetrics = (rows: any[], count: number): any[] =>
 
     return { ...row, ...extra };
   });
+
+/** Master-detail do demo (frente 10): um template simples ou um grid aninhado. */
+const detailColumns: GridColumnDef[] = [
+  { path: 'year', label: 'Year', width: 120 },
+  { path: 'population', label: 'Population', dataType: 'number', format: { maximumFractionDigits: 0 } },
+];
+
+const detailRenderers: Record<string, GridDetailRenderer | null> = {
+  none: null,
+  template: (item: any) => html`
+    <div style="display: grid; gap: 4px; padding-block: 8px">
+      <strong>${item.country} (${item.code})</strong>
+      <span>${item.year}: ${Number(item.population).toLocaleString()}</span>
+    </div>`,
+  grid: (item: any) => html`
+    <u-grid
+      style="display: block; height: 220px"
+      show-group-panel="false"
+      .columns=${detailColumns}
+      .items=${Array.from({ length: 8 }, (_, i) => ({ year: item.year - i, population: Math.round(item.population * (1 - i / 50)) }))}></u-grid>`,
+};
 
 @customElement('dev-root')
 export class DevRoot extends LitElement {
@@ -176,6 +197,14 @@ export class DevRoot extends LitElement {
             <option value="single">single</option>
             <option value="multiple">multiple</option>
             <option value="multiple-checkboxes">multiple + checkboxes</option>
+          </select>
+        </label>
+        <label>
+          Detail:
+          <select @change=${(e: Event) => this.grid.detailRenderer = detailRenderers[(e.target as HTMLSelectElement).value]}>
+            <option value="none">none</option>
+            <option value="template">template</option>
+            <option value="grid">nested grid</option>
           </select>
         </label>
         <label>

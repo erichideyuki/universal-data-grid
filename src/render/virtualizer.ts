@@ -45,6 +45,11 @@ export interface RowVirtualizerOptions {
  * Alturas medidas (`wrap`): árvore de Fenwick com a altura de cada linha
  * (só existe nesse modo), O(log n) para posição ↔ índice.
  *
+ * Linhas de altura própria (detalhe do master-detail, frente 10): camada
+ * ESPARSA por cima das duas anteriores — índices crescentes e a diferença de
+ * altura de cada uma numa árvore de Fenwick de k posições, O(log k). Sem
+ * nenhuma, nada muda (altura fixa segue aritmética pura).
+ *
  * Escala: com altura virtual acima de {@link MAX_SCROLL_HEIGHT}, o corpo
  * físico fica nesse limite. Saltos (arrastar a barra, Home/End) mapeiam a
  * posição física proporcionalmente; passos pequenos (roda, setas, Page
@@ -70,6 +75,14 @@ export class RowVirtualizer implements ReactiveController {
   #tree: Float64Array | undefined;
   #sizes: Float64Array | undefined;
   #measured = 0;
+
+  /**
+   * Linhas de altura própria (esparsas): índices crescentes, altura de cada
+   * uma e a árvore de Fenwick (1-based) da diferença para a altura base.
+   */
+  #variableIndices: Int32Array = new Int32Array(0);
+  #variableSizes: Float64Array = new Float64Array(0);
+  #variableTree: Float64Array | undefined;
 
   #scroller: HTMLElement | undefined;
   #resizeObserver: ResizeObserver | undefined;
@@ -156,9 +169,105 @@ export class RowVirtualizer implements ReactiveController {
     return this.#measured;
   }
 
+  /**
+   * Linhas de altura própria (linhas de detalhe): `indices` crescentes e a
+   * altura (estimada ou já medida) de cada uma. Substitui as anteriores — o
+   * grid chama depois de refazer as linhas. Custo O(k).
+   */
+  setVariableRows(indices: Int32Array, sizes: Float64Array): void {
+    this.#variableIndices = indices;
+    this.#variableSizes = sizes;
+    this.#rebuildVariableTree();
+    this.#clamp();
+  }
+
+  /** Quantas linhas de altura própria há. */
+  get variableRows(): number {
+    return this.#variableIndices.length;
+  }
+
+  #rebuildVariableTree(): void {
+    const count = this.#variableIndices.length;
+
+    if (!count) {
+      this.#variableTree = undefined;
+      return;
+    }
+
+    const tree = new Float64Array(count + 1);
+
+    for (let i = 1; i <= count; i++) {
+      tree[i] += this.#variableSizes[i - 1] - this.#baseSize(this.#variableIndices[i - 1]);
+      const parent = i + (i & -i);
+
+      if (parent <= count) {
+        tree[parent] += tree[i];
+      }
+    }
+
+    this.#variableTree = tree;
+  }
+
+  /** Posição de `index` entre as linhas de altura própria (`-1` = não é uma). */
+  #variableSlot(index: number): number {
+    const indices = this.#variableIndices;
+    const below = this.#variableBelow(index);
+
+    return below < indices.length && indices[below] === index ? below : -1;
+  }
+
+  /** Quantas linhas de altura própria vêm antes de `index`. */
+  #variableBelow(index: number): number {
+    const indices = this.#variableIndices;
+    let low = 0;
+    let high = indices.length;
+
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+
+      if (indices[middle] < index) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    return low;
+  }
+
+  /** Soma das diferenças de altura das `slots` primeiras linhas de altura própria. */
+  #variablePrefix(slots: number): number {
+    const tree = this.#variableTree;
+
+    if (!tree) {
+      return 0;
+    }
+
+    let sum = 0;
+
+    for (let i = slots; i > 0; i -= i & -i) {
+      sum += tree[i];
+    }
+
+    return sum;
+  }
+
+  #setVariableSize(slot: number, size: number): void {
+    const tree = this.#variableTree!;
+    const delta = size - this.#variableSizes[slot];
+
+    this.#variableSizes[slot] = size;
+
+    for (let i = slot + 1; i < tree.length; i += i & -i) {
+      tree[i] += delta;
+    }
+  }
+
   /** Altura virtual da lista inteira. */
   get virtualSize(): number {
-    return this.#tree ? this.#prefix(this.#count) : this.#count * this.#height();
+    const base = this.#tree ? this.#prefix(this.#count) : this.#count * this.#height();
+
+    return base + this.#variablePrefix(this.#variableIndices.length);
   }
 
   /** Altura do corpo físico (o que vai no estilo do `<tbody>`). */
@@ -168,20 +277,39 @@ export class RowVirtualizer implements ReactiveController {
 
   /** Início virtual da linha `index`. */
   startOf(index: number): number {
-    return this.#tree ? this.#prefix(index) : index * this.#height();
+    const base = this.#tree ? this.#prefix(index) : index * this.#height();
+
+    return this.#variableTree ? base + this.#variablePrefix(this.#variableBelow(index)) : base;
+  }
+
+  /** Altura base (fixa ou medida por `wrap`) da linha `index`. */
+  #baseSize(index: number): number {
+    return this.#sizes?.[index] ?? this.#height();
   }
 
   /** Altura da linha `index`. */
   sizeOf(index: number): number {
-    return this.#sizes?.[index] ?? this.#height();
+    if (this.#variableTree) {
+      const slot = this.#variableSlot(index);
+
+      if (slot >= 0) {
+        return this.#variableSizes[slot];
+      }
+    }
+
+    return this.#baseSize(index);
   }
 
   /**
-   * Mede as linhas renderizadas (`data-index`), para `wrap`. Devolve `true`
-   * se alguma altura mudou (e pede novo render).
+   * Mede as linhas renderizadas (`data-index`): as de altura própria sempre;
+   * as demais só com `all` (`wrap`). Devolve `true` se alguma altura mudou
+   * (e pede novo render). Linha que muda ACIMA da janela visível não move o
+   * que está na tela: a posição de rolagem acompanha a diferença.
    */
-  measureRows(rows: Iterable<HTMLElement>): boolean {
+  measureRows(rows: Iterable<HTMLElement>, all = true): boolean {
     let changed = false;
+    let above = 0;
+    const top = this.#virtual - this.#margin;
 
     for (const row of rows) {
       const index = Number(row.getAttribute('data-index') ?? Number.NaN);
@@ -190,20 +318,62 @@ export class RowVirtualizer implements ReactiveController {
         continue;
       }
 
-      const size = row.getBoundingClientRect().height;
+      const slot = this.#variableTree ? this.#variableSlot(index) : -1;
 
-      if (size > 0 && Math.abs(size - this.sizeOf(index)) > 0.5) {
-        this.#setSize(index, size);
+      if (slot < 0 && !all) {
+        continue;
+      }
+
+      const size = row.getBoundingClientRect().height;
+      const previous = this.sizeOf(index);
+
+      if (size > 0 && Math.abs(size - previous) > 0.5) {
+        if (this.startOf(index) + previous <= top) {
+          above += size - previous;
+        }
+
+        if (slot >= 0) {
+          this.#setVariableSize(slot, size);
+        } else {
+          this.#setSize(index, size);
+        }
+
         changed = true;
       }
     }
 
     if (changed) {
+      if (above) {
+        this.#shift(above);
+      }
+
       this.#clamp();
       this.#host.requestUpdate();
     }
 
     return changed;
+  }
+
+  /** Desloca a posição (o conteúdo acima cresceu `delta`): o que está na tela fica parado. */
+  #shift(delta: number): void {
+    const scroller = this.#scroller;
+
+    if (!scroller) {
+      return;
+    }
+
+    if (this.scaled) {
+      // Na escala a posição física fica; a virtual anda.
+      this.#virtual = Math.max(0, this.#virtual + delta);
+      return;
+    }
+
+    const target = Math.max(0, this.#physical + delta);
+
+    this.#physical = target;
+    this.#virtual = target;
+    this.#pending = { physical: target, virtual: target };
+    scroller.scrollTop = target;
   }
 
   #height(): number {
@@ -212,6 +382,8 @@ export class RowVirtualizer implements ReactiveController {
     if (height !== this.#rowHeight) {
       this.#rowHeight = height;
       this.#dropSizes();
+      // As diferenças esparsas são sobre a altura base.
+      this.#rebuildVariableTree();
     }
 
     return height;
@@ -278,6 +450,24 @@ export class RowVirtualizer implements ReactiveController {
 
     if (count === 0) {
       return 0;
+    }
+
+    if (this.#variableTree) {
+      // Busca binária pela posição (O(log n · log k)): maior `index` com início ≤ offset.
+      let low = 0;
+      let high = count - 1;
+
+      while (low < high) {
+        const middle = Math.floor((low + high + 1) / 2);
+
+        if (this.startOf(middle) <= offset) {
+          low = middle;
+        } else {
+          high = middle - 1;
+        }
+      }
+
+      return low;
     }
 
     if (!this.#tree) {

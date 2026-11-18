@@ -22,6 +22,13 @@ export interface GroupRowContext {
   /** Nome acessível da célula do rótulo quando há resumos em células à parte (a linha é um ponto só da navegação). */
   ariaLabel?: string;
   onToggle: (row: GroupRow) => void;
+  /** Conteúdo do `groupRenderer` no lugar do rótulo e da contagem. */
+  content?: unknown;
+  /**
+   * Com `content` e resumos alinhados: o texto deles (oculto) e o prefixo dos
+   * ids — o nome da célula é o conteúdo seguido dos resumos (`aria-labelledby`).
+   */
+  alignedSummaries?: { text: string; id: string };
 }
 
 export const groupRowLabel = (row: GroupRow, separator: string, valueText: string): string =>
@@ -39,6 +46,8 @@ export const renderGroupRowCells = ({
   labelSpan,
   trailing = nothing,
   onToggle,
+  content,
+  alignedSummaries,
 }: GroupRowContext): TemplateResult => {
   const label = groupRowLabel(row, separator, valueText);
 
@@ -79,11 +88,17 @@ export const renderGroupRowCells = ({
       tabindex=${tabIndex}
       aria-keyshortcuts="Control+G Meta+G"
       aria-label=${ifDefined(ariaLabel)}
+      aria-labelledby=${ifDefined(alignedSummaries ? `${alignedSummaries.id}-label ${alignedSummaries.id}-summaries` : undefined)}
       colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}><span
         class="grouping-label"
-        style="inset-inline-start: calc(${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${label}${info
-          ? html` <span class="group-info" part="group-count">${info}</span>`
-          : nothing}</span></td>
+        id=${ifDefined(alignedSummaries ? `${alignedSummaries.id}-label` : undefined)}
+        style="inset-inline-start: calc(${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${content === undefined
+          ? html`${label}${info
+            ? html` <span class="group-info" part="group-count">${info}</span>`
+            : nothing}`
+          : content}</span>${alignedSummaries
+          ? html`<span id="${alignedSummaries.id}-summaries" hidden>${alignedSummaries.text}</span>`
+          : nothing}</td>
     ${trailing}
   `;
 };

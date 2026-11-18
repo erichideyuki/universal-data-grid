@@ -53,12 +53,10 @@
   "sideEffects": [
     "./dist/grid.js",
     "./dist/grid-column.js",
-    "./dist/grid-custom-cell.js",
     "./dist/grid-i18n.js",
     "./dist/grid.min.js",
     "./src/grid.ts",
     "./src/grid-column.ts",
-    "./src/grid-custom-cell.ts",
     "./src/grid-i18n.ts"
   ],
   "customElements": "custom-elements.json",

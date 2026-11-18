@@ -179,7 +179,7 @@ const fullLifecycle = async (): Promise<Tracked> => {
   grid.groupColumn(columns[1], 1);
   await settle(grid);
   const firstRow = root(grid).querySelector('tbody tr[data-index]')!;
-  const customCell = grid.querySelector('[slot^="cell:"]')!;
+  const customCell = grid.querySelector('[slot^="u-grid-internal:cell:"]')!;
   expect(customCell).not.toBeNull();
 
   await dragHeaderToGroupPanel(grid, 0);

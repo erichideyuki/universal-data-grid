@@ -1,12 +1,11 @@
 import { html, type TemplateResult } from 'lit';
 
-import type { GridColumnDef } from '../grid-column-def.js';
+import type { GridCellRenderContext, GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 import { booleanIconValue, formatCellValue, type FormatContext } from '../row-model/format.js';
 import type { DataRow } from '../row-model/types.js';
 import { getCellValue } from '../row-model/value.js';
-
-import '../grid-custom-cell.js';
+import { rendererContent } from './content.js';
 
 // Ícones Material Symbols (Apache 2.0): check e close.
 const CHECK_PATH = 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z';
@@ -29,11 +28,22 @@ const renderBooleanIcon = (value: boolean, format: FormatContext): TemplateResul
       fill="currentColor"
       aria-hidden="true"><path d=${value ? CHECK_PATH : CLOSE_PATH}/></svg></span>`;
 
+/** Texto que a célula nativa mostraria (o `ctx.text` do renderer; booleano em ícone vira o texto). */
+export const cellText = (item: unknown, column: GridColumnDef, format: FormatContext): string => {
+  const value = getCellValue(item, column);
+  const icon = booleanIconValue(value, column, format);
+
+  return icon === undefined
+    ? formatCellValue(value, item, column, format)
+    : icon ? format.trueText : format.falseText;
+};
+
 /**
- * Conteúdo de uma célula de dados. Com `renderer`, o elemento do hospedeiro
- * vai para o light DOM do grid e é projetado por um slot nomeado pela CHAVE
- * da linha e pelo id da coluna — nunca por índices, que mudam ao expandir,
- * ordenar ou reordenar.
+ * Conteúdo de uma célula de dados. Com `renderer`, o resultado vai direto na
+ * célula (`TemplateResult`/texto) ou, se for `HTMLElement`, para o light DOM
+ * do grid, projetado por um slot nomeado pela CHAVE da linha e pelo id da
+ * coluna — nunca por índices, que mudam ao expandir, ordenar ou reordenar.
+ * `epoch` muda com o idioma (o renderer roda de novo).
  */
 export const renderDataCell = (
   grid: DataGrid,
@@ -41,9 +51,11 @@ export const renderDataCell = (
   column: GridColumnDef,
   columnId: number,
   format: FormatContext,
-): TemplateResult | string => {
+  epoch: unknown,
+): unknown => {
+  const { renderer } = column;
 
-  if (!column.renderer) {
+  if (!renderer) {
     const value = getCellValue(row.item, column);
     const icon = booleanIconValue(value, column, format);
 
@@ -52,14 +64,32 @@ export const renderDataCell = (
       : renderBooleanIcon(icon, format);
   }
 
-  const slotName = `cell:${row.key}:${columnId}`;
+  const { item } = row;
 
-  return html`
-    <slot name=${slotName}></slot>
-    <u-grid-custom-cell
-      .grid=${grid}
-      .column=${column}
-      .item=${row.item}
-      .slotName=${slotName}></u-grid-custom-cell>
-  `;
+  return rendererContent({
+    host: grid,
+    slotName: `u-grid-internal:cell:${row.key}:${columnId}`,
+    deps: [item, column, renderer, epoch],
+    renderer,
+    invoke: signal => {
+      const ctx: GridCellRenderContext = {
+        item,
+        get value() {
+          return getCellValue(item, column);
+        },
+        get text() {
+          return cellText(item, column, format);
+        },
+        column,
+        rowKey: item,
+        grid,
+        get signal() {
+          return signal();
+        },
+      };
+
+      // `this` = a coluna, como no renderer antigo (`u-grid-custom-cell`).
+      return renderer.call(column, item, ctx);
+    },
+  });
 };

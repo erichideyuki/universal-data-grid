@@ -3,6 +3,7 @@ import { customElement, property } from 'lit/decorators.js';
 
 import { booleanAttribute, filterOperationAttribute, filterOperationsAttribute, type LegacyAttributes, optionalBooleanAttribute } from './attribute-converters.js';
 import type {
+  GridCellRenderer,
   GridColumnAlignment,
   GridColumnBooleanDisplay,
   GridColumnComparator,
@@ -11,6 +12,8 @@ import type {
   GridColumnFixed,
   GridColumnFormat,
   GridFilterOperation,
+  GridGroupRenderer,
+  GridHeaderRenderer,
   GridSortOrder,
 } from './grid-column-def.js';
 
@@ -98,8 +101,18 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** Dot path of the cell value in the row item (`"address.city"`). */
   @property() path = '';
 
-  /** Builds the cell content (property only). Return `null` for an empty cell. */
-  @property({ attribute: false }) renderer: ((item: any) => HTMLElement | null) | null = null;
+  /**
+   * Builds the cell content (property only): a Lit `TemplateResult`
+   * (recommended), a string (text) or an `HTMLElement` (placed in the grid's
+   * light DOM). `null`, `undefined` and Lit's `nothing` render an empty cell.
+   */
+  @property({ attribute: false }) renderer: GridCellRenderer | null = null;
+
+  /** Builds the header label (property only); sort arrow, filter button and resize handle stay. */
+  @property({ attribute: false }) headerRenderer: GridHeaderRenderer | null = null;
+
+  /** Builds the label of the group rows of this column (property only); the expand button and aligned summaries stay. */
+  @property({ attribute: false }) groupRenderer: GridGroupRenderer | null = null;
 
   /**
    * Data type of the column (`string`, `number`, `date`, `datetime`,

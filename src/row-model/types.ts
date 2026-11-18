@@ -20,6 +20,7 @@ export interface GroupNode {
 export interface GroupRow {
   isGroup: true;
   isFooter?: false;
+  isDetail?: false;
   key: string;
   /** Chave do nó (`GroupNode.key`), usada no estado de expansão. */
   groupKey: string;
@@ -39,6 +40,7 @@ export interface GroupRow {
 export interface GroupFooterRow {
   isGroup: false;
   isFooter: true;
+  isDetail?: false;
   key: string;
   groupKey: string;
   level: number;
@@ -49,10 +51,22 @@ export interface GroupFooterRow {
 export interface DataRow {
   isGroup: false;
   isFooter?: false;
+  isDetail?: false;
   key: string;
   item: any;
   /** Posição da linha dentro do bloco de dados (do grupo ou do grid) — define a listra. */
   index: number;
 }
 
-export type Row = GroupRow | GroupFooterRow | DataRow;
+/** Linha de detalhe (master-detail) logo depois da linha de dados do item. */
+export interface DetailRow {
+  isGroup: false;
+  isFooter?: false;
+  isDetail: true;
+  key: string;
+  item: any;
+  /** Chave da linha mestre (`DataRow.key`). */
+  masterKey: string;
+}
+
+export type Row = GroupRow | GroupFooterRow | DataRow | DetailRow;

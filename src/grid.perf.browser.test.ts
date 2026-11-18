@@ -8,6 +8,8 @@
  * tolerância. Cada medida é a melhor de {@link REPEATS} (o ruído da máquina
  * só soma tempo). Os dados são gerados antes de medir (não são o grid).
  */
+import { html } from 'lit';
+
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { GridColumnDef } from './grid-column-def.js';
@@ -649,6 +651,48 @@ const exportScenario = (rows: number, label: string) => {
   });
 };
 
+/**
+ * Frente 10: master-detail com 1 milhão de linhas — ligar o detalhe,
+ * expandir alguns (altura variável esparsa no virtualizador), rolar com eles
+ * abertos, recolher. Sem detalhe aberto o virtualizador segue aritmético.
+ */
+const detailScenario = (rows: number, label: string) => {
+  it(`${label} linhas com master-detail: ligar, expandir alguns, rolar, recolher`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeLeanColumns());
+    const detail = (item: { id?: unknown }) => html`<div style="height: 120px; padding: 8px">Detail ${String(item.id)}</div>`;
+    const enable = await interaction('enableDetail', grid, () => grid.detailRenderer = detail, () => grid.detailRenderer = null);
+    const opened = [0, 2, 5, Math.floor(rows / 2), rows - 1].map(index => items![index]);
+    const expand = await interaction(
+      'expandRows',
+      grid,
+      () => opened.forEach(item => grid.expandRow(item)),
+      () => opened.forEach(item => grid.collapseRow(item)),
+    );
+    const scroll = await scrollMetrics(grid, 'detail.');
+    const nodes = domNodes(grid);
+    const collapse = await interaction(
+      'collapseRows',
+      grid,
+      () => opened.forEach(item => grid.collapseRow(item)),
+      () => opened.forEach(item => grid.expandRow(item)),
+    );
+
+    await perf.unthrottle();
+    const variable = grid._virtualizer.variableRows;
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = { firstRenderMs, ...enable, ...expand, ...scroll, ...collapse, domNodes: nodes };
+
+    checkBudgets(rows, metrics, perf.report(`detail-${label}`, metrics));
+    expect(variable, 'recolhidos: nenhuma linha de altura própria').toBe(0);
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -658,4 +702,5 @@ describe('perfil de máquina fraca', () => {
   hugeScenario(5_000_000, '5m');
   selectionScenario(1_000_000, '1m');
   exportScenario(1_000_000, '1m');
+  detailScenario(1_000_000, '1m');
 });

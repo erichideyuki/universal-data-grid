@@ -1,3 +1,7 @@
+import type { nothing, TemplateResult } from 'lit';
+
+import type { DataGrid } from './grid.js';
+
 /** Sort direction: ascending or descending. */
 export type GridSortOrder = 'asc' | 'desc';
 
@@ -91,8 +95,16 @@ export interface GridColumnDef<TItem = any> {
   wrap?: boolean;
   /** Text for empty values (`null`/`undefined`). */
   emptyText?: string | null;
-  /** Builds the cell content; `null` renders an empty cell. */
-  renderer?: ((item: TItem) => HTMLElement | null) | null;
+  /**
+   * Builds the cell content: a Lit `TemplateResult` (recommended), a string
+   * (text, never HTML) or an `HTMLElement` (placed in the grid's light DOM).
+   * `null`, `undefined` and Lit's `nothing` render an empty cell. See `GridCellRenderer`.
+   */
+  renderer?: GridCellRenderer<TItem> | null;
+  /** Builds the header label (sort arrow, filter button and resize handle stay). `label` is still required. */
+  headerRenderer?: GridHeaderRenderer<TItem> | null;
+  /** Builds the label of the group rows of this column (expand button and aligned summaries stay). */
+  groupRenderer?: GridGroupRenderer<TItem> | null;
   /** Allows sorting from the header. Default: `true` when the column has a `path`, `valueGetter` or `comparator`. */
   sortable?: boolean | null;
   /** INITIAL sort direction; afterwards sorting is grid state (`sortColumn`, `getSorting`). */
@@ -209,6 +221,110 @@ export interface GridSummaryValue<TItem = any> {
   /** Formatted value, as shown. */
   text: string;
 }
+
+// --------------------------------------------------------------- renderers
+
+/**
+ * What a renderer returns. A Lit `TemplateResult` (recommended) or a string
+ * (always text, never parsed as HTML) is rendered inside the grid's shadow
+ * DOM — also on the server — and styled through the `part` names the
+ * template declares (`u-grid::part(my-badge)`). An `HTMLElement` is placed
+ * in the grid's light DOM and projected by a slot: page styles apply, but it
+ * only renders in the browser (the server leaves the slot empty). `null`,
+ * `undefined` and Lit's `nothing` render nothing. Return the same kind of
+ * result on the server and on the client (don't branch on `typeof document`).
+ */
+export type GridRenderResult = TemplateResult | HTMLElement | string | typeof nothing | null | undefined;
+
+/** Members shared by every renderer context. */
+export interface GridRenderContextBase {
+  /** The grid rendering the content (a renderer may be shared by several grids). */
+  readonly grid: DataGrid;
+  /**
+   * Aborted when the grid discards this content (the row leaves the virtual
+   * window, the detail is collapsed, the column or the renderer changes, the
+   * grid is disconnected): unmount framework roots here. Created on first
+   * access.
+   */
+  readonly signal: AbortSignal;
+}
+
+/** Context of a cell `renderer`. */
+export interface GridCellRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The row item. */
+  readonly item: TItem;
+  /** Cell value (`valueGetter` or `path`). */
+  readonly value: unknown;
+  /** The text the native cell would show (`format`, `displayValue`, `emptyText`, boolean texts). */
+  readonly text: string;
+  /** The column of the cell. */
+  readonly column: GridColumnDef<TItem>;
+  /** Row key (without `keyExpr`, the item itself). */
+  readonly rowKey: unknown;
+}
+
+/** Context of a `headerRenderer`. */
+export interface GridHeaderRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The column of the header. */
+  readonly column: GridColumnDef<TItem>;
+}
+
+/** Context of a `groupRenderer`. */
+export interface GridGroupRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The grouped column. */
+  readonly column: GridColumnDef<TItem>;
+  /** Group value. */
+  readonly value: unknown;
+  /** Group value formatted as the grid shows it. */
+  readonly text: string;
+  /** Values of the group from the outermost level. */
+  readonly groupPath: GridGroupPath;
+  /** Grouping level (0-based). */
+  readonly groupIndex: number;
+  /** Rows in the group (after filtering). */
+  readonly itemCount: number;
+  /** Whether the group is expanded. */
+  readonly expanded: boolean;
+  /** Summaries shown in the group row text (`display: 'inline'`). */
+  readonly summaries: readonly GridSummaryValue<TItem>[];
+  /** The full label the grid would show (`"Country: Brazil (3, Sum of Population: 1,234)"`). */
+  readonly defaultText: string;
+}
+
+/** Context of the grid `detailRenderer`. */
+export interface GridDetailRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The master row item. */
+  readonly item: TItem;
+  /** Key of the master row. */
+  readonly rowKey: unknown;
+}
+
+/** Context of the grid `noDataRenderer`. */
+export interface GridNoDataRenderContext extends GridRenderContextBase {
+  /** `true` when there are items but the filter or the search hides them all. */
+  readonly filtered: boolean;
+}
+
+/**
+ * Cell renderer: a pure function of the item and the column. It runs again
+ * when the item, the column object or the language change and when the row
+ * comes back to the virtual window — so it may run several times for the
+ * same item —, never when selecting, focusing or sorting (nor when the item
+ * is mutated).
+ */
+export type GridCellRenderer<TItem = any> = (item: TItem, ctx: GridCellRenderContext<TItem>) => GridRenderResult;
+
+/** Header label renderer (runs again when the column or the language change). */
+export type GridHeaderRenderer<TItem = any> = (ctx: GridHeaderRenderContext<TItem>) => GridRenderResult;
+
+/** Group row label renderer (runs again when any member of the context changes). */
+export type GridGroupRenderer<TItem = any> = (ctx: GridGroupRenderContext<TItem>) => GridRenderResult;
+
+/** Detail row renderer (master-detail). `null` renders an empty detail row (the toggle stays). */
+export type GridDetailRenderer<TItem = any> = (item: TItem, ctx: GridDetailRenderContext<TItem>) => GridRenderResult;
+
+/** Empty state renderer (no rows to show). */
+export type GridNoDataRenderer = (ctx: GridNoDataRenderContext) => GridRenderResult;
 
 /**
  * O usuário pode agrupar pela coluna?

@@ -350,6 +350,26 @@
               "name": "header-filter"
             },
             {
+              "description": "Cells and header of the master-detail toggle column.",
+              "name": "detail-toggle-cell"
+            },
+            {
+              "description": "The expand/collapse button of a master row.",
+              "name": "detail-toggle-button"
+            },
+            {
+              "description": "Detail rows (with `row`).",
+              "name": "detail-row"
+            },
+            {
+              "description": "The full-width cell of a detail row.",
+              "name": "detail-cell"
+            },
+            {
+              "description": "Master rows whose detail is expanded (with `row`).",
+              "name": "expanded"
+            },
+            {
               "description": "Search matches (`<mark>`) in native cells (not in `renderer` cells).",
               "name": "search-highlight"
             }
@@ -378,6 +398,34 @@
                 "text": "GridSummary | null"
               },
               "description": "Totals (footer fixed at the bottom) and group summaries (property only).\nRecomputed when the data, the grouping or the summary changes."
+            },
+            {
+              "kind": "field",
+              "name": "noDataRenderer",
+              "type": {
+                "text": "GridNoDataRenderer | null"
+              },
+              "default": "null",
+              "description": "Builds the empty state (property only) shown when there are no rows to\nshow; `ctx.filtered` tells a filter/search hid every item. Without it,\nthe translated \"No data\" text."
+            },
+            {
+              "kind": "field",
+              "name": "detailRenderer",
+              "type": {
+                "text": "GridDetailRenderer | null"
+              },
+              "default": "null",
+              "description": "Builds the detail of a row (master-detail; property only). With it, a\ntoggle column appears at the start and each expanded row is followed by\na full-width detail row (variable height). Returning `null` renders an\nempty detail row."
+            },
+            {
+              "kind": "field",
+              "name": "autoExpandRows",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
+              "attribute": "auto-expand-rows"
             },
             {
               "kind": "field",
@@ -893,6 +941,60 @@
             },
             {
               "kind": "method",
+              "name": "expandRow",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Expands the detail of the row `rowKey` (master-detail; without\n`detailRenderer` it does nothing). A key not in the rows (filtered out,\nin a collapsed group, not in `items`) keeps the state — and the key —\nuntil collapsed; parent groups are not expanded."
+            },
+            {
+              "kind": "method",
+              "name": "collapseRow",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Collapses the detail of the row `rowKey` (see `expandRow`)."
+            },
+            {
+              "kind": "method",
+              "name": "isRowExpanded",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Whether the detail of the row `rowKey` is (or would be) expanded; `false` without `detailRenderer`."
+            },
+            {
+              "kind": "method",
               "name": "getSummaryValues",
               "return": {
                 "type": {
@@ -1231,6 +1333,13 @@
           ],
           "events": [
             {
+              "name": "u-grid-row-expansion-change",
+              "type": {
+                "text": "CustomEvent<GridRowExpansionChangeEventDetail>"
+              },
+              "description": "A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`)."
+            },
+            {
               "name": "u-grid-group-expansion-change",
               "type": {
                 "text": "CustomEvent<GridGroupExpansionChangeEventDetail>"
@@ -1324,6 +1433,15 @@
               "default": "false",
               "description": "Groups start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandGroup`, `expandAllGroups`…); changing it resets that state.",
               "fieldName": "autoExpandGroups"
+            },
+            {
+              "name": "auto-expand-rows",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
+              "fieldName": "autoExpandRows"
             },
             {
               "name": "sort-mode",
@@ -1580,14 +1698,105 @@
           "summary": "Data grid web component.",
           "tagName": "u-grid",
           "customElement": true
-        },
-        {
-          "kind": "variable",
-          "name": "clipboardData",
-          "default": "event.clipboardData!"
         }
       ],
       "exports": [
+        {
+          "kind": "js",
+          "name": "GridCellRenderContext",
+          "declaration": {
+            "name": "GridCellRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridCellRenderer",
+          "declaration": {
+            "name": "GridCellRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridDetailRenderContext",
+          "declaration": {
+            "name": "GridDetailRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridDetailRenderer",
+          "declaration": {
+            "name": "GridDetailRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridGroupRenderContext",
+          "declaration": {
+            "name": "GridGroupRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridGroupRenderer",
+          "declaration": {
+            "name": "GridGroupRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridHeaderRenderContext",
+          "declaration": {
+            "name": "GridHeaderRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridHeaderRenderer",
+          "declaration": {
+            "name": "GridHeaderRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridNoDataRenderContext",
+          "declaration": {
+            "name": "GridNoDataRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridNoDataRenderer",
+          "declaration": {
+            "name": "GridNoDataRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRenderContextBase",
+          "declaration": {
+            "name": "GridRenderContextBase",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRenderResult",
+          "declaration": {
+            "name": "GridRenderResult",
+            "module": "dist/grid-column-def.js"
+          }
+        },
         {
           "kind": "js",
           "name": "GridColumnAlignment",
@@ -1877,10 +2086,28 @@
               "kind": "field",
               "name": "renderer",
               "type": {
-                "text": "((item: any) => HTMLElement | null) | null"
+                "text": "GridCellRenderer | null"
               },
               "default": "null",
-              "description": "Builds the cell content (property only). Return `null` for an empty cell."
+              "description": "Builds the cell content (property only): a Lit `TemplateResult`\n(recommended), a string (text) or an `HTMLElement` (placed in the grid's\nlight DOM). `null`, `undefined` and Lit's `nothing` render an empty cell."
+            },
+            {
+              "kind": "field",
+              "name": "headerRenderer",
+              "type": {
+                "text": "GridHeaderRenderer | null"
+              },
+              "default": "null",
+              "description": "Builds the header label (property only); sort arrow, filter button and resize handle stay."
+            },
+            {
+              "kind": "field",
+              "name": "groupRenderer",
+              "type": {
+                "text": "GridGroupRenderer | null"
+              },
+              "default": "null",
+              "description": "Builds the label of the group rows of this column (property only); the expand button and aligned summaries stay."
             },
             {
               "kind": "field",

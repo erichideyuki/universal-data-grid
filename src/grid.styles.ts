@@ -34,6 +34,7 @@ export const styles = css`
     --_fixed-shadow-color: var(--u-grid-fixed-shadow-color, color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 22%, transparent));
     --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
     --_selection-column-width: 48px;
+    --_detail-toggle-width: 40px;
     --_selected-row-color: var(--u-grid-selected-row-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 12%, transparent));
   }
 
@@ -103,7 +104,7 @@ export const styles = css`
     touch-action: none;
   }
 
-  tr {
+  tr:where(.grid-table > * > *) {
     --_row-tint: transparent;
   }
 
@@ -112,14 +113,14 @@ export const styles = css`
     background-color: var(--_row-tint);
   }
 
-  thead {
+  thead:where(.grid-table > *) {
     position: sticky;
     top: 0;
     background-color: var(--u-grid-header-background-color, var(--_background-color));
     z-index: 2;
   }
 
-  table {
+  table:where(.grid-table) {
     width: max-content;
     min-width: 100%;
     border-collapse: collapse;
@@ -127,11 +128,11 @@ export const styles = css`
   }
 
   /* Todas as larguras definidas: a tabela tem a soma exata e não estica. */
-  table.fit {
+  table:where(.grid-table).fit {
     min-width: 0;
   }
 
-  td, th {
+  td:where(.grid-table > * > * > *), th:where(.grid-table > * > * > *) {
     max-width: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -142,7 +143,7 @@ export const styles = css`
     --_edge-shadow: 0 0 transparent;
   }
 
-  td {
+  td:where(.grid-table > * > * > *) {
     border-collapse: separate;
     padding: var(--u-grid-cell-padding, var(--u-grid-data-cell-padding, var(--_cell-padding)));
     font-size: var(--u-grid-cell-font-size, var(--u-td-font-size, 0.875rem));
@@ -150,7 +151,7 @@ export const styles = css`
     text-align: start;
   }
 
-  th {
+  th:where(.grid-table > * > * > *) {
     height: var(--u-grid-header-cell-height, 46px);
     padding: var(--u-grid-header-cell-padding, var(--_cell-padding));
     font-size: var(--u-grid-header-cell-font-size, var(--u-th-font-size, 0.8125rem));
@@ -160,11 +161,11 @@ export const styles = css`
   }
 
   /* Alinhamento lógico: \`end\` vai para a esquerda em RTL. */
-  td.align-center, th.align-center {
+  td:where(.grid-table > * > * > *).align-center, th:where(.grid-table > * > * > *).align-center {
     text-align: center;
   }
 
-  td.align-end, th.align-end {
+  td:where(.grid-table > * > * > *).align-end, th:where(.grid-table > * > * > *).align-end {
     text-align: end;
   }
 
@@ -177,32 +178,32 @@ export const styles = css`
     color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 60%), transparent);
   }
 
-  td.wrap {
+  td:where(.grid-table > * > * > *).wrap {
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
-  .column-lines td:not(.group-column):not(:last-child),
-  .column-lines th:not(.group-column):not(:last-child) {
+  .column-lines td:where(.grid-table > * > * > *):not(.group-column):not(:last-child),
+  .column-lines th:where(.grid-table > * > * > *):not(.group-column):not(:last-child) {
     --_col-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
     box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
   .column-lines .header,
   .group-row,
-  thead,
-  .row-lines tr:not(.last):not(:last-child),
-  tr:has(+ .group-row) {
+  thead:where(.grid-table > *),
+  .row-lines tr:where(.grid-table > * > *):not(.last):not(:last-child),
+  tr:where(.grid-table > * > *):has(+ .group-row) {
     box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
   }
 
   /* Espaçadora do virtualizador (altura até a 1ª linha da janela): sem linha nem borda. */
-  tr.spacer {
+  tr:where(.grid-table > * > *).spacer {
     box-shadow: none;
   }
 
   /* Realce da linha de dados sob o ponteiro (\`--u-grid-row-hover-opacity: 0%\` desliga). */
-  tbody tr[role=row]:not(.group-row):not(.summary-row):hover {
+  tbody:where(.grid-table > *) tr:where(.grid-table > * > *)[role=row]:not(.group-row):not(.summary-row):not(.detail-row):hover {
     --_row-tint: color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent);
     background-color: var(--_row-tint);
   }
@@ -213,7 +214,7 @@ export const styles = css`
   }
 
   /* Linha selecionada (depois do realce do ponteiro: a seleção vence). */
-  tbody tr[role=row].selected:not(.group-row) {
+  tbody:where(.grid-table > *) tr:where(.grid-table > * > *)[role=row].selected:not(.group-row) {
     --_row-tint: var(--_selected-row-color);
     background-color: var(--_row-tint);
   }
@@ -228,13 +229,13 @@ export const styles = css`
   }
 
   /* Célula ativa do teclado (roving tabindex); o clique não mostra o anel. */
-  td[tabindex]:focus,
-  th[tabindex]:focus {
+  td:where(.grid-table > * > * > *)[tabindex]:focus,
+  th:where(.grid-table > * > * > *)[tabindex]:focus {
     outline: none;
   }
 
-  td[tabindex]:focus-visible,
-  th[tabindex]:focus-visible {
+  td:where(.grid-table > * > * > *)[tabindex]:focus-visible,
+  th:where(.grid-table > * > * > *)[tabindex]:focus-visible {
     outline: var(--_focus-ring);
     outline-offset: calc(var(--u-grid-focus-ring-width, 2px) * -1);
   }
@@ -243,7 +244,7 @@ export const styles = css`
    * Linha da célula ativa fora da janela virtual: fica no DOM (o foco não se
    * perde ao rolar) mas fora do fluxo e invisível.
    */
-  tbody tr.pinned {
+  tbody:where(.grid-table > *) tr:where(.grid-table > * > *).pinned {
     position: absolute;
     inset-inline-start: 0;
     top: 0;
@@ -263,6 +264,55 @@ export const styles = css`
     padding: 0;
     text-align: center;
     cursor: pointer;
+  }
+
+  /* Master-detail: coluna de expansão e linha de detalhe de largura total. */
+  .detail-toggle-column,
+  .detail-toggle-cell {
+    width: var(--_detail-toggle-width);
+    min-width: var(--_detail-toggle-width);
+  }
+
+  .detail-toggle-cell {
+    padding: 0;
+    font-size: 24px;
+    color: var(--_toggle-color);
+  }
+
+  .detail-toggle {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 24px;
+    cursor: pointer;
+    border-radius: var(--u-grid-group-toggle-shape, var(--u-grid-toggle-shape, 50%));
+  }
+
+  .detail-toggle:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  /*
+   * Conteúdo do detalhe na largura da área visível (WCAG 1.4.10): preso ao
+   * início na rolagem horizontal de uma tabela larga.
+   */
+  .detail-content {
+    position: sticky;
+    inset-inline-start: var(--_cell-inline-padding);
+    max-inline-size: calc(var(--_viewport-inline-size, 100%) - 2 * var(--_cell-inline-padding));
+  }
+
+  :host(:dir(rtl)) tr:where(.grid-table > * > *):not(.expanded) > .detail-toggle-cell .toggle-icon {
+    transform: scaleX(-1);
+  }
+
+  td:where(.grid-table > * > * > *).detail-cell {
+    white-space: normal;
   }
 
   .selection-checkbox {
@@ -303,20 +353,20 @@ export const styles = css`
     box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
-  td.fixed,
-  td.sticky-cell {
+  td:where(.grid-table > * > * > *).fixed,
+  td:where(.grid-table > * > * > *).sticky-cell {
     background: linear-gradient(var(--_row-tint), var(--_row-tint)) var(--_background-color);
   }
 
-  th.fixed,
-  th.sticky-cell {
+  th:where(.grid-table > * > * > *).fixed,
+  th:where(.grid-table > * > * > *).sticky-cell {
     background-color: var(--u-grid-header-background-color, var(--_background-color));
   }
 
-  .row-lines tr:not(.last):not(:last-child) > :is(.fixed, .sticky-cell),
-  tr:has(+ .group-row) > :is(.fixed, .sticky-cell),
+  .row-lines tr:where(.grid-table > * > *):not(.last):not(:last-child) > :is(.fixed, .sticky-cell),
+  tr:where(.grid-table > * > *):has(+ .group-row) > :is(.fixed, .sticky-cell),
   .group-row > .sticky-cell,
-  thead :is(.fixed, .sticky-cell) {
+  thead:where(.grid-table > *) :is(.fixed, .sticky-cell) {
     --_row-line: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
   }
 
@@ -588,7 +638,7 @@ export const styles = css`
     order: 9999;
   }
 
-  .header + table thead {
+  .header + table:where(.grid-table) thead:where(.grid-table > *) {
     top: var(--_toolbar-offset, var(--_header-height));
   }
 
@@ -737,8 +787,8 @@ export const styles = css`
     background-color: var(--_summary-background);
   }
 
-  .summary-row > td.fixed,
-  .summary-row > td.sticky-cell {
+  .summary-row > td:where(.grid-table > * > * > *).fixed,
+  .summary-row > td:where(.grid-table > * > * > *).sticky-cell {
     background: var(--_summary-background);
   }
 
@@ -931,7 +981,7 @@ export const styles = css`
     border-radius: 2px;
   }
 
-  .filter-row > td {
+  .filter-row > td:where(.grid-table > * > * > *) {
     height: var(--u-grid-filter-row-height, var(--u-grid-header-cell-height, 46px));
     padding: 4px 8px;
     font-weight: normal;

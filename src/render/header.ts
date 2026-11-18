@@ -40,10 +40,32 @@ export interface HeaderCellContext {
   onContextMenu?: (event: MouseEvent) => void;
   /** Botão "⋮" do menu do cabeçalho (alternativa de toque ao clique direito). */
   menuButton?: TemplateResult | typeof nothing;
+  /** Conteúdo do rótulo (`headerRenderer`); padrão: `column.label`. */
+  label?: unknown;
 }
 
 const ariaSort = (order: GridSortOrder | undefined): 'ascending' | 'descending' | 'none' =>
   order === 'asc' ? 'ascending' : order === 'desc' ? 'descending' : 'none';
+
+const INTERACTIVE = 'a[href], button, input, select, textarea, [role="button"], [contenteditable=""], [contenteditable="true"]';
+
+/**
+ * O evento veio de um elemento interativo do conteúdo da célula (botão do
+ * `headerRenderer`, funil): não ordena. Para no próprio `<th>`.
+ */
+export const fromInteractiveContent = (event: Event): boolean => {
+  for (const node of event.composedPath()) {
+    if (node === event.currentTarget) {
+      return false;
+    }
+
+    if (node instanceof Element && node.matches(INTERACTIVE)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 /** Enter/Espaço ativam como o clique (com os mesmos modificadores). */
 export const isActivationKey = (event: KeyboardEvent): boolean =>
@@ -91,6 +113,7 @@ export const renderHeaderCell = ({
   keyShortcuts,
   onContextMenu,
   menuButton = nothing,
+  label = column.label,
 }: HeaderCellContext): TemplateResult => html`
   <th
     class="header-column ${classMap({ ...classes, sortable, sorted: !!order, filtered })}"
@@ -106,17 +129,17 @@ export const renderHeaderCell = ({
     tabindex=${tabIndex}
     @pointerdown=${sortable ? onPointerDown : nothing}
     @contextmenu=${onContextMenu ?? nothing}
-    @click=${sortable ? (event: MouseEvent) => onActivate(column, event) : nothing}
+    @click=${sortable ? (event: MouseEvent) => !fromInteractiveContent(event) && onActivate(column, event) : nothing}
     @keydown=${sortable || onKeyDown
       ? (event: KeyboardEvent) => {
         onKeyDown?.(event);
 
-        if (sortable && !event.defaultPrevented && isActivationKey(event) && !event.repeat) {
+        if (sortable && !event.defaultPrevented && isActivationKey(event) && !event.repeat && !fromInteractiveContent(event)) {
           event.preventDefault();
           onActivate(column, event);
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
+    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
       renderDescription(colIndex, description)}
   </th>`;

@@ -100,7 +100,7 @@ describe('flattenRows', () => {
 
   it('sem grupos: uma linha por item, com índice para a listra', () => {
     const rows = flattenRows([{ id: 1 }, { id: 2 }], [], () => true, keyOf).slice();
-    expect(rows.map(r => [r.key, !r.isGroup && !r.isFooter && r.index])).toEqual([['d:1', 0], ['d:2', 1]]);
+    expect(rows.map(r => [r.key, !r.isGroup && !r.isFooter && !r.isDetail && r.index])).toEqual([['d:1', 0], ['d:2', 1]]);
   });
 
   it('respeita a expansão por chave e reinicia o índice em cada grupo', () => {
@@ -110,7 +110,7 @@ describe('flattenRows', () => {
 
     const rows = flattenRows(items, groups, key => expanded.has(key), keyOf).slice();
 
-    expect(rows.map(r => r.isGroup ? `G${r.value}` : r.isFooter ? 'F' : `${r.item.id}/${r.index}`))
+    expect(rows.map(r => r.isGroup ? `G${r.value}` : r.isFooter || r.isDetail ? 'F' : `${r.item.id}/${r.index}`))
       .toEqual(['Ga', 'Gb', '2/0', '3/1']);
   });
 
@@ -129,7 +129,58 @@ describe('flattenRows', () => {
 
     expect(rows.length).toBe(100_003);
     expect(rows.at(0).isGroup).toBe(true);
-    expect(last.isGroup || last.isFooter || [last.item.id, last.index]).toEqual([99_998, 33_332]);
+    expect(last.isGroup || last.isFooter || last.isDetail || [last.item.id, last.index]).toEqual([99_998, 33_332]);
     expect(rows.at(33_335).isGroup).toBe(true);
+  });
+});
+
+describe('flattenRows com linhas de detalhe', () => {
+  const keyOf = (item: any) => String(item.id);
+  const items = Array.from({ length: 6 }, (_, id) => ({ id }));
+  const describeRows = (rows: ReturnType<typeof flattenRows>) => rows.slice().map(r =>
+    r.isGroup ? `G${r.value}` : r.isFooter ? 'F' : r.isDetail ? `x${r.item.id}` : `${r.item.id}/${r.index}`);
+
+  it('intercala o detalhe depois do item expandido, sem mudar a listra', () => {
+    const rows = flattenRows(items, [], () => true, keyOf, false, () => ({ all: false, positions: Int32Array.of(1, 4) }));
+
+    expect(rows.length).toBe(8);
+    expect(rows.detailCount).toBe(2);
+    expect(describeRows(rows)).toEqual(['0/0', '1/1', 'x1', '2/2', '3/3', '4/4', 'x4', '5/5']);
+    expect([...rows.detailIndices()]).toEqual([2, 6]);
+    expect(rows.indexOfItem(items[4])).toBe(5);
+    expect(rows.indexOfDetail(items[4])).toBe(6);
+    expect(rows.indexOfDetail(items[3])).toBe(-1);
+    expect(rows.at(2)).toMatchObject({ isDetail: true, key: 'x:1', masterKey: 'd:1' });
+  });
+
+  it('todas expandidas com exceções', () => {
+    const rows = flattenRows(items.slice(0, 4), [], () => true, keyOf, false, () => ({ all: true, positions: Int32Array.of(0, 2) }));
+
+    expect(describeRows(rows)).toEqual(['0/0', '1/1', 'x1', '2/2', '3/3', 'x3']);
+    expect([...rows.detailIndices()]).toEqual([2, 5]);
+    expect(rows.indexOfItem(items[3])).toBe(4);
+    expect(rows.indexOfDetail(items[1])).toBe(2);
+  });
+
+  it('por bloco de grupo', () => {
+    const grouped = [{ id: 1, g: 'a' }, { id: 2, g: 'a' }, { id: 3, g: 'b' }];
+    const groups = buildGroups(grouped, [col('g')], byColumn);
+    const rows = flattenRows(grouped, groups, () => true, keyOf, false, block => block.includes(grouped[1])
+      ? { all: false, positions: Int32Array.of(block.indexOf(grouped[1])) }
+      : undefined);
+
+    expect(describeRows(rows)).toEqual(['Ga', '1/0', '2/1', 'x2', 'Gb', '3/0']);
+    expect([...rows.detailIndices()]).toEqual([3]);
+  });
+
+  it('1 milhão de itens com alguns detalhes: sem objeto por linha', () => {
+    const many = Array.from({ length: 1_000_000 }, (_, id) => ({ id }));
+    const rows = flattenRows(many, [], () => true, keyOf, false, () => ({ all: false, positions: Int32Array.of(10, 500_000, 999_999) }));
+
+    expect(rows.length).toBe(1_000_003);
+    expect(rows.at(500_001)).toMatchObject({ key: 'd:500000' });
+    expect(rows.at(500_002)).toMatchObject({ isDetail: true, key: 'x:500000' });
+    expect(rows.at(500_003)).toMatchObject({ key: 'd:500001', index: 500_001 });
+    expect(rows.at(1_000_002)).toMatchObject({ isDetail: true, key: 'x:999999' });
   });
 });

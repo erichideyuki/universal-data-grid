@@ -8,6 +8,17 @@
     "exportGroupedCsvTotalMs": 12269.1,
     "copy10kMs": 210.7
   },
+  "detail-1m": {
+    "firstRenderMs": 18.9,
+    "enableDetailMs": 6.5,
+    "expandRowsMs": 8.3,
+    "detail.scrollP95Ms": 5.7,
+    "detail.scrollWorstMs": 5.7,
+    "detail.jumpP95Ms": 14.9,
+    "detail.jumpWorstMs": 15.5,
+    "collapseRowsMs": 9.9,
+    "domNodes": 315
+  },
   "filter-100k": {
     "filterTextMs": 37.1,
     "filterNumberMs": 42,

@@ -60,6 +60,7 @@ const hydrate = async (name: HydrationScenarioName): Promise<{ grid: DataGrid; s
   grid.columns = columns;
   grid.items = items;
   grid.filterValue = scenario.filter?.filterValue ?? null;
+  grid.detailRenderer = scenario.detailRenderer ?? null;
   document.body.append(host);
   await settle(grid);
 
@@ -93,6 +94,22 @@ describe('hidratação do SSR', () => {
     expect(root.querySelectorAll('.header-filter-button')).toHaveLength(4);
     expect(root.querySelector('tr.filter-row .filter-editor')).not.toBeNull();
     expect(grid.getCombinedFilter()).not.toBeNull();
+  });
+
+  it('templates: célula, cabeçalho, grupo e detalhe hidratam; o HTMLElement chega no cliente', async () => {
+    const { grid, ssrIndexes } = await hydrate('templates');
+    const root = grid.shadowRoot!;
+
+    expect(errors).toEqual([]);
+    expect(rowIndexes(grid)[0]).toBe(ssrIndexes[0]);
+    expect(root.querySelector('th .h')!.textContent).toBe('Year');
+    expect(root.querySelector('.grouping-cell .g')!.textContent).toBe('Argentina (100)');
+    expect(root.querySelector('td .code')!.textContent).toBe('ARG');
+    expect(root.querySelector('tr.detail-row .detail')).not.toBeNull();
+    expect(grid.querySelector('[slot^="u-grid-internal:cell:"] b.dom')).not.toBeNull();
+    // Nenhum conteúdo duplicado: um `.code` por linha de dados.
+    const dataCount = dataRows(grid).filter(tr => !tr.matches('.group-row, .detail-row')).length;
+    expect(root.querySelectorAll('td .code')).toHaveLength(dataCount);
   });
 
   it('ar: a direção e os textos traduzidos sobrevivem à hidratação', async () => {
