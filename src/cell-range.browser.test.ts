@@ -5,7 +5,7 @@
  * virtualização, RTL e axe.
  */
 import axe from 'axe-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { commands } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
@@ -28,6 +28,7 @@ declare module 'vitest/browser' {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   cleanup();
   await commands.emulateMedia({ forcedColors: null });
 });
@@ -634,5 +635,104 @@ describe('acessibilidade', () => {
     const active = focused(grid)!;
     expect(getComputedStyle(active).outlineColor).toBe(systemColor('CanvasText'));
     probe.remove();
+  });
+});
+
+describe('menu de contexto da célula (frente 18; WCAG 2.5.7)', () => {
+  const menu = (grid: DataGrid): HTMLElement | null => root(grid).querySelector<HTMLElement>('[role=menu]');
+  const menuTexts = (grid: DataGrid): string[] =>
+    [...menu(grid)?.querySelectorAll('[role=menuitem] .menu-item-text') ?? []].map(item => item.textContent.trim());
+
+  const choose = async (grid: DataGrid, text: string): Promise<void> => {
+    const item = [...menu(grid)!.querySelectorAll<HTMLElement>('[role=menuitem]')]
+      .find(candidate => candidate.querySelector('.menu-item-text')!.textContent.trim() === text)!;
+    item.click();
+    await settle(grid);
+  };
+
+  const rightClick = async (grid: DataGrid, target: HTMLElement): Promise<void> => {
+    pointer('pointerdown', target, target, { button: 2, buttons: 2 });
+    target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, ...centerOf(target) }));
+    await settle(grid);
+  };
+
+  it('sem arrasto nem teclado: clique e "Estender seleção até esta célula" montam o intervalo; "Adicionar" soma', async () => {
+    const grid = await create();
+
+    await click(grid, cell(grid, 0, 0));
+    await rightClick(grid, cell(grid, 2, 1));
+    // Sem `row-menu`, só os itens do intervalo (nenhum de linha).
+    expect(menuTexts(grid)).toEqual(['Extend selection to this cell', 'Add cell to selection']);
+
+    await choose(grid, 'Extend selection to this cell');
+    expect(selectedTexts(grid)).toEqual([['Ana', 'Rio'], ['Bia', 'SP'], ['Caio', 'Rio']]);
+    expect(focused(grid)).toBe(cell(grid, 2, 1));
+
+    await rightClick(grid, cell(grid, 4, 2));
+    expect(menuTexts(grid)).toEqual(['Copy selected cells', 'Extend selection to this cell', 'Add cell to selection']);
+    await choose(grid, 'Add cell to selection');
+    expect(grid.getCellRanges().length).toBe(2);
+    expect(cell(grid, 4, 2).getAttribute('aria-selected')).toBe('true');
+    expect(focused(grid)).toBe(cell(grid, 4, 2));
+
+    // Teclado: Shift+F10 no canto não oferece "Estender" (já é o canto); Esc fecha e devolve o foco.
+    await press(grid, 'F10', { shiftKey: true });
+    expect(menuTexts(grid)).toEqual(['Copy selected cells']);
+    await press(grid, 'Escape');
+    expect(menu(grid)).toBeNull();
+    expect(focused(grid)).toBe(cell(grid, 4, 2));
+  });
+
+  it('"Copiar células selecionadas" escreve os intervalos pela Clipboard API', async () => {
+    const writes: string[] = [];
+    vi.spyOn(navigator.clipboard, 'write').mockImplementation(async items => {
+      writes.push(await (await items[0].getType('text/plain')).text());
+    });
+    const grid = await create();
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'name', endColumn: 'city' });
+    await settle(grid);
+
+    await rightClick(grid, cell(grid, 1, 1));
+    await choose(grid, 'Copy selected cells');
+    await settle(grid);
+    expect(writes).toEqual(['Ana\tRio\r\nBia\tSP']);
+    expect(await grid.copySelection()).toBe(true);
+    expect(writes[1]).toBe(writes[0]);
+  });
+
+  it('"Colar" lê a área de transferência e cola como o Ctrl+V; sem permissão, anuncia', async () => {
+    const grid = await create(g => {
+      g.allowEditing = true;
+      g.editMode = 'batch';
+      g.clipboardMode = 'copy-paste';
+    });
+    const read = vi.spyOn(navigator.clipboard, 'readText').mockResolvedValue('Recife\nSalvador');
+    let pasting = 0;
+    grid.addEventListener('u-grid-pasting', () => pasting++);
+
+    await rightClick(grid, cell(grid, 0, 1));
+    expect(menuTexts(grid)).toContain('Paste');
+    await choose(grid, 'Paste');
+    await settle(grid);
+    expect(read).toHaveBeenCalled();
+    expect(pasting).toBe(1);
+    expect(grid.getChanges().map(change => change.data)).toEqual([{ city: 'Recife' }, { city: 'Salvador' }]);
+    expect(focused(grid)).toBe(cell(grid, 0, 1));
+
+    read.mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    await rightClick(grid, cell(grid, 2, 1));
+    await choose(grid, 'Paste');
+    await settle(grid);
+    expect(announcement(grid)).toBe('Could not read the clipboard. Use Ctrl+V.');
+  });
+
+  it('axe com o menu aberto (itens do intervalo)', async () => {
+    const grid = await create();
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'name', endColumn: 'city' });
+    await settle(grid);
+    await rightClick(grid, cell(grid, 3, 2));
+
+    expect(menu(grid)).not.toBeNull();
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
   });
 });

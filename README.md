@@ -1489,6 +1489,7 @@ group row. Built-in items:
 | ------ | -------------------------------------- | ------------- |
 | `header` | Sort ascending / descending / Clear sorting, Group by this column, Pin to start / end / Unpin (with `column-chooser`), Move left / right, Auto-size, Increase / Decrease width | `column-header-menu="false"` |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
+| `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | `cell-selection-mode="none"` (Paste: `clipboard-mode` other than `copy-paste`) — shown without `row-menu` |
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details | **off by default**: `row-menu` turns them on |
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
 
@@ -1529,9 +1530,18 @@ cannot write to the clipboard (permission denied), screen readers hear "Could no
 editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
 after "Delete" in the confirmation dialog; after the other items, back where the menu was opened.
 
+**Cell ranges in the menu.** On a data cell, with [cell ranges](#cell-ranges) on, the menu offers
+`copySelectedCells` (with ranges), `paste` (with `clipboard-mode="copy-paste"` on an editable cell;
+it reads the clipboard with the Clipboard API — the browser may ask for permission; if it cannot, the
+grid announces it and `Ctrl+V` still works), `extendSelectionToCell` (the active range — or the
+cell that was active before the menu opened — grows to this cell; same as `Shift`+click) and, in
+`multiple`, `addCellToSelection` (same as `Ctrl`+click). They are the single-pointer alternative
+to dragging (WCAG 2.5.7): right-click or a long press on touch screens. The focus goes to the new
+corner after "Extend"/"Add", and back to the cell after "Copy"/"Paste".
+
 ### Copy by API
 
-`copySelection()` copies like `Ctrl+C` (the selected rows or, without a selection, the active
+`copySelection()` copies like `Ctrl+C` (the cell ranges, else the selected rows, else the active
 cell) through the asynchronous Clipboard API and resolves `true` when written. Call it within the
 user's gesture (browsers require it). It fires `u-grid-copying` with `source: 'api'` and a
 `DataTransfer` of the grid: cancel it and `setData` your own content, as with `Ctrl+C`.
@@ -2147,6 +2157,7 @@ interface GridI18n {
   // Toolbar and menus: toolbarLabel, toolbarMoreButtonLabel, exportButtonLabel, exportCsv,
   // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
   // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
+  // copySelectedCells, paste, pasteFailedAnnouncement (cell ranges),
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
 }

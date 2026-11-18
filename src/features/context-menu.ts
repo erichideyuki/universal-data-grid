@@ -35,6 +35,10 @@ export type GridContextMenuItemName =
   | 'collapseAllGroups'
   | 'copyCell'
   | 'copySelectedRows'
+  | 'copySelectedCells'
+  | 'paste'
+  | 'extendSelectionToCell'
+  | 'addCellToSelection'
   | 'exportSelectedCsv'
   | 'exportSelectedXlsx'
   | 'editRow'
@@ -125,6 +129,10 @@ export const CONTEXT_MENU_ITEMS_BY_TARGET: Readonly<Record<GridContextMenuTarget
   ]),
   'group-panel': new Set<GridContextMenuItemName>(['ungroupColumn', 'moveLeft', 'moveRight', 'ungroupAll', 'expandAllGroups', 'collapseAllGroups']),
   row: new Set<GridContextMenuItemName>([
+    'copySelectedCells',
+    'paste',
+    'extendSelectionToCell',
+    'addCellToSelection',
     'copyCell',
     'copySelectedRows',
     'exportSelectedCsv',

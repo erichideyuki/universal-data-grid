@@ -112,6 +112,18 @@ célula de dados (clique direito, Shift+F10, tecla Menu; Esc e as ações
 devolvem o foco à célula). A frente 18 faz o menu de contexto: os itens
 entram nele.
 
+**Integração com a 18** (pedida pela coordenadora depois do merge da 18):
+itens embutidos do alvo `row` — `copySelectedCells`, `paste`,
+`extendSelectionToCell`, `addCellToSelection` (nomes = chaves i18n;
+`copySelectedCells`/`paste`/`pasteFailedAnnouncement` são chaves novas) —
+valem sem `row-menu` (são a alternativa do 2.5.7; o toque longo da 18
+também abre). "Estender" usa como âncora o intervalo ativo ou a célula
+ativa de ANTES do menu (o menu move a ativa para a célula clicada).
+"Colar" lê pela Clipboard API (`readText`; falhou → anuncia
+`pasteFailedAnnouncement`) e segue o mesmo caminho do Ctrl+V
+(`u-grid-pasting`, 09). `copySelection()` passou a seguir a precedência do
+Ctrl+C (intervalos → linhas → célula).
+
 ## Comportamento
 - Intervalo = retângulo de índices (linha no corpo exibido × coluna de
   dados na ordem de exibição — fixas do início, meio e fixas do fim

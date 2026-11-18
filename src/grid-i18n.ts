@@ -359,6 +359,12 @@ export interface GridI18n {
   extendSelectionToCell: string;
   /** Cell context menu item: adds the cell as a new range (`cell-selection-mode="multiple"`). */
   addCellToSelection: string;
+  /** Cell context menu item: copies the cell ranges. */
+  copySelectedCells: string;
+  /** Cell context menu item: pastes the clipboard into editable cells (`clipboard-mode="copy-paste"`). */
+  paste: string;
+  /** Announced when the cell menu "Paste" cannot read the clipboard (permission denied or no Clipboard API). */
+  pasteFailedAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -603,6 +609,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Selection summary',
     extendSelectionToCell: 'Extend selection to this cell',
     addCellToSelection: 'Add cell to selection',
+    copySelectedCells: 'Copy selected cells',
+    paste: 'Paste',
+    pasteFailedAnnouncement: 'Could not read the clipboard. Use Ctrl+V.',
   },
   es: {
     noData: 'Sin datos',
@@ -782,6 +791,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Resumen de la selección',
     extendSelectionToCell: 'Extender la selección hasta esta celda',
     addCellToSelection: 'Agregar la celda a la selección',
+    copySelectedCells: 'Copiar celdas seleccionadas',
+    paste: 'Pegar',
+    pasteFailedAnnouncement: 'No se pudo leer el portapapeles. Use Ctrl+V.',
   },
   pt: {
     noData: 'Sem dados',
@@ -961,6 +973,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Resumo da seleção',
     extendSelectionToCell: 'Estender a seleção até esta célula',
     addCellToSelection: 'Adicionar a célula à seleção',
+    copySelectedCells: 'Copiar células selecionadas',
+    paste: 'Colar',
+    pasteFailedAnnouncement: 'Não foi possível ler a área de transferência. Use Ctrl+V.',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1140,6 +1155,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Résumé de la sélection',
     extendSelectionToCell: 'Étendre la sélection jusqu’à cette cellule',
     addCellToSelection: 'Ajouter la cellule à la sélection',
+    copySelectedCells: 'Copier les cellules sélectionnées',
+    paste: 'Coller',
+    pasteFailedAnnouncement: 'Impossible de lire le presse-papiers. Utilisez Ctrl+V.',
   },
   de: {
     noData: 'Keine Daten',
@@ -1319,6 +1337,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Zusammenfassung der Auswahl',
     extendSelectionToCell: 'Auswahl bis zu dieser Zelle erweitern',
     addCellToSelection: 'Zelle zur Auswahl hinzufügen',
+    copySelectedCells: 'Ausgewählte Zellen kopieren',
+    paste: 'Einfügen',
+    pasteFailedAnnouncement: 'Die Zwischenablage konnte nicht gelesen werden. Verwenden Sie Strg+V.',
   },
   it: {
     noData: 'Nessun dato',
@@ -1498,6 +1519,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Riepilogo della selezione',
     extendSelectionToCell: 'Estendi la selezione fino a questa cella',
     addCellToSelection: 'Aggiungi la cella alla selezione',
+    copySelectedCells: 'Copia le celle selezionate',
+    paste: 'Incolla',
+    pasteFailedAnnouncement: 'Impossibile leggere gli appunti. Usa Ctrl+V.',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1677,6 +1701,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Samenvatting van de selectie',
     extendSelectionToCell: 'Selectie uitbreiden tot deze cel',
     addCellToSelection: 'Cel aan selectie toevoegen',
+    copySelectedCells: 'Geselecteerde cellen kopiëren',
+    paste: 'Plakken',
+    pasteFailedAnnouncement: 'Het klembord kon niet worden gelezen. Gebruik Ctrl+V.',
   },
   ru: {
     noData: 'Нет данных',
@@ -1856,6 +1883,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Сводка по выделению',
     extendSelectionToCell: 'Расширить выделение до этой ячейки',
     addCellToSelection: 'Добавить ячейку к выделению',
+    copySelectedCells: 'Копировать выделенные ячейки',
+    paste: 'Вставить',
+    pasteFailedAnnouncement: 'Не удалось прочитать буфер обмена. Используйте Ctrl+V.',
   },
   pl: {
     noData: 'Brak danych',
@@ -2035,6 +2065,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Podsumowanie zaznaczenia',
     extendSelectionToCell: 'Rozszerz zaznaczenie do tej komórki',
     addCellToSelection: 'Dodaj komórkę do zaznaczenia',
+    copySelectedCells: 'Kopiuj zaznaczone komórki',
+    paste: 'Wklej',
+    pasteFailedAnnouncement: 'Nie udało się odczytać schowka. Użyj Ctrl+V.',
   },
   tr: {
     noData: 'Veri yok',
@@ -2214,6 +2247,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'Seçim özeti',
     extendSelectionToCell: 'Seçimi bu hücreye kadar genişlet',
     addCellToSelection: 'Hücreyi seçime ekle',
+    copySelectedCells: 'Seçili hücreleri kopyala',
+    paste: 'Yapıştır',
+    pasteFailedAnnouncement: 'Pano okunamadı. Ctrl+V kullanın.',
   },
   ja: {
     noData: 'データがありません',
@@ -2393,6 +2429,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: '選択の集計',
     extendSelectionToCell: 'このセルまで選択を広げる',
     addCellToSelection: 'セルを選択に追加',
+    copySelectedCells: '選択したセルをコピー',
+    paste: '貼り付け',
+    pasteFailedAnnouncement: 'クリップボードを読み取れませんでした。Ctrl+V を使用してください。',
   },
   ko: {
     noData: '데이터 없음',
@@ -2572,6 +2611,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: '선택 요약',
     extendSelectionToCell: '이 셀까지 선택 확장',
     addCellToSelection: '셀을 선택에 추가',
+    copySelectedCells: '선택한 셀 복사',
+    paste: '붙여넣기',
+    pasteFailedAnnouncement: '클립보드를 읽을 수 없습니다. Ctrl+V를 사용하세요.',
   },
   zh: {
     noData: '无数据',
@@ -2751,6 +2793,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: '所选内容摘要',
     extendSelectionToCell: '将所选内容扩展到此单元格',
     addCellToSelection: '将单元格添加到所选内容',
+    copySelectedCells: '复制所选单元格',
+    paste: '粘贴',
+    pasteFailedAnnouncement: '无法读取剪贴板。请使用 Ctrl+V。',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -2930,6 +2975,9 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     cellRangeSummaryLabel: 'ملخص التحديد',
     extendSelectionToCell: 'توسيع التحديد حتى هذه الخلية',
     addCellToSelection: 'إضافة الخلية إلى التحديد',
+    copySelectedCells: 'نسخ الخلايا المحددة',
+    paste: 'لصق',
+    pasteFailedAnnouncement: 'تعذّرت قراءة الحافظة. استخدم Ctrl+V.',
   },
 });
 

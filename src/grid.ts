@@ -1268,6 +1268,10 @@ const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 interface ContextMenuRequest extends Omit<GridContextMenuContext, 'grid'> {
   groupRow?: GroupRow;
   rowIndex?: number;
+  /** Índice navegável da coluna da célula (itens de intervalo, frente 19). */
+  col?: number;
+  /** Célula ativa antes de o menu abrir: âncora de "Estender seleção" (frente 19). */
+  rangeFrom?: CellPosition;
 }
 
 /** Item embutido que se aplica ao alvo agora (texto da i18n). */
@@ -6452,12 +6456,10 @@ export class DataGrid extends LitElement {
    * O intervalo ativo vai da âncora até `position` (Shift+clique; item
    * "Estender seleção até esta célula" do menu da 18). Foco no `end`.
    */
-  #extendRangeTo(position: CellPosition, source: GridChangeSource): void {
+  #extendRangeTo(position: CellPosition, source: GridChangeSource, from: CellPosition = { row: this.#activeRowIndex, col: this.#activeCol }): void {
     const active = this.#ranges[this.#ranges.length - 1];
     const continuing = !!active && !this.#rangeRestart;
-    let anchor: CellPosition = continuing
-      ? { row: active.anchorRow, col: active.anchorCol }
-      : { row: this.#activeRowIndex, col: this.#activeCol };
+    let anchor: CellPosition = continuing ? { row: active.anchorRow, col: active.anchorCol } : from;
 
     if (!this.#isRangeCell(anchor.row, anchor.col)) {
       anchor = position;
@@ -6473,42 +6475,14 @@ export class DataGrid extends LitElement {
   }
 
   /** Item "Adicionar célula à seleção" do menu da 18 (equivale ao Ctrl+clique). */
-  #addCellToRanges(position: CellPosition, source: GridChangeSource): void {
-    const base = this.#ranges.length || !this.#isRangeCell(this.#activeRowIndex, this.#activeCol)
+  #addCellToRanges(position: CellPosition, source: GridChangeSource, from: CellPosition = { row: this.#activeRowIndex, col: this.#activeCol }): void {
+    const base = this.#ranges.length || !this.#isRangeCell(from.row, from.col) || (from.row === position.row && from.col === position.col)
       ? this.#ranges
-      : [this.#single({ row: this.#activeRowIndex, col: this.#activeCol })];
+      : [this.#single(from)];
 
     this.#rangeRestart = false;
     this.#setRanges(this.#cellSelectionMode === 'multiple' ? [...base, this.#single(position)] : [], source);
     this.#setActive(position, source, { focus: true });
-  }
-
-  /**
-   * Para o menu de contexto da célula (frente 18, WCAG 2.5.7): estende o
-   * intervalo ativo até a célula. `false` fora de uma célula de dados.
-   * @internal
-   */
-  _extendCellRangeTo(rowIndex: number, col: number): boolean {
-    if (this.#cellSelectionMode === 'none' || !this.#isRangeCell(rowIndex, col)) {
-      return false;
-    }
-
-    this.#extendRangeTo({ row: rowIndex, col }, 'user');
-    return true;
-  }
-
-  /**
-   * Para o menu de contexto da célula (frente 18): a célula vira mais um
-   * intervalo (`multiple`).
-   * @internal
-   */
-  _addCellToRanges(rowIndex: number, col: number): boolean {
-    if (this.#cellSelectionMode !== 'multiple' || !this.#isRangeCell(rowIndex, col)) {
-      return false;
-    }
-
-    this.#addCellToRanges({ row: rowIndex, col }, 'user');
-    return true;
   }
 
   /** Botão principal do mouse/caneta numa célula do corpo: clique, Shift/Ctrl+clique e início do arrasto. */
@@ -7018,31 +6992,38 @@ export class DataGrid extends LitElement {
   readonly #onPaste = (event: ClipboardEvent): void => {
     const table = this.#tableRef.value;
 
-    if (
-      this.clipboardMode !== 'copy-paste'
-      || !this.#editingOn
-      || !this.allowEditing
-      || this.#editor
-      || this.#saving
-      || !table
-      || !this.shadowRoot
-      || !isGridCopy(event, table, this.shadowRoot)
-    ) {
+    if (!this.#canPaste() || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
       return;
     }
 
     const cell = this.#navCellOf(event.composedPath());
     const position = cell && !cell.closest('tr.filter-row') ? this.#positionOf(cell) : undefined;
 
-    if (!position || !this.#isRangeCell(position.row, position.col)) {
-      return;
+    if (position && this.#pasteText(event.clipboardData!.getData('text/plain'), position, event.clipboardData!)) {
+      event.preventDefault();
+    }
+  };
+
+  /** Colar vale agora: `copy-paste`, edição ligada, sem editor aberto nem salvamento em curso. */
+  #canPaste(): boolean {
+    return this.clipboardMode === 'copy-paste' && this.#editingOn && !!this.allowEditing && !this.#editor && !this.#saving;
+  }
+
+  /**
+   * Cola `text` (TSV) a partir de `position` (Ctrl/Cmd+V e o item "Colar" do
+   * menu da célula): `u-grid-pasting`, conversão, validação e salvamento da
+   * 09. `true` = o grid tratou (colou ou recusou anunciando); `false` = não é
+   * dele (o `paste` nativo segue).
+   */
+  #pasteText(text: string, position: CellPosition, clipboardData: DataTransfer): boolean {
+    if (!this.#isRangeCell(position.row, position.col)) {
+      return false;
     }
 
-    const text = event.clipboardData!.getData('text/plain');
     const values = parseTsv(text).map(row => row.map(unescapePasted));
 
     if (!values.length) {
-      return;
+      return false;
     }
 
     const blockRows = values.length;
@@ -7054,12 +7035,11 @@ export class DataGrid extends LitElement {
     const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
 
     if (size.rows * size.cols > MAX_RANGE_CLIPBOARD_CELLS) {
-      event.preventDefault();
       this.#announce(formatMessage(this.#translation.pasteLimitExceededAnnouncement, {
         count: format.format(size.rows * size.cols),
         max: format.format(MAX_RANGE_CLIPBOARD_CELLS),
       }));
-      return;
+      return true;
     }
 
     // Linhas de dados a partir do canto (grupos e detalhes não contam); colunas cortadas na borda.
@@ -7075,13 +7055,11 @@ export class DataGrid extends LitElement {
     const right = Math.min(target.left + size.cols - 1, lastCol);
     const navColumns = this.#currentNavColumns();
     const range = publicRange({ anchorRow: target.top, anchorCol: target.left, endRow: rows[rows.length - 1], endCol: right }, navColumns);
-    const detail: GridPasteEventDetail = { text, values, range, clipboardData: event.clipboardData! };
+    const detail: GridPasteEventDetail = { text, values, range, clipboardData };
 
     if (!this.dispatchEvent(new CustomEvent('u-grid-pasting', { ...this.#eventInit(detail), cancelable: true }))) {
-      return;
+      return false;
     }
-
-    event.preventDefault();
 
     // O ouvinte pode ter mexido em `values` (sem trocar o array).
     const pasted = detail.values;
@@ -7147,7 +7125,7 @@ export class DataGrid extends LitElement {
     if (written && this.#editMode !== 'batch') {
       this.#announce(announcement);
       void this.#save('user');
-      return;
+      return true;
     }
 
     // Lote: os inválidos ficam pendentes marcados; o anúncio os cita e o foco vai ao 1º (como o salvar barrado da 09).
@@ -7172,7 +7150,9 @@ export class DataGrid extends LitElement {
     } else {
       report();
     }
-  };
+
+    return true;
+  }
 
   /** Texto colado → valor da coluna (parser dos editores, no idioma; aceita o texto formatado que a cópia gera). */
   #parsePasted(text: string, column: GridColumnDef, original: unknown): unknown {
@@ -11128,7 +11108,7 @@ export class DataGrid extends LitElement {
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
-            data-row-menu=${ifDefined(this.rowMenu ? '' : undefined)}
+            data-row-menu=${ifDefined(this.rowMenu || this.#cellSelectionMode !== 'none' || this.clipboardMode === 'copy-paste' ? '' : undefined)}
             @contextmenu=${this.#onTableContextMenu}
             @pointerdown=${this.#onLongPressStart}
             @click=${this.#longPressClickCapture}
@@ -13559,6 +13539,7 @@ export class DataGrid extends LitElement {
       return false;
     }
 
+    request.rangeFrom = { row: this.#activeRowIndex, col: this.#activeCol };
     this.#setActive(position, 'user');
 
     return this.#openContextMenuWith(
@@ -13597,6 +13578,7 @@ export class DataGrid extends LitElement {
       rowKey: this.#keyOf(row.item),
       groupPath: null,
       rowIndex: position.row,
+      col: position.col,
     };
   }
 
@@ -13673,8 +13655,19 @@ export class DataGrid extends LitElement {
         return request.column && this.columnHeaderMenu ? this.#headerMenuItems(request.column) : [];
       case 'group-panel':
         return this.groupPanelMenu && this._groupColumns.length ? this.#groupPanelMenuItems(request.column) : [];
-      case 'row':
-        return this.rowMenu ? this.#rowMenuItems(request) : [];
+
+      case 'row': {
+        // Itens do intervalo (frente 19, alternativa de ponteiro único ao arrasto — WCAG 2.5.7) valem sem `row-menu`.
+        const range = this.#cellRangeMenuItems(request);
+        const row = this.rowMenu ? this.#rowMenuItems(request) : [];
+
+        if (range.length && row.length) {
+          row[0].separatorBefore = true;
+        }
+
+        return [...range, ...row];
+      }
+
       case 'group-row':
         return this.rowMenu && request.groupRow ? this.#groupRowMenuItems(request.groupRow) : [];
     }
@@ -13820,6 +13813,82 @@ export class DataGrid extends LitElement {
       { name: 'expandAllGroups', text: translation.expandAllGroups },
       { name: 'collapseAllGroups', text: translation.collapseAllGroups },
     ];
+  }
+
+  /**
+   * Itens do intervalo de células no menu da célula de dados (frente 19):
+   * copiar os intervalos, colar, estender a seleção até a célula e somar a
+   * célula (`multiple`). Valem com `cell-selection-mode` (colar: com
+   * `clipboard-mode="copy-paste"`), mesmo sem `row-menu`.
+   */
+  #cellRangeMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
+    const translation = this.#translation;
+    const items: BuiltInMenuItem[] = [];
+    const mode = this.#cellSelectionMode;
+    const { rowIndex, col } = request;
+
+    if (request.cellType !== 'data' || rowIndex === undefined || col === undefined || !this.#isRangeCell(rowIndex, col)) {
+      return items;
+    }
+
+    if (mode !== 'none' && this.#ranges.length && this.clipboardMode !== 'none') {
+      items.push({ name: 'copySelectedCells', text: translation.copySelectedCells });
+    }
+
+    const row = this.#rowAt(rowIndex);
+
+    if (this.#canPaste() && isDataRow(row) && request.column && this.#cellEditable(row, request.column)) {
+      items.push({ name: 'paste', text: translation.paste });
+    }
+
+    if (mode === 'none') {
+      return items;
+    }
+
+    const first = items.length;
+    const active = this.#ranges[this.#ranges.length - 1];
+    const from = active && !this.#rangeRestart ? { row: active.anchorRow, col: active.anchorCol } : request.rangeFrom;
+    const end = active && !this.#rangeRestart ? { row: active.endRow, col: active.endCol } : from;
+
+    // Estender: há uma âncora (intervalo ativo ou a célula ativa de antes) e a célula não é o canto atual.
+    if (from && end && this.#isRangeCell(from.row, from.col) && (end.row !== rowIndex || end.col !== col)) {
+      items.push({ name: 'extendSelectionToCell', text: translation.extendSelectionToCell });
+    }
+
+    if (mode === 'multiple' && !this.#rangeEdgesAt(rowIndex, col)) {
+      items.push({ name: 'addCellToSelection', text: translation.addCellToSelection });
+    }
+
+    if (items.length > first && first > 0) {
+      items[first].separatorBefore = true;
+    }
+
+    return items;
+  }
+
+  /** "Colar" do menu: lê a área de transferência (Clipboard API; o navegador pode pedir permissão). */
+  async #pasteFromMenu(position: CellPosition): Promise<void> {
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    let text: string;
+
+    try {
+      if (!clipboard || typeof clipboard.readText !== 'function') {
+        throw new Error('no Clipboard API');
+      }
+
+      text = await clipboard.readText();
+    } catch {
+      this.#announce(this.#translation.pasteFailedAnnouncement);
+      return;
+    }
+
+    if (!this.#canPaste()) {
+      return;
+    }
+
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', text);
+    this.#pasteText(text, position, clipboardData);
   }
 
   #rowMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
@@ -14016,11 +14085,41 @@ export class DataGrid extends LitElement {
     const rowKey = request.rowKey;
     const rowIndex = this.#rowIndexOfKey(rowKey);
 
+    const position = { row: rowIndex, col: request.col ?? (column ? this.#currentNavColumns().indexOf(column) : -1) };
+
     switch (name) {
       case 'copyCell':
       case 'copySelectedRows':
         menu.hideAndFocus();
         this.#copyFromMenu(name, column, rowIndex);
+        break;
+
+      case 'copySelectedCells': {
+        menu.hideAndFocus();
+        const content = this.#copyRanges(position);
+
+        if (content && 'refused' in content) {
+          this.#announce(content.refused);
+        } else if (content) {
+          void this.#writeToClipboard(content, 'user');
+        }
+
+        break;
+      }
+
+      case 'paste':
+        // O foco volta à célula; a leitura (assíncrona) cola a partir dela.
+        menu.hideAndFocus();
+        void this.#pasteFromMenu(position);
+        break;
+      case 'extendSelectionToCell':
+        // O foco vai ao novo canto (a célula do menu).
+        menu.hide();
+        this.#extendRangeTo(position, 'user', request.rangeFrom);
+        break;
+      case 'addCellToSelection':
+        menu.hide();
+        this.#addCellToRanges(position, 'user', request.rangeFrom);
         break;
 
       case 'exportSelectedCsv':
@@ -14321,8 +14420,8 @@ export class DataGrid extends LitElement {
   // ------------------------------------------------------- área de transferência (API e menu)
 
   /**
-   * Copies like Ctrl/Cmd+C: the selected rows (current order and filter) or,
-   * without a selection, the active cell — TSV and an HTML table through the
+   * Copies like Ctrl/Cmd+C: the cell ranges, else the selected rows (current
+   * order and filter), else the active cell — TSV and an HTML table through the
    * asynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).
    * Resolves `false` when there is nothing to copy, `clipboardMode` is
    * `none`, the listener canceled without setting data, or the browser
@@ -14337,7 +14436,16 @@ export class DataGrid extends LitElement {
     this.#ensureRows();
 
     const position = { row: this.#activeRowIndex, col: this.#activeCol };
-    const content = (this.#selection.size ? this.#copySelection() : undefined)
+    // Como o Ctrl+C: intervalos (frente 19) > linhas selecionadas > célula ativa.
+    const ranges = position.row >= 0 ? this.#copyRanges(position) : undefined;
+
+    if (ranges && 'refused' in ranges) {
+      this.#announce(ranges.refused);
+      return false;
+    }
+
+    const content = ranges
+      ?? (this.#selection.size ? this.#copySelection() : undefined)
       ?? (position.row >= 0 ? this.#copyCell({ position }) : undefined);
 
     return content ? this.#writeToClipboard(content, 'api') : false;
