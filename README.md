@@ -1414,7 +1414,7 @@ opened; `closeContextMenu()` closes it.
 
 **Keyboard.** `↑`/`↓` (wrapping), `Home`/`End`, a letter goes to the next item starting with it,
 `Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. When a "Copy" item
-cannot write to the clipboard (permission denied), screen readers hear "Could not copy". On a cell,
+cannot write to the clipboard (permission denied), screen readers hear "Could not copy to the clipboard." On a cell,
 `Shift+F10`/the menu key opens the row menu only when the focus is on the cell itself (inside an
 editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
 after "Delete" in the confirmation dialog; after the other items, back where the menu was opened.

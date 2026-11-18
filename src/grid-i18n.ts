@@ -329,7 +329,7 @@ export interface GridI18n {
   expandRow: string;
   /** Row menu item: hides the detail row (master-detail). */
   collapseRow: string;
-  /** Screen reader announcement when the row menu Copy items could not write to the clipboard (permission denied, no Clipboard API). */
+  /** Announced when a menu Copy item (row menu; cell menu "Copy selected cells") cannot write to the clipboard. */
   copyFailedAnnouncement: string;
 }
 
@@ -560,7 +560,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Collapse group',
     expandRow: 'Show details',
     collapseRow: 'Hide details',
-    copyFailedAnnouncement: 'Could not copy',
+    copyFailedAnnouncement: 'Could not copy to the clipboard.',
   },
   es: {
     noData: 'Sin datos',
@@ -725,7 +725,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Contraer grupo',
     expandRow: 'Mostrar detalles',
     collapseRow: 'Ocultar detalles',
-    copyFailedAnnouncement: 'No se pudo copiar',
+    copyFailedAnnouncement: 'No se pudo copiar al portapapeles.',
   },
   pt: {
     noData: 'Sem dados',
@@ -890,7 +890,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Recolher grupo',
     expandRow: 'Mostrar detalhes',
     collapseRow: 'Ocultar detalhes',
-    copyFailedAnnouncement: 'Não foi possível copiar',
+    copyFailedAnnouncement: 'Não foi possível copiar para a área de transferência.',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1055,7 +1055,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Réduire le groupe',
     expandRow: 'Afficher les détails',
     collapseRow: 'Masquer les détails',
-    copyFailedAnnouncement: 'Impossible de copier',
+    copyFailedAnnouncement: 'Impossible de copier dans le presse-papiers.',
   },
   de: {
     noData: 'Keine Daten',
@@ -1220,7 +1220,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Gruppe reduzieren',
     expandRow: 'Details anzeigen',
     collapseRow: 'Details ausblenden',
-    copyFailedAnnouncement: 'Kopieren nicht möglich',
+    copyFailedAnnouncement: 'Konnte nicht in die Zwischenablage kopieren.',
   },
   it: {
     noData: 'Nessun dato',
@@ -1385,7 +1385,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Comprimi gruppo',
     expandRow: 'Mostra dettagli',
     collapseRow: 'Nascondi dettagli',
-    copyFailedAnnouncement: 'Impossibile copiare',
+    copyFailedAnnouncement: 'Impossibile copiare negli appunti.',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1550,7 +1550,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Groep samenvouwen',
     expandRow: 'Details weergeven',
     collapseRow: 'Details verbergen',
-    copyFailedAnnouncement: 'Kopiëren is mislukt',
+    copyFailedAnnouncement: 'Kopiëren naar het klembord is mislukt.',
   },
   ru: {
     noData: 'Нет данных',
@@ -1715,7 +1715,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Свернуть группу',
     expandRow: 'Показать подробности',
     collapseRow: 'Скрыть подробности',
-    copyFailedAnnouncement: 'Не удалось скопировать',
+    copyFailedAnnouncement: 'Не удалось скопировать в буфер обмена.',
   },
   pl: {
     noData: 'Brak danych',
@@ -1880,7 +1880,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Zwiń grupę',
     expandRow: 'Pokaż szczegóły',
     collapseRow: 'Ukryj szczegóły',
-    copyFailedAnnouncement: 'Nie udało się skopiować',
+    copyFailedAnnouncement: 'Nie udało się skopiować do schowka.',
   },
   tr: {
     noData: 'Veri yok',
@@ -2045,7 +2045,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'Grubu daralt',
     expandRow: 'Ayrıntıları göster',
     collapseRow: 'Ayrıntıları gizle',
-    copyFailedAnnouncement: 'Kopyalanamadı',
+    copyFailedAnnouncement: 'Panoya kopyalanamadı.',
   },
   ja: {
     noData: 'データがありません',
@@ -2210,7 +2210,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'グループを折りたたむ',
     expandRow: '詳細を表示',
     collapseRow: '詳細を非表示',
-    copyFailedAnnouncement: 'コピーできませんでした',
+    copyFailedAnnouncement: 'クリップボードにコピーできませんでした。',
   },
   ko: {
     noData: '데이터 없음',
@@ -2375,7 +2375,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: '그룹 접기',
     expandRow: '세부 정보 표시',
     collapseRow: '세부 정보 숨기기',
-    copyFailedAnnouncement: '복사하지 못했습니다',
+    copyFailedAnnouncement: '클립보드에 복사할 수 없습니다.',
   },
   zh: {
     noData: '无数据',
@@ -2540,7 +2540,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: '折叠分组',
     expandRow: '显示详细信息',
     collapseRow: '隐藏详细信息',
-    copyFailedAnnouncement: '无法复制',
+    copyFailedAnnouncement: '无法复制到剪贴板。',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -2705,7 +2705,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     collapseGroup: 'طي المجموعة',
     expandRow: 'إظهار التفاصيل',
     collapseRow: 'إخفاء التفاصيل',
-    copyFailedAnnouncement: 'تعذّر النسخ',
+    copyFailedAnnouncement: 'تعذّر النسخ إلى الحافظة.',
   },
 });
 

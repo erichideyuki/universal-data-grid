@@ -372,7 +372,7 @@ linhas).
   existente, spec 05); anúncio de falha ao copiar (chave i18n nova) e
   `opacity` do botão desabilitado (muda o visual padrão) — pedem aval.
 - **Aprovados pelo usuário depois da entrega** ("Accept recommendations",
-  2026-11-18) e feitos: chave `copyFailedAnnouncement` ("Could not copy",
+  2026-11-18) e feitos: chave `copyFailedAnnouncement` ("Could not copy to the clipboard.", mesma chave e textos da frente 19,
   14 idiomas), anunciada quando o "Copiar" do menu da linha não consegue
   escrever (só `source: 'user'`; `copySelection()` só devolve `false`);
   botão desabilitado da barra com `opacity: 0.38` no botão inteiro (ícone e

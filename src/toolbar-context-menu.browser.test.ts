@@ -838,11 +838,11 @@ describe('ajustes aprovados depois da entrega', () => {
     await settle(grid);
     expect(await grid.copySelection()).toBe(false);
     await settle(grid);
-    expect(liveRegion(grid).textContent.trim()).not.toBe('Could not copy');
+    expect(liveRegion(grid).textContent.trim()).not.toBe('Could not copy to the clipboard.');
 
     await contextMenu(grid, cellOf(grid, 'Rio'));
     itemNamed(grid, 'Copy').click();
-    await vi.waitFor(() => expect(liveRegion(grid).textContent.trim()).toBe('Could not copy'));
+    await vi.waitFor(() => expect(liveRegion(grid).textContent.trim()).toBe('Could not copy to the clipboard.'));
     expect(focused(grid)).toBe(cellOf(grid, 'Rio'));
   });
 
