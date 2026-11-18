@@ -5926,6 +5926,7 @@ export class DataGrid extends LitElement {
    */
   #reconcileColumnOptions(): void {
     this.#visibleBands = undefined;
+
     const reconcile = (column: GridColumnDef): void => {
       const width = column.width ?? null;
       const visible = column.visible !== false;
@@ -6695,21 +6696,23 @@ export class DataGrid extends LitElement {
       const bounds = this._boundsOf(column);
       const resizable = this.#isResizable(column) && (!nextColumnMode || !!this._resizeNeighbor(column));
 
-      return [{
-        column,
-        id: columnIdOf(column),
-        format,
-        className,
-        cellClassName: truncate ? `${className} truncate` : className,
-        style,
-        headerClasses: Object.fromEntries(classes.flatMap(names => names.split(' ')).map(name => [name, true])),
-        headerStyles,
-        resizable,
-        bounds,
-        width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
-        col: index + this.#leadingColumns,
-        gapBefore: plan?.gaps.get(index) ?? 0,
-      }];
+      return [
+        {
+          column,
+          id: columnIdOf(column),
+          format,
+          className,
+          cellClassName: truncate ? `${className} truncate` : className,
+          style,
+          headerClasses: Object.fromEntries(classes.flatMap(names => names.split(' ')).map(name => [name, true])),
+          headerStyles,
+          resizable,
+          bounds,
+          width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
+          col: index + this.#leadingColumns,
+          gapBefore: plan?.gaps.get(index) ?? 0,
+        },
+      ];
     });
   }
 
@@ -8244,7 +8247,7 @@ export class DataGrid extends LitElement {
     const key = this.#headerGridKey;
     const leading = this.#leadingNavColumns().join();
 
-    if (key && key.visible === this._visibleColumns && key.tree === this.#columnTree && key.leading === leading) {
+    if (key?.visible === this._visibleColumns && key.tree === this.#columnTree && key.leading === leading) {
       return;
     }
 
