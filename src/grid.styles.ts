@@ -782,9 +782,10 @@ export const styles = css`
     outline-offset: -2px;
   }
 
+  /* Desabilitado: o botão inteiro (ícone e texto) a 38%, como no Material — não só o matiz (WCAG 1.4.1). */
   .toolbar-button[aria-disabled="true"] {
     cursor: default;
-    color: color-mix(in srgb, currentColor 60%, transparent);
+    opacity: 0.38;
   }
 
   .toolbar-icon {
@@ -1986,6 +1987,11 @@ export const styles = css`
   .edit-bar-button[aria-disabled="true"] {
     cursor: default;
     color: color-mix(in srgb, currentColor 60%, transparent);
+  }
+
+  /* Na barra o desabilitado é pela opacidade (acima): a cor fica a do botão. */
+  .toolbar-button.edit-bar-button[aria-disabled="true"] {
+    color: var(--u-color-primary, rgb(103, 80, 164));
   }
 
   .edit-bar {

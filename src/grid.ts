@@ -12854,6 +12854,15 @@ export class DataGrid extends LitElement {
 
     const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
 
+    // Pelo menu (gesto do usuário) a falha é anunciada: o foco voltou à célula sem sinal do que houve.
+    const failed = (): false => {
+      if (source === 'user') {
+        this.#announce(this.#translation.copyFailedAnnouncement);
+      }
+
+      return false;
+    };
+
     try {
       if (clipboard && typeof clipboard.write === 'function' && typeof ClipboardItem === 'function') {
         const parts: Record<string, Blob> = { 'text/plain': new Blob([text], { type: 'text/plain' }) };
@@ -12866,10 +12875,10 @@ export class DataGrid extends LitElement {
       } else if (clipboard && typeof clipboard.writeText === 'function') {
         await clipboard.writeText(text);
       } else {
-        return false;
+        return failed();
       }
     } catch {
-      return false;
+      return failed();
     }
 
     if (!canceled) {

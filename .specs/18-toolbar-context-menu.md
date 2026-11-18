@@ -371,6 +371,13 @@ linhas).
   de grupo); `lang` do estado da ordenação no `aria-label` do chip (nome
   existente, spec 05); anúncio de falha ao copiar (chave i18n nova) e
   `opacity` do botão desabilitado (muda o visual padrão) — pedem aval.
+- **Aprovados pelo usuário depois da entrega** ("Accept recommendations",
+  2026-11-18) e feitos: chave `copyFailedAnnouncement` ("Could not copy",
+  14 idiomas), anunciada quando o "Copiar" do menu da linha não consegue
+  escrever (só `source: 'user'`; `copySelection()` só devolve `false`);
+  botão desabilitado da barra com `opacity: 0.38` no botão inteiro (ícone e
+  texto, cor do botão mantida) em vez de 60% da cor (WCAG 1.4.1). Recusado:
+  tipo nomeado `GridCsvExportOptions`.
 - **Ícone do botão do hospedeiro** desenhado direto no shadow DOM (valor, não
   função): `TemplateResult` ou texto; um `HTMLElement` é movido para lá.
 

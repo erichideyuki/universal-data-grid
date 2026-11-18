@@ -1333,7 +1333,7 @@ grid.toolbarItems = [
 | `location` | `'end'` (`groupPanel`: `'start'`) | Side of the bar. |
 | `locateInMenu` | `'auto'` for built-in buttons, `'never'` for yours | `auto`: moves to the "More actions" menu when it does not fit (the last ones first); `always`: always there. The group panel, the search panel and `renderer` items never move. |
 | `showText` | `'always'` (`columnChooserButton`, `exportButton`: `'in-menu'`) | `'in-menu'`: only the icon on the bar (the text becomes its accessible name and tooltip). |
-| `disabled` | `false` | Shown and focusable, but does nothing (`aria-disabled`). Not for `renderer` items. |
+| `disabled` | `false` | Shown and focusable, but does nothing (`aria-disabled`; the whole button at 38% opacity). Not for `renderer` items. |
 | `text` | — | Your button's label (required; also the menu text). On a built-in, replaces the translated label. |
 | `icon` | — | Your button's icon (decorative: `aria-hidden`). |
 | `action` | — | `({ toolbarItem, grid }) => void`, from the bar or the "More actions" menu. |
@@ -1413,7 +1413,8 @@ from your own control (e.g. a "⋯" button in a cell `renderer`), returning `fal
 opened; `closeContextMenu()` closes it.
 
 **Keyboard.** `↑`/`↓` (wrapping), `Home`/`End`, a letter goes to the next item starting with it,
-`Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. On a cell,
+`Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. When a "Copy" item
+cannot write to the clipboard (permission denied), screen readers hear "Could not copy". On a cell,
 `Shift+F10`/the menu key opens the row menu only when the focus is on the cell itself (inside an
 editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
 after "Delete" in the confirmation dialog; after the other items, back where the menu was opened.
@@ -2023,7 +2024,7 @@ interface GridI18n {
   // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
   // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
-  // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow
+  // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
 }
 ```
 

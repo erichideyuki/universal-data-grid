@@ -825,3 +825,44 @@ describe('roteiro de teclado e foco depois de cada ação', () => {
     expect(getComputedStyle(disabled).color).not.toBe(getComputedStyle(first).color);
   });
 });
+
+describe('ajustes aprovados depois da entrega', () => {
+  it('"Copiar" do menu que não consegue escrever anuncia a falha; copySelection() (API) não anuncia', async () => {
+    vi.spyOn(navigator.clipboard, 'write').mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    const grid = await create(g => {
+      g.rowMenu = true;
+      g.selectionMode = 'multiple';
+    });
+
+    grid.selectRows([1]);
+    await settle(grid);
+    expect(await grid.copySelection()).toBe(false);
+    await settle(grid);
+    expect(liveRegion(grid).textContent.trim()).not.toBe('Could not copy');
+
+    await contextMenu(grid, cellOf(grid, 'Rio'));
+    itemNamed(grid, 'Copy').click();
+    await vi.waitFor(() => expect(liveRegion(grid).textContent.trim()).toBe('Could not copy'));
+    expect(focused(grid)).toBe(cellOf(grid, 'Rio'));
+  });
+
+  it('botão desabilitado da barra: opacidade 0,38 no botão inteiro (não só a cor); axe sem violações', async () => {
+    const grid = await create(g => {
+      g.editMode = 'batch';
+      g.allowEditing = true;
+      g.toolbarItems = ['saveButton', 'discardButton', { text: 'Refresh', action: () => undefined, disabled: true }, { text: 'Print', action: () => undefined }];
+    });
+
+    const save = root(grid).querySelector<HTMLElement>('.save-button')!;
+    const refresh = rovingItems(grid).find(item => item.textContent.trim() === 'Refresh')!;
+    const print = rovingItems(grid).find(item => item.textContent.trim() === 'Print')!;
+
+    expect(save.getAttribute('aria-disabled')).toBe('true');
+    expect(getComputedStyle(save).opacity).toBe('0.38');
+    expect(getComputedStyle(refresh).opacity).toBe('0.38');
+    expect(getComputedStyle(print).opacity).toBe('1');
+    // A cor do desabilitado é a do botão: a diferença é a opacidade, não o matiz.
+    expect(getComputedStyle(refresh).color).toBe(getComputedStyle(print).color);
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
+  });
+});
