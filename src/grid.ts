@@ -36,6 +36,7 @@ import type {
   GridExportDataRow,
   GridExporter,
   GridExportErrorEventDetail,
+  GridExportEventDetail,
   GridExportFormat,
   GridExportingEventDetail,
   GridExportOptions,
@@ -121,6 +122,7 @@ import {
   toggleOrder,
 } from './features/sorting.js';
 import {
+  GRID_DEFAULT_TOOLBAR_ITEMS as DEFAULT_TOOLBAR_ITEMS,
   type GridToolbarButtonItem,
   type GridToolbarContentItem,
   type GridToolbarItem,
@@ -332,7 +334,9 @@ export type {
   GridContextMenuOpeningEventDetail,
   GridContextMenuTarget,
 } from './features/context-menu.js';
-export { GRID_DEFAULT_TOOLBAR_ITEMS } from './features/toolbar.js';
+
+/** The automatic toolbar (`toolbarItems = null`), in order. Spread it to add your own items without losing future built-ins. */
+export const GRID_DEFAULT_TOOLBAR_ITEMS: readonly GridToolbarItemName[] = DEFAULT_TOOLBAR_ITEMS;
 export type {
   GridBuiltInToolbarItem,
   GridHostToolbarItem,
@@ -1205,7 +1209,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridLoadErrorEventDetail>} u-grid-load-error - A `dataSource.load` call rejected (not fired for aborted calls); the grid shows the error bar with "Retry".
  * @fires {CustomEvent<GridPageChangeEventDetail>} u-grid-page-change - The page or page size changed: pager, PageUp/PageDown, a filter gesture (back to the first page)
  * or a clamp after the rows shrank (`source` of the change that caused it). Not the `pageIndex`/`pageSize` setters.
- * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.
+ * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C, the row menu Copy items or `copySelection()` write the selected rows (or the focused cell)
+ * to the clipboard (`source: 'user' | 'api'`). Cancelable.
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
@@ -1905,7 +1910,14 @@ export class DataGrid extends LitElement {
   }
 
   set exportFormats(value: readonly GridExportFormat[] | null | undefined) {
-    this.#exportFormats = Object.freeze(Array.isArray(value) ? [...new Set(value)] : []);
+    const tokens = Array.isArray(value) ? value.map(token => typeof token === 'string' ? token.toLowerCase() : String(token)) : [];
+    const unknown = tokens.filter(token => token !== 'csv' && token !== 'xlsx');
+
+    if (unknown.length) {
+      console.warn(`<u-grid>: unknown export format(s) ignored: ${unknown.join(', ')}.`);
+    }
+
+    this.#exportFormats = Object.freeze([...new Set(tokens.filter((token): token is GridExportFormat => token === 'csv' || token === 'xlsx'))]);
   }
 
   #exportFormats: readonly GridExportFormat[] = Object.freeze([]);
@@ -3184,7 +3196,7 @@ export class DataGrid extends LitElement {
       // Barra e menus (frente 18): busca por letra, toque longo, exportação em curso, larguras medidas.
       menuTimers: this.#contextMenu.timers + this.#toolbarMenu.timers,
       longPressTimers: this.#longPress.timers,
-      exportTimers: (this.#exportTimer === undefined ? 0 : 1) + (this.#exporting ? 1 : 0),
+      exportTimers: (this.#exportTimer === undefined ? 0 : 1) + (this.#exporting ? 1 : 0) + (this.#xlsxCheckFrame === undefined ? 0 : 1),
       toolbarWidths: this.#toolbarWidths.size,
     };
   }
@@ -3439,6 +3451,7 @@ export class DataGrid extends LitElement {
     this.#afterEditRender();
 
     this.#afterToolbarRender();
+    this.#checkXlsxExporter();
 
     if (this.#hadFocusBeforeRender) {
       // O conteúdo de uma célula removida sai num microtask (grid-custom-cell):
@@ -9614,6 +9627,7 @@ export class DataGrid extends LitElement {
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
+            data-row-menu=${ifDefined(this.rowMenu ? '' : undefined)}
             @contextmenu=${this.#onTableContextMenu}
             @pointerdown=${this.#onLongPressStart}
             @click=${this.#longPressClickCapture}
@@ -11103,11 +11117,6 @@ export class DataGrid extends LitElement {
 
     for (const format of this.#exportFormats) {
       if (format === 'xlsx' && typeof this.xlsxExporter !== 'function') {
-        if (!this.#warnedXlsxExporter) {
-          this.#warnedXlsxExporter = true;
-          console.warn('<u-grid>: export format "xlsx" needs "xlsxExporter" (createXlsxExporter from "@universal-material/data-grid/export-xlsx"); its entries are not shown.');
-        }
-
         continue;
       }
 
@@ -11129,6 +11138,26 @@ export class DataGrid extends LitElement {
   }
 
   #warnedXlsxExporter = false;
+  #xlsxCheckFrame: number | undefined;
+
+  /**
+   * `xlsx` sem `xlsxExporter`: avisa uma vez, um quadro depois do render (o
+   * exportador costuma chegar depois do 1º render: `useEffect`, `ngAfterViewInit`).
+   */
+  #checkXlsxExporter(): void {
+    if (this.#warnedXlsxExporter || this.#xlsxCheckFrame !== undefined || !this.#exportFormats.includes('xlsx') || typeof this.xlsxExporter === 'function') {
+      return;
+    }
+
+    this.#xlsxCheckFrame = requestAnimationFrame(() => {
+      this.#xlsxCheckFrame = undefined;
+
+      if (this.isConnected && !this.#warnedXlsxExporter && this.#exportFormats.includes('xlsx') && typeof this.xlsxExporter !== 'function') {
+        this.#warnedXlsxExporter = true;
+        console.warn('<u-grid>: export format "xlsx" needs "xlsxExporter" (createXlsxExporter from "@universal-material/data-grid/export-xlsx"); its entries are not shown.');
+      }
+    });
+  }
 
   /**
    * Exportação pela interface: `u-grid-exporting` (cancelável) →
@@ -11166,7 +11195,7 @@ export class DataGrid extends LitElement {
       }
 
       controller.signal.throwIfAborted();
-      this.dispatchEvent(new CustomEvent('u-grid-export', this.#eventInit<GridExportingEventDetail>({ format, selectedOnly })));
+      this.dispatchEvent(new CustomEvent('u-grid-export', this.#eventInit<GridExportEventDetail>({ format, selectedOnly })));
       this.#announce(formatMessage(this.#translation.exportCompleteAnnouncement, { format: format === 'csv' ? 'CSV' : 'Excel' }));
     } catch (error) {
       // Desconectado no meio: nada a avisar.
@@ -11187,10 +11216,23 @@ export class DataGrid extends LitElement {
   }
 
   #exporting: AbortController | null = null;
+
+  /** Item desabilitado ativado durante a exportação: relê "Exportando…" (marca alternada). */
+  #announceExportBusy(): void {
+    if (this.#exporting) {
+      this.#announce(this.#translation.exportingAnnouncement);
+    }
+  }
+
   #exportTimer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Solto no disconnect (spec 14): aborta a exportação em curso e o timer do anúncio. */
+  /** Solto no disconnect (spec 14): aborta a exportação em curso, o timer do anúncio e a conferência do exportador. */
   #releaseExport(): void {
+    if (this.#xlsxCheckFrame !== undefined) {
+      cancelAnimationFrame(this.#xlsxCheckFrame);
+      this.#xlsxCheckFrame = undefined;
+    }
+
     this.#exporting?.abort();
     this.#exporting = null;
     clearTimeout(this.#exportTimer);
@@ -11360,15 +11402,18 @@ export class DataGrid extends LitElement {
 
     const toolbarRole = keys.length >= 2;
     const hostName = this.#hostLabel.name;
-    const label = hostName ? `${hostName}, ${this.#translation.toolbarLabel}` : this.#translation.toolbarLabel;
 
     return html`
       <div class="header" part="toolbar" ${ref(this.#toolbarRef)}>
+        <span hidden id="u-grid-toolbar-host-name" lang=${this.#contentLanguage}>${hostName}</span><span
+          hidden
+          id="u-grid-toolbar-name"
+          lang=${this.#textLanguage}>${this.#translation.toolbarLabel}</span>
         ${map(resolved.leading, entry => this.#renderStandalone(entry))}
         <div
           class="toolbar-roving"
           role=${ifDefined(toolbarRole ? 'toolbar' : undefined)}
-          aria-label=${ifDefined(toolbarRole ? label : undefined)}
+          aria-labelledby=${ifDefined(toolbarRole ? hostName ? 'u-grid-toolbar-host-name u-grid-toolbar-name' : 'u-grid-toolbar-name' : undefined)}
           ${ref(this.#rovingRef)}
           @keydown=${this.#onToolbarKeyDown}
           @focusin=${this.#onToolbarFocusIn}>
@@ -11672,6 +11717,7 @@ export class DataGrid extends LitElement {
       labelledBy,
       entries: entries.map(({ entry }) => entry),
       onKeyDown: this.#toolbarMenu.onKeyDown,
+      onDisabledAction: () => this.#announceExportBusy(),
       onAction: key => {
         const found = entries.find(({ entry }) => entry.key === key);
         const opener = this.#toolbarMenu.opener;
@@ -11859,6 +11905,11 @@ export class DataGrid extends LitElement {
       // Menu "mais" aberto com itens trocados: fecha e devolve o foco ao "mais".
       if (this.#toolbarMenu.open && this.#toolbarMenu.data?.kind === 'more') {
         this.#toolbarMenu.hide(next.size > 0);
+
+        if (!next.size) {
+          // O "mais" sai: o foco vai ao item da barra no mesmo lugar.
+          this.#focusToolbarKey('more');
+        }
       }
 
       this.requestUpdate();
@@ -11915,10 +11966,25 @@ export class DataGrid extends LitElement {
         aria-keyshortcuts=${`${menu && sortable ? 'Shift+F10 ' : ''}Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G`}
         aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
         @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
-        @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
+        @click=${sortable
+          ? (event: MouseEvent) => this.#onGroupChipActivate(column, event)
+          : opensMenu ? (event: MouseEvent) => this.#onMenuChipClick(column, event) : nothing}
         @keydown=${(event: KeyboardEvent) => this.#onChipKeyDown(column, index, event)}>
         <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
       </div>`;
+  }
+
+  /** Clique no chip que é botão de menu (não ordenável): abre/fecha o menu do painel. */
+  #onMenuChipClick(column: GridColumnDef, event: MouseEvent): void {
+    if (this.#consumeDrag(event)) {
+      return;
+    }
+
+    if (this.#contextMenuOpenFor('group-panel', column)) {
+      this.#contextMenu.hide(true);
+    } else {
+      this.#openGroupPanelMenu(event.currentTarget as HTMLElement, null, null);
+    }
   }
 
   /** Desagrupar tirou o chip focado: o foco vai ao item da barra no mesmo lugar (chip vizinho ou o próximo item). */
@@ -11958,7 +12024,7 @@ export class DataGrid extends LitElement {
 
     return this.#openContextMenuWith(
       { target: 'group-panel', cellType: null, column, item: null, rowKey: null, groupPath: null },
-      { returnFocus, ...point ?? {}, positionTarget: chip },
+      { returnFocus, ...point ?? {}, positionTarget: chip, opener: chip },
       event,
     );
   }
@@ -12038,7 +12104,8 @@ export class DataGrid extends LitElement {
     event: Event | null,
   ): boolean {
     const builtIns = this.#builtInMenuItems(request);
-    const menuItems: GridContextMenuItem[] = builtIns.map(({ name }) => ({ name }));
+    // Os embutidos levam o estado padrão (desabilitado, separador); o `text` fica de fora (marca texto do hospedeiro).
+    const menuItems: GridContextMenuItem[] = builtIns.map(({ name, disabled, separatorBefore }) => ({ name, disabled: !!disabled, separatorBefore: !!separatorBefore }));
     const { groupRow: _groupRow, rowIndex: _rowIndex, ...context } = request;
     const detail: GridContextMenuOpeningEventDetail = { ...context, grid: this, menuItems };
 
@@ -12345,6 +12412,7 @@ export class DataGrid extends LitElement {
         disabled: !!item.disabled || (typeof item.action !== 'function' && (!builtIn || !!builtIn.disabled)),
         separatorBefore: item.separatorBefore ?? (builtIn ? builtIn.separatorBefore : false),
         hiddenSuffix: !hostText ? builtIn?.hiddenSuffix : undefined,
+        suffixLang: contentLanguage,
         lang: hostText ? contentLanguage : textLanguage,
       };
     });
@@ -12383,6 +12451,7 @@ export class DataGrid extends LitElement {
       entries,
       onKeyDown: this.#contextMenu.onKeyDown,
       onAction: key => this.#onContextMenuAction(Number(key)),
+      onDisabledAction: () => this.#announceExportBusy(),
     });
   }
 
@@ -12724,6 +12793,12 @@ export class DataGrid extends LitElement {
   /** `pointerdown` de toque na tabela ou no painel: toque longo abre o menu (iOS). */
   readonly #onLongPressStart = (event: PointerEvent): void => {
     this.#longPress.start(event, (path, x, y) => {
+      // Campo editável ou texto selecionado: fica o menu nativo (colar, copiar).
+      if (path.some(node => node instanceof HTMLElement && (node.isContentEditable || node.matches('input, textarea, select')))
+        || (!!this.shadowRoot && hasGridTextSelection(this.shadowRoot))) {
+        return;
+      }
+
       if (path.some(node => node === this._groupContainerRef.value)) {
         const chip = path.find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
         this.#openGroupPanelMenu(chip ?? null, { x, y }, null);
@@ -13066,7 +13141,7 @@ declare global {
     'u-grid-edit-cancel': CustomEvent<GridEditCancelEventDetail>;
     'u-grid-context-menu-opening': CustomEvent<GridContextMenuOpeningEventDetail>;
     'u-grid-exporting': CustomEvent<GridExportingEventDetail>;
-    'u-grid-export': CustomEvent<GridExportingEventDetail>;
+    'u-grid-export': CustomEvent<GridExportEventDetail>;
     'u-grid-export-error': CustomEvent<GridExportErrorEventDetail>;
   }
 }

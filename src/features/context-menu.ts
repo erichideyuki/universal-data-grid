@@ -96,7 +96,9 @@ export interface GridContextMenuItemActionContext<TItem = any> extends GridConte
 }
 
 /**
- * `detail` of `u-grid-context-menu-opening`. Change `menuItems` in place,
+ * `detail` of `u-grid-context-menu-opening`. The built-in items come as
+ * `{ name, disabled, separatorBefore }` (their default state; `text` absent =
+ * the translation). Change `menuItems` in place,
  * synchronously in the listener (add, remove, reorder, change `text`,
  * `disabled`, `separatorBefore`): the grid reads the array right after the
  * dispatch; later changes are ignored. Do not keep the reference.

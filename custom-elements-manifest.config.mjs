@@ -66,6 +66,8 @@ const ATTRIBUTE_TYPES = {
     'key-expr': 'string',
     'remote-operations': 'boolean',
     'page-size-options': 'string',
+    // Frente 18: lista de palavras (`"csv xlsx"`).
+    'export-formats': 'string',
     'state-storage': "'local' | 'session'",
     // Frente 09: a função por linha é só por propriedade.
     'allow-editing': 'boolean',

@@ -9,6 +9,7 @@ import { html } from 'lit';
 
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { commands } from 'vitest/browser';
 
 import type { GridContextMenuOpeningEventDetail } from './features/context-menu.js';
 import type { GridToolbarItem } from './features/toolbar.js';
@@ -16,9 +17,16 @@ import type { GridColumnDef } from './grid-column-def.js';
 import { type DataGrid, GRID_DEFAULT_TOOLBAR_ITEMS, type GridExportingEventDetail } from './grid.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
 
-afterEach(() => {
+declare module 'vitest/browser' {
+  interface BrowserCommands {
+    emulateMedia: (options: { forcedColors?: 'active' | 'none' | null; reducedMotion?: 'reduce' | 'no-preference' | null }) => Promise<void>;
+  }
+}
+
+afterEach(async () => {
   cleanup();
   vi.restoreAllMocks();
+  await commands.emulateMedia({ forcedColors: null });
 });
 
 interface Person {
@@ -86,7 +94,7 @@ describe('barra: composição', () => {
     expect(GRID_DEFAULT_TOOLBAR_ITEMS).toEqual(['groupPanel', 'addRowButton', 'saveButton', 'discardButton', 'exportButton', 'columnChooserButton', 'searchPanel']);
     const toolbar = root(grid).querySelector<HTMLElement>('[part=toolbar]')!;
     expect(roving(grid).getAttribute('role')).toBe('toolbar');
-    expect(roving(grid).getAttribute('aria-label')).toBe('Grid toolbar');
+    expect(root(grid).getElementById(roving(grid).getAttribute('aria-labelledby')!)!.textContent).toBe('Grid toolbar');
     expect(rovingItems(grid).map(item => item.getAttribute('data-roving'))).toEqual(['b:exportButton', 'b:columnChooserButton']);
     // A busca fica fora do roving, depois dele.
     expect(roving(grid).contains(toolbar.querySelector('.search-panel'))).toBe(false);
@@ -155,6 +163,27 @@ describe('barra: composição', () => {
     await settle(grid);
     expect(signal!.aborted).toBe(true);
     expect(grid.querySelector('select')).toBeNull();
+  });
+});
+
+describe('barra: avisos e validação', () => {
+  it('embutido desligado avisa uma vez (também em string, renderizando de novo); exportFormats valida na propriedade', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const grid = await create(g => {
+      g.toolbarItems = ['exportButton', 'columnChooserButton'];
+    });
+
+    grid.striped = true;
+    await settle(grid);
+    grid.striped = false;
+    await settle(grid);
+    const messages = warn.mock.calls.flat().map(String);
+    expect(messages.filter(text => text.includes('"exportButton" is not shown'))).toHaveLength(1);
+    expect(messages.filter(text => text.includes('"columnChooserButton" is not shown'))).toHaveLength(1);
+
+    grid.exportFormats = ['CSV', 'pdf'] as never;
+    expect(grid.exportFormats).toEqual(['csv']);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/unknown export format\(s\) ignored: pdf/);
   });
 });
 
@@ -677,5 +706,122 @@ describe('axe', () => {
     grid.language = 'ar';
     await settle(grid);
     expect(await run()).toEqual([]);
+  });
+});
+
+describe('roteiro de teclado e foco depois de cada ação', () => {
+  it('excluir: diálogo; cancelar volta à célula; confirmar leva à mesma coluna da linha seguinte', async () => {
+    const grid = await create(g => {
+      g.rowMenu = true;
+      g.allowRemoving = true;
+    });
+
+    cellOf(grid, 'Bia').focus();
+    await key(grid, cellOf(grid, 'Bia'), 'F10', { shiftKey: true });
+    itemNamed(grid, 'Delete').click();
+    await settle(grid);
+    const dialog = root(grid).querySelector<HTMLDialogElement>('dialog.remove-dialog')!;
+    expect(dialog.open).toBe(true);
+    dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    await settle(grid);
+    expect(focused(grid)).toBe(cellOf(grid, 'Bia'));
+
+    await key(grid, cellOf(grid, 'Bia'), 'F10', { shiftKey: true });
+    itemNamed(grid, 'Delete').click();
+    await settle(grid);
+    root(grid).querySelector<HTMLElement>('dialog .danger')!.click();
+    await settle(grid);
+    await settle(grid);
+    expect(grid.items.map((item: Person) => item.name)).toEqual(['Ana', 'Caio', 'Duda']);
+    expect(focused(grid)).toBe(cellOf(grid, 'Caio'));
+  });
+
+  it('lote: restaurar volta à célula; detalhe: mostrar/ocultar volta à célula', async () => {
+    const grid = await create(g => {
+      g.rowMenu = true;
+      g.allowRemoving = true;
+      g.editMode = 'batch';
+      g.detailRenderer = () => 'detail';
+    });
+
+    grid.removeRow(2);
+    await settle(grid);
+    await key(grid, cellOf(grid, 'Bia'), 'F10', { shiftKey: true });
+    itemNamed(grid, 'Restore').click();
+    await settle(grid);
+    expect(grid.hasChanges()).toBe(false);
+    expect(focused(grid)).toBe(cellOf(grid, 'Bia'));
+
+    await key(grid, cellOf(grid, 'Bia'), 'F10', { shiftKey: true });
+    itemNamed(grid, 'Show details').click();
+    await settle(grid);
+    expect(grid.isRowExpanded(2)).toBe(true);
+    expect(focused(grid)).toBe(cellOf(grid, 'Bia'));
+  });
+
+  it('tecla Menu no cabeçalho e no chip; clique no chip não ordenável abre o menu; desagrupar tudo vai ao próximo item da barra', async () => {
+    const grid = await create(g => {
+      g.columnChooser = true;
+      g.sortMode = 'none';
+    });
+
+    await key(grid, headerCell(grid, 'City'), 'ContextMenu');
+    expect(menu(grid)!.getAttribute('part')).toBe('menu column-header-menu');
+    itemNamed(grid, 'Group by this column').click();
+    await settle(grid);
+    expect(grid.getGrouping().map(column => column.path)).toEqual(['city']);
+    expect(focused(grid)).not.toBeNull();
+
+    const chip = root(grid).querySelector<HTMLElement>('.group')!;
+    expect(chip.getAttribute('aria-haspopup')).toBe('menu');
+    chip.click();
+    await settle(grid);
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    await key(grid, focused(grid)!, 'Escape');
+    expect(focused(grid)).toBe(chip);
+
+    await key(grid, chip, 'ContextMenu');
+    itemNamed(grid, 'Ungroup all').click();
+    await settle(grid);
+    expect(grid.getGrouping()).toEqual([]);
+    expect(focused(grid)!.classList.contains('column-chooser-button')).toBe(true);
+  });
+
+  it('nome da barra com o do grid (aria-labelledby, idioma de cada parte); toque longo num campo fica nativo', async () => {
+    const grid = await create(g => {
+      g.setAttribute('aria-label', 'Orders');
+      g.columnChooser = true;
+      g.rowMenu = true;
+      g.allowEditing = true;
+      g.toolbarItems = [{ text: 'One', action: () => undefined }, 'columnChooserButton'];
+    });
+
+    const ids = roving(grid).getAttribute('aria-labelledby')!.split(' ');
+    expect(ids.map(id => root(grid).getElementById(id)!.textContent)).toEqual(['Orders', 'Grid toolbar']);
+    expect(root(grid).getElementById(ids[1])!.getAttribute('lang')).toBe('en');
+
+    grid.editCell(1, grid.columns[0]);
+    await settle(grid);
+    const input = focused(grid)!;
+    input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'touch', isPrimary: true, pointerId: 9 }));
+    await new Promise(resolve => setTimeout(resolve, 600));
+    await settle(grid);
+    expect(menu(grid)).toBeNull();
+    expect(focused(grid)).toBe(input);
+  });
+
+  it('forced-colors: item focado em Highlight; desabilitado focado segue GrayText', async () => {
+    await commands.emulateMedia({ forcedColors: 'active' });
+    const grid = await create();
+
+    await key(grid, headerCell(grid, 'Name'), 'F10', { shiftKey: true });
+    const first = menuItems(grid)[0];
+    first.focus();
+    await settle(grid);
+    expect(getComputedStyle(first).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    const disabled = itemNamed(grid, 'Clear sorting');
+    disabled.focus();
+    await settle(grid);
+    expect(getComputedStyle(disabled).color).not.toBe(getComputedStyle(first).color);
   });
 });

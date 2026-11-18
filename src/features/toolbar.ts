@@ -38,7 +38,11 @@ export interface GridToolbarItemOptions {
    * buttons). The group panel, the search panel and `renderer` items never move.
    */
   locateInMenu?: 'auto' | 'always' | 'never';
-  /** `in-menu`: only the icon on the bar (the text becomes the name and tooltip; shown in the menu). Default `always`. */
+  /**
+   * `in-menu`: only the icon on the bar (the text becomes the name and
+   * tooltip; shown in the menu). Default `always`, except the built-in
+   * `columnChooserButton` and `exportButton` (icon buttons: `in-menu`).
+   */
   showText?: 'always' | 'in-menu';
   /** Shown and focusable, but does nothing (`aria-disabled`). */
   disabled?: boolean;
@@ -127,11 +131,19 @@ export const isStandalone = (entry: ToolbarEntry): boolean =>
 export const isCollapsible = (entry: ToolbarEntry): boolean =>
   entry.kind !== 'content' && entry.inMenu !== 'never';
 
-const warned = new WeakSet();
+/** Avisos já dados por lista (`toolbarItems`) e motivo: uma vez cada, mesmo renderizando de novo. */
+const warned = new WeakMap<object, Set<string>>();
 
-const warnOnce = (owner: object, message: string): void => {
-  if (!warned.has(owner)) {
-    warned.add(owner);
+const warnOnce = (owner: object, key: string, message: string): void => {
+  let keys = warned.get(owner);
+
+  if (!keys) {
+    keys = new Set();
+    warned.set(owner, keys);
+  }
+
+  if (!keys.has(key)) {
+    keys.add(key);
     console.warn(`<u-grid>: ${message}`);
   }
 };
@@ -164,12 +176,12 @@ export const resolveToolbar = (
       const name = item.name;
 
       if (!BUILT_IN_NAMES.has(name)) {
-        warnOnce(source, `unknown toolbar item "${name}" ignored (host items use \`id\`, \`text\` and \`action\`).`);
+        warnOnce(source, `unknown:${name}`, `unknown toolbar item "${name}" ignored (host items use \`id\`, \`text\` and \`action\`).`);
         return;
       }
 
       if (seen.has(name)) {
-        warnOnce(source, `toolbar item "${name}" listed twice; the first one is used.`);
+        warnOnce(source, `twice:${name}`, `toolbar item "${name}" listed twice; the first one is used.`);
         return;
       }
 
@@ -177,7 +189,7 @@ export const resolveToolbar = (
 
       if (!enabled(name)) {
         if (explicit) {
-          warnOnce(item, `toolbar item "${name}" is not shown: its feature is off.`);
+          warnOnce(source, `off:${name}`, `toolbar item "${name}" is not shown: its feature is off.`);
         }
 
         return;
@@ -198,7 +210,7 @@ export const resolveToolbar = (
       };
     } else {
       // Botão sem nome (WCAG 4.1.2) ou sem ação: fora.
-      warnOnce(item, 'toolbar item without `text` and `action` (or `renderer`) ignored.');
+      warnOnce(source, `unnamed:${index}`, 'toolbar item without `text` and `action` (or `renderer`) ignored.');
       return;
     }
 

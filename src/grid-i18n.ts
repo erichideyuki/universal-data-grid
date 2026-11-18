@@ -29,11 +29,11 @@ export interface GridI18n {
   hideColumn: string;
   /** Tooltip of an unchecked column in the chooser. */
   showColumn: string;
-  /** Tooltip of the chooser button that fixes a column at the start (its name is `fixStartLabel`). */
+  /** Tooltip of the chooser button that fixes a column at the start (its name is `fixStartLabel`) and column header menu item. */
   fixStart: string;
-  /** Tooltip of the chooser button that fixes a column at the end (its name is `fixEndLabel`). */
+  /** Tooltip of the chooser button that fixes a column at the end (its name is `fixEndLabel`) and column header menu item. */
   fixEnd: string;
-  /** Tooltip of a pressed fix button (removes the fixing). */
+  /** Tooltip of a pressed fix button (removes the fixing) and column header menu item. */
   unfix: string;
   /** Tooltip of the column resize handle: double-click or Enter auto-sizes. */
   autoSize: string;
@@ -53,13 +53,13 @@ export interface GridI18n {
   summaryColumnText: string;
   /** Count and inline summaries after the group value. `{info}` = the items joined as a list of the language. */
   groupInfoText: string;
-  /** Group panel menu: removes the column from the grouping. */
+  /** Group panel and group row menus: removes the column from the grouping. */
   ungroupColumn: string;
   /** Group panel menu: removes every column from the grouping. */
   ungroupAll: string;
-  /** Group panel menu: expands every group. */
+  /** Group panel and group row menus: expands every group. */
   expandAllGroups: string;
-  /** Group panel menu: collapses every group. */
+  /** Group panel and group row menus: collapses every group. */
   collapseAllGroups: string;
   /** Accessible name of the group panel menu. */
   groupPanelMenuLabel: string;
@@ -129,9 +129,9 @@ export interface GridI18n {
   selectAllRows: string;
   /** Screen reader announcement after a bulk selection change. `{count}` = number of selected rows. */
   rowsSelectedAnnouncement: string;
-  /** Screen reader announcement after Ctrl+C copied rows. `{count}` = copied rows (no plural forms: keep it a label). */
+  /** Screen reader announcement after Ctrl+C, the row menu or `copySelection()` copied rows. `{count}` = copied rows (no plural forms: keep it a label). */
   rowsCopiedAnnouncement: string;
-  /** Screen reader announcement after Ctrl+C copied the focused cell. */
+  /** Screen reader announcement after Ctrl+C, the row menu or `copySelection()` copied a cell. */
   cellCopiedAnnouncement: string;
   /** Screen reader announcement after moving a column (keyboard or column header menu). `{column}`, `{position}`, `{count}`. */
   columnMovedAnnouncement: string;
@@ -175,7 +175,7 @@ export interface GridI18n {
   columnResizedAnnouncement: string;
   /** Name of the column resize handle. `{column}` = column label. */
   resizeHandleLabel: string;
-  /** Name of the group panel (toolbar of group chips). */
+  /** Name of the group panel (a `role="group"` of group chips inside the toolbar). */
   groupPanelLabel: string;
   /** Name of the filter row operation button. `{column}` = column label, `{operation}` = current operation. */
   filterOperationButtonLabel: string;
@@ -215,13 +215,13 @@ export interface GridI18n {
   nextPage: string;
   /** Last page button. */
   lastPage: string;
-  /** Edit button of a row (`editMode="row"`). */
+  /** Edit button of a row (`editMode="row"`) and the row menu Edit item. */
   editRow: string;
   /** Save button of the row being edited (`editMode="row"`). */
   saveRow: string;
-  /** Delete button of a row, and the confirm button of the delete dialog. */
+  /** Delete button of a row, the row menu Delete item and the confirm button of the delete dialog. */
   removeRow: string;
-  /** Button that restores a row marked for removal (`editMode="batch"`). */
+  /** Button and row menu item that restore a row marked for removal (`editMode="batch"`). */
   restoreRow: string;
   /** Toolbar button that adds a row (`allowAdding`). */
   addRow: string;

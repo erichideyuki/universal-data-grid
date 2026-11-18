@@ -1037,6 +1037,16 @@ export const styles = css`
     background: none;
   }
 
+  /*
+   * Toque longo (frente 18): sem o balão nativo do iOS (seleção/"copiar") por
+   * cima do menu do grid, só onde há menu.
+   */
+  .grid-table[data-row-menu] > tbody > tr > td,
+  .grid-table > thead th,
+  .group {
+    -webkit-touch-callout: none;
+  }
+
   .menu-separator {
     height: 0;
     margin-block: 8px;
@@ -1550,6 +1560,14 @@ export const styles = css`
       forced-color-adjust: none;
       background: Highlight;
       color: HighlightText;
+    }
+
+    /* Desabilitado e focado: segue GrayText (o estado não some no foco). */
+    .menu-item[aria-disabled="true"]:focus-visible {
+      background: Canvas;
+      color: GrayText;
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
     }
 
     .menu-separator {

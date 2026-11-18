@@ -342,6 +342,35 @@ linhas).
 - **Guarda de foco**: foco levado de propósito para fora do grid (âncora do
   `openContextMenu`) não é foco perdido — a guarda só age com o foco no
   `<body>`.
+- **Revisão da API na entrega** (`webcomponent-api-reviewer`, 13 achados,
+  aplicados): avisos uma vez por lista e motivo (o item em string virava
+  objeto novo a cada render); `exportFormats` valida também na propriedade
+  (minúsculas, desconhecido avisa); embutidos no `menuItems` com `disabled`
+  e `separatorBefore` padrão; aviso do `xlsx` sem exportador um quadro
+  depois do render (o exportador chega depois do 1º render nos frameworks);
+  `GRID_DEFAULT_TOOLBAR_ITEMS` declarado no `grid.ts` (entra no CEM);
+  `export-formats` como `string` no CEM; JSDoc das chaves reaproveitadas.
+  Desvios registrados: `showText` padrão `in-menu` no `columnChooserButton`
+  e no `exportButton` (botões de ícone, como o seletor de hoje); item com
+  `renderer` sem `locateInMenu`/`showText`/`disabled` (nunca recolhe; o
+  conteúdo é do hospedeiro); tipos extras exportados
+  (`GridToolbarButtonItem`, `GridToolbarContentItem`, `GridContextMenuContext`).
+  Recusado: tipo nomeado `GridCsvExportOptions` (nome público novo — fica para
+  aval; o README mostra o `Omit`).
+- **Revisão de a11y na entrega** (`a11y-reviewer`, 13 achados). Aplicados:
+  clique no chip não ordenável (botão de menu) abre o menu; toque longo em
+  campo editável ou com texto selecionado fica nativo;
+  `-webkit-touch-callout: none` só onde há menu; nome da barra por
+  `aria-labelledby` com o `lang` de cada parte; "mais" que some com o menu
+  aberto devolve o foco à barra; ativar item de exportar desabilitado durante
+  a exportação relê "Exportando…"; sufixo oculto ("Desagrupar País") com o
+  `lang` do conteúdo; `forced-colors` do item desabilitado focado; testes de
+  foco que faltavam. Deixados (justificados, vão ao usuário): desagrupar pelo
+  menu do painel leva o foco ao chip vizinho (comportamento já aprovado na
+  spec 17; o texto "como Ctrl+G" desta spec vale para o cabeçalho e a linha
+  de grupo); `lang` do estado da ordenação no `aria-label` do chip (nome
+  existente, spec 05); anúncio de falha ao copiar (chave i18n nova) e
+  `opacity` do botão desabilitado (muda o visual padrão) — pedem aval.
 - **Ícone do botão do hospedeiro** desenhado direto no shadow DOM (valor, não
   função): `TemplateResult` ou texto; um `HTMLElement` é movido para lá.
 

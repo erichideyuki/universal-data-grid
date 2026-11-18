@@ -328,6 +328,8 @@ export interface MenuEntry {
   separatorBefore?: boolean;
   /** Texto oculto depois do rótulo (ex.: a coluna de "Desagrupar"). */
   hiddenSuffix?: string;
+  /** Idioma do texto oculto (o rótulo da coluna é do hospedeiro). */
+  suffixLang?: string;
   /** Idioma do texto: o da i18n nos embutidos; o do conteúdo do hospedeiro (ou `''`) nos dele. */
   lang?: string;
   /** O item abre um diálogo (seletor de colunas pelo "mais"). */
@@ -346,11 +348,13 @@ export interface MenuRenderContext {
   labelLang?: string;
   entries: readonly MenuEntry[];
   onAction: (key: string) => void;
+  /** Ativação de um item `aria-disabled` (não age; o grid pode anunciar o porquê). */
+  onDisabledAction?: (key: string) => void;
   onKeyDown: (event: KeyboardEvent) => void;
 }
 
 /** O menu (sem estado): itens `menuitem` com foco móvel e separadores. */
-export const renderMenu = ({ className, part, label, labelledBy, labelLang, entries, onAction, onKeyDown }: MenuRenderContext): TemplateResult => html`
+export const renderMenu = ({ className, part, label, labelledBy, labelLang, entries, onAction, onDisabledAction, onKeyDown }: MenuRenderContext): TemplateResult => html`
   <div
     class="grid-menu ${className}"
     part=${part}
@@ -373,10 +377,12 @@ export const renderMenu = ({ className, part, label, labelledBy, labelLang, entr
         aria-haspopup=${ifDefined(entry.hasPopup)}
         aria-disabled=${entry.disabled ? 'true' : 'false'}
         @click=${() => {
-          if (!entry.disabled) {
+          if (entry.disabled) {
+            onDisabledAction?.(entry.key);
+          } else {
             onAction(entry.key);
           }
         }}><span class="menu-item-text">${entry.label}</span>${entry.hiddenSuffix
-          ? html`<span class="visually-hidden"> ${entry.hiddenSuffix}</span>`
+          ? html`<span class="visually-hidden" lang=${ifDefined(entry.suffixLang)}> ${entry.hiddenSuffix}</span>`
           : nothing}</button>`)}
   </div>`;

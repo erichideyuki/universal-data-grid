@@ -1319,8 +1319,8 @@ and `searchPanel` (`show-search-panel`) — in that order (`GRID_DEFAULT_TOOLBAR
 import { GRID_DEFAULT_TOOLBAR_ITEMS } from '@universal-material/data-grid';
 
 grid.toolbarItems = [
-  ...GRID_DEFAULT_TOOLBAR_ITEMS,
-  { name: 'searchPanel', location: 'start' },              // configures a built-in (the first one listed wins)
+  // Configure a built-in with an object (when a name is listed twice, the first one wins).
+  ...GRID_DEFAULT_TOOLBAR_ITEMS.map(name => name === 'searchPanel' ? { name, location: 'start' } : name),
   { text: 'Refresh', icon: refreshIcon, showText: 'in-menu', action: ({ grid }) => grid.refresh() },
   { text: 'Print', action: () => print(), locateInMenu: 'always' },
   { renderer: ({ signal }) => html`<my-view-select></my-view-select>` }, // your own content
@@ -1332,8 +1332,8 @@ grid.toolbarItems = [
 | `name` | — | A built-in item. It shows only when its feature is on (a console warning tells you when it doesn't). |
 | `location` | `'end'` (`groupPanel`: `'start'`) | Side of the bar. |
 | `locateInMenu` | `'auto'` for built-in buttons, `'never'` for yours | `auto`: moves to the "More actions" menu when it does not fit (the last ones first); `always`: always there. The group panel, the search panel and `renderer` items never move. |
-| `showText` | `'always'` | `'in-menu'`: only the icon on the bar (the text becomes its accessible name and tooltip). |
-| `disabled` | `false` | Shown and focusable, but does nothing (`aria-disabled`). |
+| `showText` | `'always'` (`columnChooserButton`, `exportButton`: `'in-menu'`) | `'in-menu'`: only the icon on the bar (the text becomes its accessible name and tooltip). |
+| `disabled` | `false` | Shown and focusable, but does nothing (`aria-disabled`). Not for `renderer` items. |
 | `text` | — | Your button's label (required; also the menu text). On a built-in, replaces the translated label. |
 | `icon` | — | Your button's icon (decorative: `aria-hidden`). |
 | `action` | — | `({ toolbarItem, grid }) => void`, from the bar or the "More actions" menu. |
@@ -1399,7 +1399,8 @@ grid.addEventListener('u-grid-context-menu-opening', event => {
 });
 ```
 
-`detail` is `{ target, cellType, column, item, rowKey, groupPath, grid, menuItems }`. A menu item
+`detail` is `{ target, cellType, column, item, rowKey, groupPath, grid, menuItems }`; the built-in
+items come as `{ name, disabled, separatorBefore }` (their default state). A menu item
 is `{ name?, id?, text?, disabled?, separatorBefore?, action? }`: with `action` (and `text`) it is
 yours — the action gets the same context plus `menuItem`, after the menu closed and the focus went
 back to where it was opened (still within the user's gesture); with `name` it is a built-in
@@ -2052,17 +2053,17 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Built-in items of the group panel menu (ungroup, move, expand/collapse all). See [Context menus](#context-menus). |
 | `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, "⋮", Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
 | `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). |
-| `toolbarItems`     | *(property only)*     | `(GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
-| `exportFormats`    | `export-formats`      | `GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
+| `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
+| `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
 | `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter(ExcelJS)`). |
-| `csvExportOptions` | *(property only)*     | `GridCsvDownloadOptions \| null` | `null` | Options of the CSV exported from the UI (without `selectedOnly`/`signal`). |
+| `csvExportOptions` | *(property only)*     | `Omit<GridCsvDownloadOptions, 'selectedOnly' \| 'signal'> \| null` | `null` | Options of the CSV exported from the UI. |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
 | `stateStorage`     | `state-storage`       | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Save and restore the user state. See [State persistence](#state-persistence). |
 | `stateStorageKey`  | `state-storage-key`   | `string`  | `''`    | Key in `localStorage`/`sessionStorage`. |
 | `stateChangeDelay` | `state-change-delay`  | `number`  | `500`   | Delay (ms) of `u-grid-state-change` and of the save. |
 | `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
-| `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the grouping toolbar (where columns are dropped to group). |
+| `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the group panel in the toolbar (where columns are dropped to group). |
 | `showColumnHeaders`| `show-column-headers` | `boolean` | `true`  | Show the column header row. |
 | `showRowLines`     | `show-row-lines`      | `boolean` | `true`  | Horizontal row separators. |
 | `showColumnLines`  | `show-column-lines`   | `boolean` | `false` | Vertical column separators. |

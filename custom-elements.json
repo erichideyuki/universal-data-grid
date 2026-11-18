@@ -7,6 +7,15 @@
       "path": "dist/grid.js",
       "declarations": [
         {
+          "kind": "variable",
+          "name": "GRID_DEFAULT_TOOLBAR_ITEMS",
+          "type": {
+            "text": "readonly GridToolbarItemName[]"
+          },
+          "default": "DEFAULT_TOOLBAR_ITEMS",
+          "description": "The automatic toolbar (`toolbarItems = null`), in order. Spread it to add your own items without losing future built-ins."
+        },
+        {
           "kind": "class",
           "description": "Data grid with row virtualization, grouping, sorting, filtering (filter\nrow, header filter, search panel), column resizing, fixing, hiding and\nreordering, i18n and SSR.\n\nName the grid with `aria-label` or `aria-labelledby` on `<u-grid>`: they\nname the inner `role=\"grid\"`/`\"treegrid\"` table. `aria-labelledby` ids are\nresolved in the grid's root (document or enclosing shadow root); their\ntext is copied and kept in sync.",
           "name": "DataGrid",
@@ -2192,7 +2201,7 @@
               "type": {
                 "text": "CustomEvent<GridCopyEventDetail>"
               },
-              "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable."
+              "description": "Before Ctrl/Cmd+C, the row menu Copy items or `copySelection()` write the selected rows (or the focused cell) to the clipboard (`source: 'user' | 'api'`). Cancelable."
             },
             {
               "type": {
@@ -2408,7 +2417,7 @@
             {
               "name": "export-formats",
               "type": {
-                "text": "readonly GridExportFormat[]"
+                "text": "string"
               },
               "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx\"`). `xlsx` needs\n`xlsxExporter`. Default `[]` (no export UI; the export methods always work).",
               "fieldName": "exportFormats"
@@ -3053,6 +3062,14 @@
           "declaration": {
             "name": "GridValueSetter",
             "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GRID_DEFAULT_TOOLBAR_ITEMS",
+          "declaration": {
+            "name": "GRID_DEFAULT_TOOLBAR_ITEMS",
+            "module": "dist/grid.js"
           }
         },
         {
