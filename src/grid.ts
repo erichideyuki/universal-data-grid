@@ -914,6 +914,12 @@ interface ColumnLayout {
   gapBefore: number;
 }
 
+/** Virtualização de colunas: índices (nas visíveis) que entram no DOM e espaçadora antes de cada um. */
+interface ColumnPlan {
+  kept: Set<number>;
+  gaps: Map<number, number>;
+}
+
 /** Ordenação do cabeçalho de um render (prioridades só com mais de uma coluna). */
 interface HeaderSorting {
   rowSorting: GridSort[];
@@ -944,8 +950,12 @@ const DEFAULT_VIRTUAL_COLUMN_WIDTH = 150;
 /** Antes de medir (SSR, 1º render): largura suposta da área visível. */
 const DEFAULT_VIEWPORT_WIDTH = 1920;
 
-/** Folga da janela horizontal de cada lado (px). */
-const COLUMN_OVERSCAN = 300;
+/**
+ * Folga da janela horizontal de cada lado (px): uma coluna a mais para o
+ * passo da roda (120 px). Folga maior põe mais células em toda linha e
+ * encarece cada render de rolagem (medido no perfil fraco, spec 16).
+ */
+const COLUMN_OVERSCAN = 160;
 
 const normalizeFixed = (fixed: unknown): GridColumnFixed =>
   fixed === 'start' || fixed === 'end' ? fixed : null;
@@ -1647,6 +1657,7 @@ export class DataGrid extends LitElement {
   /** Níveis do cabeçalho (0 sem cabeçalho) e células por (nível, coluna navegável). */
   #headerLevels = 1;
   #headerGrid: HeaderCellLayout<NavColumn>[][] = [];
+  #headerGridKey: { visible: GridColumnDef[]; tree: ColumnTree<GridColumnDef>; leading: string } | undefined;
   readonly #hostOptions = new Map<GridColumnDef, HostColumnOptions>();
   #layoutDirty = true;
   #autoWidthDirty = true;
@@ -5755,6 +5766,7 @@ export class DataGrid extends LitElement {
   #syncColumns(): void {
     const tree = buildColumnTree<GridColumnDef>(this.columns);
     this.#columnTree = tree;
+    this.#visibleBands = undefined;
     // Só as folhas têm células; as bandas são só cabeçalho.
     const definitions = tree.leaves;
     const defined = new Set(tree.parentOf.keys());
@@ -5890,6 +5902,7 @@ export class DataGrid extends LitElement {
       this.#sortDirty = true;
     }
 
+    this.#visibleBands = undefined;
     const partitioned = this.#partition(normalizeLeafOrder(regular, this.#columnTree));
 
     if (!sameItems(partitioned, this._regularColumns)) {
@@ -5912,6 +5925,7 @@ export class DataGrid extends LitElement {
    * escolhido para ela. Também refaz os blocos e a lista de visíveis.
    */
   #reconcileColumnOptions(): void {
+    this.#visibleBands = undefined;
     const reconcile = (column: GridColumnDef): void => {
       const width = column.width ?? null;
       const visible = column.visible !== false;
@@ -5990,27 +6004,39 @@ export class DataGrid extends LitElement {
       return true;
     }
 
-    return this._regularColumns.some(leaf => this.#ownVisible(leaf) && this.#bandShows(column, leaf));
+    return this.#bandsWithVisibleLeaf().has(column);
   }
 
-  /** `leaf` está dentro de `band` (em qualquer nível) e as bandas entre as duas estão visíveis. */
-  #bandShows(band: GridColumnDef, leaf: GridColumnDef): boolean {
-    let parent = this.#columnTree.parentOf.get(leaf) ?? null;
-
-    while (parent) {
-      if (parent === band) {
-        return true;
-      }
-
-      if (!this.#ownVisible(parent)) {
-        return false;
-      }
-
-      parent = this.#columnTree.parentOf.get(parent) ?? null;
+  /**
+   * Bandas com alguma folha comum efetivamente visível (cache: o cabeçalho e
+   * o menu perguntam por célula a cada render). Zerado a cada mudança de
+   * visibilidade, de ordem ou de definição.
+   */
+  #bandsWithVisibleLeaf(): Set<GridColumnDef> {
+    if (this.#visibleBands) {
+      return this.#visibleBands;
     }
 
-    return false;
+    const bands = new Set<GridColumnDef>();
+    const tree = this.#columnTree;
+
+    for (const leaf of this._regularColumns) {
+      if (!this.#ownVisible(leaf)) {
+        continue;
+      }
+
+      const chain = ancestorsOf(tree, leaf);
+
+      if (chain.every(band => this.#ownVisible(band))) {
+        chain.forEach(band => bands.add(band));
+      }
+    }
+
+    this.#visibleBands = bands;
+    return bands;
   }
+
+  #visibleBands: Set<GridColumnDef> | undefined;
 
   /**
    * Lado fixo: o da coluna do nível de cima (banda fixa leva os filhos;
@@ -6068,6 +6094,34 @@ export class DataGrid extends LitElement {
   /** Irmãos visíveis do mesmo bloco (fixas no início, livres, fixas no fim): mover pelo teclado/menu. */
   #movableSiblingsOf(column: GridColumnDef): GridColumnDef[] {
     return this.#siblingsOf(column).filter(sibling => this._isColumnVisible(sibling) && this._sameBlock(column, sibling));
+  }
+
+  /**
+   * Há irmã visível do mesmo bloco ao lado (o menu tem "Mover")? Sem filtrar
+   * todas as irmãs: roda por célula do cabeçalho a cada render (300 colunas).
+   * Os blocos são contíguos: a irmã visível mais próxima decide cada lado.
+   */
+  #hasMovableNeighbor(column: GridColumnDef): boolean {
+    const siblings = this.#siblingsOf(column);
+    const index = siblings.indexOf(column);
+
+    if (index < 0 || !this._isColumnVisible(column)) {
+      return false;
+    }
+
+    for (const step of [-1, 1]) {
+      for (let at = index + step; at >= 0 && at < siblings.length; at += step) {
+        if (this._isColumnVisible(siblings[at])) {
+          if (this._sameBlock(column, siblings[at])) {
+            return true;
+          }
+
+          break;
+        }
+      }
+    }
+
+    return false;
   }
 
   /** @internal */
@@ -6178,10 +6232,12 @@ export class DataGrid extends LitElement {
 
     const previous = new Map(changes.map(target => [target, this.#userVisible.get(target)]));
     changes.forEach(target => this.#userVisible.set(target, visible));
+    this.#visibleBands = undefined;
 
     // Nunca oculta a última coluna visível.
     if (!visible && !this._regularColumns.some(leaf => this._isColumnVisible(leaf))) {
       previous.forEach((value, target) => value === undefined ? this.#userVisible.delete(target) : this.#userVisible.set(target, value));
+      this.#visibleBands = undefined;
       this.requestUpdate();
       return false;
     }
@@ -6243,46 +6299,62 @@ export class DataGrid extends LitElement {
    * horizontal e a da célula ativa; as demais viram espaçadoras
    * (`gapBefore` e `#trailingGap`).
    */
-  #renderedLayout(layout: ColumnLayout[]): ColumnLayout[] {
+  #columnPlan(): ColumnPlan | undefined {
     this.#trailingGap = 0;
 
     if (!this.#virtualColumns) {
       this.#freeOffsets = undefined;
-      return layout;
+      return undefined;
     }
 
-    const free = layout.filter(cell => !this._fixedOf(cell.column));
-    const offsets = prefixOffsets(free.map(cell => cell.width ?? 0));
-    const fixedArea = this.#stickyStart() + layout.reduce((sum, cell) => sum + (this._fixedOf(cell.column) ? cell.width ?? 0 : 0), 0);
+    // Só larguras e lados (barato para todas); o layout completo é só das que entram no DOM.
+    const columns = this._visibleColumns;
+    const sides = columns.map(column => this._fixedOf(column));
+    const widths = columns.map(column => this.#widthOf(column) ?? this.#renderedWidths.get(column) ?? 0);
+    const free: number[] = [];
+    let fixedArea = this.#stickyStart();
 
-    this.#freeOffsets = offsets;
+    columns.forEach((_, index) => {
+      if (sides[index]) {
+        fixedArea += widths[index];
+      } else {
+        free.push(index);
+      }
+    });
+
+    this.#freeOffsets = prefixOffsets(free.map(index => widths[index]));
     this.#fixedArea = fixedArea;
 
     const window = this.#horizontalWindow();
     this.#columnWindow = window;
 
-    const kept = new Set<ColumnLayout>(free.slice(window.first, window.last + 1));
-    const activeCell = layout[this.#activeCol - this.#leadingColumns];
+    const kept = new Set<number>(free.slice(window.first, window.last + 1));
+    const active = this.#activeCol - this.#leadingColumns;
 
-    if (activeCell) {
+    if (active >= 0 && active < columns.length) {
       // A célula ativa (foco, editor) sobrevive à virtualização.
-      kept.add(activeCell);
+      kept.add(active);
     }
 
-    const result: ColumnLayout[] = [];
+    const gaps = new Map<number, number>();
     let gap = 0;
 
-    for (const cell of layout) {
-      if (this._fixedOf(cell.column) || kept.has(cell)) {
-        result.push(gap ? { ...cell, gapBefore: gap } : cell);
+    columns.forEach((_, index) => {
+      if (sides[index] || kept.has(index)) {
+        kept.add(index);
+
+        if (gap) {
+          gaps.set(index, gap);
+        }
+
         gap = 0;
       } else {
-        gap += cell.width ?? 0;
+        gap += widths[index];
       }
-    }
+    });
 
     this.#trailingGap = gap;
-    return result;
+    return { kept, gaps };
   }
 
   /** Janela das colunas roláveis pela rolagem e largura guardadas (sem ler o DOM no render). */
@@ -6558,7 +6630,7 @@ export class DataGrid extends LitElement {
    * Classe, deslocamento `sticky` e limites de cada coluna visível. Os
    * deslocamentos usam a largura medida (a tabela pode esticar as colunas).
    */
-  #columnLayout(): ColumnLayout[] {
+  #columnLayout(plan?: ColumnPlan): ColumnLayout[] {
     const columns = this._visibleColumns;
     const fixed = columns.map(column => this._fixedOf(column));
     const sizeOf = (column: GridColumnDef): number =>
@@ -6585,7 +6657,11 @@ export class DataGrid extends LitElement {
 
     const nextColumnMode = this.resizeMode === 'next-column';
 
-    return columns.map((column, index) => {
+    return columns.flatMap((column, index) => {
+      if (plan && !plan.kept.has(index)) {
+        return [];
+      }
+
       const side = fixed[index];
       const format = this.#formatContext(column);
       const alignment = resolveAlignment(column, format.dataType);
@@ -6619,7 +6695,7 @@ export class DataGrid extends LitElement {
       const bounds = this._boundsOf(column);
       const resizable = this.#isResizable(column) && (!nextColumnMode || !!this._resizeNeighbor(column));
 
-      return {
+      return [{
         column,
         id: columnIdOf(column),
         format,
@@ -6632,8 +6708,8 @@ export class DataGrid extends LitElement {
         bounds,
         width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
         col: index + this.#leadingColumns,
-        gapBefore: 0,
-      };
+        gapBefore: plan?.gaps.get(index) ?? 0,
+      }];
     });
   }
 
@@ -8160,8 +8236,19 @@ export class DataGrid extends LitElement {
     if (!this.showColumnHeaders) {
       this.#headerLevels = 0;
       this.#headerGrid = [];
+      this.#headerGridKey = undefined;
       return;
     }
+
+    // Mesmas colunas e árvore (rolagem): o cabeçalho lógico não muda.
+    const key = this.#headerGridKey;
+    const leading = this.#leadingNavColumns().join();
+
+    if (key && key.visible === this._visibleColumns && key.tree === this.#columnTree && key.leading === leading) {
+      return;
+    }
+
+    this.#headerGridKey = { visible: this._visibleColumns, tree: this.#columnTree, leading };
 
     const slots: HeaderSlot<NavColumn>[] = navColumns.map(column => ({
       leaf: column,
@@ -9196,9 +9283,8 @@ export class DataGrid extends LitElement {
     this.#updateHeaderGrid(navColumns);
     this.#resolveActive(navColumns);
 
-    const fullLayout = this.#columnLayout();
     // Virtualização de colunas: só as da janela, as fixas e a ativa (frente 13).
-    const layout = this.#renderedLayout(fullLayout);
+    const layout = this.#columnLayout(this.#columnPlan());
     const headerRows = this.#headerLevels + (this.showFilterRow ? 1 : 0);
     const footerRows = this.#totalSpecs.length ? 1 : 0;
     const selectionMode = this.#selectionMode;
@@ -9210,12 +9296,12 @@ export class DataGrid extends LitElement {
 
     // Com todas as larguras definidas a tabela não estica: soma exata (como
     // no modo `widget` da referência). Com alguma automática, ocupa a largura.
-    const fit = fullLayout.length > 0 && (this.#virtualColumns || fullLayout.every(({ column }) =>
+    const fit = layout.length > 0 && (this.#virtualColumns || layout.every(({ column }) =>
       this.#userWidths.has(column) || (column.width !== null && column.width !== undefined)));
 
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
-    const fixedEnd = fullLayout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
-    const fixedStart = fullLayout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
+    const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
+    const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
     // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
     const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
       + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
@@ -10970,11 +11056,9 @@ export class DataGrid extends LitElement {
     }
 
     const band = this._isBand(column);
-    const movable = this.#movableSiblingsOf(column);
-    const index = movable.indexOf(column);
 
     return (!band && !this._groupColumns.includes(column) && isColumnGroupable(column))
-      || (index >= 0 && movable.length > 1)
+      || this.#hasMovableNeighbor(column)
       || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
   }
 

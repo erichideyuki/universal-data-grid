@@ -25,7 +25,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Summaries](#summaries) (totals and group summaries)
 - [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
-- [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
+- [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
 - [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
@@ -71,6 +71,9 @@ React, Vue, Svelte — or with no framework at all.
   `applyChanges` that keeps selection, focus and expansion.
 - **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
   columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
+- **Multi-level headers & wide grids** — band columns (headers over groups of columns, any depth)
+  that move, fix and hide as a block, and column virtualization: hundreds of columns × millions of
+  rows scroll smoothly on both axes.
 - **Export & clipboard** — CSV of what the user sees (columns, order, filter, groups, summaries,
   selected rows only), an optional Excel adapter with ExcelJS injected by you, export data for any
   other format (PDF…), and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
@@ -249,6 +252,8 @@ Both approaches map to the same shape:
 
 ```ts
 interface GridColumnDef<TItem = any> {
+  /** Nested columns: with at least one, this column is a band (see "Bands"). */
+  columns?: readonly GridColumnDef<TItem>[] | null;
   /** Dot-path into each item, e.g. `"user.address.city"`. */
   path?: string;
   /** Stable id in the saved state and in string column references (summaries). Default: `path`. */
@@ -645,7 +650,7 @@ grid.groupColumn(column);              // group by this column (innermost level)
 grid.groupColumn(column, 0);           // …or at a given level (moves it if already grouped)
 grid.ungroupColumn(column);            // back to the end of the regular columns
 grid.getGrouping();                    // grouped columns, outermost first
-grid.moveColumn(column, targetIndex);  // reorder a regular column (ungroups a grouped one)
+grid.moveColumn(column, targetIndex);  // reorder among its siblings (same band); ungroups a grouped one
 ```
 
 All accept a `GridColumnDef` (or a `<u-grid-column>` element) already known to the grid.
@@ -1088,13 +1093,88 @@ outside closes it. The last visible column cannot be hidden.
 | Event | Detail | Fired when |
 | ----- | ------ | ---------- |
 | `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size, column header menu). `nextColumn*` only in `next-column` mode. |
-| `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column in the chooser. |
-| `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user fixes/unfixes a column in the chooser. |
-| `u-grid-column-reorder` | `{ column, index, previousIndex }` | The user moves a column by drag and drop, `Alt+Shift+←/→` or the column header menu (positions among regular columns, hidden ones included). `fromIndex`/`toIndex` are deprecated aliases. |
+| `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column (or a band) in the chooser. One event per column whose own visibility changed: a band first, then each column it shows. |
+| `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user fixes/unfixes a column (or a top-level band) in the chooser. |
+| `u-grid-column-reorder` | `{ column, band, index, previousIndex }` | The user moves a column (or a band) by drag and drop, `Alt+Shift+←/→` or the column header menu. Positions are among the column's siblings — the columns of the same `band`, or the top level when `band` is `null` — that are not grouped, hidden ones included. `fromIndex`/`toIndex` are deprecated aliases. |
 
 All events bubble and are `composed`. Unlike sorting and grouping, these column events fire **only
 for user gestures**: changes made through the API (`setColumnWidth`, `moveColumn`, a new `width` or
 `visible` on the definition) do not fire them.
+
+### Bands (multi-level headers)
+
+A column with nested `columns` is a **band**: a header over its columns, with one header row per
+level. Bands nest to any depth; a column without a band above it spans the header rows down to the
+last one.
+
+```ts
+grid.columns = [
+  { path: 'country', label: 'Country' },
+  { label: 'Population', columns: [
+    { path: 'population', label: 'Total' },
+    { path: 'urban', label: 'Urban', format: { style: 'percent' } },
+  ] },
+  { label: 'GDP', fixed: 'end', columns: [
+    { path: 'gdp', label: 'Total' },
+    { label: 'By sector', columns: [{ path: 'agro', label: 'Agriculture' }, { path: 'industry', label: 'Industry' }] },
+  ] },
+];
+```
+
+```html
+<u-grid>
+  <u-grid-column path="country">Country</u-grid-column>
+  <u-grid-column>Population
+    <u-grid-column path="population">Total</u-grid-column>
+    <u-grid-column path="urban">Urban</u-grid-column>
+  </u-grid-column>
+</u-grid>
+```
+
+- In a band only `label`, `headerRenderer`, `alignment` (of the label; default `center`), `fixed`,
+  `visible` and `showInChooser` apply; the other fields are ignored. With `<u-grid-column>`, the
+  band's `label` is its own text (without the nested columns) and `columns` is a read-only list of
+  the nested elements (`null` without them).
+- **Reordering**: a column moves only among the columns of its band (drag and drop, `Alt+Shift+←/→`
+  or the header menu); dragging a band, or `Alt+Shift+←/→` on it, moves the whole block.
+  `moveColumn(column, index)` takes the index among the column's siblings.
+- **Fixing** a band fixes all its columns; `fixed` on a nested column is ignored.
+- **Hiding**: a band is shown while it is visible and has a visible column. In the column chooser a
+  band is a checkbox with its columns in a nested list: mixed (some columns hidden) → all visible →
+  band hidden; checking a column of a hidden band shows the band. Hiding the band keeps its columns'
+  own state for when it comes back.
+- Only leaf columns sort, group, filter, resize and export (no band row in CSV/Excel).
+  `sortColumn`, `groupColumn` and `setColumnWidth` with a band do nothing, `focusCell` returns
+  `false` and `autoSizeColumn` sizes each visible column of the band. A grouped column leaves its
+  band in the header and returns to the end of it when ungrouped.
+- **Keyboard**: `↑`/`↓` move between header levels (`↑` from a column goes to its band, `↓` from a
+  band to the column under the remembered position), `←`/`→` move along the level skipping the whole
+  band, `Home`/`End` go to the first/last cell of the level and `Ctrl+Home` to the top-left header.
+  On a band, `Shift+F10` (or the `⋮` button) opens a menu with "Move left/right"; `Enter`, `Space`
+  and `Ctrl+G` do nothing.
+- **Accessibility**: bands are `role="columnheader"` cells with a native `colspan`, header rows have
+  `aria-rowindex` 1…N (the filter row follows), and `aria-colindex` is always the real column index.
+  `u-grid-focus-change` on a band header has `cellType: 'header'` and the band as `column`.
+- Style bands with `::part(band-header-cell)` (they also match `::part(header-cell)`);
+  `--u-grid-header-cell-height` applies to each header row.
+
+### Column virtualization
+
+`column-rendering-mode` (`columnRenderingMode`) controls how columns are rendered:
+
+| Value | Behavior |
+| ----- | -------- |
+| `auto` (default) | `virtual` when more than 50 leaf columns are defined (visible, hidden or grouped), otherwise `standard`. |
+| `virtual` | Only the columns in view (plus some overscan), the fixed columns and the focused cell's column are in the DOM; the others become spacer cells with their width. |
+| `standard` | Every visible column is rendered. |
+
+Under `virtual`, a column without `width` takes its auto-size width (`column-auto-width`) or
+`max(minWidth, 150)` px, and the table is exactly as wide as the sum. Keyboard navigation reaches
+every column: moving to a column outside the DOM brings it in, focuses it and scrolls it into view
+(never under the fixed columns). `aria-colcount` and `aria-colindex` count every column; spacers
+are `role="presentation"`. Exports, summaries and Ctrl+C use all columns. As with rows, the
+browser's find-in-page only sees the rendered columns. Before measuring (server rendering, first
+render) the grid renders the columns that fit in 1920 px.
 
 ---
 
@@ -1845,6 +1925,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button. |
 | `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
+| `columnRenderingMode` | `column-rendering-mode` | `'auto' \| 'virtual' \| 'standard'` | `'auto'` | Column virtualization (`auto`: virtual with more than 50 leaf columns). See [Column virtualization](#column-virtualization). |
 | `showFilterRow`    | `show-filter-row`     | `boolean` | `false` | Show the filter row. See [Filtering](#filtering). |
 | `showSearchPanel`  | `show-search-panel`   | `boolean` | `false` | Show the search box in the bar above the table. |
 | `headerFilter`     | `header-filter`       | `boolean` | `false` | Show the header filter button in filterable headers. |
@@ -1975,7 +2056,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `selection-cell` | Cells and header of the checkbox column. |
 | `selection-checkbox` | The selection checkboxes (rows and "select all"). |
 | `no-data` | The cell rendered in the empty state. |
-| `header-cell` | Column header cells (`<th>`). |
+| `header-cell` | Column header cells (`<th>`), bands included. |
+| `band-header-cell` | Band header cells (multi-level headers). |
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
 | `group-chip` | Group chips in the grouping bar. |
 | `column-chooser` | The column chooser popover. |
@@ -2116,7 +2198,7 @@ CSS property and part for IDEs and tooling.
 | `expandGroup(groupPath)` / `collapseGroup(groupPath)` | Expand / collapse one group (`['Brazil', 'SP']`). |
 | `isGroupExpanded(groupPath)` | Whether a group is (or would be) expanded. |
 | `getSummaryValues(groupPath?)` | Computed totals, or the summaries of a group: `{ item, value, text }[]`. |
-| `moveColumn(column, targetIndex)` | Reorder a regular column to `targetIndex` (kept inside its fixed/regular block); ungroups a grouped column. |
+| `moveColumn(column, targetIndex)` | Reorder a column or a band to `targetIndex` among its siblings (same band or top level; kept inside its band and its fixed/regular block); ungroups a grouped column. |
 | `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
 | `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
 | `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
@@ -2199,6 +2281,7 @@ import {
   type GridColumnFormatter, // (value, item) => string
   type GridColumnComparator, // (a, b, itemA, itemB) => number
   type GridColumnFixed,     // 'start' | 'end' | null
+  type GridColumnRenderingMode, // 'auto' | 'virtual' | 'standard'
   type GridSort,            // { column, order }
   type GridSortOrder,       // 'asc' | 'desc'
   type GridSortMode,        // 'none' | 'single' | 'multiple'

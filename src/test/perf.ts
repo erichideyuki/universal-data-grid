@@ -196,6 +196,58 @@ export const measureScroll = async (grid: DataGrid, positions: readonly number[]
   return { p95Ms: percentile(work, 95), worstMs: Math.max(0, ...work) };
 };
 
+/**
+ * Rolagem HORIZONTAL (virtualização de colunas, frente 13): como
+ * `measureScroll`, pelo `scrollLeft`. Em RTL as posições são negativas.
+ */
+export const measureHorizontalScroll = async (grid: DataGrid, positions: readonly number[]): Promise<ScrollResult> => {
+  const scroller = scrollerOf(grid);
+  const container = scroller.parentElement!;
+  const work: number[] = [];
+  let start = 0;
+
+  const onCapture = () => {
+    start = performance.now();
+  };
+
+  container.addEventListener('scroll', onCapture, { capture: true });
+  await painted(grid);
+
+  try {
+    for (const position of positions) {
+      const before = scroller.scrollLeft;
+
+      scroller.scrollLeft = position;
+
+      if (Math.abs(scroller.scrollLeft - before) < 1) {
+        continue;
+      }
+
+      await new Promise(resolve => scroller.addEventListener('scroll', resolve, { once: true }));
+      await updatesDone(grid);
+      forceLayout(grid);
+      work.push(performance.now() - start);
+      await nextFrame();
+    }
+  } finally {
+    container.removeEventListener('scroll', onCapture, { capture: true });
+  }
+
+  await painted(grid);
+  return { p95Ms: percentile(work, 95), worstMs: Math.max(0, ...work) };
+};
+
+/** Passos horizontais de roda (`delta` px) e saltos espalhados pela largura toda. */
+export const horizontalPositions = (grid: DataGrid, steps: number, delta: number | 'jump'): number[] => {
+  const scroller = scrollerOf(grid);
+  const max = scroller.scrollWidth - scroller.clientWidth;
+  const start = scroller.scrollLeft;
+
+  return Array.from({ length: steps }, (_, i) => delta === 'jump'
+    ? Math.round(((i * 0.618_034) % 1) * max)
+    : Math.min(start + (i + 1) * delta, max));
+};
+
 /** Rolagem de roda/trackpad: `steps` passos de `delta` px a partir da posição atual. */
 export const wheelPositions = (grid: DataGrid, steps: number, delta: number): number[] => {
   const start = scrollerOf(grid).scrollTop;

@@ -1168,7 +1168,7 @@ describe('bandas e virtualização de colunas (frente 13)', () => {
     await press(grid, 'F10', { shiftKey: true });
 
     const menu = root(grid).querySelector<HTMLElement>('.column-header-menu')!;
-    const moveLeft = [...menu.querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent!.trim() === 'Move left')!;
+    const moveLeft = [...menu.querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent.trim() === 'Move left')!;
     expect(focused(grid)).toBe(menu.querySelector('[role=menuitem]'));
     moveLeft.click();
     await settle(grid);

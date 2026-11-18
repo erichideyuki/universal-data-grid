@@ -113,3 +113,36 @@ export const makeLeanColumns = (): GridColumnDef[] => [
   { path: 'year', label: 'Year', width: 90 },
   { path: 'quantity', label: 'Quantity', format: { useGrouping: true }, width: 120 },
 ];
+
+/**
+ * Grid largo (frente 13): `count` colunas com o valor calculado do `id` (os
+ * itens ficam com um campo só — 300 campos × 1 milhão não cabem no heap do
+ * perfil fraco). Com `bandSize`, em bandas desse tamanho.
+ */
+export const makeWideColumns = (count: number, bandSize = 0): GridColumnDef[] => {
+  const leaves = Array.from({ length: count }, (_, c): GridColumnDef => ({
+    label: `C${c}`,
+    width: 110,
+    dataType: 'number',
+    valueGetter: (item: { id: number }) => (item.id * (c + 7)) % 10_007,
+  }));
+
+  if (!bandSize) {
+    return leaves;
+  }
+
+  return Array.from({ length: Math.ceil(count / bandSize) }, (_, band): GridColumnDef => ({
+    label: `Band ${band}`,
+    columns: leaves.slice(band * bandSize, (band + 1) * bandSize),
+  }));
+};
+
+export const makeIdItems = (count: number): object[] => {
+  const items = new Array<object>(count);
+
+  for (let i = 0; i < count; i++) {
+    items[i] = { id: i };
+  }
+
+  return items;
+};

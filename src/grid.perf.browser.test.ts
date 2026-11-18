@@ -15,11 +15,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid, GridDataSource, GridLoadOptions } from './grid.js';
 import { cleanup } from './test/fixture.js';
-import { makeColumns, makeItems, makeLeanColumns, makeLeanItems } from './test/perf-data.js';
+import { makeColumns, makeIdItems, makeItems, makeLeanColumns, makeLeanItems, makeWideColumns } from './test/perf-data.js';
 import {
   domNodes,
   heapMiB,
+  horizontalPositions,
   jumpPositions,
+  measureHorizontalScroll,
   measureScroll,
   measureWork,
   painted,
@@ -79,6 +81,13 @@ const warmUp = async () => {
   await measureWork(grid, () => grid.autoExpandGroups = true);
   await measureScroll(grid, jumpPositions(grid, 10));
   grid.remove();
+
+  // Virtualização de colunas (frente 13): rolagem horizontal.
+  const { grid: wide } = await firstRender(makeIdItems(20_000), makeWideColumns(300, 10));
+
+  await measureHorizontalScroll(wide, horizontalPositions(wide, 20, 120));
+  await measureHorizontalScroll(wide, horizontalPositions(wide, 10, 'jump'));
+  wide.remove();
 };
 
 beforeAll(async () => {
@@ -1044,6 +1053,72 @@ const editingScenario = (rows: number, label: string) => {
   });
 };
 
+/** Rolagem horizontal: passos de roda e saltos, melhor de {@link REPEATS}. */
+const horizontalMetrics = async (grid: DataGrid, prefix: string) => {
+  const best = { wheelP95: Infinity, wheelWorst: Infinity, jumpP95: Infinity, jumpWorst: Infinity };
+  const scroller = grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+
+  for (let i = 0; i < REPEATS; i++) {
+    scroller.scrollLeft = 0;
+    await painted(grid);
+    perf.recalibrate();
+    const wheel = await measureHorizontalScroll(grid, horizontalPositions(grid, 40, 120));
+    const jump = await measureHorizontalScroll(grid, horizontalPositions(grid, 20, 'jump'));
+
+    best.wheelP95 = Math.min(best.wheelP95, perf.weak(wheel.p95Ms));
+    best.wheelWorst = Math.min(best.wheelWorst, perf.weak(wheel.worstMs));
+    best.jumpP95 = Math.min(best.jumpP95, perf.weak(jump.p95Ms));
+    best.jumpWorst = Math.min(best.jumpWorst, perf.weak(jump.worstMs));
+  }
+
+  return {
+    [`${prefix}scrollP95Ms`]: best.wheelP95,
+    [`${prefix}scrollWorstMs`]: best.wheelWorst,
+    [`${prefix}jumpP95Ms`]: best.jumpP95,
+    [`${prefix}jumpWorstMs`]: best.jumpWorst,
+  };
+};
+
+/**
+ * Grid largo (frente 13): 300 colunas (calculadas) × linhas, com e sem
+ * bandas, rolando nos dois eixos com a virtualização de colunas (`auto`).
+ */
+const wideScenario = (rows: number, label: string, bandSize: number) => {
+  const name = bandSize ? 'bands' : 'wide';
+
+  it(`${label} linhas × 300 colunas${bandSize ? ` em bandas de ${bandSize}` : ''}: render, rolagem vertical e horizontal`, async () => {
+    let items: object[] | undefined = makeIdItems(rows);
+    const heapBefore = await heapMiB();
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeWideColumns(300, bandSize));
+    const scroll = await scrollMetrics(grid);
+    const horizontal = await horizontalMetrics(grid, 'horizontal.');
+    // Os dois eixos: rola na vertical com a janela de colunas no meio.
+    const middle = await scrollMetrics(grid, 'middle.');
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+
+    expect(grid.shadowRoot!.querySelectorAll('th.header-column').length, 'colunas no DOM').toBeLessThan(40);
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...scroll,
+      ...horizontal,
+      ...middle,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`${name}-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -1058,4 +1133,6 @@ describe('perfil de máquina fraca', () => {
   detailScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');
   editingScenario(1_000_000, '1m');
+  wideScenario(1_000_000, '1m', 0);
+  wideScenario(1_000_000, '1m', 10);
 });
