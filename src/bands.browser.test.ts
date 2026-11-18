@@ -300,7 +300,8 @@ describe('fixar, ocultar e seletor', () => {
 
   it('seletor: banda tri-state, lista aninhada; um evento por coluna mudada', async () => {
     const c = makeColumns();
-    const grid = await createGrid({ columns: [c.country, { ...c.population, columns: [c.popTotal, { ...c.urban, visible: false }] }], items, configure: g => g.columnChooser = true });
+    const band: GridColumnDef = { ...c.population, columns: [c.popTotal, { ...c.urban, visible: false }] };
+    const grid = await createGrid({ columns: [c.country, band], items, configure: g => g.columnChooser = true });
     const events: GridColumnVisibilityChangeEventDetail[] = [];
     grid.addEventListener('u-grid-column-visibility-change', event => events.push(event.detail));
 
@@ -325,11 +326,31 @@ describe('fixar, ocultar e seletor', () => {
     expect(describeHeader(grid)).toEqual(['Country']);
     expect([...nested.querySelectorAll('input')].map(input => input.checked)).toEqual([false, false]);
 
-    // Marcar uma filha com a banda oculta mostra a banda.
-    (nested.querySelector('input')!).click();
+    // Banda oculta → volta como estava (todas visíveis).
+    bandBox().click();
     await settle(grid);
     expect(describeHeader(grid)).toEqual(['Country^2 Population/2', 'PopTotal Urban']);
-    expect(events.slice(-1).map(e => [e.column.label, e.visible])).toEqual([['Population', true]]);
+
+    // Oculta com as colunas mistas e marcada de novo: o misto volta (APG tri-state).
+    nested.querySelectorAll('input')[1].click();
+    await settle(grid);
+    expect(bandBox().indeterminate).toBe(true);
+    grid._userSetVisible(band, false);
+    await settle(grid);
+    expect(describeHeader(grid)).toEqual(['Country']);
+    bandBox().click();
+    await settle(grid);
+    expect(bandBox().indeterminate).toBe(true);
+    expect(describeHeader(grid)).toEqual(['Country^2 Population', 'PopTotal']);
+
+    // Marcar uma filha com a banda oculta mostra a banda (as outras ficam como estavam).
+    grid._userSetVisible(band, false);
+    await settle(grid);
+    events.length = 0;
+    nested.querySelectorAll('input')[1].click();
+    await settle(grid);
+    expect(describeHeader(grid)).toEqual(['Country^2 Population/2', 'PopTotal Urban']);
+    expect(events.map(e => [e.column.label, e.visible])).toEqual([['Population', true], ['Urban', true]]);
   });
 
   it('não oculta a última coluna visível pela banda', async () => {

@@ -458,7 +458,7 @@ export interface GridFocusChangeEventDetail {
    * summary rows.
    */
   rowKey: unknown;
-  /** Column of the active cell; `null` in the selection, detail toggle and row buttons (`cellType: 'command'`) columns, in detail rows and in group rows. */
+  /** Column of the active cell (in a band header, the band, with `cellType: 'header'`); `null` in the selection, detail toggle and row buttons (`cellType: 'command'`) columns, in detail rows and in group rows. */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
   cellType: GridCellType;
@@ -797,7 +797,7 @@ export interface GridColumnFixedChangeEventDetail {
   previousFixed: GridColumnFixed;
 }
 
-/** `detail` of `u-grid-column-reorder`. Positions among the regular (non-grouped) columns; hidden ones count. */
+/** `detail` of `u-grid-column-reorder`. Positions among the column's siblings (same `band`, or the top level) that are not grouped; hidden ones count. */
 export interface GridColumnReorderEventDetail {
   /** The moved column (a leaf column or a band). */
   column: GridColumnDef;
@@ -1114,9 +1114,9 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridFilterEventDetail>} u-grid-filter-change - After the user filtered (filter row, header filter, search panel) or `clearFilter()` ran.
  * Setting `filterValue`/`searchText` does not fire it.
  * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard, double-click auto-size or the column header menu).
- * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
- * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
- * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
+ * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column (or a band) in the column chooser (one event per own change).
+ * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column (or a top-level band) in the column chooser.
+ * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column or a band (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
  * @fires {CustomEvent<GridLoadingEventDetail>} u-grid-loading - Before each call to `dataSource.load` (`dataSource` only). Cancelable: the call is skipped and the rows shown stay.
  * @fires {CustomEvent<GridLoadEventDetail>} u-grid-load - A `dataSource.load` call resolved (not fired for aborted calls).
@@ -1211,7 +1211,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart selection-cell - Cells and header of the selection checkbox column.
  * @csspart selection-checkbox - The selection checkboxes (rows and "select all").
  * @csspart no-data - The cell rendered in the empty state.
- * @csspart header-cell - Column header cells (`<th>`).
+ * @csspart header-cell - Column header cells (`<th>`), bands included.
+ * @csspart band-header-cell - Band header cells (multi-level headers); they also match `header-cell`.
  * @csspart sort-indicator - The sort arrow (and priority number) in headers and group chips.
  * @csspart group-chip - Group chips in the group panel.
  * @csspart column-chooser - The column chooser popover.
@@ -3326,7 +3327,7 @@ export class DataGrid extends LitElement {
     this.#moveColumnTo(true, column, targetIndex ?? this._groupColumns.length, 'api');
   }
 
-  /** Removes `column` from the grouping; it goes back to the end of the regular columns. */
+  /** Removes `column` from the grouping; it goes back to the end of its band (or of the regular columns at the top level). */
   ungroupColumn(column: GridColumnDef): void {
     if (this._groupColumns.includes(column)) {
       this.#moveColumnTo(false, column, this._regularColumns.length, 'api');
@@ -5974,6 +5975,29 @@ export class DataGrid extends LitElement {
     }
   }
 
+  /** A banda tem coluna comum visível pelos estados próprios abaixo dela (ignorando ela e as de cima). */
+  #hasOwnVisibleLeaf(band: GridColumnDef): boolean {
+    const tree = this.#columnTree;
+
+    return this._regularColumns.some(leaf => {
+      if (!this.#ownVisible(leaf)) {
+        return false;
+      }
+
+      for (let parent = tree.parentOf.get(leaf) ?? null; parent; parent = tree.parentOf.get(parent) ?? null) {
+        if (parent === band) {
+          return true;
+        }
+
+        if (!this.#ownVisible(parent)) {
+          return false;
+        }
+      }
+
+      return false;
+    });
+  }
+
   /** Visibilidade PRÓPRIA (usuário > hospedeiro), sem olhar as bandas. */
   #ownVisible(column: GridColumnDef): boolean {
     return this.#userVisible.get(column) ?? column.visible !== false;
@@ -6212,11 +6236,15 @@ export class DataGrid extends LitElement {
     };
 
     if (visible) {
+      // Banda que volta (ela ou uma de cima estava oculta): as colunas dela
+      // voltam ao estado próprio que tinham (APG tri-state: oculta → o misto
+      // de antes). Banda já visível (misto) ou sem coluna própria visível: todas.
+      const returning = !this.#ownVisible(column) || ancestorsOf(tree, column).some(band => !this.#ownVisible(band));
+
       ancestorsOf(tree, column).forEach(band => change(band, true));
       change(column, true);
 
-      // Banda marcada (APG tri-state): todas as colunas dela visíveis.
-      if (tree.childrenOf.has(column)) {
+      if (tree.childrenOf.has(column) && (!returning || !this.#hasOwnVisibleLeaf(column))) {
         const showAll = (band: GridColumnDef): void => (tree.childrenOf.get(band) ?? []).forEach(child => {
           change(child, true);
           showAll(child);

@@ -73,7 +73,11 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   #width: number | null = null;
   #groupIndex: number | null = null;
 
-  /** Width in px. Changing it after the column is rendered overrides the width chosen by the user. */
+  /**
+   * Width in px. Changing it after the column is rendered overrides the width
+   * chosen by the user. Under virtual column rendering (`columnRenderingMode`)
+   * a column without `width` takes its auto-size width or `max(minWidth, 150)` px.
+   */
   @property({ type: Number })
   get width(): number | null {
     return this.#width;
@@ -144,7 +148,7 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** `Intl` options or a formatter function (property only). */
   @property({ attribute: false }) format: GridColumnFormat | null = null;
 
-  /** Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. */
+  /** Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`). */
   @property() alignment: GridColumnAlignment | null = null;
 
   /** Computes the cell value used to group, sort and filter (property only). Default: read `path`. */
@@ -171,7 +175,10 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** `resizable="false"` prevents resizing this column even with `column-resizing`. */
   @property({ converter: optionalBoolean }) resizable: boolean | null = null;
 
-  /** Fixes the column at the `start` or `end` of the scrollable area (logical: mirrors in RTL). */
+  /**
+   * Fixes the column at the `start` or `end` of the scrollable area (logical:
+   * mirrors in RTL). A fixed band fixes its columns; ignored on nested columns.
+   */
   @property({ converter: fixedSide }) fixed: GridColumnFixed = null;
 
   /** INITIAL visibility (`visible="false"` hides). Afterwards the user changes it in the chooser. */

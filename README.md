@@ -260,7 +260,7 @@ interface GridColumnDef<TItem = any> {
   name?: string;
   /** Header text. With <u-grid-column>, this is the element's text content. */
   label?: string;
-  /** Fixed column width in pixels. Omit for auto width. */
+  /** Fixed column width in pixels. Omit for auto width (under virtual column rendering: auto-size width or max(minWidth, 150) px). */
   width?: number | null;
   /** Minimum column width in pixels. */
   minWidth?: number | null;
@@ -648,7 +648,7 @@ grid.columns = [
 ```ts
 grid.groupColumn(column);              // group by this column (innermost level)
 grid.groupColumn(column, 0);           // …or at a given level (moves it if already grouped)
-grid.ungroupColumn(column);            // back to the end of the regular columns
+grid.ungroupColumn(column);            // back to the end of its band (or of the regular columns)
 grid.getGrouping();                    // grouped columns, outermost first
 grid.moveColumn(column, targetIndex);  // reorder among its siblings (same band); ungroups a grouped one
 ```
@@ -1141,8 +1141,8 @@ grid.columns = [
 - **Fixing** a band fixes all its columns; `fixed` on a nested column is ignored.
 - **Hiding**: a band is shown while it is visible and has a visible column. In the column chooser a
   band is a checkbox with its columns in a nested list: mixed (some columns hidden) → all visible →
-  band hidden; checking a column of a hidden band shows the band. Hiding the band keeps its columns'
-  own state for when it comes back.
+  band hidden → back as it was before hiding (all visible, or mixed if the band was hidden while
+  mixed); checking a column of a hidden band shows the band and keeps the others' state.
 - Only leaf columns sort, group, filter, resize and export (no band row in CSV/Excel).
   `sortColumn`, `groupColumn` and `setColumnWidth` with a band do nothing, `focusCell` returns
   `false` and `autoSizeColumn` sizes each visible column of the band. A grouped column leaves its
@@ -2192,15 +2192,15 @@ CSS property and part for IDEs and tooling.
 | `clearSorting()` | Remove all sorting. |
 | `getSorting()` | Current sort as `{ column, order }[]`, in priority order. |
 | `groupColumn(column, targetIndex?)` | Group by `column` at level `targetIndex` (default: innermost); moves an already grouped column. |
-| `ungroupColumn(column)` | Remove `column` from the grouping (it goes to the end of the regular columns). |
+| `ungroupColumn(column)` | Remove `column` from the grouping (it goes back to the end of its band, or of the regular columns at the top level). |
 | `getGrouping()` | Grouped columns, outermost first. |
 | `expandAllGroups(groupIndex?)` / `collapseAllGroups(groupIndex?)` | Expand / collapse every group of a level (every level without it), also groups that appear later. |
 | `expandGroup(groupPath)` / `collapseGroup(groupPath)` | Expand / collapse one group (`['Brazil', 'SP']`). |
 | `isGroupExpanded(groupPath)` | Whether a group is (or would be) expanded. |
 | `getSummaryValues(groupPath?)` | Computed totals, or the summaries of a group: `{ item, value, text }[]`. |
 | `moveColumn(column, targetIndex)` | Reorder a column or a band to `targetIndex` among its siblings (same band or top level; kept inside its band and its fixed/regular block); ungroups a grouped column. |
-| `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
-| `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
+| `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth` (a band does nothing). |
+| `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows); for a band, each of its visible columns. |
 | `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
 | `clearFilter()` | Remove `filterValue` and `searchText` (fires `u-grid-filter-change`, `source: 'api'`). |
 | `getCombinedFilter()` | `filterValue` `and` the search as one expression (copy), or `null`. |
@@ -2241,9 +2241,9 @@ All bubble and are `composed`.
 | `u-grid-group-expansion-change` | `GridGroupExpansionChangeEventDetail` | yes | After groups were expanded or collapsed (chevron, menu or API); only when the state changed. |
 | `u-grid-filter-change` | `GridFilterEventDetail` | `clearFilter()` only | After the user filtered. Setting `filterValue`/`searchText` does not fire it. |
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
-| `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
-| `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
-| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop, `Alt+Shift+←/→` or the column header menu). |
+| `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column (or a band) in the chooser. |
+| `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column (or a top-level band) in the chooser. |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed. |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |

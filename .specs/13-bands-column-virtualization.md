@@ -149,7 +149,8 @@ Foco e teclado (padrão espacial da APG; início/fim lógicos, espelham em RTL):
 Seletor de colunas:
 - Banda: caixa nativa tri-state (`.checked` = todos visíveis,
   `.indeterminate` = parte); o clique segue a APG: misto → todos visíveis →
-  banda oculta → todos visíveis. Filhos numa `<ul>` aninhada com
+  banda oculta → o estado de antes de ocultar (todos, ou o misto se foi
+  oculta mista; sem coluna própria visível, todos). Filhos numa `<ul>` aninhada com
   `aria-labelledby` = rótulo da banda; a caixa do filho mostra o estado
   efetivo (banda oculta = desmarcado); marcar um filho com a banda oculta
   mostra a banda. Fixar só no nível de cima. Não oculta a última folha
