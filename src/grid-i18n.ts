@@ -121,6 +121,18 @@ export interface GridI18n {
   cancel: string;
   /** Screen reader announcement after the user filters. `{count}` = rows that pass (no plural forms: keep it a label). */
   filteredAnnouncement: string;
+  /** Label of the row selection checkbox. */
+  selectRow: string;
+  /** Label of the "select all" checkbox in the header of the selection column. */
+  selectAllRows: string;
+  /** Screen reader announcement after a bulk selection change. `{count}` = number of selected rows. */
+  rowsSelectedAnnouncement: string;
+  /** Screen reader announcement after moving a column with the keyboard. `{column}`, `{position}`, `{count}`. */
+  columnMovedAnnouncement: string;
+  /** Screen reader announcement after grouping by a column (or changing its level) with the keyboard. `{column}`. */
+  groupedAnnouncement: string;
+  /** Screen reader announcement after ungrouping a column with the keyboard. `{column}`. */
+  ungroupedAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -243,6 +255,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Cancel',
     filteredAnnouncement: 'Rows: {count}',
+    selectRow: 'Select row',
+    selectAllRows: 'Select all rows',
+    rowsSelectedAnnouncement: 'Selected rows: {count}',
+    columnMovedAnnouncement: '{column} moved to position {position} of {count}',
+    groupedAnnouncement: 'Grouped by {column}',
+    ungroupedAnnouncement: 'Ungrouped {column}',
   },
   es: {
     noData: 'Sin datos',
@@ -303,6 +321,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'Aceptar',
     cancel: 'Cancelar',
     filteredAnnouncement: 'Filas: {count}',
+    selectRow: 'Seleccionar fila',
+    selectAllRows: 'Seleccionar todas las filas',
+    rowsSelectedAnnouncement: 'Filas seleccionadas: {count}',
+    columnMovedAnnouncement: '{column} movida a la posición {position} de {count}',
+    groupedAnnouncement: 'Agrupado por {column}',
+    ungroupedAnnouncement: 'Se quitó la agrupación por {column}',
   },
   pt: {
     noData: 'Sem dados',
@@ -363,6 +387,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Cancelar',
     filteredAnnouncement: 'Linhas: {count}',
+    selectRow: 'Selecionar linha',
+    selectAllRows: 'Selecionar todas as linhas',
+    rowsSelectedAnnouncement: 'Linhas selecionadas: {count}',
+    columnMovedAnnouncement: '{column} movida para a posição {position} de {count}',
+    groupedAnnouncement: 'Agrupado por {column}',
+    ungroupedAnnouncement: 'Agrupamento por {column} removido',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -423,6 +453,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Annuler',
     filteredAnnouncement: 'Lignes : {count}',
+    selectRow: 'Sélectionner la ligne',
+    selectAllRows: 'Sélectionner toutes les lignes',
+    rowsSelectedAnnouncement: 'Lignes sélectionnées : {count}',
+    columnMovedAnnouncement: '{column} déplacée en position {position} sur {count}',
+    groupedAnnouncement: 'Groupé par {column}',
+    ungroupedAnnouncement: 'Regroupement par {column} supprimé',
   },
   de: {
     noData: 'Keine Daten',
@@ -483,6 +519,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Abbrechen',
     filteredAnnouncement: 'Zeilen: {count}',
+    selectRow: 'Zeile auswählen',
+    selectAllRows: 'Alle Zeilen auswählen',
+    rowsSelectedAnnouncement: 'Ausgewählte Zeilen: {count}',
+    columnMovedAnnouncement: '{column} an Position {position} von {count} verschoben',
+    groupedAnnouncement: 'Gruppiert nach {column}',
+    ungroupedAnnouncement: 'Gruppierung nach {column} aufgehoben',
   },
   it: {
     noData: 'Nessun dato',
@@ -543,6 +585,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Annulla',
     filteredAnnouncement: 'Righe: {count}',
+    selectRow: 'Seleziona riga',
+    selectAllRows: 'Seleziona tutte le righe',
+    rowsSelectedAnnouncement: 'Righe selezionate: {count}',
+    columnMovedAnnouncement: '{column} spostata in posizione {position} di {count}',
+    groupedAnnouncement: 'Raggruppato per {column}',
+    ungroupedAnnouncement: 'Raggruppamento per {column} rimosso',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -603,6 +651,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Annuleren',
     filteredAnnouncement: 'Rijen: {count}',
+    selectRow: 'Rij selecteren',
+    selectAllRows: 'Alle rijen selecteren',
+    rowsSelectedAnnouncement: 'Geselecteerde rijen: {count}',
+    columnMovedAnnouncement: '{column} verplaatst naar positie {position} van {count}',
+    groupedAnnouncement: 'Gegroepeerd op {column}',
+    ungroupedAnnouncement: 'Groepering op {column} verwijderd',
   },
   ru: {
     noData: 'Нет данных',
@@ -663,6 +717,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'ОК',
     cancel: 'Отмена',
     filteredAnnouncement: 'Строк: {count}',
+    selectRow: 'Выбрать строку',
+    selectAllRows: 'Выбрать все строки',
+    rowsSelectedAnnouncement: 'Выбрано строк: {count}',
+    columnMovedAnnouncement: 'Столбец {column} перемещён на позицию {position} из {count}',
+    groupedAnnouncement: 'Сгруппировано по {column}',
+    ungroupedAnnouncement: 'Группировка по {column} снята',
   },
   pl: {
     noData: 'Brak danych',
@@ -723,6 +783,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'Anuluj',
     filteredAnnouncement: 'Wiersze: {count}',
+    selectRow: 'Zaznacz wiersz',
+    selectAllRows: 'Zaznacz wszystkie wiersze',
+    rowsSelectedAnnouncement: 'Zaznaczone wiersze: {count}',
+    columnMovedAnnouncement: '{column} przeniesiono na pozycję {position} z {count}',
+    groupedAnnouncement: 'Pogrupowano według {column}',
+    ungroupedAnnouncement: 'Usunięto grupowanie według {column}',
   },
   tr: {
     noData: 'Veri yok',
@@ -783,6 +849,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'Tamam',
     cancel: 'İptal',
     filteredAnnouncement: 'Satır: {count}',
+    selectRow: 'Satırı seç',
+    selectAllRows: 'Tüm satırları seç',
+    rowsSelectedAnnouncement: 'Seçili satır: {count}',
+    columnMovedAnnouncement: '{column} {count} içinde {position}. konuma taşındı',
+    groupedAnnouncement: '{column} ile gruplandı',
+    ungroupedAnnouncement: '{column} gruplaması kaldırıldı',
   },
   ja: {
     noData: 'データがありません',
@@ -843,6 +915,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'OK',
     cancel: 'キャンセル',
     filteredAnnouncement: '行数: {count}',
+    selectRow: '行を選択',
+    selectAllRows: 'すべての行を選択',
+    rowsSelectedAnnouncement: '選択した行: {count}',
+    columnMovedAnnouncement: '{column} を {count} 列中 {position} 番目に移動しました',
+    groupedAnnouncement: '{column} でグループ化しました',
+    ungroupedAnnouncement: '{column} のグループ化を解除しました',
   },
   ko: {
     noData: '데이터 없음',
@@ -903,6 +981,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: '확인',
     cancel: '취소',
     filteredAnnouncement: '행: {count}',
+    selectRow: '행 선택',
+    selectAllRows: '모든 행 선택',
+    rowsSelectedAnnouncement: '선택한 행: {count}',
+    columnMovedAnnouncement: '{column}을(를) {count}개 중 {position}번째로 이동했습니다',
+    groupedAnnouncement: '{column}(으)로 그룹화했습니다',
+    ungroupedAnnouncement: '{column} 그룹화를 해제했습니다',
   },
   zh: {
     noData: '无数据',
@@ -963,6 +1047,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: '确定',
     cancel: '取消',
     filteredAnnouncement: '行数：{count}',
+    selectRow: '选择行',
+    selectAllRows: '选择所有行',
+    rowsSelectedAnnouncement: '已选择行数：{count}',
+    columnMovedAnnouncement: '已将 {column} 移到第 {position} 位（共 {count} 位）',
+    groupedAnnouncement: '已按 {column} 分组',
+    ungroupedAnnouncement: '已取消按 {column} 分组',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -1023,6 +1113,12 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     ok: 'موافق',
     cancel: 'إلغاء',
     filteredAnnouncement: 'الصفوف: {count}',
+    selectRow: 'تحديد الصف',
+    selectAllRows: 'تحديد كل الصفوف',
+    rowsSelectedAnnouncement: 'الصفوف المحددة: {count}',
+    columnMovedAnnouncement: 'تم نقل {column} إلى الموضع {position} من {count}',
+    groupedAnnouncement: 'تم التجميع حسب {column}',
+    ungroupedAnnouncement: 'تم إلغاء التجميع حسب {column}',
   },
 });
 

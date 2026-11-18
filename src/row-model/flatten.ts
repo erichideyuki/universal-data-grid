@@ -70,6 +70,36 @@ export class RowList {
     return { isGroup: false, key: `d:${this.#keyOf(item)}`, item, index: position } satisfies DataRow;
   }
 
+  /** Índice da 1ª linha de dados do item; `-1` se ele não está nas linhas (foco e seleção, frente 05). */
+  indexOfItem(item: unknown): number {
+    for (let i = 0; i < this.#segments.length; i++) {
+      const segment = this.#segments[i];
+
+      if (Array.isArray(segment)) {
+        const position = segment.indexOf(item);
+
+        if (position >= 0) {
+          return this.#starts[i] + position;
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  /** Índice da linha avulsa (grupo, rodapé de grupo) de chave `key`; `-1` se não está (recolhida). */
+  indexOfKey(key: string): number {
+    for (let i = 0; i < this.#segments.length; i++) {
+      const segment = this.#segments[i];
+
+      if (!Array.isArray(segment) && (segment as Row).key === key) {
+        return this.#starts[i];
+      }
+    }
+
+    return -1;
+  }
+
   /**
    * Linhas de `start` (inclusive) a `end` (exclusive). Chaves repetidas na
    * fatia (o mesmo objeto duas vezes em `items`) ganham sufixo `#n`, para o

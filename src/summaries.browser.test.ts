@@ -24,9 +24,13 @@ const root = (grid: DataGrid) => grid.shadowRoot!;
 const column = (grid: DataGrid, label: string) => grid.columns.find(c => c.label === label)!;
 const totalRow = (grid: DataGrid) => root(grid).querySelector<HTMLTableRowElement>('tfoot tr.total-row');
 const footerRows = (grid: DataGrid) => [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr.group-footer-row')];
+/** Texto VISÍVEL de uma célula de resumo (o rótulo completo vai num trecho só para o leitor de tela). */
+const visibleText = (td: Element) => (td.querySelector('[aria-hidden=true]') ?? td).textContent.trim();
+/** Nome acessível de uma célula de resumo (do conteúdo, não de `aria-label` — WCAG 2.5.3). */
+const accessibleLabel = (td: Element) => td.querySelector('.visually-hidden')?.textContent.trim() ?? '';
 /** Texto de cada célula de uma linha de resumo, a partir das colunas comuns. */
 const summaryTexts = (row: HTMLTableRowElement) =>
-  [...row.querySelectorAll<HTMLTableCellElement>('td[aria-colindex]')].map(td => td.textContent.trim());
+  [...row.querySelectorAll<HTMLTableCellElement>('td[aria-colindex]:not(.selection-cell)')].map(visibleText);
 
 const press = async (grid: DataGrid, target: HTMLElement, key: string, init: KeyboardEventInit = {}) => {
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init }));
@@ -75,7 +79,7 @@ describe('rodapé de totais', () => {
 
     // Rótulo completo para o leitor de tela.
     const amountCell = row.querySelector('td[aria-colindex="3"]')!;
-    expect(amountCell.getAttribute('aria-label')).toBe('Sum of Amount: 47, Avg of Amount: 15.67');
+    expect(accessibleLabel(amountCell)).toBe('Sum of Amount: 47, Avg of Amount: 15.67');
     expect(amountCell.getAttribute('part')).toBe('summary-cell');
 
     // aria-rowcount conta o rodapé; o rodapé é a última linha.
@@ -150,7 +154,8 @@ describe('linha de grupo', () => {
 
     expect(groupLabels(grid)).toEqual(['Country: Brazil', 'Country: Peru']);
     expect(groupInfos(grid)).toEqual(['(3, Sum of Amount: 40)', '(1, Sum of Amount: 7)']);
-    expect(groupToggles(grid)[0].getAttribute('aria-label')).toBe('Country: Brazil (3, Sum of Amount: 40)');
+    // Nome acessível: o texto da célula da linha de grupo (o botão é `aria-hidden`, frente 05).
+    expect(grid.shadowRoot!.querySelector('.grouping-cell')!.textContent.replace(/\s+/g, ' ').trim()).toBe('Country: Brazil (3, Sum of Amount: 40)');
 
     grid.setAttribute('show-group-count', 'false');
     await settle(grid);
@@ -170,8 +175,8 @@ describe('linha de grupo', () => {
     // Comuns visíveis: city (1), amount (2), day (3); o rótulo ocupa city.
     expect(label.colSpan).toBe(1);
     expect(summary.getAttribute('aria-colindex')).toBe('2');
-    expect(summary.textContent.trim()).toBe('Max: 30');
-    expect(summary.getAttribute('aria-label')).toBe('Max of Amount: 30');
+    expect(visibleText(summary)).toBe('Max: 30');
+    expect(accessibleLabel(summary)).toBe('Max of Amount: 30');
     expect(groupInfos(grid)[0]).toBe('(3)');
   });
 

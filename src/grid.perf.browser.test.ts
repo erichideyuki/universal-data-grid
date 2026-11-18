@@ -466,6 +466,54 @@ const summaryScenario = (rows: number, label: string) => {
   });
 };
 
+/** Tecla no elemento com o foco dentro do grid (ou na célula ativa). */
+const press = (grid: DataGrid, key: string, init: KeyboardEventInit = {}): void => {
+  const target = grid.shadowRoot!.activeElement ?? grid.shadowRoot!.querySelector('table [tabindex="0"]')!;
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init }));
+};
+
+/** Frente 05: selecionar tudo e navegação rápida pelo teclado (o foco acompanha o virtualizador). */
+const selectionScenario = (rows: number, label: string) => {
+  it(`${label} linhas com caixas de seleção: selecionar tudo, limpar, setas, PageDown, Ctrl+End`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+    const { grid } = await bestFirstRender(items, makeLeanColumns());
+
+    grid.selectionMode = 'multiple';
+    grid.showCheckboxes = true;
+    await painted(grid);
+    grid.focusCell(items[0]);
+    await painted(grid);
+
+    const selectAll = await interaction('selectAll', grid, () => press(grid, 'a', { ctrlKey: true }), () => grid.clearSelection());
+    const allChecked = grid.shadowRoot!.querySelector('th.selection-cell [role=checkbox]')!.getAttribute('aria-checked');
+    const selected = grid.selectedKeys.length;
+    const clear = await interaction('clearSelection', grid, () => grid.clearSelection(), () => grid.selectAll());
+    const arrowDown = await interaction('arrowDown', grid, () => press(grid, 'ArrowDown'), () => press(grid, 'ArrowUp'));
+    const pageDown = await interaction('pageDown', grid, () => press(grid, 'PageDown'), () => press(grid, 'PageUp'));
+    const gridEnd = await interaction('gridEnd', grid, () => press(grid, 'End', { ctrlKey: true }), () => press(grid, 'Home', { ctrlKey: true }));
+
+    await perf.unthrottle();
+    await painted(grid);
+
+    const focused = grid.shadowRoot!.activeElement as HTMLElement;
+    const focusedRow = focused.closest('tr')!;
+    const nodes = domNodes(grid);
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = { ...selectAll, ...clear, ...arrowDown, ...pageDown, ...gridEnd, domNodes: nodes };
+
+    checkBudgets(rows, metrics, perf.report(`selection-${label}`, metrics));
+    expect(selected).toBe(rows);
+    expect(allChecked).toBe('true');
+    expect(focusedRow.getAttribute('aria-rowindex'), 'Ctrl+End chega à última linha').toBe(String(rows + 1));
+    expect(focusedRow.classList.contains('pinned'), 'a última linha está na janela virtual').toBe(false);
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -473,4 +521,5 @@ describe('perfil de máquina fraca', () => {
   groupedScenario(1_000_000, '1m');
   summaryScenario(1_000_000, '1m');
   hugeScenario(5_000_000, '5m');
+  selectionScenario(1_000_000, '1m');
 });

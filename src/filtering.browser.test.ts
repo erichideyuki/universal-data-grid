@@ -147,8 +147,9 @@ describe('filtro + resumos (frente 07)', () => {
         g.summary = { total: [{ column: 'age', type: 'sum' }, { column: 'name', type: 'count' }], group: [{ column: 'age', type: 'sum' }] };
       },
     });
+    // Texto visível (o rótulo completo das células de resumo é só para o leitor de tela, frente 05).
     const totals = () => [...root(grid).querySelectorAll<HTMLTableCellElement>('tfoot tr.total-row td[aria-colindex]')]
-      .map(td => td.textContent.trim());
+      .map(td => (td.querySelector('[aria-hidden=true]') ?? td).textContent.trim());
 
     expect(totals()).toEqual(['Count: 5', 'Sum: 126']);
 

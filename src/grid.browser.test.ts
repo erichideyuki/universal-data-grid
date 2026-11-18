@@ -272,7 +272,7 @@ describe('acessibilidade (B18)', () => {
       items: [{ g: 'a', n: 1 }],
     });
 
-    const container = grid.shadowRoot!.querySelector('[role=grid]')!;
+    const container = grid.shadowRoot!.querySelector('table')!;
     expect(container.getAttribute('aria-rowcount')).toBe('2');
 
     const toggle = grid.shadowRoot!.querySelector('button.group-toggle')!;

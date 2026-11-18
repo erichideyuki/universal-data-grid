@@ -166,6 +166,19 @@ export class DevRoot extends LitElement {
           </select>
         </label>
         <label>
+          Selection:
+          <select @change=${(e: Event) => {
+            const value = (e.target as HTMLSelectElement).value;
+            this.grid.selectionMode = value.startsWith('multiple') ? 'multiple' : value as DataGrid['selectionMode'];
+            this.grid.showCheckboxes = value === 'multiple-checkboxes';
+          }}>
+            <option value="none">none</option>
+            <option value="single">single</option>
+            <option value="multiple">multiple</option>
+            <option value="multiple-checkboxes">multiple + checkboxes</option>
+          </select>
+        </label>
+        <label>
           Resize mode:
           <select @change=${(e: Event) => this.grid.resizeMode = (e.target as HTMLSelectElement).value as DataGrid['resizeMode']}>
             <option value="widget">widget</option>

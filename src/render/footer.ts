@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from 'lit';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
 
 import type { GridColumnDef } from '../grid-column-def.js';
@@ -19,18 +20,27 @@ export interface SummaryColumnLayout {
 }
 
 /**
+ * O nome acessível vem do conteúdo: texto visível escondido do leitor e o
+ * rótulo completo ("Sum of Amount: 47") só para ele — `aria-label` com texto
+ * visível diferente reprova no axe (`label-content-name-mismatch`, WCAG 2.5.3).
+ *
  * Células das colunas a partir de `from` (índice em `layout`), com os
- * resumos de cada coluna; colunas sem resumo ficam vazias.
+ * resumos de cada coluna; colunas sem resumo ficam vazias. `colOffset`:
+ * colunas antes das comuns (caixas de seleção) no `aria-colindex`. Com
+ * `tabIndexOf` (linhas de resumo navegáveis, frente 05) cada célula entra
+ * no roving tabindex do grid (`data-col` = índice entre as navegáveis).
  */
 export const renderSummaryCells = (
   layout: readonly SummaryColumnLayout[],
   texts: ReadonlyMap<GridColumnDef, SummaryText[]>,
   from = 0,
   separator = ', ',
+  colOffset = 0,
+  tabIndexOf?: (col: number) => 0 | -1,
 ): TemplateResult =>
   html`${map(layout.slice(from), (cell, index) => {
     const summaries = texts.get(cell.column);
-    const colIndex = from + index + 1;
+    const col = colOffset + from + index;
 
     return summaries?.length
       ? html`<td
@@ -38,9 +48,18 @@ export const renderSummaryCells = (
           class="summary-cell ${cell.className}"
           style=${cell.style}
           role="gridcell"
-          aria-colindex=${colIndex}
-          aria-label=${summaries.map(summary => summary.label).join(separator)}>${map(summaries, summary => html`<span class="summary-item">${summary.text}</span>`)}</td>`
-      : html`<td class="summary-cell ${cell.className}" style=${cell.style} role="gridcell" aria-colindex=${colIndex}></td>`;
+          aria-colindex=${col + 1}
+          data-col=${ifDefined(tabIndexOf ? col : undefined)}
+          tabindex=${ifDefined(tabIndexOf?.(col))}
+          ><span aria-hidden="true">${map(summaries, summary => html`<span class="summary-item">${summary.text}</span>`)}</span><span
+            class="visually-hidden">${summaries.map(summary => summary.label).join(separator)}</span></td>`
+      : html`<td
+          class="summary-cell ${cell.className}"
+          style=${cell.style}
+          role="gridcell"
+          aria-colindex=${col + 1}
+          data-col=${ifDefined(tabIndexOf ? col : undefined)}
+          tabindex=${ifDefined(tabIndexOf?.(col))}></td>`;
   })}`;
 
 /** Recuos das colunas de grupo (rodapés e linhas de dados). */
@@ -59,13 +78,30 @@ export interface TotalFooterContext {
   rowIndex: number;
   /** Separador de lista do idioma (rótulo de várias somas na mesma célula). */
   separator: string;
+  /** Célula antes das colunas comuns (caixas de seleção). */
+  leading?: TemplateResult | typeof nothing;
+  /** Colunas antes das comuns no `aria-colindex`. */
+  colOffset?: number;
+  /** Roving tabindex do grid (ver `renderSummaryCells`). */
+  tabIndexOf?: (col: number) => 0 | -1;
 }
 
 /** Rodapé de totais: `rowgroup` próprio, fixo embaixo (fora do virtualizador). */
-export const renderTotalFooter = ({ layout, texts, groupColumns, groupColumnWidth, rowIndex, separator }: TotalFooterContext): TemplateResult => html`
+export const renderTotalFooter = ({
+  layout,
+  texts,
+  groupColumns,
+  groupColumnWidth,
+  rowIndex,
+  separator,
+  leading = nothing,
+  colOffset = 0,
+  tabIndexOf,
+}: TotalFooterContext): TemplateResult => html`
   <tfoot class="total-footer" role="rowgroup">
     <tr class="summary-row total-row" part="summary-row total-row" role="row" aria-rowindex=${rowIndex}>
       ${groupColumns ? renderIndentCells(groupColumns, groupColumnWidth) : nothing}
-      ${renderSummaryCells(layout, texts, 0, separator)}
+      ${leading}
+      ${renderSummaryCells(layout, texts, 0, separator, colOffset, tabIndexOf)}
     </tr>
   </tfoot>`;

@@ -152,6 +152,10 @@
               "name": "--u-grid-focus-ring-width"
             },
             {
+              "description": "Background of selected rows. Default: primary color at 12%.",
+              "name": "--u-grid-selected-row-background-color"
+            },
+            {
               "description": "Text color of sorted column headers.",
               "name": "--u-grid-sorted-header-color"
             },
@@ -234,8 +238,20 @@
               "name": "even"
             },
             {
+              "description": "Selected data rows (with `row`).",
+              "name": "selected"
+            },
+            {
               "description": "Data cells (`<td>`).",
               "name": "cell"
+            },
+            {
+              "description": "Cells and header of the selection checkbox column.",
+              "name": "selection-cell"
+            },
+            {
+              "description": "The selection checkboxes (rows and \"select all\").",
+              "name": "selection-checkbox"
             },
             {
               "description": "The cell rendered in the empty state.",
@@ -543,6 +559,42 @@
             },
             {
               "kind": "field",
+              "name": "selectionMode",
+              "type": {
+                "text": "GridSelectionMode"
+              },
+              "default": "'none'",
+              "description": "Row selection: `none` (default; the selection methods do nothing),\n`single` or `multiple`. Click selects, Ctrl+click toggles, Shift+click\nextends; Space, Shift+Space, Shift+↑/↓ and Ctrl+A on the keyboard.",
+              "attribute": "selection-mode"
+            },
+            {
+              "kind": "field",
+              "name": "showCheckboxes",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a checkbox column (fixed at the start) with \"select all\" in the\nheader. Only with `selection-mode=\"multiple\"`; then a click on a row only\nmoves the focus and the checkbox (or Space) selects.",
+              "attribute": "show-checkboxes"
+            },
+            {
+              "kind": "field",
+              "name": "selectedKeys",
+              "type": {
+                "text": "readonly unknown[]"
+              },
+              "description": "Selected row keys (property only). Without `keyExpr` the key is the item\nobject itself, so replacing `items` with new objects loses the selection.\nKeys missing from `items` are kept (and retained) until deselected. The\ngetter returns a frozen array — the same instance until the selection\nchanges. Setting it does not fire `u-grid-selection-change`."
+            },
+            {
+              "kind": "field",
+              "name": "focusedRowKey",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "Key of the data row of the active cell (the cell keyboard navigation\nstarts from); `null` when it is a header or group row. Setting it moves\nthe active cell to that row (scrolling to it) without taking the DOM\nfocus and without firing `u-grid-focus-change`; a key not in the rows is\nignored and `null` moves it to the first header (ignored when\n`show-column-headers` is `false`)."
+            },
+            {
+              "kind": "field",
               "name": "stripped",
               "type": {
                 "text": "boolean"
@@ -590,7 +642,7 @@
                   }
                 },
                 {
-                  "name": "{ append = false }",
+                  "name": "options",
                   "default": "{}",
                   "type": {
                     "text": "{ append?: boolean }"
@@ -929,6 +981,151 @@
                 }
               },
               "deprecated": "Use `openColumnChooser()`."
+            },
+            {
+              "kind": "method",
+              "name": "selectRows",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "keys",
+                  "type": {
+                    "text": "readonly unknown[]"
+                  }
+                },
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "{ append?: boolean }"
+                  }
+                }
+              ],
+              "description": "Selects the rows of `keys`. Without `append` they replace the selection;\nwith it they are added. In `single` mode only the last key is kept; in\n`none` it does nothing."
+            },
+            {
+              "kind": "method",
+              "name": "deselectRows",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "keys",
+                  "type": {
+                    "text": "readonly unknown[]"
+                  }
+                }
+              ],
+              "description": "Removes the rows of `keys` from the selection (nothing in `none` mode)."
+            },
+            {
+              "kind": "method",
+              "name": "selectAll",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Selects every row that passes the filter, including rows of collapsed groups (`multiple` mode only)."
+            },
+            {
+              "kind": "method",
+              "name": "deselectAll",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Deselects every row that passes the filter (`multiple` mode only); other keys stay selected."
+            },
+            {
+              "kind": "method",
+              "name": "clearSelection",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Removes every key from the selection (also keys not in `items`)."
+            },
+            {
+              "kind": "method",
+              "name": "isRowSelected",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "key",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Whether the row of `key` is selected."
+            },
+            {
+              "kind": "method",
+              "name": "getSelectedItems",
+              "return": {
+                "type": {
+                  "text": "any[]"
+                }
+              },
+              "description": "Items of the selected keys that are in `items`, in selection order."
+            },
+            {
+              "kind": "method",
+              "name": "focusCell",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                },
+                {
+                  "name": "column",
+                  "optional": true,
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ],
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event."
+            },
+            {
+              "kind": "method",
+              "name": "focus",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "options",
+                  "optional": true,
+                  "type": {
+                    "text": "FocusOptions"
+                  }
+                }
+              ],
+              "description": "Moves the focus to the active cell of the grid (the one keyboard navigation starts from)."
             }
           ],
           "events": [
@@ -951,7 +1148,7 @@
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
               },
-              "description": "The user moved a column by drag and drop."
+              "description": "The user moved a column (drag and drop or Alt+Shift+←/→ on the header)."
             },
             {
               "name": "u-grid-column-visibility-change",
@@ -987,6 +1184,20 @@
                 "text": "CustomEvent<GridSortEventDetail>"
               },
               "description": "After the sorting changed (user or API)."
+            },
+            {
+              "name": "u-grid-selection-change",
+              "type": {
+                "text": "CustomEvent<GridSelectionChangeEventDetail>"
+              },
+              "description": "The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter)."
+            },
+            {
+              "name": "u-grid-focus-change",
+              "type": {
+                "text": "CustomEvent<GridFocusChangeEventDetail>"
+              },
+              "description": "The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation)."
             },
             {
               "type": {
@@ -1165,6 +1376,24 @@
               "default": "false",
               "description": "Columns without `width` take the width of their content (header and rendered rows).",
               "fieldName": "columnAutoWidth"
+            },
+            {
+              "name": "selection-mode",
+              "type": {
+                "text": "GridSelectionMode"
+              },
+              "default": "'none'",
+              "description": "Row selection: `none` (default; the selection methods do nothing),\n`single` or `multiple`. Click selects, Ctrl+click toggles, Shift+click\nextends; Space, Shift+Space, Shift+↑/↓ and Ctrl+A on the keyboard.",
+              "fieldName": "selectionMode"
+            },
+            {
+              "name": "show-checkboxes",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a checkbox column (fixed at the start) with \"select all\" in the\nheader. Only with `selection-mode=\"multiple\"`; then a click on a row only\nmoves the focus and the checkbox (or Space) selects.",
+              "fieldName": "showCheckboxes"
             },
             {
               "name": "stripped",

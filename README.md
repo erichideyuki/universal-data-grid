@@ -23,6 +23,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Filtering](#filtering) (filter row, search panel, header filter)
 - [Grouping](#grouping)
 - [Summaries](#summaries) (totals and group summaries)
+- [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Custom cell rendering](#custom-cell-rendering)
 - [Internationalization (i18n)](#internationalization-i18n)
@@ -56,7 +57,10 @@ React, Vue, Svelte — or with no framework at all.
 - **Data types & formatting** — number, date, date-time and boolean columns formatted with `Intl`
   in the grid's language, with per-column `format`, `alignment`, computed values and empty text.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
-  area.
+  area (or use the keyboard: `Alt+Shift+←/→`, `Ctrl+G`).
+- **Selection & keyboard** — single or multiple row selection by key, with checkboxes and "select
+  all"; full keyboard navigation (WAI-ARIA APG grid pattern) that survives virtualization; complete
+  grid ARIA, checked with `axe-core`.
 - **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
   columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
 - **Custom cell renderers** — return any `HTMLElement` per column to fully control a cell.
@@ -568,8 +572,8 @@ grid.columns = [
 - **Group order** — groups are sorted by value type: numbers and dates by value, text in natural
   order for the grid language (`item 2` before `item 10`); empty values come first. Click the group
   chip to reverse the order — see [Sorting](#sorting).
-- **Expand / collapse** — click the chevron on a group row (it is a button, so `Tab` + `Enter`/`Space`
-  work too), or use the group panel menu (below). The expanded state is kept per group (by its
+- **Expand / collapse** — click the chevron on a group row, press `→`/`←` (or `Enter`) with the
+  group row focused, or use the group panel menu (below). The expanded state is kept per group (by its
   values) when `items` are replaced or sorted. `auto-expand-groups` renders groups expanded by
   default; it is the *initial* default — changing it later resets the expansion state:
 
@@ -688,6 +692,117 @@ grid.summary = {
 
 ---
 
+## Selection & keyboard
+
+### Row selection
+
+```html
+<u-grid selection-mode="multiple" show-checkboxes></u-grid>
+```
+
+- **`selection-mode`** — `none` (default), `single` or `multiple`.
+- **Mouse** — click selects the row, `Ctrl`/`⌘`+click toggles it, `Shift`+click selects the range
+  from the last toggled row (`Ctrl`+`Shift` adds the range).
+- **`show-checkboxes`** (`multiple` only) — adds a checkbox column fixed at the start, with "select
+  all" in its header (checked, unchecked or mixed). With checkboxes, a click on a row only moves the
+  focus; the checkbox (or `Space`) selects.
+- **By key** — the selection is a set of row keys. Until `keyExpr` exists, the key is the item object
+  itself: the selection survives sorting, grouping, filtering and replacing `items` *with the same
+  objects*; replacing them with new objects loses it. Keys that are not in `items` are kept (and
+  retained) until deselected or `clearSelection()` is called.
+- **Select all** selects every row that passes the filter, including rows inside collapsed groups.
+
+```ts
+grid.selectRows([item1, item2]);                 // replace the selection
+grid.selectRows([item3], { append: true });      // add to it
+grid.deselectRows([item1]);
+grid.selectAll();                                // multiple only
+grid.deselectAll();                              // the filtered rows only
+grid.clearSelection();                           // every key
+grid.isRowSelected(item2);                       // true
+grid.getSelectedItems();                         // selected items present in `items`
+grid.selectedKeys;                               // frozen array, same instance until it changes
+grid.selectedKeys = [item2];                     // set without firing an event
+```
+
+`u-grid-selection-change` fires after every change made by the user or by a method — not when
+`selectedKeys` is set: `detail` is
+`{ selectedKeys, previous, added, removed, source: 'user' | 'api' }`. Switching
+`selection-mode` from `multiple` to `single` keeps only the last key (and fires with `source: 'api'`).
+
+### Keyboard navigation
+
+The table is a single `Tab` stop (roving `tabindex`, as in the WAI-ARIA APG "Data Grid" pattern):
+`Tab` enters the grid on its active cell and leaves it on the next key press. The group panel and the
+column chooser button are separate stops in the bar above.
+
+| Key | Action |
+| --- | ------ |
+| `←` `→` `↑` `↓` | Neighbor cell (`←`/`→` mirrored in RTL). The header row is the first row. |
+| `Home` / `End` | First / last cell of the row. |
+| `Ctrl`+`Home` / `Ctrl`+`End` | First cell of the first row / last cell of the last row. |
+| `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). |
+| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to the resize handle. |
+| `Esc` | Back from the content to the cell. |
+| `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
+| `Shift`+`↑`/`↓`, `Shift`+`Space` | Extend the selection (`multiple`). |
+| `Ctrl`+`A` | Select all (`multiple`). |
+| `→` / `←` on a group row | Expand / collapse (`←` on a collapsed group goes to its parent group); `Enter` toggles. |
+| `Enter` / `Space` on a header | Sort (`Shift` adds the column), as with the mouse. |
+| `Alt`+`←`/`→` on a header | Resize the column. |
+| `Alt`+`Shift`+`←`/`→` on a header | Move the column (same as dragging it; mirrored in RTL). |
+| `Ctrl`+`G` on a header | Group by the column (same as dragging it to the group panel). |
+| `←`/`→`, `Home`/`End` in the group panel | Move between the group chips. |
+| `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
+| `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
+| `Shift`+`F10` / menu key on a group chip | Open the group panel menu. |
+| `F2` / `Alt`+`↓` on a header | Focus the header filter button / open the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+
+The grid calls `preventDefault()` on the keys it handles, so `Ctrl`+`A`/`Ctrl`+`G` do not reach the
+browser while the focus is in a cell. The active cell survives virtualization (its row stays in the
+DOM, hidden, while scrolled away), sorting, grouping and column moves.
+
+```ts
+grid.focus();                          // focus the active cell
+grid.focusCell(item, column);          // scroll to a cell and focus it (false if the row or column is not shown)
+grid.focusedRowKey;                    // key of the active data row (null in a header or group row)
+grid.focusedRowKey = item;             // move the active cell without focusing (no event)
+grid.focusedRowKey = null;             // back to the first header (ignored without column headers)
+```
+
+`u-grid-focus-change` fires when the active cell changes by keyboard, click or `focusCell()` — not
+when `focusedRowKey` is set, nor when the active cell moves because its row or column left the grid
+(read `focusedRowKey` then): `detail` is
+`{ rowKey, column, cellType, previousRowKey, previousColumn, source }`, where `cellType` is
+`'header' | 'data' | 'selection' | 'group' | 'summary'` and `column` is `null` in the checkbox column
+and in group rows.
+
+Group footers and the totals footer ([Summaries](#summaries)) are rows of the navigation too (the
+totals footer is the last row, `cellType: 'summary'`). A group row is a single stop: summaries shown
+under their columns in it are part of its accessible name. In the group panel, `Shift+F10` (or the
+menu key) opens the group panel menu on a chip.
+
+The filter row ([Filtering](#filtering)) is a header row whose editors are regular `Tab` stops
+between the column headers and the body (arrow keys stay in the editor; `↓` from a header goes
+straight to the body). The header filter button is not a `Tab` stop: `F2` or `Alt+↓` on the header
+reach it. "Select all" selects the rows that pass the filter and the search.
+
+### Accessibility
+
+- `role="grid"` (`role="treegrid"` while grouped), with `aria-rowcount`/`aria-colcount` for the whole
+  data set (not just the rendered rows), the real `aria-rowindex`/`aria-colindex` of every cell,
+  `aria-multiselectable` in `multiple` mode, `aria-selected` on data rows and `aria-level` +
+  `aria-expanded` on group rows.
+- Checkboxes are `role="checkbox"` with `aria-checked` (`mixed` in "select all").
+- A visible focus ring (`:focus-visible`, `--u-grid-focus-ring-color`/`-width`) on the keyboard
+  focus only.
+- Sorting, grouping, column moves and bulk selections are announced through an `aria-live` region
+  (translatable).
+- Every drag gesture has a keyboard alternative (WCAG 2.1.1 and 2.5.7). The browser tests run
+  `axe-core` with zero violations.
+
+---
+
 ## Column features
 
 ```html
@@ -711,7 +826,8 @@ column out).
 - **Double-click** the handle to auto-size the column to its content (header + rendered rows).
 - **Keyboard** — `Alt+←/→` on a header cell, or `←/→` on the focused handle, resize by 16 px
   (mirrored in RTL); `Enter` on the handle auto-sizes.
-- The handle is a focusable `role="separator"` with `aria-valuenow` set to the column width.
+- The handle is a `role="separator"` with `aria-valuenow` set to the column width. It is not a `Tab`
+  stop (the grid has one): `F2` on the header focuses it, `Esc` goes back.
 - Using the handle (drag, click, double-click, keys) never sorts the column; neither does dragging a
   header to reorder it.
 
@@ -927,10 +1043,16 @@ interface GridI18n {
   ok: string;
   cancel: string;
   filteredAnnouncement: string; // after a user filter: "Rows: {count}"
+  selectRow: string;           // row checkbox label: "Select row"
+  selectAllRows: string;       // "select all" checkbox label: "Select all rows"
+  rowsSelectedAnnouncement: string; // after a bulk selection: "Selected rows: {count}"
+  columnMovedAnnouncement: string;  // "{column} moved to position {position} of {count}"
+  groupedAnnouncement: string;      // "Grouped by {column}"
+  ungroupedAnnouncement: string;    // "Ungrouped {column}"
 }
 ```
 
-`{column}` and `{order}` are placeholders filled by the grid (`{order}` with `sortAscending` /
+`{column}`, `{order}`, `{count}` and `{position}` are placeholders filled by the grid (`{order}` with `sortAscending` /
 `sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd` and `unpin` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
@@ -969,6 +1091,10 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `headerFilter`     | `header-filter`       | `boolean` | `false` | Show the header filter button in filterable headers. |
 | `filterValue`      | *(property only)*     | `GridFilterExpression \| null` | `null` | Column filter expression (read it for the current filter). |
 | `searchText`       | `search-text`         | `string`  | `''`    | Search panel text. |
+| `selectionMode`    | `selection-mode`      | `'none' \| 'single' \| 'multiple'` | `'none'` | Row selection. See [Selection & keyboard](#selection--keyboard). |
+| `showCheckboxes`   | `show-checkboxes`     | `boolean` | `false` | Checkbox column with "select all" (`multiple` only). |
+| `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (the items, until `keyExpr`). Setting it fires no event. |
+| `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell. Setting it fires no event. |
 
 ```html
 <u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
@@ -1015,6 +1141,7 @@ blends into that design system automatically when present.
 | `--u-grid-group-chip-outline-color` / `--u-grid-group-chip-outline-width` | outline token / `1px` | Group chip border. |
 | `--u-grid-group-chip-font-size`, `-font-weight`, `-line-height`, `-letter-spacing` | label-large tokens | Group chip text. |
 | `--u-grid-focus-ring-color` / `--u-grid-focus-ring-width` | primary token / `2px` | Keyboard focus ring. |
+| `--u-grid-selected-row-background-color` | primary token at 12% | Background of selected rows. |
 | `--u-grid-sorted-header-color` | text color | Text color of sorted column headers. |
 | `--u-grid-sort-indicator-size` | `1.125em` | Size of the sort arrow. |
 | `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
@@ -1050,7 +1177,10 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `row` | Every body row (`<tr>`; not the header nor the totals footer). |
 | `group-row` | Group header rows. |
 | `odd` / `even` | Data rows, by parity (the first data row is `odd`; useful with striping). |
+| `selected` | Selected data rows. |
 | `cell` | Data cells (`<td>`). |
+| `selection-cell` | Cells and header of the checkbox column. |
+| `selection-checkbox` | The selection checkboxes (rows and "select all"). |
 | `no-data` | The cell rendered in the empty state. |
 | `header-cell` | Column header cells (`<th>`). |
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
@@ -1170,6 +1300,14 @@ CSS property and part for IDEs and tooling.
 | `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
 | `clearFilter()` | Remove `filterValue` and `searchText` (fires `u-grid-filter-change`, `source: 'api'`). |
 | `getCombinedFilter()` | `filterValue` `and` the search as one expression (copy), or `null`. |
+| `selectRows(keys, { append })` | Select the rows of `keys` (replacing the selection unless `append`). |
+| `deselectRows(keys)` | Deselect the rows of `keys`. |
+| `selectAll()` / `deselectAll()` | Select / deselect every row that passes the filter (`multiple` only). |
+| `clearSelection()` | Deselect every key. |
+| `isRowSelected(key)` | Whether the row of `key` is selected. |
+| `getSelectedItems()` | Selected items present in `items`, in selection order. |
+| `focusCell(rowKey, column?)` | Scroll to a cell and focus it; `false` if the row or column is not shown (groups are not expanded). |
+| `focus(options?)` | Focus the active cell. |
 
 ### `<u-grid>` events
 
@@ -1185,7 +1323,9 @@ All bubble and are `composed`.
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
-| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column by drag and drop. |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop or `Alt+Shift+←/→`). |
+| `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
+| `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
 
 The events that also fire for API calls carry `source: 'user' | 'api'` in `detail`.
 
@@ -1211,6 +1351,10 @@ import {
   type GridSortMode,        // 'none' | 'single' | 'multiple'
   type GridResizeMode,      // 'widget' | 'next-column'
   type GridChangeSource,    // 'user' | 'api'
+  type GridSelectionMode,   // 'none' | 'single' | 'multiple'
+  type GridSelectionChangeEventDetail, // { selectedKeys, previous, added, removed, source }
+  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary'
+  type GridFocusChangeEventDetail, // { rowKey, column, cellType, previousRowKey, previousColumn, source }
   type GridSortEventDetail, // { sorting, previous, source }
   type GridGroupEventDetail, // { grouping, previous, source }
   type GridGroupExpansionChangeEventDetail, // { groupPath, groupIndex, expanded, source }

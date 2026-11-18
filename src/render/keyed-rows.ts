@@ -57,6 +57,7 @@ class KeyedRowsDirective<T> extends Directive {
 
     const oldParts = committed as ChildPart[];
     const oldKeys = this.#keys;
+    const newKeySet = new Set(items.map(keyOf));
     const reusable = new Map<unknown, ChildPart>();
     const stale: ChildPart[] = [];
 
@@ -69,6 +70,22 @@ class KeyedRowsDirective<T> extends Directive {
 
       reusable.set(key, oldParts[index]);
     });
+
+    for (const [key, part] of reusable) {
+      if (!newKeySet.has(key)) {
+        stale.push(part);
+        reusable.delete(key);
+      }
+    }
+
+    // Remove antes de inserir: uma parte que fica (a linha com o foco) não é
+    // movida só porque havia vizinhas a remover entre ela e a seguinte —
+    // mover um elemento focado no DOM tira o foco dele.
+    for (const part of stale) {
+      removePart(part);
+      // O que o `removePart` esquece (no-op se um dia ele passar a remover).
+      part.endNode?.parentNode?.removeChild(part.endNode);
+    }
 
     const newParts: ChildPart[] = new Array(items.length);
     const newKeys: unknown[] = new Array(items.length);
@@ -92,9 +109,9 @@ class KeyedRowsDirective<T> extends Directive {
       next = part;
     }
 
-    for (const part of [...stale, ...reusable.values()]) {
+    // Chaves repetidas na lista nova que sobraram.
+    for (const part of reusable.values()) {
       removePart(part);
-      // O que o `removePart` esquece (no-op se um dia ele passar a remover).
       part.endNode?.parentNode?.removeChild(part.endNode);
     }
 

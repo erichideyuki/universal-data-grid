@@ -77,7 +77,7 @@ export const groupInfos = (grid: DataGrid): string[] =>
   [...root(grid).querySelectorAll('.grouping-cell')].map(td => td.querySelector('.group-info')?.textContent.trim() ?? '');
 
 export const bodyRows = (grid: DataGrid): HTMLTableRowElement[] =>
-  [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr[role=row]')];
+  [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr[role=row]:not(.no-data-row)')];
 
 export const dataRows = (grid: DataGrid): HTMLTableRowElement[] =>
   bodyRows(grid).filter(tr => !tr.classList.contains('group-row') && !tr.classList.contains('summary-row'));

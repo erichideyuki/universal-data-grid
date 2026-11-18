@@ -140,4 +140,16 @@ describe('SSR', () => {
     expect(output).not.toContain('José');
     expect(output).not.toContain('>Bob<');
   });
+
+  it('renderiza seleção, caixas e roving tabindex sem erro', async () => {
+    const output = await renderToString(html`
+      <u-grid language="en" selection-mode="multiple" show-checkboxes .columns=${columns} .items=${items}></u-grid>`);
+
+    expect(output).toContain('role="treegrid"');
+    expect(output).toContain('aria-multiselectable="true"');
+    expect(output).toContain('aria-label="Select all rows"');
+    expect(output).toContain('aria-checked="false"');
+    // Um ponto de Tab na tabela (e outro no chip da barra de grupos).
+    expect(output.slice(output.indexOf('<table')).match(/tabindex="0"/g)).toHaveLength(1);
+  });
 });

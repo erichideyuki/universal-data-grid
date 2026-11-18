@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 
 import type { GroupRow } from '../row-model/types.js';
 
@@ -16,6 +17,10 @@ export interface GroupRowContext {
   labelSpan?: number;
   /** Células depois do rótulo (resumos `display: 'column'`). */
   trailing?: TemplateResult | typeof nothing;
+  /** Roving tabindex: `0` quando a linha é a ativa. */
+  tabIndex: 0 | -1;
+  /** Nome acessível da célula do rótulo quando há resumos em células à parte (a linha é um ponto só da navegação). */
+  ariaLabel?: string;
   onToggle: (row: GroupRow) => void;
 }
 
@@ -29,6 +34,8 @@ export const renderGroupRowCells = ({
   separator,
   valueText,
   info = '',
+  tabIndex,
+  ariaLabel,
   labelSpan,
   trailing = nothing,
   onToggle,
@@ -46,8 +53,9 @@ export const renderGroupRowCells = ({
       <button
         class="group-toggle"
         type="button"
+        tabindex="-1"
+        aria-hidden="true"
         aria-expanded=${row.expanded ? 'true' : 'false'}
-        aria-label=${info ? `${label} ${info}` : label}
         @click=${() => onToggle(row)}>
         <span class="toggle-icon">
           <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor" aria-hidden="true">
@@ -60,6 +68,9 @@ export const renderGroupRowCells = ({
       class="grouping-cell"
       role="gridcell"
       aria-colindex="1"
+      data-col="group"
+      tabindex=${tabIndex}
+      aria-label=${ifDefined(ariaLabel)}
       colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}><span
         class="grouping-label"
         style="inset-inline-start: calc(${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${label}${info

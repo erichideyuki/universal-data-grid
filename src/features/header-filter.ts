@@ -340,6 +340,7 @@ export const renderHeaderFilterButton = (
       class="header-filter-button ${active ? 'active' : ''}"
       part="header-filter-button"
       type="button"
+      tabindex="-1"
       aria-label=${label}
       title=${label}
       aria-haspopup="dialog"
@@ -351,7 +352,8 @@ export const renderHeaderFilterButton = (
         controller.toggle(column);
       }}
       @keydown=${(event: KeyboardEvent) => {
-        // Enter/Espaço no funil não podem ordenar a coluna.
+        // Enter/Espaço no funil não podem ordenar a coluna. Fora da ordem de
+        // Tab (o grid tem um ponto só): F2 ou Alt+↓ no cabeçalho chegam aqui.
         if (event.key === 'Enter' || event.key === ' ') {
           event.stopPropagation();
         }

@@ -29,6 +29,14 @@ import {
 } from './features/group-panel-menu.js';
 import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import {
+  type CellPosition,
+  HEADER_ROW,
+  type NavigationKey,
+  navigationKeyOf,
+  nextCell,
+  rangeBetween,
+} from './features/keyboard.js';
+import {
   clampWidth,
   ColumnResizeController,
   DEFAULT_MIN_COLUMN_WIDTH,
@@ -38,6 +46,13 @@ import {
   type WidthBounds,
 } from './features/resize.js';
 import { renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
+import {
+  countSelected,
+  type GridSelectionMode,
+  normalizeSelectionMode,
+  type SelectionChange,
+  SelectionModel,
+} from './features/selection.js';
 import {
   formatMessage,
   type GridSortMode,
@@ -77,7 +92,7 @@ import {
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
 import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
-import { renderGroupRowCells } from './render/group-row.js';
+import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
@@ -140,6 +155,7 @@ export type {
   GridSummaryValue,
 } from './grid-column-def.js';
 export type { GridSortMode, GridSortingMode } from './features/sorting.js';
+export type { GridSelectionMode } from './features/selection.js';
 export { DataGridColumn } from './grid-column.js';
 
 /** @deprecated Use `DataGridColumn`. */
@@ -193,11 +209,59 @@ export interface GridFilterEventDetail {
   /** `user` (filter row, header filter, search panel) or `api` (`clearFilter`). */
   source: GridChangeSource;
 }
+
+/** `detail` of `u-grid-selection-change`. */
+export interface GridSelectionChangeEventDetail {
+  /** Selected keys after the change (the frozen array also returned by `selectedKeys`). */
+  selectedKeys: readonly unknown[];
+  /** Selected keys before the change (frozen). */
+  previous: readonly unknown[];
+  /** Keys that entered the selection. */
+  added: readonly unknown[];
+  /** Keys that left the selection. */
+  removed: readonly unknown[];
+  /** `user` (click, checkbox, keyboard) or `api` (selection methods, `selectionMode` switched from `multiple` to `single`). */
+  source: GridChangeSource;
+}
+
+/** Kind of the active cell: column header, data cell, selection checkbox cell, group row or summary row (group footer, totals). */
+export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary';
+
+/** `detail` of `u-grid-focus-change`. */
+export interface GridFocusChangeEventDetail {
+  /** Key of the data row of the active cell (the item without `keyExpr`); `null` in headers, group and summary rows. */
+  rowKey: unknown;
+  /** Column of the active cell; `null` in the selection column and in group rows. */
+  column: GridColumnDef | null;
+  /** Kind of the active cell. */
+  cellType: GridCellType;
+  /** `rowKey` before the change. */
+  previousRowKey: unknown;
+  /** `column` before the change. */
+  previousColumn: GridColumnDef | null;
+  /** `user` (keyboard, click) or `api` (`focusCell`). */
+  source: GridChangeSource;
+}
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n, type GridI18nInput } from './grid-i18n.js';
 
 /** Largura (px) de cada coluna de recuo de grupo; igual ao `--_group-column-width`. */
 const GROUP_COLUMN_WIDTH = 32;
+
+/** Largura (px) da coluna de caixas de seleção; igual ao `--_selection-column-width`. */
+const SELECTION_COLUMN_WIDTH = 48;
+
+/** Coluna de caixas de seleção entre as navegáveis (não é `GridColumnDef`). */
+const SELECTION_COLUMN = 'selection' as const;
+
+type NavColumn = GridColumnDef | typeof SELECTION_COLUMN;
+
+/** Célula ativa como o hospedeiro a vê (eventos). */
+interface PublicFocus {
+  rowKey: unknown;
+  column: GridColumnDef | null;
+  cellType: GridCellType;
+}
 
 /** `detail` of `u-grid-column-visibility-change`. */
 export interface GridColumnVisibilityChangeEventDetail {
@@ -371,6 +435,43 @@ const columnIdOf = (column: GridColumnDef): number => {
   return id;
 };
 
+// Ícones Material Symbols (Apache 2.0): check e remove (estado misto).
+const CHECK_PATH = 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z';
+const MIXED_PATH = 'M200-440v-80h560v80H200Z';
+
+/** Linha de dados (não grupo nem rodapé de grupo). */
+const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter;
+
+/** Identidade estável da linha ativa: item (dados), chave (grupo, rodapé de grupo) ou o rodapé de totais. */
+type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
+
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[contenteditable=""]',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+/** Enter/F2: foca o 1º elemento interativo da célula (inclusive o projetado por `renderer`). */
+const focusFirstWithin = (cell: HTMLElement): boolean => {
+  const slotted = [...cell.querySelectorAll('slot')].flatMap(slot => slot.assignedElements({ flatten: true }));
+
+  for (const root of [cell, ...slotted]) {
+    const target = root !== cell && root.matches(FOCUSABLE) ? root : root.querySelector(FOCUSABLE);
+
+    if (target instanceof HTMLElement || target instanceof SVGElement) {
+      target.focus();
+      return true;
+    }
+  }
+
+  return false;
+};
+
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
  * row, header filter, search panel), column resizing, fixing, hiding and
@@ -389,7 +490,9 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard or double-click auto-size).
  * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
- * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column by drag and drop.
+ * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop or Alt+Shift+←/→ on the header).
+ * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
+ * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
  *
  * @cssprop --u-grid-background-color - Grid background.
  * @cssprop --u-grid-striped-background-color - Background of even rows when `striped`.
@@ -426,6 +529,7 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @cssprop --u-grid-group-chip-letter-spacing - Group chip letter spacing.
  * @cssprop --u-grid-focus-ring-color - Keyboard focus ring color.
  * @cssprop --u-grid-focus-ring-width - Keyboard focus ring width. Default `2px`.
+ * @cssprop --u-grid-selected-row-background-color - Background of selected rows. Default: primary color at 12%.
  * @cssprop --u-grid-sorted-header-color - Text color of sorted column headers.
  * @cssprop --u-grid-sort-indicator-size - Size of the sort arrow. Default `1.125em`.
  * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
@@ -447,7 +551,10 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @csspart group-row - Group header rows.
  * @csspart odd - Data rows in odd positions (the first data row is `odd`).
  * @csspart even - Data rows in even positions.
+ * @csspart selected - Selected data rows (with `row`).
  * @csspart cell - Data cells (`<td>`).
+ * @csspart selection-cell - Cells and header of the selection checkbox column.
+ * @csspart selection-checkbox - The selection checkboxes (rows and "select all").
  * @csspart no-data - The cell rendered in the empty state.
  * @csspart header-cell - Column header cells (`<th>`).
  * @csspart sort-indicator - The sort arrow (and priority number) in headers and group chips.
@@ -747,6 +854,108 @@ export class DataGrid extends LitElement {
   /** Columns without `width` take the width of their content (header and rendered rows). */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-auto-width' }) columnAutoWidth = false;
 
+  // ------------------------------------------------------ seleção e foco
+
+  /**
+   * Row selection: `none` (default; the selection methods do nothing),
+   * `single` or `multiple`. Click selects, Ctrl+click toggles, Shift+click
+   * extends; Space, Shift+Space, Shift+↑/↓ and Ctrl+A on the keyboard.
+   */
+  @property({ attribute: 'selection-mode' }) selectionMode: GridSelectionMode = 'none';
+
+  /**
+   * Shows a checkbox column (fixed at the start) with "select all" in the
+   * header. Only with `selection-mode="multiple"`; then a click on a row only
+   * moves the focus and the checkbox (or Space) selects.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-checkboxes' }) showCheckboxes = false;
+
+  readonly #selection = new SelectionModel();
+  /** Âncora do Shift+clique/Shift+setas: chave da última linha alternada. */
+  #selectionAnchor: unknown = undefined;
+  /** Contagem de selecionadas entre as linhas filtradas (estado do "selecionar tudo"). */
+  readonly #selectedInView = { version: -1, items: undefined as readonly unknown[] | undefined, count: 0 };
+
+  /**
+   * Selected row keys (property only). Without `keyExpr` the key is the item
+   * object itself, so replacing `items` with new objects loses the selection.
+   * Keys missing from `items` are kept (and retained) until deselected. The
+   * getter returns a frozen array — the same instance until the selection
+   * changes. Setting it does not fire `u-grid-selection-change`.
+   */
+  @property({ attribute: false })
+  get selectedKeys(): readonly unknown[] {
+    return this.#selection.keys;
+  }
+
+  set selectedKeys(keys: readonly unknown[] | null | undefined) {
+    const list = [...keys ?? []];
+    this.#selection.replace(this.#selectionMode === 'single' ? list.slice(-1) : list);
+  }
+
+  get #selectionMode(): GridSelectionMode {
+    return normalizeSelectionMode(this.selectionMode);
+  }
+
+  get #showSelectionColumn(): boolean {
+    return this.showCheckboxes && this.#selectionMode === 'multiple';
+  }
+
+  /** Célula ativa (roving tabindex): identidade da linha (`null` = cabeçalho). */
+  #activeRef: ActiveRef | null = null;
+  /** Último índice conhecido da linha ativa (`HEADER_ROW` = cabeçalho). */
+  #activeRowIndex = HEADER_ROW;
+  /** Coluna ativa (segue a coluna quando ela muda de lugar). */
+  #activeColumn: NavColumn | undefined;
+  /** Último índice conhecido da coluna ativa entre as navegáveis. */
+  #activeCol = 0;
+  /** Célula ativa já resolvida num render (antes disso não há o que avisar). */
+  #activeResolved = false;
+  /** O que foi avisado por último em `u-grid-focus-change`. */
+  #reportedFocus: PublicFocus | undefined;
+  /** Depois do próximo render: levar o foco do DOM à célula ativa. */
+  #focusPending = false;
+  /** Depois do próximo render: rolar até a célula ativa. */
+  #revealPending = false;
+  /** Chip do painel de grupos com `tabindex="0"` (roving na barra). */
+  #activeChip = 0;
+  #chipFocusPending = false;
+  /** Colunas navegáveis do último render (caixa de seleção + visíveis). */
+  #navColumns: NavColumn[] = [];
+  readonly #tableRef: Ref<HTMLTableElement> = createRef();
+
+  /**
+   * Key of the data row of the active cell (the cell keyboard navigation
+   * starts from); `null` when it is a header or group row. Setting it moves
+   * the active cell to that row (scrolling to it) without taking the DOM
+   * focus and without firing `u-grid-focus-change`; a key not in the rows is
+   * ignored and `null` moves it to the first header (ignored when
+   * `show-column-headers` is `false`).
+   */
+  @property({ attribute: false })
+  get focusedRowKey(): unknown {
+    return this.#publicFocus().rowKey;
+  }
+
+  set focusedRowKey(key: unknown) {
+    if (key === null || key === undefined) {
+      if (this.showColumnHeaders) {
+        this.#setActive({ row: HEADER_ROW, col: 0 }, null);
+      }
+
+      return;
+    }
+
+    // `items` pode ter sido trocado no mesmo tick (ou antes do 1º render).
+    this.#ensureRows();
+
+    const row = this.#rowIndexOfKey(key);
+
+    if (row >= 0) {
+      this.#setActive({ row, col: this.#activeCol }, null, { reveal: true });
+    }
+  }
+
   /** @deprecated Use `striped`. */
   @property({ type: Boolean, converter: booleanAttribute(false) })
   get stripped(): boolean {
@@ -909,6 +1118,7 @@ export class DataGrid extends LitElement {
       filterRowState: this.#filterRow.size,
       filterTimers: this.#filterRow.timers + this.#search.timers + (this.#filtering.pending ? 1 : 0),
       headerFilterOpen: this.#headerFilterPopover.open ? 1 : 0,
+      selectedKeys: this.#selection.size,
     };
   }
 
@@ -955,6 +1165,16 @@ export class DataGrid extends LitElement {
   }
 
   override willUpdate(changed: PropertyValues<this>) {
+    // `single` guarda uma chave só. Evento só na troca `multiple` → `single`
+    // de um grid já renderizado; na inicialização (setters) corta calado.
+    if (changed.has('selectionMode') && this.#selectionMode === 'single' && this.#selection.size > 1) {
+      const change = this.#selection.replace(this.#selection.keys.slice(-1));
+
+      if (this.hasUpdated && normalizeSelectionMode(changed.get('selectionMode')) === 'multiple') {
+        this.#applySelection(change, 'api');
+      }
+    }
+
     if (changed.has('autoExpandGroups')) {
       // Opção do hospedeiro vence o estado do usuário (como nas colunas).
       if (changed.get('autoExpandGroups') !== undefined) {
@@ -1029,6 +1249,19 @@ export class DataGrid extends LitElement {
       }
     }
 
+    // Célula ativa realocada neste render (a linha ou a coluna saiu): só
+    // registra, sem evento — quem precisa lê `focusedRowKey`.
+    this.#reportFocus(null);
+
+    if (this.#focusPending || this.#revealPending) {
+      this.#afterActiveRender();
+    }
+
+    if (this.#chipFocusPending) {
+      this.#chipFocusPending = false;
+      this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]')?.focus();
+    }
+
     if (
       this.#dragAndDropDirty
       || changed.has('_regularColumns')
@@ -1050,8 +1283,8 @@ export class DataGrid extends LitElement {
    * it, the column is added (or keeps its priority if already sorted). For a
    * grouped column it sets the direction of its groups.
    */
-  sortColumn(column: GridColumnDef, order: GridSortOrder | null, { append = false }: { append?: boolean } = {}): void {
-    this.#changeSorting(nextSorting(this.#sorting, column, order, append, this.#isGrouped), 'api');
+  sortColumn(column: GridColumnDef, order: GridSortOrder | null, options: { append?: boolean } = {}): void {
+    this.#changeSorting(nextSorting(this.#sorting, column, order, options.append ?? false, this.#isGrouped), 'api');
   }
 
   /** @deprecated Use `sortColumn()`. */
@@ -1336,6 +1569,93 @@ export class DataGrid extends LitElement {
   showColumnChooser(): void {
     this.#deprecated('showColumnChooser()', 'openColumnChooser()');
     this.openColumnChooser();
+  }
+
+  /**
+   * Selects the rows of `keys`. Without `append` they replace the selection;
+   * with it they are added. In `single` mode only the last key is kept; in
+   * `none` it does nothing.
+   */
+  selectRows(keys: readonly unknown[], options: { append?: boolean } = {}): void {
+    this.#select(keys, options.append ?? false, 'api');
+  }
+
+  /** Removes the rows of `keys` from the selection (nothing in `none` mode). */
+  deselectRows(keys: readonly unknown[]): void {
+    if (this.#selectionMode !== 'none') {
+      this.#applySelection(this.#selection.remove(keys), 'api');
+    }
+  }
+
+  /** Selects every row that passes the filter, including rows of collapsed groups (`multiple` mode only). */
+  selectAll(): void {
+    this.#selectAll(true, 'api');
+  }
+
+  /** Deselects every row that passes the filter (`multiple` mode only); other keys stay selected. */
+  deselectAll(): void {
+    this.#selectAll(false, 'api');
+  }
+
+  /** Removes every key from the selection (also keys not in `items`). */
+  clearSelection(): void {
+    if (this.#selectionMode !== 'none') {
+      this.#applySelection(this.#selection.replace([]), 'api');
+    }
+  }
+
+  /** Whether the row of `key` is selected. */
+  isRowSelected(key: unknown): boolean {
+    return this.#selection.has(key);
+  }
+
+  /** Items of the selected keys that are in `items`, in selection order. */
+  getSelectedItems(): any[] {
+    if (!this.#selection.size) {
+      return [];
+    }
+
+    const present = new Set(this.#items);
+    return this.#selection.keys.filter(key => present.has(key));
+  }
+
+  /**
+   * Scrolls to the cell of the row `rowKey` and `column` (default: the first
+   * visible column) and moves the DOM focus to it. Returns `false` when the
+   * row is not in the grid (filtered out or in a collapsed group — groups are
+   * not expanded) or `column` is not a visible, ungrouped column. Before the
+   * first render it only sets the active cell (the focus moves when it is
+   * rendered) and fires no event.
+   */
+  focusCell(rowKey: unknown, column?: GridColumnDef): boolean {
+    this.#ensureRows();
+
+    const row = this.#rowIndexOfKey(rowKey);
+
+    if (row < 0) {
+      return false;
+    }
+
+    const navColumns = this.#currentNavColumns();
+    const col = column ? navColumns.indexOf(column) : navColumns.indexOf(this._visibleColumns[0]);
+
+    if (column && col < 0) {
+      return false;
+    }
+
+    this.#setActive({ row, col: Math.max(col, 0) }, 'api', { focus: true, reveal: true });
+    return true;
+  }
+
+  /** Moves the focus to the active cell of the grid (the one keyboard navigation starts from). */
+  override focus(options?: FocusOptions): void {
+    const cell = this.#activeCellElement();
+
+    if (cell) {
+      cell.focus(options);
+    } else {
+      super.focus(options);
+    }
   }
 
   /**
@@ -1776,7 +2096,7 @@ export class DataGrid extends LitElement {
       return undefined;
     }
 
-    const colIndex = index + 1;
+    const colIndex = index + 1 + (this.#showSelectionColumn ? 1 : 0);
     const cells = this.renderRoot.querySelectorAll<HTMLElement>(
       `th.header-column[aria-colindex="${colIndex}"], tbody tr:not(.group-row) > td[aria-colindex="${colIndex}"]`,
     );
@@ -1827,7 +2147,7 @@ export class DataGrid extends LitElement {
 
     if (!cells.length) {
       const row = root.querySelector('tbody tr[role=row]:not(.group-row)');
-      cells = row ? [...row.querySelectorAll<HTMLElement>('td[role=gridcell]')] : [];
+      cells = row ? [...row.querySelectorAll<HTMLElement>('td[role=gridcell]:not(.selection-cell)')] : [];
     }
 
     let changed = false;
@@ -1893,7 +2213,7 @@ export class DataGrid extends LitElement {
       this.#renderedWidths.get(column) ?? this.#widthOf(column) ?? 0;
 
     const offsets: number[] = [];
-    let start = this._groupColumns.length * GROUP_COLUMN_WIDTH;
+    let start = this.#stickyStart();
 
     columns.forEach((column, index) => {
       if (fixed[index] === 'start') {
@@ -1961,6 +2281,11 @@ export class DataGrid extends LitElement {
         width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
       };
     });
+  }
+
+  /** Largura presa no início antes das colunas fixas: recuos de grupo e caixas de seleção. */
+  #stickyStart(): number {
+    return this._groupColumns.length * GROUP_COLUMN_WIDTH + (this.#showSelectionColumn ? SELECTION_COLUMN_WIDTH : 0);
   }
 
   // -------------------------------------------------------------- row model
@@ -2516,6 +2841,763 @@ export class DataGrid extends LitElement {
     this.#setGroupExpanded(row.groupKey, row.level, row.path, !row.expanded, 'user');
   };
 
+  // ------------------------------------------------- seleção e foco (interno)
+
+  #select(keys: readonly unknown[], append: boolean, source: GridChangeSource): void {
+    const mode = this.#selectionMode;
+
+    if (mode === 'none') {
+      return;
+    }
+
+    const list = [...keys];
+
+    this.#applySelection(
+      mode === 'single'
+        ? this.#selection.replace(list.slice(-1))
+        : append ? this.#selection.add(list) : this.#selection.replace(list),
+      source,
+    );
+  }
+
+  /** Marca/desmarca todas as linhas que passam no filtro (as de grupos recolhidos também). */
+  #selectAll(select: boolean, source: GridChangeSource): boolean {
+    if (this.#selectionMode !== 'multiple') {
+      return false;
+    }
+
+    this.#ensureRows();
+
+    const keys = this.#sortedItems;
+    return this.#applySelection(select ? this.#selection.add(keys) : this.#selection.remove(keys), source);
+  }
+
+  #applySelection(change: SelectionChange | undefined, source: GridChangeSource): boolean {
+    if (!change) {
+      return false;
+    }
+
+    this.requestUpdate();
+    this.dispatchEvent(new CustomEvent('u-grid-selection-change', this.#eventInit<GridSelectionChangeEventDetail>({
+      ...change,
+      source,
+    })));
+
+    return true;
+  }
+
+  /** Clique na caixa ou Espaço: alterna a linha (em `single`, substitui). */
+  #toggleRow(row: DataRow): void {
+    const key = row.item;
+    const selected = this.#selection.has(key);
+
+    this.#selectionAnchor = key;
+
+    if (this.#selectionMode === 'single') {
+      this.#applySelection(selected ? this.#selection.remove([key]) : this.#selection.replace([key]), 'user');
+    } else {
+      this.#applySelection(selected ? this.#selection.remove([key]) : this.#selection.add([key]), 'user');
+    }
+  }
+
+  /** Shift+clique/Shift+setas: da âncora até `rowIndex` (só linhas de dados). */
+  #extendSelection(rowIndex: number, append: boolean): void {
+    const target = this.#rowAt(rowIndex);
+
+    if (!isDataRow(target)) {
+      return;
+    }
+
+    if (this.#selectionMode !== 'multiple') {
+      this.#toggleRow(target);
+      return;
+    }
+
+    let anchor = this.#rowIndexOfKey(this.#selectionAnchor);
+
+    if (anchor < 0) {
+      anchor = rowIndex;
+      this.#selectionAnchor = target.item;
+    }
+
+    const keys = rangeBetween(anchor, rowIndex)
+      .map(index => this.#rows.at(index))
+      .filter(isDataRow)
+      .map(row => row.item);
+
+    const changed = this.#applySelection(append ? this.#selection.add(keys) : this.#selection.replace(keys), 'user');
+
+    if (changed && keys.length > 1) {
+      this.#announceSelectionCount();
+    }
+  }
+
+  /** Caixa "selecionar tudo": desmarca se todas as filtradas estão marcadas; senão marca todas. */
+  #toggleAll(): void {
+    const all = this.#sortedItems.length > 0 && this.#selectedInViewCount() === this.#sortedItems.length;
+
+    if (this.#selectAll(!all, 'user')) {
+      this.#announceSelectionCount();
+    }
+  }
+
+  #announceSelectionCount(): void {
+    this.#announce(formatMessage(this.#translation.rowsSelectedAnnouncement, { count: String(this.#selection.size) }));
+  }
+
+  #announce(text: string): void {
+    this.#announcement = text;
+    this.requestUpdate();
+  }
+
+  /** Quantas das linhas filtradas estão selecionadas (recalcula só quando a seleção ou os itens mudam). */
+  #selectedInViewCount(): number {
+    const cache = this.#selectedInView;
+
+    if (cache.version !== this.#selection.version || cache.items !== this.#sortedItems) {
+      cache.version = this.#selection.version;
+      cache.items = this.#sortedItems;
+      cache.count = countSelected(this.#selection, this.#sortedItems);
+    }
+
+    return cache.count;
+  }
+
+  readonly #onBodyClick = (event: MouseEvent): void => {
+    if (this.#selectionMode === 'none') {
+      return;
+    }
+
+    const path = event.composedPath();
+    const tr = path.find((node): node is HTMLTableRowElement => node instanceof HTMLTableRowElement);
+    const index = Number(tr?.getAttribute('data-index') ?? NaN);
+    const row = this.#rowAt(index);
+
+    if (!isDataRow(row)) {
+      return;
+    }
+
+    const onCheckbox = path.some(node => node instanceof HTMLElement && node.classList.contains('selection-cell'));
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    if (onCheckbox) {
+      if (event.shiftKey) {
+        this.#extendSelection(index, true);
+      } else {
+        this.#toggleRow(row);
+      }
+
+      return;
+    }
+
+    // Com caixas, o clique na linha só move o foco (como o DevExtreme no modo `always`).
+    if (this.#showSelectionColumn) {
+      return;
+    }
+
+    if (event.shiftKey && this.#selectionMode === 'multiple') {
+      this.#extendSelection(index, ctrl);
+    } else if (ctrl) {
+      this.#toggleRow(row);
+    } else {
+      this.#selectionAnchor = row.item;
+      this.#select([row.item], false, 'user');
+    }
+  };
+
+  /** Índice da linha de dados da chave (sem `keyExpr`, o próprio item); `-1` se não está nas linhas. */
+  #rowIndexOfKey(key: unknown): number {
+    if (key === undefined) {
+      return -1;
+    }
+
+    const active = this.#rowAt(this.#activeRowIndex);
+
+    if (isDataRow(active) && active.item === key) {
+      return this.#activeRowIndex;
+    }
+
+    return this.#rows.indexOfItem(key);
+  }
+
+  /** Linha `index` (ou `undefined` fora da lista). */
+  #rowAt(index: number): Row | undefined {
+    return index >= 0 && index < this.#rows.length ? this.#rows.at(index) : undefined;
+  }
+
+  /** Rodapé de totais: navegável como a última linha (índice = número de linhas do corpo). */
+  get #hasTotals(): boolean {
+    return this.#totalSpecs.length > 0;
+  }
+
+  /** Identidade estável da linha `index` (sobrevive a ordenar, agrupar e trocar `items`). */
+  #refAt(index: number): ActiveRef | null {
+    if (index === this.#rows.length && this.#hasTotals) {
+      return { totals: true };
+    }
+
+    const row = this.#rowAt(index);
+
+    if (!row) {
+      return null;
+    }
+
+    return isDataRow(row) ? { item: row.item } : { rowKey: row.key };
+  }
+
+  #isRefAt(index: number, target: ActiveRef): boolean {
+    if ('totals' in target) {
+      return index === this.#rows.length;
+    }
+
+    const row = this.#rowAt(index);
+
+    if (!row) {
+      return false;
+    }
+
+    return 'item' in target ? isDataRow(row) && row.item === target.item : row.key === target.rowKey;
+  }
+
+  #currentNavColumns(): NavColumn[] {
+    return this.#showSelectionColumn ? [SELECTION_COLUMN, ...this._visibleColumns] : [...this._visibleColumns];
+  }
+
+  #publicFocus(): PublicFocus {
+    const column = this.#activeColumn;
+    const row = this.#rowAt(this.#activeRowIndex);
+
+    if (!row) {
+      const cellType = this.#activeRowIndex === HEADER_ROW ? 'header' : 'summary';
+      return { rowKey: null, column: column && column !== SELECTION_COLUMN ? column : null, cellType };
+    }
+
+    if (row.isGroup) {
+      return { rowKey: null, column: null, cellType: 'group' };
+    }
+
+    if (row.isFooter) {
+      return { rowKey: null, column: column && column !== SELECTION_COLUMN ? column : null, cellType: 'summary' };
+    }
+
+    return column === SELECTION_COLUMN || !column
+      ? { rowKey: row.item, column: null, cellType: column ? 'selection' : 'data' }
+      : { rowKey: row.item, column, cellType: 'data' };
+  }
+
+  #revealAttempts = 0;
+
+  /** Move a célula ativa. `source` nulo = setter (sem evento). */
+  #setActive(
+    { row, col }: CellPosition,
+    source: GridChangeSource | null,
+    { focus = false, reveal = false }: { focus?: boolean; reveal?: boolean } = {},
+  ): void {
+    const navColumns = this.#currentNavColumns();
+    const index = row === HEADER_ROW || this.#refAt(row) ? row : this.#activeRowIndex;
+
+    this.#activeRowIndex = index;
+    this.#activeRef = this.#refAt(index);
+    this.#activeCol = Math.min(Math.max(col, 0), Math.max(navColumns.length - 1, 0));
+    this.#activeColumn = navColumns[this.#activeCol];
+    this.#activeResolved = true;
+    this.#focusPending ||= focus;
+    this.#revealPending ||= reveal || focus;
+    this.#revealAttempts = 0;
+    this.#reportFocus(source);
+    this.requestUpdate();
+  }
+
+  /** Avisa a mudança da célula ativa (`source` nulo: só registra). */
+  #reportFocus(source: GridChangeSource | null): void {
+    const next = this.#publicFocus();
+    const previous = this.#reportedFocus;
+
+    this.#reportedFocus = next;
+
+    if (
+      !source
+      || !previous
+      || (previous.rowKey === next.rowKey && previous.column === next.column && previous.cellType === next.cellType)
+    ) {
+      return;
+    }
+
+    this.dispatchEvent(new CustomEvent('u-grid-focus-change', this.#eventInit<GridFocusChangeEventDetail>({
+      rowKey: next.rowKey,
+      column: next.column,
+      cellType: next.cellType,
+      previousRowKey: previous.rowKey,
+      previousColumn: previous.column,
+      source,
+    })));
+  }
+
+  /**
+   * Acerta a célula ativa às linhas e colunas deste render: a linha é
+   * achada pela chave (sobrevive a ordenar, agrupar e trocar `items`); se
+   * saiu, a ativa fica no mesmo índice (limitado). A coluna segue a
+   * definição (sobrevive a reordenar).
+   */
+  #resolveActive(navColumns: NavColumn[]): void {
+    const rows = this.#rows;
+    let index = this.#activeRowIndex;
+
+    const active = this.#activeRef;
+
+    if (active && !this.#isRefAt(index, active)) {
+      const found = 'totals' in active
+        ? this.#hasTotals ? rows.length : -1
+        : 'item' in active ? rows.indexOfItem(active.item) : rows.indexOfKey(active.rowKey);
+      index = found >= 0 ? found : index;
+    }
+
+    const lastRow = rows.length - (this.#hasTotals ? 0 : 1);
+
+    if (index > lastRow) {
+      index = lastRow;
+    }
+
+    if (index === HEADER_ROW && !this.showColumnHeaders && rows.length) {
+      index = 0;
+    }
+
+    if (index < HEADER_ROW) {
+      index = HEADER_ROW;
+    }
+
+    let col = this.#activeColumn === undefined ? -1 : navColumns.indexOf(this.#activeColumn);
+
+    if (col < 0) {
+      col = Math.min(this.#activeCol, Math.max(navColumns.length - 1, 0));
+    }
+
+    this.#activeRowIndex = index;
+    this.#activeRef = this.#refAt(index);
+    this.#activeCol = col;
+    this.#activeColumn = navColumns[col];
+    this.#navColumns = navColumns;
+
+    if (!this.#activeResolved) {
+      this.#activeResolved = true;
+      this.#reportedFocus = this.#publicFocus();
+    }
+  }
+
+  /** `col` negativo: qualquer coluna (linha de grupo, célula única). */
+  #isActive(row: number, col: number): boolean {
+    return row === this.#activeRowIndex && (col < 0 || col === this.#activeCol);
+  }
+
+  #activeCellElement(): HTMLElement | null {
+    return this.#tableRef.value?.querySelector<HTMLElement>(':scope > thead [tabindex="0"], :scope > tbody [tabindex="0"], :scope > tfoot [tabindex="0"]') ?? null;
+  }
+
+  /** Depois do render: foco do DOM e rolagem até a célula ativa. */
+  #afterActiveRender(): void {
+    const cell = this.#activeCellElement();
+
+    if (!cell) {
+      this.#focusPending = false;
+      this.#revealPending = false;
+      return;
+    }
+
+    if (this.#focusPending) {
+      this.#focusPending = false;
+      cell.focus({ preventScroll: true });
+    }
+
+    if (!this.#revealPending) {
+      return;
+    }
+
+    if (cell.closest('tr')?.classList.contains('pinned')) {
+      // Fora da janela virtual: rola pelo tamanho medido; o render disparado
+      // pela rolagem traz a linha e termina o ajuste (horizontal).
+      if (++this.#revealAttempts > 3) {
+        this.#revealPending = false;
+      }
+
+      this.#scrollRowIntoView(this.#activeRowIndex);
+      return;
+    }
+
+    this.#revealPending = false;
+
+    const scroller = this._scrollContainerRef.value;
+
+    if (scroller) {
+      // Cabeçalho/barra presos no topo: a célula não para embaixo deles.
+      scroller.style.scrollPaddingBlockStart = cell.tagName === 'TH' ? '0px' : `${this.#stickyTop()}px`;
+    }
+
+    cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  /** Rola até a linha `index` sem depender de ela estar renderizada (abaixo do que é fixo no topo). */
+  #scrollRowIntoView(index: number): void {
+    this.#virtualizer.scrollToIndex(index);
+  }
+
+  /** Altura do que fica preso no topo da rolagem (cabeçalho das colunas ou barra). */
+  #stickyTop(): number {
+    const root = this.renderRoot;
+    const thead = root.querySelector<HTMLElement>('thead');
+    const toolbar = root.querySelector<HTMLElement>('.header');
+
+    // Com a barra, o cabeçalho prende logo abaixo dela (\`.header + table thead\`).
+    return (thead?.offsetHeight ?? 0) + (toolbar?.offsetHeight ?? 0);
+  }
+
+  /** Linhas do corpo que cabem na área visível. */
+  #pageSize(): number {
+    const scroller = this._scrollContainerRef.value;
+
+    if (!scroller) {
+      return 1;
+    }
+
+    return Math.max(1, Math.floor((scroller.clientHeight - this.#stickyTop()) / this.rowHeight));
+  }
+
+  /** Célula navegável (td/th com `data-col`) no caminho do evento. */
+  #navCellOf(path: EventTarget[]): HTMLElement | undefined {
+    const table = this.#tableRef.value;
+
+    for (const node of path) {
+      if (node === table) {
+        return undefined;
+      }
+
+      if (node instanceof HTMLElement && node.hasAttribute('data-col') && (node.tagName === 'TD' || node.tagName === 'TH')) {
+        return node;
+      }
+    }
+
+    return undefined;
+  }
+
+  #positionOf(cell: HTMLElement): CellPosition | undefined {
+    const tr = cell.parentElement;
+
+    if (!(tr instanceof HTMLTableRowElement)) {
+      return undefined;
+    }
+
+    const section = tr.parentElement?.tagName;
+    const row = section === 'THEAD' ? HEADER_ROW : section === 'TFOOT' ? this.#rows.length : Number(tr.getAttribute('data-index') ?? NaN);
+
+    if (Number.isNaN(row)) {
+      return undefined;
+    }
+
+    const col = Number(cell.getAttribute('data-col') ?? NaN);
+
+    return { row, col: Number.isNaN(col) ? this.#activeCol : col };
+  }
+
+  /** Foco que entra numa célula (clique, Tab, conteúdo da célula): ela vira a ativa. */
+  readonly #onGridFocusIn = (event: FocusEvent): void => {
+    const path = event.composedPath();
+    const cell = this.#navCellOf(path);
+    const position = cell && this.#positionOf(cell);
+
+    if (!cell || !position) {
+      return;
+    }
+
+    const sameRow = position.row === this.#activeRowIndex;
+
+    if (!sameRow || (position.col !== this.#activeCol && !this.#rowAt(position.row)?.isGroup)) {
+      this.#setActive(position, 'user');
+    } else if (path[0] === cell && cell.closest('tr')?.classList.contains('pinned')) {
+      // Tab de volta para a célula ativa que está fora da tela: traz a linha.
+      this.#revealPending = true;
+      this.#revealAttempts = 0;
+      this.requestUpdate();
+    }
+  };
+
+  readonly #onGridKeyDown = (event: KeyboardEvent): void => {
+    if (event.defaultPrevented || event.isComposing) {
+      return;
+    }
+
+    const path = event.composedPath();
+    const cell = this.#navCellOf(path);
+    const position = cell && this.#positionOf(cell);
+
+    if (!cell || !position) {
+      return;
+    }
+
+    // Foco dentro do conteúdo da célula (Enter/F2): as teclas são dele; Esc volta à célula.
+    if (path[0] !== cell) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cell.focus();
+      }
+
+      return;
+    }
+
+    const ctrl = event.ctrlKey || event.metaKey;
+    const column = this.#navColumns[position.col];
+    const row = this.#rowAt(position.row);
+
+    if (!row && this.#onHeaderKeyDown(event, cell, column)) {
+      return;
+    }
+
+    if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+      if (this.#selectionMode === 'multiple') {
+        event.preventDefault();
+
+        if (this.#selectAll(true, 'user')) {
+          this.#announceSelectionCount();
+        }
+      }
+
+      return;
+    }
+
+    const key = navigationKeyOf(event, this._isRtl());
+
+    if (key) {
+      if (!event.altKey) {
+        this.#navigate(event, position, key, row);
+      }
+
+      return;
+    }
+
+    if (!row) {
+      return;
+    }
+
+    if (row.isGroup) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        this.#toggleGroup(row);
+      }
+
+      return;
+    }
+
+    if (!isDataRow(row)) {
+      return;
+    }
+
+    if (event.key === ' ' && this.#selectionMode !== 'none') {
+      event.preventDefault();
+
+      if (event.shiftKey) {
+        this.#extendSelection(position.row, ctrl);
+      } else {
+        this.#toggleRow(row);
+      }
+    } else if ((event.key === 'Enter' || event.key === 'F2') && column !== SELECTION_COLUMN) {
+      if (focusFirstWithin(cell)) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  /** Teclas próprias do cabeçalho; `true` = tratada. */
+  #onHeaderKeyDown(event: KeyboardEvent, cell: HTMLElement, column: NavColumn | undefined): boolean {
+    if (column === SELECTION_COLUMN) {
+      if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+        event.preventDefault();
+        this.#toggleAll();
+        return true;
+      }
+
+      return false;
+    }
+
+    if (!column) {
+      return false;
+    }
+
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    if (event.altKey && event.shiftKey && !ctrl && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      const forward = (event.key === 'ArrowRight') !== this._isRtl();
+      this.#keyboardMoveColumn(column, forward ? 1 : -1);
+      return true;
+    }
+
+    if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
+      event.preventDefault();
+      this._userGroupColumn(column, this._groupColumns.length);
+      this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+      this.#focusPending = true;
+      return true;
+    }
+
+    if (event.key === 'F2') {
+      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): funil, depois a alça.
+      const target = cell.querySelector<HTMLElement>('.header-filter-button') ?? cell.querySelector<HTMLElement>('.resize-handle');
+
+      if (target) {
+        event.preventDefault();
+        target.focus();
+      }
+
+      return true;
+    }
+
+    // Alt+↓ abre o filtro do cabeçalho (Esc fecha e devolve o foco ao funil; Esc de novo, à célula).
+    if (event.altKey && !event.shiftKey && !ctrl && event.key === 'ArrowDown') {
+      const funnel = cell.querySelector<HTMLElement>('.header-filter-button');
+
+      if (funnel) {
+        event.preventDefault();
+        funnel.click();
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  #navigate(event: KeyboardEvent, position: CellPosition, key: NavigationKey, row: Row | undefined): void {
+    event.preventDefault();
+
+    // Linha de grupo: → expande, ← recolhe ou vai ao grupo de cima.
+    if (row?.isGroup && (key === 'left' || key === 'right') && !event.shiftKey) {
+      if (key === 'right' ? !row.expanded : row.expanded) {
+        this.#toggleGroup(row);
+      } else if (key === 'left') {
+        const parent = this.#parentGroupIndex(position.row);
+
+        if (parent >= 0) {
+          this.#setActive({ row: parent, col: this.#activeCol }, 'user', { focus: true });
+        }
+      }
+
+      return;
+    }
+
+    const next = nextCell({ row: position.row, col: row?.isGroup ? this.#activeCol : position.col }, key, {
+      rowCount: this.#rows.length + (this.#hasTotals ? 1 : 0),
+      colCount: this.#navColumns.length,
+      hasHeader: this.showColumnHeaders,
+      pageSize: this.#pageSize(),
+      isGroupRow: index => !!this.#rowAt(index)?.isGroup,
+    });
+
+    this.#setActive(next, 'user', { focus: true });
+
+    const vertical = key === 'up' || key === 'down' || key === 'pageUp' || key === 'pageDown';
+
+    if (event.shiftKey && vertical && next.row >= 0 && this.#selectionMode === 'multiple') {
+      this.#extendSelection(next.row, event.ctrlKey || event.metaKey);
+    }
+  }
+
+  #parentGroupIndex(index: number): number {
+    const row = this.#rowAt(index);
+
+    if (!row?.isGroup || row.level === 0) {
+      return -1;
+    }
+
+    for (let i = index - 1; i >= 0; i--) {
+      const candidate = this.#rows.at(i);
+
+      if (candidate.isGroup && candidate.level < row.level) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  /** Alt+Shift+←/→ no cabeçalho: troca a coluna com a vizinha visível do mesmo bloco. */
+  #keyboardMoveColumn(column: GridColumnDef, direction: 1 | -1): void {
+    const visible = this._visibleColumns;
+    const neighbor = visible[visible.indexOf(column) + direction];
+
+    if (!neighbor || !this._sameBlock(column, neighbor)) {
+      return;
+    }
+
+    const neighborIndex = this._regularColumns.indexOf(neighbor);
+    this._userMoveColumn(column, direction > 0 ? neighborIndex + 1 : neighborIndex);
+
+    // `_visibleColumns` só é refeito no próximo update: posição pela ordem nova das comuns.
+    const visibleAfter = this._regularColumns.filter(c => this._isColumnVisible(c));
+
+    this.#announce(formatMessage(this.#translation.columnMovedAnnouncement, {
+      column: column.label ?? '',
+      position: String(visibleAfter.indexOf(column) + 1),
+      count: String(visibleAfter.length),
+    }));
+    this.#focusPending = true;
+    this.#revealPending = true;
+  }
+
+  /** Teclado no chip do painel de grupos (barra com roving tabindex). */
+  #onChipKeyDown(column: GridColumnDef, index: number, event: KeyboardEvent): void {
+    const ctrl = event.ctrlKey || event.metaKey;
+    const count = this._groupColumns.length;
+    const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+    const forward = (event.key === 'ArrowRight') !== this._isRtl();
+
+    if (horizontal && event.altKey && event.shiftKey && !ctrl) {
+      event.preventDefault();
+      const target = index + (forward ? 1 : -1);
+
+      if (target >= 0 && target < count) {
+        this._userGroupColumn(column, forward ? target + 1 : target);
+        this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+        this.#focusChip(target);
+      }
+
+      return;
+    }
+
+    if ((ctrl && !event.altKey && event.key.toLowerCase() === 'g') || event.key === 'Delete') {
+      event.preventDefault();
+      this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
+      this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
+      this.#activeChip = Math.min(index, Math.max(count - 2, 0));
+      // O foco vai ao cabeçalho da coluna devolvida (fim das comuns).
+      void this.updateComplete.then(() => {
+        const col = this.#currentNavColumns().indexOf(column);
+
+        if (col >= 0 && this.showColumnHeaders) {
+          this.#setActive({ row: HEADER_ROW, col }, 'user', { focus: true });
+        }
+      });
+      return;
+    }
+
+    if (horizontal && !event.altKey && !ctrl) {
+      event.preventDefault();
+      this.#focusChip(Math.min(Math.max(index + (forward ? 1 : -1), 0), count - 1));
+    } else if ((event.key === 'Home' || event.key === 'End') && !ctrl) {
+      event.preventDefault();
+      this.#focusChip(event.key === 'Home' ? 0 : count - 1);
+    } else if (this.groupPanelMenu && (isContextMenuKey(event) || (!this.#canSortByUser(column) && isActivationKey(event)))) {
+      event.preventDefault();
+      this.#groupMenu.show({ column, returnFocus: event.currentTarget as HTMLElement });
+    } else if (isActivationKey(event) && !event.repeat && this.#canSortByUser(column)) {
+      event.preventDefault();
+      this.#onGroupChipActivate(column, event);
+    }
+  }
+
+  #focusChip(index: number): void {
+    this.#activeChip = index;
+    this.#chipFocusPending = true;
+    this.requestUpdate();
+  }
+
   // ----------------------------------------------------------------- render
 
   override render() {
@@ -2532,9 +3614,13 @@ export class DataGrid extends LitElement {
     // primeiras linhas, em vez de "sem dados".
     const window = virtualizer.renderWindow();
 
+    const navColumns = this.#currentNavColumns();
+    this.#resolveActive(navColumns);
+
     const layout = this.#columnLayout();
     const headerRows = (this.showColumnHeaders ? 1 : 0) + (this.showFilterRow ? 1 : 0);
     const footerRows = this.#totalSpecs.length ? 1 : 0;
+    const selectionMode = this.#selectionMode;
     const classes = {
       striped: this.striped,
       'row-lines': this.showRowLines,
@@ -2546,22 +3632,33 @@ export class DataGrid extends LitElement {
     const fit = layout.length > 0 && layout.every(({ column }) =>
       this.#userWidths.has(column) || (column.width !== null && column.width !== undefined));
 
+    // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
+    const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
+    const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
+    const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`;
+
     return html`
       <div
         class="container ${classMap(classes)}"
-        ${ref(this._containerRef)}
-        role="grid"
-        aria-rowcount="${rows.length + headerRows + footerRows}"
-        aria-colcount="${layout.length}">
-        <div class="scroll-container" ${ref(this._scrollContainerRef)}>
+        ${ref(this._containerRef)}>
+        <div class="scroll-container" style=${scrollPadding} ${ref(this._scrollContainerRef)}>
           ${this.#renderToolbar()}
-          <table class=${fit ? 'fit' : ''} @pointerover=${this.#updateCellHint}>
+          <table
+            class=${fit ? 'fit' : ''}
+            role=${this._groupColumns.length ? 'treegrid' : 'grid'}
+            aria-rowcount="${rows.length + headerRows + footerRows}"
+            aria-colcount="${navColumns.length}"
+            aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
+            ${ref(this.#tableRef)}
+            @pointerover=${this.#updateCellHint}
+            @keydown=${this.#onGridKeyDown}
+            @focusin=${this.#onGridFocusIn}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
-            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize()}px;">
-              <tr class="spacer" aria-hidden="true" style="height: ${window.offset}px;"></tr>
+            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize()}px;" @click=${this.#onBodyClick}>
+              <tr class="spacer" role="presentation" aria-hidden="true" style="height: ${window.offset}px;"></tr>
               ${this.#renderBody(window, headerRows, layout)}
-              <tr></tr>
+              <tr role="presentation"></tr>
             </tbody>
             ${footerRows ? this.#renderTotalFooter(layout, rows.length + headerRows + 1) : nothing}
           </table>
@@ -2582,6 +3679,7 @@ export class DataGrid extends LitElement {
     return html`
       ${map(this._groupColumns, () => html`
         <col class="group-column"/>`)}
+      ${this.#showSelectionColumn ? html`<col class="selection-column"/>` : nothing}
       ${map(layout, ({ column }) => {
         const width = this.#widthOf(column);
         const colStyles: { width?: string } = {};
@@ -2594,6 +3692,29 @@ export class DataGrid extends LitElement {
           <col style="${styleMap(colStyles)}"/>`;
       })}
     `;
+  }
+
+  /** Estado da caixa "selecionar tudo" pelas linhas filtradas. */
+  #selectAllState(): 'true' | 'false' | 'mixed' {
+    const total = this.#sortedItems.length;
+    const count = total ? this.#selectedInViewCount() : 0;
+
+    return count === 0 ? 'false' : count === total ? 'true' : 'mixed';
+  }
+
+  #renderCheckbox(checked: 'true' | 'false' | 'mixed', label: string) {
+    return html`<span
+      class="selection-checkbox"
+      part="selection-checkbox"
+      role="checkbox"
+      aria-checked=${checked}
+      aria-label=${label}><svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 -960 960 960"
+        width="18"
+        height="18"
+        fill="currentColor"
+        aria-hidden="true"><path d=${checked === 'mixed' ? MIXED_PATH : CHECK_PATH}/></svg></span>`;
   }
 
   #renderColumnHeaders(layout: ColumnLayout[]) {
@@ -2620,6 +3741,14 @@ export class DataGrid extends LitElement {
             role="presentation"
             class="group-column sticky-cell"
             style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+        ${this.#showSelectionColumn
+          ? html`<td
+            class="selection-cell sticky-cell"
+            part="selection-cell"
+            role="gridcell"
+            aria-colindex="1"
+            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"></td>`
+          : nothing}
         ${map(layout, (cell, index) => renderFilterCell({
           controller: this.#filterRow,
           column: cell.column,
@@ -2628,7 +3757,7 @@ export class DataGrid extends LitElement {
           translation,
           className: cell.className,
           style: cell.style,
-          colIndex: index + 1,
+          colIndex: index + 1 + (this.#showSelectionColumn ? 1 : 0),
         }))}
       </tr>`;
   }
@@ -2637,6 +3766,8 @@ export class DataGrid extends LitElement {
     const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
     const showIndex = rowSorting.length > 1;
     const filterValue = this.#filtering.filterValue;
+    const offset = this.#showSelectionColumn ? 1 : 0;
+    const translation = this.#translation;
 
     return html`
         <tr id="header-columns-row" role="row" aria-rowindex="1">
@@ -2645,6 +3776,18 @@ export class DataGrid extends LitElement {
               role="presentation"
               class="group-column sticky-cell"
               style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)}
+          ${offset
+            ? html`
+              <th
+                class="selection-cell sticky-cell"
+                part="selection-cell"
+                role="columnheader"
+                aria-colindex="1"
+                data-col="0"
+                tabindex=${this.#isActive(HEADER_ROW, 0) ? 0 : -1}
+                style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"
+                @click=${() => this.#toggleAll()}>${this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`
+            : nothing}
           ${map(layout, (cell, index) => {
             const { column } = cell;
             const position = rowSorting.findIndex(spec => spec.column === column);
@@ -2653,13 +3796,21 @@ export class DataGrid extends LitElement {
               column,
               classes: cell.headerClasses,
               styles: cell.headerStyles,
-              colIndex: index + 1,
+              colIndex: index + 1 + offset,
+              tabIndex: this.#isActive(HEADER_ROW, index + offset) ? 0 : -1,
               sortable: this.#canSortByUser(column),
               order: rowSorting[position]?.order,
               sortIndex: showIndex && position >= 0 ? position + 1 : undefined,
               onActivate: this.#onHeaderActivate,
               onPointerDown: this.#onSortPointerDown,
-              onKeyDown: cell.resizable ? (event: KeyboardEvent) => this.#resize.keyDown(event, column, true) : undefined,
+              // Alt+Shift+←/→ move a coluna (no grid); só Alt+←/→ redimensiona.
+              onKeyDown: cell.resizable
+                ? (event: KeyboardEvent) => {
+                  if (!event.shiftKey) {
+                    this.#resize.keyDown(event, column, true);
+                  }
+                }
+                : undefined,
               trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
               filterButton: this.headerFilter && isColumnFilterable(column)
                 ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation)
@@ -2671,6 +3822,7 @@ export class DataGrid extends LitElement {
   }
 
   #renderResizeHandle({ column, bounds, width }: ColumnLayout) {
+    // Fora da ordem de Tab (o grid tem um ponto só): F2 no cabeçalho chega aqui, Esc volta.
     return html`<div
       class="resize-handle"
       role="separator"
@@ -2679,7 +3831,7 @@ export class DataGrid extends LitElement {
       aria-valuenow=${ifDefined(width === undefined ? undefined : Math.round(width))}
       aria-valuemin=${bounds.min}
       aria-valuemax=${ifDefined(Number.isFinite(bounds.max) ? bounds.max : undefined)}
-      tabindex="0"
+      tabindex="-1"
       title=${this.#translation.autoSize}
       @pointerdown=${(event: PointerEvent) => this.#resize.pointerDown(event, column)}
       @click=${(event: Event) => event.stopPropagation()}
@@ -2706,8 +3858,8 @@ export class DataGrid extends LitElement {
 
     if (!this.#rows.length) {
       return html`
-        <tr>
-          <td part="no-data" colspan="${Math.max(this._groupColumns.length + layout.length, 1)}">${this.#translation.noData}</td>
+        <tr role="row" class="no-data-row">
+          <td role="gridcell" part="no-data" colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.#translation.noData}</td>
         </tr>
       `;
     }
@@ -2719,29 +3871,59 @@ export class DataGrid extends LitElement {
     // `<tbody>` encolheria a caixa da tabela e soltaria o cabeçalho
     // `sticky` (spec 16).
     const { first, end } = window;
-    const entries = this.#rows.slice(first, end).map((row, i) => ({ row, index: first + i }));
+    const entries = this.#rows.slice(first, end).map((row, i) => ({ row, index: first + i, pinned: false }));
+
+    // A linha da célula ativa fica no DOM mesmo fora da janela virtual
+    // (invisível, fora do fluxo): o foco não se perde ao rolar e o Tab volta
+    // a ela. Fica antes/depois da janela, na mesma ordem: ao voltar à tela a
+    // parte não é movida (mover tiraria o foco).
+    const active = this.#activeRowIndex;
+
+    if (active >= 0 && active < this.#rows.length && (active < first || active >= end)) {
+      const pinned = { row: this.#rows.at(active), index: active, pinned: true };
+
+      if (active < first) {
+        entries.unshift(pinned);
+      } else {
+        entries.push(pinned);
+      }
+    }
 
     return keyedRows(
       entries,
       entry => entry.row.key,
-      entry => this.#renderRow(entry.index, entry.row, headerRows, layout),
+      entry => this.#renderRow(entry.index, entry.row, headerRows, layout, entry.pinned),
     );
   }
 
-  #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[]) {
+  #totalColumns(layout: ColumnLayout[]): number {
+    return this._groupColumns.length + (this.#showSelectionColumn ? 1 : 0) + layout.length;
+  }
+
+  #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[], pinned: boolean) {
     const parity = row.isGroup || row.isFooter
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
+    const selectable = isDataRow(row) && this.#selectionMode !== 'none';
+    const selected = selectable && this.#selection.has(row.item);
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
       'group-footer-row': !!row.isFooter,
       'summary-row': !!row.isFooter,
       last: index === this.#rows.length - 1,
+      selected,
+      pinned,
     };
 
     if (parity) {
       classes[parity] = true;
+    }
+
+    const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : parity];
+
+    if (selected) {
+      parts.push('selected');
     }
 
     return html`
@@ -2751,13 +3933,15 @@ export class DataGrid extends LitElement {
         role="row"
         aria-rowindex="${index + 1 + headerRows}"
         aria-level=${row.isGroup ? row.level + 1 : nothing}
+        aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : undefined)}
+        aria-selected=${ifDefined(selectable ? (selected ? 'true' : 'false') : undefined)}
         class="${classMap(classes)}"
-        part="row ${row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : parity}">
+        part=${parts.join(' ')}>
         ${row.isGroup
-          ? this.#renderGroupRowCells(row, layout)
+          ? this.#renderGroupRowCells(row, index, layout)
           : row.isFooter
-            ? this.#renderGroupFooterCells(row, layout)
-            : this.#renderDataRowCells(row, layout)}
+            ? this.#renderGroupFooterCells(row, index, layout)
+            : this.#renderDataRowCells(row, index, layout, selected)}
       </tr>
     `;
   }
@@ -2767,11 +3951,12 @@ export class DataGrid extends LitElement {
    * `column` em células próprias a partir da 1ª coluna com resumo (o rótulo
    * ocupa as anteriores, como na referência).
    */
-  #renderGroupRowCells(row: GroupRow, layout: ColumnLayout[]) {
+  #renderGroupRowCells(row: GroupRow, rowIndex: number, layout: ColumnLayout[]) {
     const groupColumns = this._groupColumns.length;
-    const totalColumns = groupColumns + layout.length;
-    // Colunas depois do botão: recuos dos níveis internos + colunas comuns.
-    const base = groupColumns - row.level - 1;
+    const offset = this.#showSelectionColumn ? 1 : 0;
+    const totalColumns = groupColumns + offset + layout.length;
+    // Colunas depois do botão: recuos dos níveis internos, caixas e colunas comuns.
+    const base = groupColumns - row.level - 1 + offset;
     const specs = this.#groupSpecs;
     let alignedFrom = layout.length;
 
@@ -2806,54 +3991,102 @@ export class DataGrid extends LitElement {
     });
 
     const info = parts.length ? formatMessage(this.#translation.groupInfoText, { info: this.#formatList(parts) }) : '';
+    const alignedTexts = this.#textsByColumn(specs, row.summaries, summary => isAligned(summary, (summary.item as GridGroupSummaryItem).display));
     const aligned = alignedFrom < layout.length
-      ? renderSummaryCells(layout, this.#textsByColumn(specs, row.summaries, summary => isAligned(summary, (summary.item as GridGroupSummaryItem).display)), alignedFrom, this.#listSeparatorText)
+      ? renderSummaryCells(layout, alignedTexts, alignedFrom, this.#listSeparatorText, offset)
       : nothing;
+    // A linha de grupo é um ponto só da navegação: os resumos alinhados entram no rótulo dela.
+    const alignedLabels = [...alignedTexts.values()].flat().map(text => text.label);
+    const valueText = this.#groupValueText(row);
+    const ariaLabel = alignedLabels.length
+      ? [`${groupRowLabel(row, this.#translation.groupLabelSeparator, valueText)}${info ? ` ${info}` : ''}`, ...alignedLabels].join(this.#listSeparatorText)
+      : undefined;
 
     return renderGroupRowCells({
       row,
       totalColumns,
       separator: this.#translation.groupLabelSeparator,
-      valueText: this.#groupValueText(row),
+      valueText,
       info,
+      ariaLabel,
       labelSpan: base + alignedFrom,
       trailing: aligned,
+      tabIndex: this.#isActive(rowIndex, -1) ? 0 : -1,
       onToggle: this.#toggleGroup,
     });
   }
 
-  #renderGroupFooterCells(row: GroupFooterRow, layout: ColumnLayout[]) {
+  #renderGroupFooterCells(row: GroupFooterRow, rowIndex: number, layout: ColumnLayout[]) {
     const texts = this.#textsByColumn(this.#groupSpecs, row.summaries, ({ item }) => (item as GridGroupSummaryItem).display === 'footer');
+    const offset = this.#showSelectionColumn ? 1 : 0;
 
     return html`
       ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
-      ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText)}
+      ${this.#renderEmptySelectionCell(rowIndex)}
+      ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText, offset, col => this.#isActive(rowIndex, col) ? 0 : -1)}
     `;
   }
 
-  #renderTotalFooter(layout: ColumnLayout[], rowIndex: number) {
+  /** Célula da coluna de caixas nas linhas de resumo (vazia, mas navegável). */
+  #renderEmptySelectionCell(rowIndex: number) {
+    return this.#showSelectionColumn
+      ? html`<td
+        class="selection-cell sticky-cell"
+        part="selection-cell"
+        role="gridcell"
+        aria-colindex="1"
+        data-col="0"
+        tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
+        style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"></td>`
+      : nothing;
+  }
+
+  #renderTotalFooter(layout: ColumnLayout[], ariaRowIndex: number) {
+    const rowIndex = this.#rows.length;
+
     return renderTotalFooter({
       layout,
       texts: this.#textsByColumn(this.#totalSpecs, this.#totals, () => true),
       groupColumns: this._groupColumns.length,
       groupColumnWidth: GROUP_COLUMN_WIDTH,
-      rowIndex,
+      rowIndex: ariaRowIndex,
       separator: this.#listSeparatorText,
+      leading: this.#renderEmptySelectionCell(rowIndex),
+      colOffset: this.#showSelectionColumn ? 1 : 0,
+      tabIndexOf: col => this.#isActive(rowIndex, col) ? 0 : -1,
     });
   }
 
-  #renderDataRowCells(row: DataRow, layout: ColumnLayout[]) {
+  #renderDataRowCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean) {
+    const offset = this.#showSelectionColumn ? 1 : 0;
     const matcher = this.#highlightMatcher();
 
     return html`
-      ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
+      ${map(this._groupColumns, (_, index) => html`
+        <td
+          role="presentation"
+          class="group-column sticky-cell"
+          style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+      ${offset
+        ? html`
+          <td
+            class="selection-cell sticky-cell"
+            part="selection-cell"
+            role="gridcell"
+            aria-colindex="1"
+            data-col="0"
+            tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
+            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px">${this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
+        : nothing}
       ${map(layout, (cell, index) => html`
         <td
           part="cell"
           class=${cell.cellClassName}
           style=${cell.style}
           role="gridcell"
-          aria-colindex="${index + 1}">${this.#renderCellContent(row, cell, matcher)}</td>`)}
+          aria-colindex="${index + 1 + offset}"
+          data-col=${index + offset}
+          tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`)}
     `;
   }
 
@@ -2875,7 +4108,7 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
 
     return html`
-      <div class="header">
+      <div class="header" role="toolbar">
         ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
         ${this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing}
         ${this.columnChooser
@@ -2906,53 +4139,50 @@ export class DataGrid extends LitElement {
   }
 
   /**
-   * Chip de uma coluna agrupada: arrastável; se ordenável, alterna a direção
-   * dos grupos. Com o menu do painel, sempre focável: Shift+F10/tecla de
-   * menu abrem o menu (Enter/Espaço também, se não ordenar).
+   * Chip de uma coluna agrupada: arrastável; Enter/Espaço alternam a direção
+   * dos grupos (se ordenável) ou abrem o menu do painel; Shift+F10/tecla de
+   * menu abrem o menu; Alt+Shift+←/→ muda o nível, Ctrl+G/Delete desagrupa.
+   * ←/→ andam entre os chips (um ponto de Tab na barra).
    */
   #renderGroupChip(column: GridColumnDef, index: number) {
     const sortable = this.#canSortByUser(column);
     const menu = this.groupPanelMenu;
-    const focusable = sortable || menu;
     // Só é "botão de menu" quando a ativação abre o menu; no ordenável a ativação ordena.
     const opensMenu = menu && !sortable;
     const order = this.#orderOf(column) ?? 'asc';
     const translation = this.#translation;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (menu && (isContextMenuKey(event) || (!sortable && isActivationKey(event)))) {
-        event.preventDefault();
-        this.#groupMenu.show({ column, returnFocus: event.currentTarget as HTMLElement });
-      } else if (sortable && isActivationKey(event) && !event.repeat) {
-        event.preventDefault();
-        this.#onGroupChipActivate(column, event);
-      }
-    };
+    const activeChip = Math.min(this.#activeChip, this._groupColumns.length - 1);
 
     return html`
       <div
         class="group ${classMap({ sortable })}"
         part="group-chip"
         style="--_order: ${index}"
-        role=${ifDefined(focusable ? 'button' : undefined)}
-        tabindex=${ifDefined(focusable ? 0 : undefined)}
+        role="button"
+        tabindex=${index === activeChip ? 0 : -1}
         aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
         aria-expanded=${ifDefined(opensMenu ? this.#groupMenu.open && this.#groupMenu.column === column ? 'true' : 'false' : undefined)}
         aria-keyshortcuts=${ifDefined(menu && sortable ? 'Shift+F10' : undefined)}
-        aria-label=${ifDefined(sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : undefined)}
+        aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
+        @focus=${() => {
+          this.#activeChip = index;
+        }}
         @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
         @click=${sortable ? (event: MouseEvent) => this.#onGroupChipActivate(column, event) : nothing}
-        @keydown=${focusable ? onKeyDown : nothing}>
+        @keydown=${(event: KeyboardEvent) => this.#onChipKeyDown(column, index, event)}>
         <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
       </div>`;
   }
 
   #focusAfterUngroup(chipIndex: number): void {
     const chips = [...this.renderRoot.querySelectorAll<HTMLElement>('.group[tabindex]')];
-    const target = chips[Math.min(chipIndex, chips.length - 1)]
-      ?? this.renderRoot.querySelector<HTMLElement>('th.header-column[tabindex]');
 
-    target?.focus();
+    if (chips.length) {
+      // Roving da barra: o vizinho vira o chip com `tabindex="0"`.
+      this.#focusChip(Math.min(chipIndex, chips.length - 1));
+    } else {
+      this.focus();
+    }
   }
 
   /** Clique direito no painel (num chip: com "Desagrupar" desta coluna). */
@@ -3092,5 +4322,7 @@ declare global {
     'u-grid-group-change': CustomEvent<GridGroupEventDetail>;
     'u-grid-group-expansion-change': CustomEvent<GridGroupExpansionChangeEventDetail>;
     'u-grid-filter-change': CustomEvent<GridFilterEventDetail>;
+    'u-grid-selection-change': CustomEvent<GridSelectionChangeEventDetail>;
+    'u-grid-focus-change': CustomEvent<GridFocusChangeEventDetail>;
   }
 }

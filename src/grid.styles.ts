@@ -29,6 +29,8 @@ export const styles = css`
     --_resize-handle-width: var(--u-grid-resize-handle-width, 8px);
     --_fixed-shadow-color: var(--u-grid-fixed-shadow-color, color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 22%, transparent));
     --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+    --_selection-column-width: 48px;
+    --_selected-row-color: var(--u-grid-selected-row-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 12%, transparent));
   }
 
   :host(:dir(rtl)) {
@@ -201,6 +203,76 @@ export const styles = css`
   .group-column {
     width: var(--_group-column-width);
     min-width: var(--_group-column-width);
+  }
+
+  /* Linha selecionada (depois do realce do ponteiro: a seleção vence). */
+  tbody tr[role=row].selected:not(.group-row) {
+    --_row-tint: var(--_selected-row-color);
+    background-color: var(--_row-tint);
+  }
+
+  /* Célula ativa do teclado (roving tabindex); o clique não mostra o anel. */
+  td[tabindex]:focus,
+  th[tabindex]:focus {
+    outline: none;
+  }
+
+  td[tabindex]:focus-visible,
+  th[tabindex]:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: calc(var(--u-grid-focus-ring-width, 2px) * -1);
+  }
+
+  /*
+   * Linha da célula ativa fora da janela virtual: fica no DOM (o foco não se
+   * perde ao rolar) mas fora do fluxo e invisível.
+   */
+  tbody tr.pinned {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0;
+    height: 1px !important;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .selection-column,
+  .selection-cell {
+    width: var(--_selection-column-width);
+    min-width: var(--_selection-column-width);
+  }
+
+  .selection-cell {
+    padding: 0;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .selection-checkbox {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    border-radius: 2px;
+    vertical-align: middle;
+    color: var(--u-color-on-primary, rgb(255, 255, 255));
+  }
+
+  .selection-checkbox svg {
+    visibility: hidden;
+  }
+
+  .selection-checkbox:is([aria-checked="true"], [aria-checked="mixed"]) {
+    border-color: var(--u-color-primary, rgb(103, 80, 164));
+    background-color: var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  .selection-checkbox:is([aria-checked="true"], [aria-checked="mixed"]) svg {
+    visibility: visible;
   }
 
   /*

@@ -13,8 +13,10 @@ export interface HeaderCellContext {
   classes: Record<string, boolean>;
   /** `min-width` e o deslocamento `sticky` das colunas fixas. */
   styles: StyleInfo;
-  /** `aria-colindex` (1-based). */
+  /** `aria-colindex` (1-based, conta a coluna de caixas). */
   colIndex: number;
+  /** Roving tabindex: `0` só na célula ativa do grid. */
+  tabIndex: 0 | -1;
   /** O usuário pode ordenar por esta coluna (modo ≠ `none` e coluna ordenável). */
   sortable: boolean;
   order: GridSortOrder | undefined;
@@ -63,6 +65,7 @@ export const renderHeaderCell = ({
   classes,
   styles,
   colIndex,
+  tabIndex,
   sortable,
   order,
   sortIndex,
@@ -80,7 +83,8 @@ export const renderHeaderCell = ({
     role="columnheader"
     aria-colindex="${colIndex}"
     aria-sort=${ifDefined(sortable || order ? ariaSort(order) : undefined)}
-    tabindex=${ifDefined(sortable ? 0 : undefined)}
+    data-col=${colIndex - 1}
+    tabindex=${tabIndex}
     @pointerdown=${sortable ? onPointerDown : nothing}
     @click=${sortable ? (event: MouseEvent) => onActivate(column, event) : nothing}
     @keydown=${sortable || onKeyDown
