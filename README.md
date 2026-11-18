@@ -20,6 +20,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Defining columns](#defining-columns)
 - [Data types & formatting](#data-types--formatting)
 - [Sorting](#sorting)
+- [Filtering](#filtering) (filter row, search panel, header filter)
 - [Grouping](#grouping)
 - [Summaries](#summaries) (totals and group summaries)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
@@ -41,6 +42,10 @@ React, Vue, Svelte — or with no framework at all.
   maximum element height, the scroll range is scaled).
 - **Sorting** — click a header to sort, Shift+click to sort by several columns, stable and fast
   (100,000 rows in under 200 ms), with keyboard and screen reader support.
+- **Filtering** — filter row with an editor and operation menu per column, a search panel that
+  ignores case and accents and highlights matches, and a header filter with the distinct values;
+  one serializable DevExtreme-style expression (`filterValue`). A million rows filter without
+  freezing the typing.
 - **Grouping** — group by one or more columns (or by ranges: decade, initial letter), with
   expand/collapse (also all at once, by API or from the group panel menu), row counts,
   multi-level nesting and an expansion state that survives new data. Group interactively by
@@ -271,6 +276,12 @@ interface GridColumnDef<TItem = any> {
   groupValueGetter?: ((item: TItem) => unknown) | null;
   /** Lets the user group by this column. Default: true when it has a `path`, `valueGetter` or `groupValueGetter`. */
   groupable?: boolean | null;
+  /** Lets the user filter by this column (filter row, header filter, search). Default: true when it has a `path`. */
+  filterable?: boolean | null;
+  /** Operations of the filter row menu. Default by data type. */
+  filterOperations?: readonly GridFilterOperation[] | null;
+  /** Operation of the filter row editor. Default: 'contains' for text, '=' otherwise (outside `filterOperations`: the first of the list). */
+  defaultFilterOperation?: GridFilterOperation | null;
 }
 ```
 
@@ -280,7 +291,7 @@ interface GridColumnDef<TItem = any> {
 primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
 is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
 with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `groupable="false"`,
-`show-in-chooser="false"`, `wrap="false"`.
+`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`. `filter-operations` takes a space separated list.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -421,6 +432,114 @@ grid.addEventListener('u-grid-sorting', event => {
   }
 });
 ```
+
+---
+
+## Filtering
+
+Three ways to filter, all off by default and all writing to one serializable expression,
+`filterValue`:
+
+```html
+<u-grid show-filter-row show-search-panel header-filter></u-grid>
+```
+
+- **Filter row** (`show-filter-row`) — a row below the headers with an editor per filterable column,
+  chosen by `dataType`: text, number, date (applies when the date is confirmed) and a three-state
+  select for booleans. Text and numbers apply 300 ms after the last key (or at once on `Enter`).
+  The button before the editor opens the operation menu (`Alt+↓` from the editor also opens it;
+  arrows, `Home`/`End`, `Enter` and `Esc` work inside); **Reset** removes the condition.
+- **Search panel** (`show-search-panel`) — a search box in the bar above the table. It searches the
+  displayed text of the visible filterable columns, ignoring case and accents (`sao` finds
+  "São Paulo"), and highlights the matches with `<mark part="search-highlight">` (built as text
+  nodes — row data is never parsed as HTML). Custom `renderer` cells are searched but not
+  highlighted.
+- **Header filter** (`header-filter`) — a funnel button in each filterable header opens a popover
+  with the column's distinct values (with counts, `(Blanks)` for empty values, a search box and
+  **Select all**). Dates are grouped by year → month → day. **OK** applies, **Cancel**/`Esc`/a
+  click outside close without applying, **Clear filter** removes every condition of the column.
+  The values come from the rows that pass the *other* filters. The funnel turns active while the
+  column has a condition.
+
+Filters combine with `and`; sorting, grouping and group counts work on the result. A polite live
+region announces the row count after a user filter ("Rows: 12").
+
+### Filter expressions
+
+`filterValue` uses the same shape as DevExtreme:
+
+```ts
+grid.filterValue = [
+  ['age', '>=', 30],
+  'and',
+  [['city', 'anyof', ['Lima', 'Rio']], 'or', ['name', 'startswith', 'jo']],
+];
+grid.filterValue = ['!', ['status', '=', 'archived']];
+grid.filterValue = null; // no filter
+```
+
+- A condition is `[path, operation, value]`, where `path` is the column `path` (a path without a
+  column is read from the items; with two columns on the same path, the first wins). `[path, value]`
+  means `=`.
+- Groups join expressions with `'and'` / `'or'` (`and` binds tighter; two expressions in a row
+  mean `and`, as in DevExtreme); `['!', expression]` negates.
+
+| Operation | Value | Notes |
+| --------- | ----- | ----- |
+| `=`, `<>` | value | Text: ignores case and accents, compares the displayed text. `null` means blank. |
+| `<`, `<=`, `>`, `>=` | value | Numbers and dates by value; text in the grid language order. |
+| `contains`, `notcontains`, `startswith`, `endswith` | text | Ignore case and accents; match the displayed text (also in number/date columns). |
+| `between` | `[start, end]` | Inclusive; either end may be `null`. |
+| `anyof`, `noneof` | list | `null` in the list stands for blank values. |
+| `isblank`, `isnotblank` | — | Blank = `null`, `undefined`, `''`, `NaN` or an invalid date. |
+
+Values are converted to the column `dataType`. In `date` columns comparisons use the calendar day;
+in `datetime` columns they use the instant, except for a date-only value (`'2024-03-05'`), which
+compares the day (that is what the filter row and the header filter write). An invalid expression is
+ignored with a console warning.
+
+The grid keeps a frozen copy of `filterValue` (never your array) and updates it when the user
+filters, so reading it always gives the current filter. The filter row and the header filter edit
+the top-level `and` conditions of their column and leave the rest of the expression alone.
+
+### Column options
+
+| Option | Attribute | Default | Description |
+| ------ | --------- | ------- | ----------- |
+| `filterable` | `filterable` | `true` with a `path` | `false` removes the column from the filter row, the header filter and the search. Columns need a `path` to be filtered. |
+| `filterOperations` | `filter-operations` | by type | Operations of the filter row menu (attribute: space separated, `filter-operations="contains startswith ="`). Text: `contains notcontains startswith endswith = <>`; number/date: `= <> < > <= >= between`; boolean: `=`. Only the menu is restricted. |
+| `defaultFilterOperation` | `default-filter-operation` | `contains` (text), `=` | Operation of the filter row editor; one outside `filterOperations` falls back to the first of the list. |
+
+### Filtering API
+
+```ts
+grid.filterValue = ['amount', 'between', [100, 500]];
+grid.searchText = 'lima';      // attribute: search-text
+grid.getCombinedFilter();      // filterValue `and` the search, e.g. for a server request
+grid.clearFilter();            // removes filterValue and searchText
+```
+
+`getCombinedFilter()` turns the search into `[path, 'contains', text]` conditions joined by `'or'`
+over the visible filterable columns (number and date columns included: `contains` matches their
+displayed text).
+
+### Filtering events
+
+`u-grid-filter-change` bubbles, is `composed` and fires after the user filtered (filter row, header
+filter, search panel) or `clearFilter()` changed something. Setting `filterValue` or `searchText`
+does **not** fire it, so two-way bindings don't loop. `detail` is
+`{ filterValue, previousFilterValue, searchText, previousSearchText, source: 'user' | 'api' }`.
+
+```ts
+grid.addEventListener('u-grid-filter-change', event => {
+  saveState({ filter: event.detail.filterValue, search: event.detail.searchText });
+});
+```
+
+**Large data** — up to 200,000 rows the filter runs at once (100,000 rows filter in well under
+100 ms). Above that it runs in slices between frames, so typing stays fluid even with a million rows;
+the previous result stays on screen until the new one is ready, and `await grid.updateComplete`
+waits for it.
 
 ---
 
@@ -790,6 +909,24 @@ interface GridI18n {
   expandAllGroups: string;     // "Expand all groups"
   collapseAllGroups: string;   // "Collapse all groups"
   groupPanelMenu: string;      // accessible name of the group panel menu
+  filterEquals: string;        // one key per operation: filterEquals, filterNotEquals, filterLessThan,
+  // filterLessThanOrEqual, filterGreaterThan, filterGreaterThanOrEqual, filterContains,
+  // filterNotContains, filterStartsWith, filterEndsWith, filterBetween, filterAnyOf,
+  // filterNoneOf, filterIsBlank, filterIsNotBlank
+  filterReset: string;         // last item of the operation menu
+  filterEditorLabel: string;   // filter row editor name: "Filter {column}"
+  filterOperationLabel: string; // operation button / menu name
+  headerFilterLabel: string;   // header filter button / popover name: "Filter options for {column}"
+  filterBetweenStart: string;  // "From" (first `between` editor)
+  filterBetweenEnd: string;    // "To"
+  filterAll: string;           // "(All)" in the boolean filter row select
+  filterBlanks: string;        // "(Blanks)" in the header filter
+  filterClear: string;         // "Clear filter" in the header filter
+  searchPlaceholder: string;   // "Search…" (search panel and header filter search)
+  selectAll: string;           // "Select all"
+  ok: string;
+  cancel: string;
+  filteredAnnouncement: string; // after a user filter: "Rows: {count}"
 }
 ```
 
@@ -827,6 +964,11 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button. |
 | `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
+| `showFilterRow`    | `show-filter-row`     | `boolean` | `false` | Show the filter row. See [Filtering](#filtering). |
+| `showSearchPanel`  | `show-search-panel`   | `boolean` | `false` | Show the search box in the bar above the table. |
+| `headerFilter`     | `header-filter`       | `boolean` | `false` | Show the header filter button in filterable headers. |
+| `filterValue`      | *(property only)*     | `GridFilterExpression \| null` | `null` | Column filter expression (read it for the current filter). |
+| `searchText`       | `search-text`         | `string`  | `''`    | Search panel text. |
 
 ```html
 <u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
@@ -883,6 +1025,11 @@ blends into that design system automatically when present.
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
 | `--u-grid-summary-background-color` | header background | Background of the totals footer and group footers (opaque: the footer covers the rows). |
 | `--u-grid-summary-cell-font-weight` | `500` | Font weight of summary cells. |
+| `--u-grid-filter-row-height` | header cell height (`46px`) | Height of the filter row. |
+| `--u-grid-search-highlight-background-color` / `--u-grid-search-highlight-color` | primary token at 24% / inherited | Search matches in cells. |
+| `--u-grid-header-filter-button-active-color` | primary token | Funnel of a filtered column. |
+| `--u-grid-header-filter-background-color` | surface-container token | Header filter popover background. |
+| `--u-grid-header-filter-shape` | `12px` | Header filter popover corner radius. |
 
 ```css
 u-grid {
@@ -915,6 +1062,14 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
 | `group-count` | Count and inline summaries in a group row. |
 | `group-panel-menu` | The group panel context menu. |
+| `filter-row` | The filter row (`<tr>`). |
+| `filter-cell` | Filter row cells. |
+| `filter-editor` | Filter row inputs and selects. |
+| `filter-operation-button` | The operation button of a filter row cell. |
+| `search-input` | The search panel input. |
+| `header-filter-button` | The funnel button in a header. |
+| `header-filter` | The header filter popover. |
+| `search-highlight` | Search matches (`<mark>`) in native cells. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -993,7 +1148,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -1013,6 +1168,8 @@ CSS property and part for IDEs and tooling.
 | `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth`. |
 | `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows). |
 | `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
+| `clearFilter()` | Remove `filterValue` and `searchText` (fires `u-grid-filter-change`, `source: 'api'`). |
+| `getCombinedFilter()` | `filterValue` `and` the search as one expression (copy), or `null`. |
 
 ### `<u-grid>` events
 
@@ -1024,6 +1181,7 @@ All bubble and are `composed`.
 | `u-grid-sort-change` | `GridSortEventDetail` | yes | After the sort changed. |
 | `u-grid-group-change` | `GridGroupEventDetail` | yes | After the grouping changed. |
 | `u-grid-group-expansion-change` | `GridGroupExpansionChangeEventDetail` | yes | After groups were expanded or collapsed (chevron, menu or API); only when the state changed. |
+| `u-grid-filter-change` | `GridFilterEventDetail` | `clearFilter()` only | After the user filtered. Setting `filterValue`/`searchText` does not fire it. |
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
@@ -1065,6 +1223,10 @@ import {
   type GridSummaryAggregator, // (values, items) => unknown
   type GridSummaryFormat,   // Intl options or (value) => string
   type GridSummaryValue,    // { item, value, text }
+  type GridFilterOperation, // '=' | '<>' | '<' | ... | 'isblank' | 'isnotblank'
+  type GridFilterCondition, // [path, operation, value?]
+  type GridFilterExpression, // condition | ['!', expr] | (expr | 'and' | 'or')[]
+  type GridFilterEventDetail, // { filterValue, previousFilterValue, searchText, previousSearchText, source }
   type GridColumnResizeEventDetail,
   type GridColumnVisibilityChangeEventDetail,
   type GridColumnFixedChangeEventDetail,

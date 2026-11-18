@@ -1,5 +1,7 @@
 import type { ComplexAttributeConverter } from 'lit';
 
+import type { GridFilterOperation } from './grid-column-def.js';
+
 /**
  * Booleano de atributo que também desliga (spec 15): sem atributo = padrão;
  * `"false"` = `false`; qualquer outro valor (inclusive vazio) = `true`.
@@ -22,3 +24,45 @@ export const optionalBooleanAttribute: ComplexAttributeConverter<boolean | null>
  * repassa ao novo com aviso de deprecação uma vez por instância.
  */
 export type LegacyAttributes = Readonly<Record<string, string>>;
+
+const FILTER_OPERATION_TOKENS = new Set(
+  '= <> < <= > >= contains notcontains startswith endswith between anyof noneof isblank isnotblank'.split(' '),
+);
+
+/** Uma operação (`default-filter-operation`); desconhecida avisa e vira `null`. */
+export const filterOperationAttribute = {
+  fromAttribute: (value: string | null): GridFilterOperation | null => {
+    if (value === null) {
+      return null;
+    }
+
+    if (!FILTER_OPERATION_TOKENS.has(value)) {
+      console.warn(`<u-grid-column>: unknown filter operation ignored: ${value}.`);
+      return null;
+    }
+
+    return value as GridFilterOperation;
+  },
+};
+
+/**
+ * Lista de operações separada por espaço (`filter-operations="contains ="`),
+ * à moda de `DOMTokenList`. Só lê (não reflete); token desconhecido é
+ * ignorado com aviso.
+ */
+export const filterOperationsAttribute = {
+  fromAttribute: (value: string | null): GridFilterOperation[] | null => {
+    if (value === null) {
+      return null;
+    }
+
+    const tokens = value.split(/\s+/).filter(Boolean);
+    const unknown = tokens.filter(token => !FILTER_OPERATION_TOKENS.has(token));
+
+    if (unknown.length) {
+      console.warn(`<u-grid-column>: unknown filter operation(s) ignored: ${unknown.join(', ')}.`);
+    }
+
+    return tokens.filter(token => FILTER_OPERATION_TOKENS.has(token)) as GridFilterOperation[];
+  },
+};

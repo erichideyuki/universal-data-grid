@@ -181,6 +181,9 @@ export class DevRoot extends LitElement {
           sort-mode="multiple"
           column-resizing
           column-chooser
+          show-filter-row
+          show-search-panel
+          header-filter
           .columns=${this.#columns}
           .summary=${demoSummary}
           .items=${this.#items}>

@@ -5,7 +5,7 @@ import { html } from 'lit';
 
 import { describe, expect, it } from 'vitest';
 
-import type { GridColumnDef, GridSummary } from './grid-column-def.js';
+import type { GridColumnDef, GridFilterExpression, GridSummary } from './grid-column-def.js';
 
 import './grid.js';
 
@@ -118,5 +118,26 @@ describe('SSR', () => {
 
     expect(output).toContain('role="img"');
     expect(output).toContain('aria-label="Wahr"');
+  });
+  it('renderiza filtro (linha, busca com destaque, funil) já filtrado, em ar/RTL', async () => {
+    const people: GridColumnDef[] = [
+      { path: 'name', label: 'Name' },
+      { path: 'age', label: 'Age' },
+    ];
+    const data = [{ name: 'Ana <b>', age: 30 }, { name: 'José', age: 41 }, { name: 'Bob', age: 30 }];
+    const filter: GridFilterExpression = ['age', '=', 30];
+    const output = await renderToString(html`
+      <u-grid dir="rtl" language="ar" show-filter-row show-search-panel header-filter search-text="an"
+        .filterValue=${filter} .columns=${people} .items=${data}></u-grid>`);
+
+    expect(output).toContain('part="filter-row"');
+    expect(output).toContain('aria-label="تصفية Name"');
+    expect(output).toContain('part="search-input"');
+    expect(output).toContain('part="header-filter-button"');
+    const plain = output.replace(/<!--[^>]*-->|<\?>/g, '');
+
+    expect(plain).toContain('<mark class="search-highlight" part="search-highlight">An</mark>a &lt;b&gt;');
+    expect(output).not.toContain('José');
+    expect(output).not.toContain('>Bob<');
   });
 });

@@ -18,7 +18,10 @@ import {
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
 import { releaseInteractions } from './features/drag-helper.js';
 import { isRtl } from './features/drop-position.js';
+import { FilterRowController, renderFilterCell, renderFilterMenu } from './features/filter-row.js';
+import { FilteringController } from './features/filtering.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
+import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import {
   type GroupPanelMenuAction,
   GroupPanelMenuController,
@@ -34,6 +37,7 @@ import {
   measureContentWidth,
   type WidthBounds,
 } from './features/resize.js';
+import { renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
 import {
   formatMessage,
   type GridSortMode,
@@ -57,6 +61,9 @@ import {
   type GridSummaryItem,
   type GridSummaryValue,
   isColumnGroupable,
+  type GridFilterCondition,
+  type GridFilterExpression,
+  isColumnFilterable,
   isColumnSortable,
 } from './grid-column-def.js';
 import { type DataGridColumn, type GridColumnChange } from './grid-column.js';
@@ -75,9 +82,25 @@ import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { createComparer } from './row-model/compare.js';
+import { distinctValues, type DistinctValues } from './row-model/distinct.js';
+import {
+  allValuesConvert,
+  applyMask,
+  combineFilters,
+  compileFilter,
+  type ColumnFilterKind,
+  type FilterContext,
+  filterItems,
+  hasColumnCondition,
+  replaceColumnCondition,
+  searchExpression,
+} from './row-model/filter.js';
 import { flattenRows, RowList } from './row-model/flatten.js';
+import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
   DEFAULT_DATE,
+  displayAlphabet,
+  formatCell,
   type FormatContext,
   formatCellValue,
   getDateTimeFormat,
@@ -86,7 +109,7 @@ import {
   resolveDataType,
 } from './row-model/format.js';
 import { buildGroups, groupKeyOf } from './row-model/group.js';
-import { type RankCache, sortItems } from './row-model/sort.js';
+import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
 import type { DataRow, GroupFooterRow, GroupNode, GroupRow, Row } from './row-model/types.js';
 
@@ -104,6 +127,9 @@ export type {
   GridColumnRef,
   GridGroupPath,
   GridGroupSummaryItem,
+  GridFilterCondition,
+  GridFilterExpression,
+  GridFilterOperation,
   GridSort,
   GridSortOrder,
   GridSummary,
@@ -151,6 +177,20 @@ export interface GridGroupExpansionChangeEventDetail {
   /** New state. */
   expanded: boolean;
   /** `user` (toggle button, group panel menu) or `api`. */
+  source: GridChangeSource;
+}
+
+/** `detail` of `u-grid-filter-change`. */
+export interface GridFilterEventDetail {
+  /** Column filter after the change (read-only copy). */
+  filterValue: GridFilterExpression | null;
+  /** Column filter before the change. */
+  previousFilterValue: GridFilterExpression | null;
+  /** Search text after the change. */
+  searchText: string;
+  /** Search text before the change. */
+  previousSearchText: string;
+  /** `user` (filter row, header filter, search panel) or `api` (`clearFilter`). */
   source: GridChangeSource;
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
@@ -332,8 +372,9 @@ const columnIdOf = (column: GridColumnDef): number => {
 };
 
 /**
- * Data grid with row virtualization, grouping, sorting, column resizing,
- * fixing, hiding and reordering, i18n and SSR.
+ * Data grid with row virtualization, grouping, sorting, filtering (filter
+ * row, header filter, search panel), column resizing, fixing, hiding and
+ * reordering, i18n and SSR.
  *
  * @summary Data grid web component.
  *
@@ -343,6 +384,8 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @fires {CustomEvent<GridSortEventDetail>} u-grid-sort-change - After the sorting changed (user or API).
  * @fires {CustomEvent<GridGroupEventDetail>} u-grid-group-change - After the grouping changed (user or API).
  * @fires {CustomEvent<GridGroupExpansionChangeEventDetail>} u-grid-group-expansion-change - After groups were expanded or collapsed (user or API).
+ * @fires {CustomEvent<GridFilterEventDetail>} u-grid-filter-change - After the user filtered (filter row, header filter, search panel) or `clearFilter()` ran.
+ * Setting `filterValue`/`searchText` does not fire it.
  * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard or double-click auto-size).
  * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
@@ -393,6 +436,12 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
  * @cssprop --u-grid-summary-background-color - Background of the totals footer and group footers. Default: the header background.
  * @cssprop --u-grid-summary-cell-font-weight - Font weight of summary cells. Default `500`.
+ * @cssprop --u-grid-filter-row-height - Height of the filter row. Default: `--u-grid-header-cell-height` (`46px`).
+ * @cssprop --u-grid-search-highlight-background-color - Background of the search matches in cells.
+ * @cssprop --u-grid-search-highlight-color - Text color of the search matches in cells.
+ * @cssprop --u-grid-header-filter-button-active-color - Color of the header filter button of a filtered column.
+ * @cssprop --u-grid-header-filter-background-color - Header filter popover background.
+ * @cssprop --u-grid-header-filter-shape - Header filter popover corner radius. Default `12px`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
  * @csspart group-row - Group header rows.
@@ -410,6 +459,14 @@ const columnIdOf = (column: GridColumnDef): number => {
  * @csspart summary-cell - Cells with summaries (footers and `display: 'column'` in group rows).
  * @csspart group-count - Count and inline summaries in a group row (`"(3, Sum of Population: 1,234)"`).
  * @csspart group-panel-menu - The group panel context menu.
+ * @csspart filter-row - The filter row (`<tr>`) below the column headers.
+ * @csspart filter-cell - Cells of the filter row.
+ * @csspart filter-editor - Editors (inputs and selects) of the filter row.
+ * @csspart filter-operation-button - The operation button of a filter row cell.
+ * @csspart search-input - The search panel input.
+ * @csspart header-filter-button - The funnel button in a column header (`header-filter`).
+ * @csspart header-filter - The header filter popover.
+ * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
  */
 @customElement('u-grid')
 export class DataGrid extends LitElement {
@@ -460,12 +517,24 @@ export class DataGrid extends LitElement {
     // Totais acompanham o conjunto de linhas (o filtro da frente 04 também
     // tem de ligar isto); a ordem não muda o resultado.
     this.#totalsDirty = true;
+    this.#allConvert.clear();
+    this.#filtering.invalidate();
     this.#autoWidthDirty = true;
     this.#layoutDirty = true;
   }
 
-  /** `items` na ordem da ordenação atual (o próprio `items` sem ordenação). */
+  /** `items` filtrados, na ordem da ordenação atual (o próprio `items` sem filtro nem ordenação). */
   #sortedItems: readonly any[] = [];
+  /**
+   * Índices de `items` na ordem da ordenação (`null` = sem ordenação,
+   * `undefined` = por calcular). Só fica guardado com filtro ativo (mudar o
+   * filtro não reordena); sem filtro é solto depois de montar `#sortedItems`
+   * (4 bytes por linha a menos).
+   */
+  #sortOrder: Int32Array | null | undefined;
+  /** Máscara do filtro aplicada em `#sortedItems` (`null` = sem filtro). */
+  #appliedMask: Uint8Array | null = null;
+  #viewDirty = true;
   /** Postos por coluna para os `items` e o idioma atuais (inverter a direção não reordena textos). */
   readonly #rankCache: RankCache = new Map();
   #groups: GroupNode[] = [];
@@ -476,6 +545,8 @@ export class DataGrid extends LitElement {
   #modelLanguage: string | undefined;
   /** `dataType` efetivo (informado ou inferido dos itens) por coluna. */
   readonly #dataTypes = new Map<GridColumnDef, GridColumnDataType | undefined>();
+  /** Por coluna: todo valor converte no tipo (atalho da busca); vale para os `items` atuais. */
+  readonly #allConvert = new Map<GridColumnDef, boolean>();
   #hasWrap = false;
   #measuredWrap = false;
   /**
@@ -613,6 +684,50 @@ export class DataGrid extends LitElement {
    * groups. Default `true`; `group-panel-menu="false"` disables it.
    */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'group-panel-menu' }) groupPanelMenu = true;
+  // ---------------------------------------------------------------- filtro
+
+  /** Shows the filter row below the column headers (an editor and an operation menu per filterable column). */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-filter-row' }) showFilterRow = false;
+
+  /** Shows the search box in the bar above the table (searches the displayed text of the visible filterable columns). */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-search-panel' }) showSearchPanel = false;
+
+  /** Shows a filter button in the headers of filterable columns: a popover with the distinct values. */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'header-filter' }) headerFilter = false;
+
+  /**
+   * Column filter (property only): a serializable expression such as
+   * `[['age', '>', 30], 'and', ['name', 'contains', 'an']]`. The filter row
+   * and the header filter read and write it, so it always holds the current
+   * filter. The grid keeps a frozen copy (never the host array). Setting it
+   * does not fire `u-grid-filter-change`.
+   */
+  @property({ attribute: false })
+  get filterValue(): GridFilterExpression | null {
+    return this.#filtering.filterValue;
+  }
+
+  set filterValue(value: GridFilterExpression | null | undefined) {
+    this.#filterRow.discardDrafts();
+    this.#filtering.set(value, this.#filtering.searchText);
+  }
+
+  /** Text of the search panel (case and accent insensitive). Setting it does not fire `u-grid-filter-change`. */
+  @property({ attribute: 'search-text' })
+  get searchText(): string {
+    return this.#filtering.searchText;
+  }
+
+  set searchText(value: string | null | undefined) {
+    this.#search.discardDraft();
+    this.#filtering.set(this.#filtering.filterValue, value ?? '');
+  }
+
+  /** Último gesto de filtro aguardando a contagem para anunciar. */
+  #announceFilter = false;
+  #searchColumnsKey = '';
+  #searchMatcherText = '';
+  #searchMatcher: RegExp | null = null;
 
   // -------------------------------------------------------- recursos de coluna
 
@@ -750,6 +865,10 @@ export class DataGrid extends LitElement {
   readonly #resize = new ColumnResizeController(this);
   readonly #chooser = new ColumnChooserController(this);
   readonly #groupMenu = new GroupPanelMenuController(this);
+  readonly #filtering = new FilteringController(this);
+  readonly #filterRow = new FilterRowController(this);
+  readonly #headerFilterPopover = new HeaderFilterController(this);
+  readonly #search = new SearchController(this);
   #resizeObserver: ResizeObserver | undefined;
 
   /**
@@ -787,10 +906,28 @@ export class DataGrid extends LitElement {
       columnState: this.#userWidths.size + this.#userVisible.size + this.#userFixed.size
         + this.#autoWidths.size + this.#renderedWidths.size + this.#hostOptions.size,
       chooserDropzones: this.#chooser.dropzones,
+      filterRowState: this.#filterRow.size,
+      filterTimers: this.#filterRow.timers + this.#search.timers + (this.#filtering.pending ? 1 : 0),
+      headerFilterOpen: this.#headerFilterPopover.open ? 1 : 0,
     };
   }
 
   // ----------------------------------------------------------- ciclo de vida
+
+  /**
+   * Também espera a filtragem em fatias de um `items` grande.
+   * @internal
+   */
+  protected override async getUpdateComplete(): Promise<boolean> {
+    let result = await super.getUpdateComplete();
+
+    while (this.#filtering.pending) {
+      await this.#filtering.pending;
+      result = await super.getUpdateComplete();
+    }
+
+    return result;
+  }
 
   override connectedCallback() {
     super.connectedCallback();
@@ -1168,6 +1305,23 @@ export class DataGrid extends LitElement {
     }
   }
 
+  /** Removes every filter: `filterValue` and `searchText`. Fires `u-grid-filter-change` (`source: 'api'`) when something changed. */
+  clearFilter(): void {
+    this.#filterRow.discardDrafts();
+    this.#search.discardDraft();
+    this.#changeFilter(null, '', 'api');
+  }
+
+  /**
+   * The effective filter: `filterValue` `and` the search, as an expression
+   * (copy). The search becomes `[path, 'contains', text]` joined by `or`
+   * over the visible filterable columns (number and date columns included:
+   * `contains` matches their displayed text). `null` without filter.
+   */
+  getCombinedFilter(): GridFilterExpression | null {
+    return this.#filtering.combined();
+  }
+
   /** Opens the column chooser (also without the `column-chooser` button). */
   openColumnChooser(): void {
     this.#chooser.show();
@@ -1221,7 +1375,9 @@ export class DataGrid extends LitElement {
       this.#totalsDirty = true;
       this.#groupsDirty ||= this.#groupSpecs.length > 0;
       this.#dataTypes.delete(column);
+      this.#allConvert.delete(column);
       this.#rankCache.delete(column);
+      this.#filtering.invalidate();
       this.#sortDirty ||= grouped || this.#sorting.some(spec => spec.column === column);
     }
 
@@ -1257,6 +1413,7 @@ export class DataGrid extends LitElement {
 
     // Colunas reatribuídas podem trazer outro `path` no mesmo objeto.
     this.#rankCache.clear();
+    this.#filtering.invalidate();
     const known = new Set([...this._regularColumns, ...this._groupColumns]);
 
     for (const store of [this.#userWidths, this.#userVisible, this.#userFixed, this.#autoWidths, this.#renderedWidths, this.#hostOptions]) {
@@ -1299,6 +1456,8 @@ export class DataGrid extends LitElement {
       .forEach(column => group.splice(Math.min(column.groupIndex!, group.length), 0, column));
 
     this.#autoWidthDirty = true;
+    this.#filterRow.prune(defined);
+    this.#headerFilterPopover.closeIfRemoved(defined);
     this.#setColumnState(regular, group);
   }
 
@@ -1339,6 +1498,7 @@ export class DataGrid extends LitElement {
   #setColumnState(regular: GridColumnDef[], group: GridColumnDef[]): void {
     this.#dataTypes.clear();
     this.#summaryDirty = true;
+    this.#allConvert.clear();
 
     if (!sameItems(group, this._groupColumns)) {
       this._groupColumns = group;
@@ -1852,7 +2012,13 @@ export class DataGrid extends LitElement {
     return this.#groupSpecs.some(({ item }) => item.display === 'footer');
   }
 
-  /** items → ordenar → agrupar (+ resumos de grupo) → achatar; totais à parte. Cada etapa só refaz o que sujou. */
+  /**
+   * items → filtrar → ordenar → agrupar → achatar; cada etapa só refaz o que
+   * sujou. A ordenação é calculada sobre todos os `items` (índices, com os
+   * postos em cache) e o filtro é uma máscara alinhada a `items`: mudar o
+   * filtro não reordena, e o resultado é o mesmo de filtrar antes (a
+   * ordenação é estável).
+   */
   #ensureRows(): void {
     const language = this.#effectiveLanguage;
     const languageChanged = language !== this.#modelLanguage;
@@ -1860,6 +2026,7 @@ export class DataGrid extends LitElement {
 
     if (languageChanged) {
       this.#rankCache.clear();
+      this.#filtering.invalidate();
     }
 
     if (this.#summaryDirty || (languageChanged && (this.#totalSpecs.length || this.#groupSpecs.length))) {
@@ -1884,9 +2051,40 @@ export class DataGrid extends LitElement {
     }
 
     if (this.#sortDirty || (languageChanged && this.#sorting.length)) {
-      const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
-      this.#sortedItems = sortItems(this.#items, rowSorting, language, this.#rankCache);
+      this.#sortOrder = undefined;
       this.#sortDirty = false;
+      this.#viewDirty = true;
+    }
+
+    const searchColumnsKey = String(this._searchColumns().map(columnIdOf));
+
+    if (searchColumnsKey !== this.#searchColumnsKey) {
+      this.#searchColumnsKey = searchColumnsKey;
+      this.#filtering.searchColumnsChanged();
+    }
+
+    const mask = this.#filtering.maskFor(this.#items);
+
+    if (mask !== this.#appliedMask) {
+      this.#appliedMask = mask;
+      this.#viewDirty = true;
+      // Totais e resumos de grupo valem sobre as linhas FILTRADAS.
+      this.#totalsDirty = true;
+    }
+
+    if (this.#viewDirty) {
+      if (this.#sortOrder === undefined) {
+        const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+        this.#sortOrder = sortOrder(this.#items, rowSorting, language, this.#rankCache);
+      }
+
+      this.#sortedItems = applyMask(this.#items, this.#sortOrder, mask);
+
+      if (!mask && this.#sortOrder) {
+        this.#sortOrder = undefined;
+      }
+
+      this.#viewDirty = false;
       this.#groupsDirty = true;
     }
 
@@ -1894,6 +2092,11 @@ export class DataGrid extends LitElement {
       // Sobre as linhas que o grid mostra (a ordem não muda o resultado).
       this.#totals = summarize(this.#sortedItems, this.#totalSpecs.map(({ spec }) => spec));
       this.#totalsDirty = false;
+    }
+
+    if (this.#announceFilter && !this.#filtering.pending) {
+      this.#announceFilter = false;
+      this.#announcement = formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#sortedItems.length) });
     }
 
     if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
@@ -1916,6 +2119,153 @@ export class DataGrid extends LitElement {
       // Alturas medidas (`wrap`) são por índice: outras linhas, outras alturas.
       this.#virtualizer.measure();
     }
+  }
+
+  // ----------------------------------------------------------------- filtro
+
+  /**
+   * Único ponto que muda o filtro por gesto ou método: dispara
+   * `u-grid-filter-change` depois (atribuir as propriedades não dispara).
+   */
+  #changeFilter(filterValue: GridFilterExpression | null, searchText: string, source: GridChangeSource): boolean {
+    const previousFilterValue = this.#filtering.filterValue;
+    const previousSearchText = this.#filtering.searchText;
+
+    if (!this.#filtering.set(filterValue, searchText)) {
+      return false;
+    }
+
+    if (source === 'user') {
+      this.#announceFilter = true;
+    }
+
+    this.dispatchEvent(new CustomEvent('u-grid-filter-change', this.#eventInit<GridFilterEventDetail>({
+      filterValue: this.#filtering.filterValue,
+      previousFilterValue,
+      searchText: this.#filtering.searchText,
+      previousSearchText,
+      source,
+    })));
+
+    return true;
+  }
+
+  /**
+   * Contexto do avaliador: colunas conhecidas, tipo efetivo e texto exibido.
+   * Colunas sintéticas (`path` sem coluna) não entram no cache de tipos.
+   * @internal
+   */
+  _filterContext(): FilterContext {
+    const columns = [...this._regularColumns, ...this._groupColumns];
+    const known = new Set(columns);
+    const contexts = new Map<GridColumnDef, FormatContext>();
+    const { trueText, falseText } = this.#translation;
+    const language = this.language;
+    const dataTypeOf = (column: GridColumnDef) => known.has(column)
+      ? this.#dataTypeOf(column)
+      : resolveDataType(this.#items, column);
+
+    const contextOf = (column: GridColumnDef): FormatContext => {
+      let context = contexts.get(column);
+
+      if (!context) {
+        context = { language, dataType: dataTypeOf(column), trueText, falseText };
+        contexts.set(column, context);
+      }
+
+      return context;
+    };
+
+    return {
+      language,
+      columns,
+      dataTypeOf,
+      textOf: (item, column) => formatCell(item, column, contextOf(column)),
+      alphabetOf: column => displayAlphabet(column, contextOf(column), foldText),
+      allConvert: column => {
+        let all = this.#allConvert.get(column);
+
+        if (all === undefined) {
+          all = allValuesConvert(this.#items, column, dataTypeOf(column));
+
+          if (known.has(column)) {
+            this.#allConvert.set(column, all);
+          }
+        }
+
+        return all;
+      },
+    };
+  }
+
+  /**
+   * Colunas em que a busca procura: as visíveis (e agrupadas) filtráveis.
+   * @internal
+   */
+  _searchColumns(): GridColumnDef[] {
+    return [...this._groupColumns, ...this._visibleColumns].filter(isColumnFilterable);
+  }
+
+  /** @internal */
+  _columnDataType(column: GridColumnDef): GridColumnDataType | undefined {
+    return this.#dataTypeOf(column);
+  }
+
+  /** @internal */
+  _isFilterable(column: GridColumnDef): boolean {
+    return isColumnFilterable(column);
+  }
+
+  /**
+   * Gesto na linha de filtro ou no filtro do cabeçalho: troca (ou tira, com
+   * `null`) a condição da coluna, sem mexer no resto da expressão.
+   * @internal
+   */
+  _userFilterColumn(column: GridColumnDef, kind: ColumnFilterKind | 'all', condition: GridFilterCondition | null): void {
+    this.#changeFilter(replaceColumnCondition(this.#filtering.filterValue, column, kind, condition), this.#filtering.searchText, 'user');
+  }
+
+  /** @internal */
+  _userSearch(text: string): void {
+    this.#changeFilter(this.#filtering.filterValue, text, 'user');
+  }
+
+  /**
+   * Valores distintos da coluna para o filtro do cabeçalho, sobre as linhas
+   * que passam pelos OUTROS filtros (a própria condição do cabeçalho fica de
+   * fora, para dar para marcar de volta o que foi desmarcado).
+   * @internal
+   */
+  _distinctValues(column: GridColumnDef): DistinctValues {
+    const others = combineFilters(
+      replaceColumnCondition(this.#filtering.filterValue, column, 'header', null),
+      searchExpression(this.#filtering.searchText, this._searchColumns()),
+    );
+    let items: readonly unknown[] = this.#items;
+
+    try {
+      items = filterItems(items, compileFilter(others, this._filterContext()));
+    } catch {
+      // Expressão inválida (já avisada): valores de todas as linhas.
+    }
+
+    return distinctValues(items, column, {
+      language: this.language,
+      dataType: this.#dataTypeOf(column),
+      textOf: (item, target) => formatCell(item, target, this.#formatContext(target)),
+    });
+  }
+
+  /** Busca ativa: `RegExp` do destaque (recriada só quando o texto muda). */
+  #highlightMatcher(): RegExp | null {
+    const text = this.#filtering.searchText;
+
+    if (text !== this.#searchMatcherText) {
+      this.#searchMatcherText = text;
+      this.#searchMatcher = text.trim() ? createTextMatcher(text) : null;
+    }
+
+    return this.#searchMatcher;
   }
 
   // -------------------------------------------------------------- ordenação
@@ -2183,7 +2533,7 @@ export class DataGrid extends LitElement {
     const window = virtualizer.renderWindow();
 
     const layout = this.#columnLayout();
-    const headerRows = this.showColumnHeaders ? 1 : 0;
+    const headerRows = (this.showColumnHeaders ? 1 : 0) + (this.showFilterRow ? 1 : 0);
     const footerRows = this.#totalSpecs.length ? 1 : 0;
     const classes = {
       striped: this.striped,
@@ -2217,6 +2567,10 @@ export class DataGrid extends LitElement {
           </table>
         </div>
         ${this.#chooser.open ? this.#renderColumnChooser() : nothing}
+        ${this.headerFilter ? renderHeaderFilter(this.#headerFilterPopover, this.#translation) : nothing}
+        ${this.#filterRow.menuColumn
+          ? renderFilterMenu(this.#filterRow, this.#filterRow.menuColumn, this.#dataTypeOf(this.#filterRow.menuColumn), this.#translation)
+          : nothing}
       </div>
       ${this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">${this.#announcement}</div>
@@ -2243,15 +2597,48 @@ export class DataGrid extends LitElement {
   }
 
   #renderColumnHeaders(layout: ColumnLayout[]) {
-    if (!this.showColumnHeaders) {
+    if (!this.showColumnHeaders && !this.showFilterRow) {
       return nothing;
     }
 
-    const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
-    const showIndex = rowSorting.length > 1;
-
     return html`
       <thead role="rowgroup">
+        ${this.showColumnHeaders ? this.#renderHeaderRow(layout) : nothing}
+        ${this.showFilterRow ? this.#renderFilterRow(layout) : nothing}
+      </thead>
+    `;
+  }
+
+  /** Linha de filtro: um editor por coluna visível filtrável. */
+  #renderFilterRow(layout: ColumnLayout[]) {
+    const translation = this.#translation;
+
+    return html`
+      <tr class="filter-row" part="filter-row" role="row" aria-rowindex=${this.showColumnHeaders ? 2 : 1}>
+        ${map(this._groupColumns, (_, index) => html`
+          <td
+            role="presentation"
+            class="group-column sticky-cell"
+            style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+        ${map(layout, (cell, index) => renderFilterCell({
+          controller: this.#filterRow,
+          column: cell.column,
+          dataType: this.#dataTypeOf(cell.column),
+          filterable: isColumnFilterable(cell.column),
+          translation,
+          className: cell.className,
+          style: cell.style,
+          colIndex: index + 1,
+        }))}
+      </tr>`;
+  }
+
+  #renderHeaderRow(layout: ColumnLayout[]) {
+    const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+    const showIndex = rowSorting.length > 1;
+    const filterValue = this.#filtering.filterValue;
+
+    return html`
         <tr id="header-columns-row" role="row" aria-rowindex="1">
           ${map(this._groupColumns, (_, index) => html`
             <th
@@ -2274,11 +2661,13 @@ export class DataGrid extends LitElement {
               onPointerDown: this.#onSortPointerDown,
               onKeyDown: cell.resizable ? (event: KeyboardEvent) => this.#resize.keyDown(event, column, true) : undefined,
               trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
+              filterButton: this.headerFilter && isColumnFilterable(column)
+                ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation)
+                : nothing,
+              filtered: hasColumnCondition(filterValue, column),
             });
           })}
-        </tr>
-      </thead>
-    `;
+        </tr>`;
   }
 
   #renderResizeHandle({ column, bounds, width }: ColumnLayout) {
@@ -2454,6 +2843,8 @@ export class DataGrid extends LitElement {
   }
 
   #renderDataRowCells(row: DataRow, layout: ColumnLayout[]) {
+    const matcher = this.#highlightMatcher();
+
     return html`
       ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
       ${map(layout, (cell, index) => html`
@@ -2462,13 +2853,22 @@ export class DataGrid extends LitElement {
           class=${cell.cellClassName}
           style=${cell.style}
           role="gridcell"
-          aria-colindex="${index + 1}">${renderDataCell(this, row, cell.column, cell.id, cell.format)}</td>`)}
+          aria-colindex="${index + 1}">${this.#renderCellContent(row, cell, matcher)}</td>`)}
     `;
   }
 
-  /** Barra acima da tabela: painel de grupos e/ou botão do seletor de colunas. */
+  /** Conteúdo da célula, com os trechos da busca destacados (só texto nativo). */
+  #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null) {
+    const content = renderDataCell(this, row, cell.column, cell.id, cell.format);
+
+    return matcher && typeof content === 'string' && isColumnFilterable(cell.column)
+      ? renderHighlighted(content, matcher)
+      : content;
+  }
+
+  /** Barra acima da tabela: painel de grupos, busca e/ou botão do seletor de colunas. */
   #renderToolbar() {
-    if (!this.showGroupPanel && !this.columnChooser) {
+    if (!this.showGroupPanel && !this.columnChooser && !this.showSearchPanel) {
       return nothing;
     }
 
@@ -2476,7 +2876,8 @@ export class DataGrid extends LitElement {
 
     return html`
       <div class="header">
-        ${this.showGroupPanel ? this.#renderGroupPanel() : nothing}
+        ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
+        ${this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing}
         ${this.columnChooser
           ? html`
             <button
@@ -2690,5 +3091,6 @@ declare global {
     'u-grid-column-fixed-change': CustomEvent<GridColumnFixedChangeEventDetail>;
     'u-grid-group-change': CustomEvent<GridGroupEventDetail>;
     'u-grid-group-expansion-change': CustomEvent<GridGroupExpansionChangeEventDetail>;
+    'u-grid-filter-change': CustomEvent<GridFilterEventDetail>;
   }
 }

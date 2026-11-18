@@ -288,6 +288,53 @@ export const booleanIconValue = (value: unknown, column: GridColumnDef, context:
   return typeof coerced === 'boolean' ? coerced : undefined;
 };
 
+/**
+ * Caracteres (sem caixa/acento, por `fold`) que o texto formatado de um valor
+ * do tipo da coluna pode ter: amostras do formatador cobrem dígitos,
+ * separadores, sinais, símbolos, nomes de meses e AM/PM. `undefined` quando o
+ * texto depende do item (`displayValue`, `format` função) ou é texto livre.
+ * Usado pela busca para pular colunas de número/data em termos com letras.
+ */
+export const displayAlphabet = (
+  column: GridColumnDef,
+  context: FormatContext,
+  fold: (text: string) => string,
+): Set<string> | undefined => {
+
+  if (column.displayValue || typeof column.format === 'function') {
+    return undefined;
+  }
+
+  const samples: string[] = [column.emptyText ?? ''];
+  const { dataType, language } = context;
+
+  if (dataType === 'number') {
+    const formatter = getNumberFormat(language, column.format ?? undefined);
+
+    for (const sample of [-1234567890.125, 0.5, 9.87e21, -0.000001234, 0]) {
+      samples.push(formatter.format(sample));
+    }
+  } else if (dataType === 'date' || dataType === 'datetime') {
+    const fallback = dataType === 'date' ? DEFAULT_DATE : DEFAULT_DATETIME;
+    const formatter = getDateTimeFormat(language, column.format ?? fallback, fallback);
+
+    for (let month = 0; month < 12; month++) {
+      for (const day of [1, 10, 20, 28]) {
+        for (const hour of [0, 13]) {
+          samples.push(formatter.format(new Date(2024, month, day, hour, 5, 7)));
+          samples.push(formatter.format(new Date(1999, month, day + 1, hour + 9, 48, 59)));
+        }
+      }
+    }
+  } else if (dataType === 'boolean') {
+    samples.push(context.trueText, context.falseText);
+  } else {
+    return undefined;
+  }
+
+  return new Set(Array.from(fold(samples.join(''))));
+};
+
 /** Texto exibido da célula de `item` na coluna. */
 export const formatCell = (item: unknown, column: GridColumnDef, context: FormatContext): string =>
   formatCellValue(getCellValue(item, column), item, column, context);

@@ -28,6 +28,34 @@ export type GridColumnFormatter<TItem = any> = (value: unknown, item: TItem) => 
 /** `Intl` number/date options or a formatter function. */
 export type GridColumnFormat<TItem = any> = Intl.NumberFormatOptions | Intl.DateTimeFormatOptions | GridColumnFormatter<TItem>;
 
+/**
+ * Filter operation of a condition. Text operations (`contains`, `notcontains`,
+ * `startswith`, `endswith`) and `=` on text ignore case and accents.
+ */
+export type GridFilterOperation =
+  | '=' | '<>' | '<' | '<=' | '>' | '>='
+  | 'contains' | 'notcontains' | 'startswith' | 'endswith'
+  | 'between' | 'anyof' | 'noneof' | 'isblank' | 'isnotblank';
+
+/**
+ * One condition: `[path, operation, value]`. `path` is the column `path`;
+ * `between` takes `[start, end]` (inclusive, either may be `null`), `anyof` /
+ * `noneof` take a list, `isblank` / `isnotblank` take no value.
+ */
+export type GridFilterCondition =
+  | readonly [path: string, operation: GridFilterOperation, value?: unknown]
+  | readonly [path: string, value: unknown];
+
+/**
+ * Serializable filter expression (same shape as DevExtreme): a condition, a
+ * negation `['!', expression]` or a group of expressions joined by `'and'` /
+ * `'or'` (`and` binds tighter; two expressions in a row mean `and`).
+ */
+export type GridFilterExpression =
+  | GridFilterCondition
+  | readonly ['!', GridFilterExpression]
+  | readonly (GridFilterExpression | 'and' | 'or')[];
+
 /** Side a column is fixed to (logical: mirrors in RTL). */
 export type GridColumnFixed = 'start' | 'end' | null;
 
@@ -73,6 +101,19 @@ export interface GridColumnDef<TItem = any> {
   sortIndex?: number | null;
   /** Custom ascending comparator. */
   comparator?: GridColumnComparator<TItem> | null;
+  /**
+   * Allows filtering by this column (filter row, header filter and, by
+   * default, the search panel). Default: `true` when the column has a `path`
+   * (the filter expression refers to columns by `path`).
+   */
+  filterable?: boolean | null;
+  /**
+   * Operations offered in the filter row operation menu (only the menu: the
+   * header filter and `filterValue` are not checked). Default by data type.
+   */
+  filterOperations?: readonly GridFilterOperation[] | null;
+  /** Operation of the filter row editor. Default: `contains` for text, `=` otherwise (or the first of `filterOperations`). */
+  defaultFilterOperation?: GridFilterOperation | null;
   /** `false` prevents resizing this column even with `column-resizing`. */
   resizable?: boolean | null;
   /** Maximum width in px when resizing and auto-sizing. */
@@ -176,3 +217,10 @@ export const isColumnGroupable = (column: GridColumnDef): boolean =>
  */
 export const isColumnSortable = (column: GridColumnDef): boolean =>
   column.sortable ?? (!!column.path || !!column.valueGetter || !!column.comparator);
+
+/**
+ * A coluna pode ser filtrada pelo usuário? (a expressão aponta a coluna pelo `path`)
+ * @internal
+ */
+export const isColumnFilterable = (column: GridColumnDef): boolean =>
+  !!column.path && column.filterable !== false;

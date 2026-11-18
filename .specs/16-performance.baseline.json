@@ -1,4 +1,18 @@
 {
+  "filter-100k": {
+    "filterTextMs": 37.1,
+    "filterNumberMs": 42,
+    "filterDateMs": 37.4,
+    "filterAnyOfMs": 31.4,
+    "searchMs": 158.6
+  },
+  "filter-1m": {
+    "typingWorstMs": 47.3,
+    "filterWorstMs": 49.3,
+    "filterMs": 162.6,
+    "searchWorstMs": 53.7,
+    "searchMs": 1185.6
+  },
   "flat-100k": {
     "firstRenderMs": 43.3,
     "scrollP95Ms": 10.9,

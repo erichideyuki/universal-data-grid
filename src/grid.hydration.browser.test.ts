@@ -13,7 +13,7 @@ import { commands } from 'vitest/browser';
 
 import type { DataGrid } from './grid.js';
 import { settle } from './test/fixture.js';
-import { hydrationScenarios, type HydrationScenarioName } from './test/hydration-scenarios.js';
+import { type HydrationScenario, hydrationScenarios, type HydrationScenarioName } from './test/hydration-scenarios.js';
 import { expectCollected, track, type Tracked } from './test/leak.js';
 
 declare module 'vitest/browser' {
@@ -46,7 +46,8 @@ const comments = (node: Node): number =>
 /** Monta o HTML do servidor e hidrata, como o pai faz: propriedades antes de conectar. */
 const hydrate = async (name: HydrationScenarioName): Promise<{ grid: DataGrid; ssrIndexes: number[] }> => {
   const html = await commands.renderGridSsr(name);
-  const { columns, items } = hydrationScenarios[name];
+  const scenario: HydrationScenario = hydrationScenarios[name];
+  const { columns, items } = scenario;
 
   const host = document.createElement('div');
   host.className = 'ssr-host';
@@ -58,6 +59,7 @@ const hydrate = async (name: HydrationScenarioName): Promise<{ grid: DataGrid; s
 
   grid.columns = columns;
   grid.items = items;
+  grid.filterValue = scenario.filter?.filterValue ?? null;
   document.body.append(host);
   await settle(grid);
 
@@ -77,6 +79,20 @@ describe('hidratação do SSR', () => {
     expect(indexes[0]).toBe(ssrIndexes[0]);
     expect(new Set(indexes).size).toBe(indexes.length);
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+  });
+
+  it('filtrado: linha de filtro, busca com destaque e funil hidratam sem erro', async () => {
+    const { grid, ssrIndexes } = await hydrate('filtered');
+    const root = grid.shadowRoot!;
+
+    expect(errors).toEqual([]);
+    expect(ssrIndexes.length).toBeGreaterThan(0);
+    expect(rowIndexes(grid)[0]).toBe(ssrIndexes[0]);
+    expect(root.querySelector<HTMLInputElement>('.search-input')!.value).toBe('bra');
+    expect(root.querySelector('mark.search-highlight')!.textContent.toLowerCase()).toBe('bra');
+    expect(root.querySelectorAll('.header-filter-button')).toHaveLength(4);
+    expect(root.querySelector('tr.filter-row .filter-editor')).not.toBeNull();
+    expect(grid.getCombinedFilter()).not.toBeNull();
   });
 
   it('ar: a direção e os textos traduzidos sobrevivem à hidratação', async () => {

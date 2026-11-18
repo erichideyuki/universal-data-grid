@@ -1,4 +1,4 @@
-import type { GridColumnDef } from '../grid-column-def.js';
+import type { GridColumnDef, GridFilterExpression } from '../grid-column-def.js';
 
 /**
  * Cenários de hidratação: o mesmo `<u-grid>` renderizado no servidor
@@ -11,6 +11,8 @@ export interface HydrationScenario {
   dir?: 'ltr' | 'rtl';
   columns: GridColumnDef[];
   items: Record<string, unknown>[];
+  /** Linha de filtro, busca e funil ligados, com `filterValue`/`searchText` iniciais. */
+  filter?: { filterValue: GridFilterExpression; searchText: string };
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -44,6 +46,7 @@ export const hydrationScenarios = {
   pt: { language: 'pt', columns, items },
   ar: { language: 'ar', dir: 'rtl', columns: fixedColumns, items },
   empty: { language: 'pt', columns, items: [] },
+  filtered: { language: 'en', columns, items, filter: { filterValue: ['year', '>=', 1990], searchText: 'bra' } },
 } satisfies Record<string, HydrationScenario>;
 
 export type HydrationScenarioName = keyof typeof hydrationScenarios;

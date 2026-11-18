@@ -105,9 +105,35 @@ export const sortItems = <T>(
   language?: string,
   cache?: RankCache,
 ): readonly T[] => {
+  const order = sortOrder(items, sorting, language, cache);
+
+  if (!order) {
+    return items;
+  }
+
+  const sorted = new Array<T>(order.length);
+
+  for (let i = 0; i < order.length; i++) {
+    sorted[i] = items[order[i]];
+  }
+
+  return sorted;
+};
+
+/**
+ * Como {@link sortItems}, mas devolve os ÍNDICES de `items` na ordem (ou
+ * `null` sem ordenação). O grid filtra por uma máscara alinhada a `items`
+ * sem refazer a ordenação a cada mudança de filtro.
+ */
+export const sortOrder = (
+  items: readonly unknown[],
+  sorting: readonly SortSpec[],
+  language?: string,
+  cache?: RankCache,
+): Int32Array | null => {
 
   if (!sorting.length || items.length < 2) {
-    return items;
+    return null;
   }
 
   const keys = sorting.map(spec => prepareKey(items, spec, language, cache));
@@ -139,11 +165,5 @@ export const sortItems = <T>(
     });
   }
 
-  const sorted = new Array<T>(order.length);
-
-  for (let i = 0; i < order.length; i++) {
-    sorted[i] = items[order[i]];
-  }
-
-  return sorted;
+  return order;
 };

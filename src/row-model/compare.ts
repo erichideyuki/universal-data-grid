@@ -30,6 +30,27 @@ const getCollator = (language: string | undefined, numeric = true): Intl.Collato
   return collator;
 };
 
+/**
+ * Collator que ignora caixa e acento (`sensitivity: 'base'`), para os
+ * operadores de ordem do filtro em texto. Mesmo cache limitado.
+ */
+export const getBaseCollator = (language: string | undefined): Intl.Collator => {
+  const key = `b:${language ?? ''}`;
+  let collator = collators.get(key);
+
+  if (!collator) {
+    try {
+      collator = new Intl.Collator(language, { numeric: true, sensitivity: 'base' });
+    } catch {
+      collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    collators.set(key, collator);
+  }
+
+  return collator;
+};
+
 const compareCodeUnits = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 

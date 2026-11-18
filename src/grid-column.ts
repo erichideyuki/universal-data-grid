@@ -1,7 +1,7 @@
 import { LitElement, type PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
-import { booleanAttribute, type LegacyAttributes, optionalBooleanAttribute } from './attribute-converters.js';
+import { booleanAttribute, filterOperationAttribute, filterOperationsAttribute, type LegacyAttributes, optionalBooleanAttribute } from './attribute-converters.js';
 import type {
   GridColumnAlignment,
   GridColumnBooleanDisplay,
@@ -10,6 +10,7 @@ import type {
   GridColumnDef,
   GridColumnFixed,
   GridColumnFormat,
+  GridFilterOperation,
   GridSortOrder,
 } from './grid-column-def.js';
 
@@ -173,6 +174,27 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
    * `groupValueGetter`. Only limits the user: `groupColumn()` still works.
    */
   @property({ converter: optionalBoolean }) groupable: boolean | null = null;
+
+  /**
+   * Allows filtering by this column (filter row, header filter and, by
+   * default, the search panel). Default (`null`): `true` when the column has
+   * a `path`. `filterable="false"` disables it.
+   */
+  @property({ converter: optionalBoolean }) filterable: boolean | null = null;
+
+  /**
+   * Operations of the filter row operation menu. Attribute: space separated
+   * list (`filter-operations="contains startswith ="`); unknown tokens are
+   * ignored with a warning. Default by data type.
+   */
+  @property({ converter: filterOperationsAttribute, attribute: 'filter-operations' }) filterOperations: readonly GridFilterOperation[] | null = null;
+
+  /**
+   * Operation of the filter row editor. Default: `contains` for text, `=`
+   * otherwise; one outside `filterOperations` falls back to the first of the
+   * list. Unknown attribute values are ignored with a warning.
+   */
+  @property({ converter: filterOperationAttribute, attribute: 'default-filter-operation' }) defaultFilterOperation: GridFilterOperation | null = null;
 
   override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
     const renamed = LEGACY_ATTRIBUTES[name];

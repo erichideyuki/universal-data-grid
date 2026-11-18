@@ -15,7 +15,7 @@ import '../grid.js';
  */
 export const renderScenario = (name: HydrationScenarioName): Promise<string> => {
   const scenario: HydrationScenario = hydrationScenarios[name];
-  const { language, dir, columns, items } = scenario;
+  const { language, dir, columns, items, filter } = scenario;
 
   // Como o demo (`dev/dev-root.ts`): agrupado, ordenação múltipla, redimensionar, seletor.
   return collectResult(render(html`
@@ -27,6 +27,11 @@ export const renderScenario = (name: HydrationScenarioName): Promise<string> => 
       sorting="multiple"
       column-resizing
       column-chooser
+      ?show-filter-row=${!!filter}
+      ?show-search-panel=${!!filter}
+      ?header-filter=${!!filter}
+      search-text=${ifDefined(filter?.searchText)}
+      .filterValue=${filter?.filterValue ?? null}
       .columns=${columns}
       .items=${items}></u-grid>`));
 };

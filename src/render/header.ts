@@ -26,6 +26,10 @@ export interface HeaderCellContext {
   onKeyDown?: (event: KeyboardEvent) => void;
   /** Conteúdo depois do rótulo (alça de redimensionar). */
   trailing?: TemplateResult | typeof nothing;
+  /** Botão do filtro do cabeçalho (funil), depois da seta de ordenação. */
+  filterButton?: TemplateResult | typeof nothing;
+  /** A coluna tem filtro (classe `filtered`). */
+  filtered?: boolean;
 }
 
 const ariaSort = (order: GridSortOrder | undefined): 'ascending' | 'descending' | 'none' =>
@@ -66,9 +70,11 @@ export const renderHeaderCell = ({
   onPointerDown,
   onKeyDown,
   trailing = nothing,
+  filterButton = nothing,
+  filtered = false,
 }: HeaderCellContext): TemplateResult => html`
   <th
-    class="header-column ${classMap({ ...classes, sortable, sorted: !!order })}"
+    class="header-column ${classMap({ ...classes, sortable, sorted: !!order, filtered })}"
     style=${styleMap(styles)}
     part="header-cell"
     role="columnheader"
@@ -87,5 +93,5 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text">${column.label}</span>${renderSortIndicator(order, sortIndex)}</span>${trailing}
+    <span class="header-content"><span class="header-text">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}
   </th>`;

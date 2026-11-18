@@ -64,7 +64,9 @@ async function createServer() {
     })
 
     // Só na própria máquina: o middleware do Vite serve arquivos do projeto.
-    app.listen(5173, 'localhost', () => console.log('http://localhost:5173'));
+    // `PORT` permite um servidor por worktree (sessões em paralelo).
+    const port = Number(process.env.PORT) || 5173;
+    app.listen(port, 'localhost', () => console.log(`http://localhost:${port}`));
 }
 
 createServer()
