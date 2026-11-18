@@ -606,8 +606,8 @@ describe('árvore: colunas ocultas por espaço (frente 21)', () => {
     expect(grid.getAdaptiveColumns().length).toBeGreaterThan(0);
     const all = [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody.body-rows > tr[role=row]')];
     const kinds = all.slice(0, 4).map(tr => tr.classList.contains('detail-row') ? `detail:${tr.getAttribute('aria-level')}` : `node:${tr.getAttribute('aria-level')}`);
-    // a, detalhe de a, a1, detalhe de a1.
-    expect(kinds).toEqual(['node:1', 'detail:1', 'node:2', 'detail:2']);
+    // a, detalhe de a (no nível dos filhos: a está expandido), a1, detalhe de a1 (folha: no nível dela).
+    expect(kinds).toEqual(['node:1', 'detail:2', 'node:2', 'detail:2']);
     expect(tree(grid).filter(name => name.trim())
       .slice(0, 4)).toEqual(['a', '  a1', '  a2', '    a2x']);
 
@@ -619,6 +619,49 @@ describe('árvore: colunas ocultas por espaço (frente 21)', () => {
     await settle(grid);
     const after = [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody.body-rows > tr[role=row]')].slice(0, 2);
     expect(after.map(tr => tr.classList.contains('detail-row'))).toEqual([false, false]);
+  });
+
+  it('teclado e foco: ↓ passa por nó → detalhe → filho; recolher o ancestral com o foco no detalhe de um descendente leva ao nó; axe em RTL', async () => {
+    const wide: GridColumnDef[] = [
+      { path: 'name', label: 'Name', width: 160 },
+      { path: 'size', label: 'Size', width: 160, dataType: 'number' },
+      { path: 'id', label: 'Id', width: 160 },
+      { path: 'parentId', label: 'Parent', width: 160 },
+    ];
+    const grid = await flatGrid(g => {
+      g.style.width = '420px';
+      g.autoHideColumns = true;
+      g.autoExpandNodes = true;
+      g.autoExpandRows = true;
+    }, wide);
+    await settle(grid);
+    await settle(grid);
+
+    treeCell(grid, 'a').focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    expect(root(grid).activeElement?.closest('tr')?.classList.contains('detail-row')).toBe(true);
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    expect(root(grid).activeElement).toBe(treeCell(grid, 'a1'));
+
+    // Foco no detalhe de a2x (descendente de a); recolher a.
+    const a2x = treeCell(grid, 'a2x').closest('tr')!;
+    (a2x.nextElementSibling!.querySelector('[tabindex]')!).focus();
+    await settle(grid);
+    grid.collapseNode(1);
+    await settle(grid);
+    expect(root(grid).activeElement).toBe(treeCell(grid, 'a'));
+
+    // Célula de expansão: nome e estado na célula, botão oculto.
+    const toggleCell = treeCell(grid, 'a').closest('tr')!.querySelector('td.detail-toggle-cell')!;
+    expect(toggleCell.getAttribute('aria-label')).toBe('Row details');
+    expect(toggleCell.querySelector('button')!.getAttribute('aria-hidden')).toBe('true');
+
+    grid.dir = 'rtl';
+    await settle(grid);
+    const result = await axe.run(grid);
+    expect(result.violations.map(violation => violation.id)).toEqual([]);
   });
 
   it('parts compostos: rodapé de nó com summary-row e footer-row; resumo column é summary-cell', async () => {

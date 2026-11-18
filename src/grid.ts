@@ -2640,17 +2640,21 @@ export class DataGrid extends LitElement {
     const active = this.#rowAt(this.#activeRowIndex);
     const view = this.#treeView;
 
-    if (!view || !active || !isDataRowLike(active) || !active.tree) {
+    // Linha adaptativa (detalhe) conta como o nó mestre dela.
+    const activeTree = active && (isDataRowLike(active) || isDetailRow(active)) ? active.tree : undefined;
+
+    if (!view || !active || !activeTree) {
       return;
     }
 
-    let up = active.tree.node;
+    let up = activeTree.node;
 
     if (up < 0) {
       // Esqueleto da carga: é "filho" do nó que carrega.
       const index = this.#tree.index;
       up = index && active.key === `s:tree:${this.#rowKeyText(index.nodes[node])}` ? node : -1;
     } else {
+      // O próprio nó (ou o detalhe dele, que continua visível): nada se move.
       if (up === node) {
         return;
       }
@@ -2694,7 +2698,9 @@ export class DataGrid extends LitElement {
       const skeletonOwner = active && isDataRowLike(active) && active.key.startsWith('s:tree:')
         ? this.#nodeOfKeyText(active.key.slice('s:tree:'.length))
         : -1;
-      const from = skeletonOwner >= 0 ? skeletonOwner : isDataRow(active) && active.tree ? active.tree.node : -1;
+      const from = skeletonOwner >= 0
+        ? skeletonOwner
+        : (isDataRow(active) || isDetailRow(active)) && active.tree ? active.tree.node : -1;
 
       if (view && index && from >= 0) {
         let root = from;
@@ -15145,9 +15151,15 @@ export class DataGrid extends LitElement {
         return row.level + 2;
       }
 
-      // Linha adaptativa (detalhe) no nível do nó mestre.
+      // Linha adaptativa (detalhe): com o nó expandido e com filhos, no nível dos filhos (senão eles
+      // pareceriam filhos do detalhe); recolhido ou folha, no nível do nó.
       if (row.isDetail) {
-        return row.tree ? row.tree.level + 1 : 1;
+        if (!row.tree) {
+          return 1;
+        }
+
+        const opened = this.#treeView && childCount(this.#treeView, row.tree.node) > 0 && this.#nodeShownExpanded(row.tree.node);
+        return row.tree.level + (opened ? 2 : 1);
       }
 
       return isDataRowLike(row) && row.tree ? row.tree.level + 1 : 1;
@@ -15676,6 +15688,7 @@ export class DataGrid extends LitElement {
             aria-colindex="1"
             data-col="0"
             aria-expanded=${expanded ? 'true' : 'false'}
+            aria-label=${ifDefined(this.#treeOn ? this.#translation.rowDetails : undefined)}
             aria-invalid=${ifDefined(marks?.error ? 'true' : undefined)}
             aria-describedby=${ifDefined(marksDescription)}
             tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
@@ -15684,8 +15697,9 @@ export class DataGrid extends LitElement {
               part="detail-toggle-button"
               type="button"
               tabindex="-1"
-              aria-expanded=${expanded ? 'true' : 'false'}
-              aria-label=${this.#translation.rowDetails}
+              aria-hidden=${ifDefined(this.#treeOn ? 'true' : undefined)}
+              aria-expanded=${ifDefined(this.#treeOn ? undefined : expanded ? 'true' : 'false')}
+              aria-label=${ifDefined(this.#treeOn ? undefined : this.#translation.rowDetails)}
               @mousedown=${(event: MouseEvent) => event.preventDefault()}
               @click=${(event: MouseEvent) => {
                 // O foco fica na célula (ativa), não no botão: as setas seguem andando.

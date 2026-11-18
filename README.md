@@ -813,7 +813,9 @@ virtualization keep working; a million nodes expand, filter and scroll without f
 - **Not combined** with grouping (ignored, restored when `tree-mode` is back to `none`),
   master-detail (`detailRenderer`) or `rowRenderer`. Local paging pages the visible rows.
 - **Responsive columns** (`auto-hide-columns`) work in a tree: the adaptive row of a node comes
-  right below it and above its children, at the node's `aria-level`.
+  right below it and above its children (at the children's `aria-level` when the node is expanded,
+  else at the node's); in a tree the details toggle cell carries the name and state (its button is
+  hidden from assistive technology, like the tree button).
 
 **Data source.** With `tree-mode="flat"` and `dataSource`, the first load asks the roots
 (`options.tree = { parentKeys: [rootParentKey] }`) and expanding a node whose `hasChildrenExpr` is

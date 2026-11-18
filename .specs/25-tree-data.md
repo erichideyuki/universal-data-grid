@@ -252,10 +252,15 @@ BAIXA) — fica para depois, sem quebra.
 - `scrollMode: 'infinite'`: ignorado na árvore (aviso).
 - **Responsivo** (frente 21, `autoHideColumns`): vale na árvore, como no
   DevExtreme TreeList (`columnHidingEnabled`): a linha adaptativa do nó
-  fica logo abaixo dele e acima dos filhos, no `aria-level` do nó (aval do
-  usuário, 2026-11-18). O achatamento passa linhas de detalhe por trecho
+  fica logo abaixo dele e acima dos filhos (aval do usuário, 2026-11-18). O achatamento passa linhas de detalhe por trecho
   de irmãos (`pushTreeRun(..., details)`); `detailRenderer` segue
-  ignorado na árvore.
+  ignorado na árvore. Revisão de a11y: com o nó expandido e com filhos, o
+  detalhe fica no nível dos filhos (senão os filhos pareceriam do detalhe);
+  recolhido ou folha, no nível do nó. Na árvore, o nome e o estado do
+  detalhe ficam só na célula de expansão (botão `aria-hidden`, como o da
+  árvore), sem dois `aria-expanded` lidos no mesmo ponto. Foco no detalhe
+  de um descendente vai ao nó recolhido. 🔎 Roteiro manual NVDA/JAWS da
+  linha com os dois estados (árvore e detalhe).
 - Linhas fixas, intervalo de células, colunas fixas/bandas, virtualização
   de colunas: valem sem mudança (fixas e rodapé de totais com nível 1).
 
