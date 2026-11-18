@@ -23,7 +23,7 @@ export interface GridEditChange<TItem = any> {
 export interface GridValidationError<TItem = any> {
   /** The column of the value; `null` for a row error (`setError` without column). */
   column: GridColumnDef<TItem> | null;
-  /** The broken rule; `null` for errors set by `setError`. */
+  /** The broken rule; `null` for errors set by `setError` and for text that is not a number or a date. */
   rule: GridValidationRule<TItem> | null;
   /** Error text. */
   message: string;
@@ -244,6 +244,8 @@ export interface PendingRow {
   readonly unparsed: Map<GridColumnDef, UnparsedValue>;
   /** Erro por coluna. */
   readonly errors: Map<GridColumnDef, string>;
+  /** Regra que deu o erro da coluna (`u-grid-row-validating`); ausente = `setError` ou valor que não converte. */
+  readonly errorRules: Map<GridColumnDef, GridValidationRule>;
   /** Erro da linha (`setError` sem coluna). */
   rowError?: string;
 }
@@ -275,7 +277,7 @@ export class EditStore {
     let row = this.#rows.get(rowKey);
 
     if (!row) {
-      row = { type: 'update', rowKey, item, data: {}, modified: new Set(), unparsed: new Map(), errors: new Map() };
+      row = { type: 'update', rowKey, item, data: {}, modified: new Set(), unparsed: new Map(), errors: new Map(), errorRules: new Map() };
       this.#rows.set(rowKey, row);
     }
 
@@ -283,7 +285,7 @@ export class EditStore {
   }
 
   add(rowKey: unknown, data: Record<string, unknown>): PendingRow {
-    const row: PendingRow = { type: 'add', rowKey, item: {}, data, modified: new Set(), unparsed: new Map(), errors: new Map() };
+    const row: PendingRow = { type: 'add', rowKey, item: {}, data, modified: new Set(), unparsed: new Map(), errors: new Map(), errorRules: new Map() };
     this.#rows.set(rowKey, row);
     this.touch();
     return row;

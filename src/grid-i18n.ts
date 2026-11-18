@@ -117,7 +117,7 @@ export interface GridI18n {
   selectAll: string;
   /** Confirm button (header filter). */
   ok: string;
-  /** Cancel button (header filter). */
+  /** Cancel button (header filter, row editing, delete dialog). */
   cancel: string;
   /** Screen reader announcement after the user filters. `{count}` = rows that pass (no plural forms: keep it a label). */
   filteredAnnouncement: string;

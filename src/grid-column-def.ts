@@ -495,6 +495,8 @@ export interface GridEditorRenderContext<TItem = any> extends GridRenderContextB
 
 /**
  * Editor of a cell: focus goes to the first focusable element it renders.
+ * It runs when the editor opens and again when the validity of the value
+ * changes (`invalid`, `errorMessage`): keep the value in `setValue`.
  * The grid handles Enter, Tab and Esc unless the editor calls
  * `preventDefault()` on the `keydown` (a combobox that uses Enter).
  */
@@ -503,6 +505,7 @@ export type GridEditorRenderer<TItem = any> = (item: TItem, ctx: GridEditorRende
 /**
  * A coluna é editável (sem olhar o `allowEditing` do grid)? Padrão: com
  * `path` ou `valueSetter`.
+ * @internal
  */
 export const isColumnEditable = (column: GridColumnDef): boolean =>
   column.editable ?? (!!column.path || !!column.valueSetter);

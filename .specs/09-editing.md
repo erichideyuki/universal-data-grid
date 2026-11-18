@@ -76,18 +76,41 @@ a coluna de comandos já cobre o teclado).
   (padrão 0,7 + texto riscado).
 
 ## Comportamento
-- Editores embutidos por tipo: texto, número (respeita o separador decimal
-  do idioma), data (`<input type=date>`), booleano (caixa).
-- O grid NÃO altera o objeto do hospedeiro: guarda `changes`
-  (`{ type: 'insert'|'update'|'remove', key, data }`) e entrega no
-  `u-grid-saving`; o hospedeiro aplica (ou deixa o grid aplicar numa cópia
-  em `items` local com `applyChanges` da 08).
-- Modo célula: Enter/F2 edita, Enter confirma e desce, Tab vai à próxima
-  editável, Esc cancela. Modo linha: botões Salvar/Cancelar na linha. Lote:
-  células alteradas marcadas, barra "Salvar/Descartar".
-- Validação síncrona e assíncrona; célula inválida com borda de erro e
-  mensagem em tooltip; impede salvar.
-- Linha nova no topo da página visível; excluir com confirmação opcional.
+- Editores embutidos por tipo: texto, número (`inputmode=decimal`, separador
+  decimal do `language`), data (`date`/`datetime-local`, devolvido no tipo do
+  original), booleano (caixa 24×24); `editorRenderer` para editor próprio.
+- O grid NÃO altera o item nem o array do hospedeiro: guarda as mudanças por
+  chave (`GridEditChange { type: 'add'|'update'|'remove', rowKey, data?,
+  item? }`) e entrega no `u-grid-saving`; salvo, aplica numa cópia de
+  `items` (troca no lugar pelo índice do item velho — sem varrer 1 milhão de
+  chaves — ou o `#applyLocalChanges` da 08) ou por `applyChanges` com
+  `dataSource`. Alteradas ficam na posição (sem reordenar/refiltrar); novas
+  vão ao fim.
+- Modo célula: confirmar salva já (o foco anda depois do salvamento). Modo
+  linha: Editar/Excluir e Salvar/Cancelar na coluna de botões. Lote:
+  células alteradas marcadas, linhas novas/removidas marcadas, barra
+  "Salvar alterações/Descartar alterações".
+- Validação síncrona e assíncrona (corrida: digitar de novo aborta; resposta
+  velha ignorada; a espera corre contra o `abort`); mensagem visível abaixo
+  da célula; salvar bloqueado com "Linhas com erros: n" na barra.
+- Linha nova antes da 1ª linha visível (abaixo do que é fixo no topo);
+  excluir com confirmação (`<dialog>` modal) no modo célula/linha.
+- Durante um salvamento não se abre outro editor; o grid desconectado no
+  meio de uma validação não dispara `u-grid-saving`.
+
+## Decisões da implementação
+- Coluna de botões é uma coluna navegável no fim (`COMMAND_COLUMN`,
+  `cellType: 'command'`), com célula vazia nas linhas de filtro/resumo e
+  `colspan` nas de grupo.
+- Linhas novas entram por cima do row model (`RowsWithAdded`,
+  `src/row-model/added-rows.ts`): nada por linha; o `keyOf` reconhece o item
+  exibido delas por um `WeakMap` enquanto houver alguma.
+- Chave provisória: `Object.freeze({})`.
+- Sem `keyExpr` (com `items`) a chave é o objeto: depois de salvar,
+  seleção, expansão e foco passam do item velho para o novo.
+- Achados da revisão da implementação deixados para aval do usuário (API
+  nova): `part` para os botões do diálogo e para a mensagem da barra;
+  `--u-grid-command-column-width` (hoje 176px fixos).
 
 ## Acessibilidade (aprovada)
 - Teclado sem editor: Enter/F2 abre o editor da célula editável (foco no
@@ -135,20 +158,36 @@ a coluna de comandos já cobre o teclado).
 - `aria-busy` só na barra/botão Salvar enquanto salva.
 
 ## i18n
-`edit`, `save`, `cancel`, `delete`, `add`, `confirmDeleteMessage`,
-`saveChanges`, `discardChanges`, mensagens de cada regra de validação.
+36 chaves nos 14 idiomas: `editRow`, `saveRow`, `removeRow`, `restoreRow`,
+`addRow`, `saveChanges`, `discardChanges`, `commandColumn`,
+`confirmRemoveTitle`, `confirmRemoveMessage`, descrições
+(`addedRowDescription`, `removedRowDescription`, `modifiedCellDescription`),
+anúncios (`changesSavedAnnouncement`, `changesDiscardedAnnouncement`,
+`rowRemovedAnnouncement`, `rowMarkedForRemovalAnnouncement`,
+`rowRestoredAnnouncement`, `rowAddedAnnouncement`), `saveError`,
+`invalidRowsMessage`, `saving`, `validating`, `validationEscapeHint` e as
+mensagens das regras (`validationRequired`, `validationRange*`,
+`validationStringLength*`, `validationPattern`, `validationEmail`,
+`validationNumber`, `validationDate`, `validationInvalid`). `cancel` (do
+filtro) é reaproveitada.
 
 ## Fora de escopo
 Modos `form` e `popup` (fase D), desfazer/refazer (fase D), edição de
 intervalo colado (fase D).
 
 ## Arquivos
-`features/editing.ts`, `features/validation.ts`, `render/editors/*`,
-`render/cell.ts`.
+`features/editing.ts` (modelo de mudanças, valores dos editores),
+`features/validation.ts`, `render/editors.ts`, `row-model/added-rows.ts`,
+`grid.ts` (estado, teclado, render), `grid.styles.ts`, `grid-i18n.ts`.
 
 ## Testes
-Ciclo completo por modo; validação async com corrida (resposta antiga
-descartada); edição sobrevive à rolagem virtual; Tab pula não editáveis.
+`features/editing.test.ts` (dados, números/datas no idioma, regras),
+`editing.browser.test.ts` (ciclo por modo, teclado, validação async com
+corrida, inserir/excluir/diálogo, `waitUntil`, fonte de dados, rolagem
+virtual/filtro/ordenação, axe em LTR/RTL), `editing.memory.browser.test.ts`,
+SSR em `grid.ssr.test.ts` e o cenário `editing-1m` no perf (perfil fraco:
+abrir 6,5 ms, confirmar 6,3 ms, salvar lote de 100 em 1 milhão 31 ms,
+salvar célula 14 ms).
 
 ## Referência medida
 DevExtreme 26.1, demo "Cell Editing" (jQuery, 2026-11-18):

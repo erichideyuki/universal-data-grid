@@ -13,6 +13,8 @@ export interface BuiltInEditor {
   checked: boolean | null;
   /** Nome acessível (rótulo da coluna). */
   label: string;
+  /** Id do texto do cabeçalho (nome pelo cabeçalho, como a referência; vence `label`). */
+  labelledBy?: string;
   invalid: boolean;
   /** Ids para `aria-describedby` (erro, estado da linha). */
   describedBy: string;
@@ -35,7 +37,8 @@ export const renderBuiltInEditor = (editor: BuiltInEditor): TemplateResult => {
       class="cell-editor cell-editor-checkbox"
       part="cell-editor"
       type="checkbox"
-      aria-label=${editor.label}
+      aria-label=${ifDefined(editor.labelledBy || !editor.label ? undefined : editor.label)}
+      aria-labelledby=${ifDefined(editor.labelledBy)}
       aria-invalid=${editor.invalid ? 'true' : 'false'}
       aria-describedby=${ifDefined(describedBy)}
       .checked=${live(editor.checked === true)}
@@ -53,7 +56,8 @@ export const renderBuiltInEditor = (editor: BuiltInEditor): TemplateResult => {
     autocomplete="off"
     spellcheck=${editor.kind === 'text' ? 'true' : 'false'}
     placeholder=${ifDefined(editor.placeholder)}
-    aria-label=${editor.label}
+    aria-label=${ifDefined(editor.labelledBy || !editor.label ? undefined : editor.label)}
+    aria-labelledby=${ifDefined(editor.labelledBy)}
     aria-invalid=${editor.invalid ? 'true' : 'false'}
     aria-describedby=${ifDefined(describedBy)}
     .value=${live(editor.text)}

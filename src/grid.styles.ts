@@ -1646,21 +1646,26 @@ export const styles = css`
   /* Célula alterada (lote): fundo + marca no canto (não só cor, WCAG 1.4.1). */
   td:where(.grid-table > * > * > *).modified {
     background-color: var(--u-grid-modified-cell-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 10%, transparent));
-    background-image: linear-gradient(
-      to bottom left,
-      var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164))) 50%,
-      transparent 50%);
-    background-size: 8px 8px;
-    background-repeat: no-repeat;
-    background-position: top right;
   }
 
-  :host(:dir(rtl)) td.modified {
-    background-image: linear-gradient(
-      to bottom right,
-      var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164))) 50%,
-      transparent 50%);
-    background-position: top left;
+  td.modified:not(.fixed):not(.sticky-cell) {
+    position: relative;
+  }
+
+  /* Triângulo no canto final (bordas: espelha em RTL e sobrevive ao forced-colors). */
+  td.modified::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    border-block-start: 8px solid var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
+    border-inline-start: 8px solid transparent;
+    pointer-events: none;
+  }
+
+  /* Linha nova: barra no início (não só o fundo). */
+  tbody tr[role=row].added > td:first-child {
+    box-shadow: inset calc(3px * var(--_dir)) 0 0 0 var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164))), var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
   /* Célula inválida: borda de erro (cor + espessura). */
@@ -1669,9 +1674,14 @@ export const styles = css`
     outline-offset: -2px;
   }
 
+  /* Foco numa célula inválida: anel + faixa clara + borda de erro (o anel não encosta no vermelho). */
   td:where(.grid-table > * > * > *).invalid[tabindex]:focus-visible {
     outline: var(--_focus-ring);
-    box-shadow: inset 0 0 0 4px var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+    box-shadow:
+      inset 0 0 0 4px var(--u-color-surface, #fff),
+      inset 0 0 0 6px var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30))),
+      var(--_col-line),
+      var(--_row-line);
   }
 
   /* Mensagem visível e persistente abaixo da célula (acima, na última linha). */
@@ -1842,14 +1852,17 @@ export const styles = css`
   }
 
   @media (forced-colors: active) {
-    td.modified {
+    td.modified::after {
       forced-color-adjust: none;
-      background: Canvas;
-      background-image: linear-gradient(to bottom left, Highlight 50%, transparent 50%);
-      background-size: 8px 8px;
-      background-repeat: no-repeat;
-      background-position: top right;
-      color: CanvasText;
+      border-block-start-color: CanvasText;
+    }
+
+    tbody tr[role=row].selected > td.modified::after {
+      border-block-start-color: HighlightText;
+    }
+
+    tbody tr[role=row].added > td:first-child {
+      border-inline-start: 3px solid CanvasText;
     }
 
     td.invalid,

@@ -5,6 +5,7 @@
  */
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import { userEvent } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type {
@@ -101,7 +102,8 @@ describe('edição: modo célula', () => {
 
     const input = await openCell(grid, 1, 'name');
     expect(input.classList.contains('cell-editor')).toBe(true);
-    expect(input.getAttribute('aria-label')).toBe('Name');
+    // Nome pelo texto do cabeçalho (como a referência).
+    expect(root(grid).getElementById(input.getAttribute('aria-labelledby')!)?.textContent).toBe('Name');
 
     await type(grid, 'Alice');
     await press(grid, 'Enter');
@@ -306,10 +308,9 @@ describe('edição: validação', () => {
     await openCell(grid, 1, 'name');
     await type(grid, 'Old');
     await press(grid, 'Enter');
-    // Enter espera a resposta: o editor fica, com "Validando…" visível e aria-busy.
+    // Enter espera a resposta: o editor fica, com "Validando…" visível.
     const message = root(grid).querySelector('.validation-message:not([hidden])')!;
     expect(message.textContent).toContain('Validating');
-    expect(cell(grid, 0, 1).getAttribute('aria-busy')).toBe('true');
     expect(editorOf(grid)!.getAttribute('aria-describedby')).toContain(message.id);
 
     // Digitar de novo aborta a validação em curso.
@@ -712,5 +713,291 @@ describe('edição: ARIA e axe', () => {
     expect(root(grid).querySelector('.command-cell')).toBeNull();
     expect(root(grid).querySelector('[aria-readonly]')).toBeNull();
     expect(root(grid).querySelector('#edit-desc-added')).toBeNull();
+  });
+});
+
+/** Texto do anunciador (`role=status`). */
+const announced = (grid: DataGrid): string =>
+  root(grid).querySelector('[role="status"][aria-live]')?.textContent?.trim() ?? '';
+
+describe('edição: roteiro de teclado', () => {
+  it('Shift+Enter sobe; Enter na última linha fica; Tab na última editável fica na célula', async () => {
+    const grid = await editableGrid();
+
+    await openCell(grid, 3, 'name');
+    await type(grid, 'Up');
+    await press(grid, 'Enter', { shiftKey: true });
+    expect(focused(grid)).toBe(cell(grid, 1, 1));
+    expect(announced(grid)).toBe('Changes saved');
+
+    await openCell(grid, 4, 'name');
+    await press(grid, 'Enter');
+    expect(focused(grid)).toBe(cell(grid, 3, 1));
+    expect(editorOf(grid)).toBeNull();
+
+    await openCell(grid, 4, 'active');
+    await press(grid, 'Tab');
+    expect(focused(grid)).toBe(cell(grid, 3, 3));
+    expect(editorOf(grid)).toBeNull();
+
+    await openCell(grid, 1, 'name');
+    await press(grid, 'Tab', { shiftKey: true });
+    expect(focused(grid)).toBe(cell(grid, 0, 1));
+  });
+
+  it('Tab pula a linha marcada para remoção (lote)', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'batch';
+      g.allowRemoving = true;
+    });
+    await grid.removeRow(2);
+    await settle(grid);
+
+    await openCell(grid, 1, 'active');
+    await press(grid, 'Tab');
+    expect((focused(grid) as HTMLElement).closest('td')).toBe(cell(grid, 2, 1));
+  });
+
+  it('coluna de botões: Enter entra, Tab circula, Esc volta à célula', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'row';
+      g.allowRemoving = true;
+    });
+    grid.focusCell(1, grid.columns[3]);
+    await settle(grid);
+    await press(grid, 'ArrowRight');
+    const commands = cell(grid, 0, 4);
+    expect(focused(grid)).toBe(commands);
+    expect(commands.getAttribute('part')).toBe('command-cell');
+
+    await press(grid, 'Enter');
+    expect(focused(grid)?.textContent).toBe('Edit');
+    await press(grid, 'Tab');
+    expect(focused(grid)?.textContent).toBe('Delete');
+    await press(grid, 'Tab');
+    expect(focused(grid)?.textContent).toBe('Edit');
+    await press(grid, 'Escape');
+    expect(focused(grid)).toBe(commands);
+  });
+
+  it('modo linha: Enter no editor salva; Esc numa célula não editável da linha cancela', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'row';
+    });
+    const saving = record<GridSavingEventDetail>(grid, 'u-grid-saving');
+
+    await openCell(grid, 1, 'age');
+    await type(grid, '31');
+    await press(grid, 'Enter');
+    await settle(grid);
+    expect(saving[0].changes[0].data).toEqual({ age: 31 });
+    expect(root(grid).querySelector('.cell-editor')).toBeNull();
+
+    grid.editRow(2);
+    await settle(grid);
+    await type(grid, 'X');
+    cell(grid, 1, 0).focus();
+    await press(grid, 'Escape');
+    expect(root(grid).querySelector('.cell-editor')).toBeNull();
+    expect(cell(grid, 1, 1).textContent?.trim()).toBe('Bia');
+  });
+
+  it('booleano: Espaço de verdade alterna; clique na caixa alterna e confirma', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'batch';
+    });
+    const input = await openCell(grid, 2, 'active');
+    await userEvent.keyboard(' ');
+    await settle(grid);
+    expect(input.checked).toBe(true);
+    await press(grid, 'Enter');
+    expect(grid.getChanges()[0].data).toEqual({ active: true });
+
+    const box = await openCell(grid, 3, 'active');
+    await userEvent.click(box);
+    await settle(grid);
+    expect(editorOf(grid)).toBeNull();
+    expect(grid.getChanges()[1].data).toEqual({ active: false });
+  });
+
+  it('clique fora: válido confirma; inválido fica pendente marcado (aria-invalid)', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'id', label: 'Id', editable: false },
+        { path: 'name', label: 'Name', validationRules: [{ type: 'required' }] },
+      ],
+      items: people(),
+      configure: g => {
+        g.keyExpr = 'id';
+        g.allowEditing = true;
+        g.editMode = 'batch';
+      },
+    });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+
+    await openCell(grid, 1, 'name');
+    await type(grid, 'Out');
+    outside.focus();
+    await settle(grid);
+    expect(editorOf(grid)).toBeNull();
+    expect(grid.getChanges()[0].data).toEqual({ name: 'Out' });
+
+    await openCell(grid, 2, 'name');
+    await type(grid, '');
+    outside.focus();
+    await settle(grid);
+    expect(editorOf(grid)).toBeNull();
+    expect(cell(grid, 1, 1).getAttribute('aria-invalid')).toBe('true');
+    outside.remove();
+  });
+
+  it('salvar barrado: foco na 1ª célula inválida, mensagem visível e anúncio com o erro', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'id', label: 'Id', editable: false },
+        { path: 'name', label: 'Name', validationRules: [{ type: 'required' }] },
+      ],
+      items: people(),
+      configure: g => {
+        g.keyExpr = 'id';
+        g.allowEditing = true;
+        g.editMode = 'batch';
+      },
+    });
+
+    await openCell(grid, 3, 'name');
+    await type(grid, '');
+    await press(grid, 'Enter');
+    expect(await grid.saveChanges()).toBe(false);
+    await settle(grid);
+
+    expect(focused(grid)).toBe(cell(grid, 2, 1));
+    expect(root(grid).querySelector('.validation-message:not([hidden])')?.textContent).toContain('This field is required.');
+    expect(announced(grid)).toContain('Rows with errors: 1');
+    expect(announced(grid)).toContain('Name: This field is required.');
+  });
+
+  it('erro da linha (setError sem coluna) aparece e descreve as células', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'batch';
+    });
+    grid.addEventListener('u-grid-row-validating', event => {
+      event.detail.setError('Duplicate person');
+    });
+
+    await openCell(grid, 1, 'name');
+    await type(grid, 'Dup');
+    await press(grid, 'Enter');
+    expect(await grid.saveChanges()).toBe(false);
+    await settle(grid);
+
+    const first = cell(grid, 0, 0);
+    expect(focused(grid)).toBe(first);
+    const ids = cell(grid, 0, 2).getAttribute('aria-describedby')!.split(' ');
+    const message = root(grid).getElementById(ids[0])!;
+    expect(message.textContent).toBe('Duplicate person');
+    expect(message.hidden).toBe(false);
+    expect(cell(grid, 0, 2).getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('diálogo: Escape de verdade devolve o foco; confirmar leva o foco à mesma coluna da linha seguinte', async () => {
+    const grid = await editableGrid(g => {
+      g.allowRemoving = true;
+    });
+    grid.focusCell(2, grid.columns[3]);
+    await settle(grid);
+    await press(grid, 'ArrowRight');
+    await press(grid, 'Enter');
+    const button = focused(grid) as HTMLElement;
+    expect(button.textContent).toBe('Delete');
+
+    button.click();
+    await settle(grid);
+    await userEvent.keyboard('{Escape}');
+    await settle(grid);
+    expect(root(grid).querySelector('dialog')).toBeNull();
+    expect(focused(grid)).toBe(button);
+
+    button.click();
+    await settle(grid);
+    root(grid).querySelector<HTMLElement>('dialog .danger')!.click();
+    await settle(grid);
+    await settle(grid);
+    expect(grid.items.map((item: Person) => item.id)).toEqual([1, 3, 4]);
+    expect(announced(grid)).toBe('Row deleted');
+    expect(focused(grid)).toBe(cell(grid, 1, 4));
+  });
+
+  it('anúncios: marcada, restaurada, descartadas, erro ao salvar', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'batch';
+      g.allowRemoving = true;
+    });
+    const button = cell(grid, 0, 4).querySelector<HTMLElement>('.command-button')!;
+    button.click();
+    await settle(grid);
+    expect(announced(grid)).toBe('Row marked for removal');
+    button.click();
+    await settle(grid);
+    expect(announced(grid)).toBe('Row restored');
+
+    button.click();
+    await settle(grid);
+    root(grid).querySelector<HTMLElement>('.discard-button')!.click();
+    await settle(grid);
+    expect(announced(grid)).toBe('Changes discarded: 1');
+
+    grid.addEventListener('u-grid-saving', event => {
+      event.detail.waitUntil(Promise.reject(new Error('Down')));
+    });
+    button.click();
+    await settle(grid);
+    await grid.saveChanges();
+    await settle(grid);
+    expect(announced(grid)).toBe('Could not save the changes. Down');
+  });
+
+  it('editor HTMLElement: o grid completa nome, aria-invalid e descrição no light DOM', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'id', label: 'Id', editable: false },
+        {
+          path: 'name',
+          label: 'Name',
+          validationRules: [{ type: 'required' }],
+          editorRenderer: (_item, ctx) => {
+            const input = document.createElement('input');
+            input.setAttribute('aria-describedby', 'host-hint');
+            input.value = String(ctx.value ?? '');
+            input.addEventListener('input', () => ctx.setValue(input.value));
+            return input;
+          },
+        },
+      ],
+      items: people(),
+      configure: g => {
+        g.keyExpr = 'id';
+        g.allowEditing = true;
+      },
+    });
+
+    await openCell(grid, 1, 'name');
+    const input = grid.querySelector<HTMLInputElement>('input')!;
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute('aria-label')).toBe('Name');
+
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+
+    // Validade mudou: o renderer roda de novo (elemento novo, com o foco).
+    const current = grid.querySelector<HTMLInputElement>('input')!;
+    expect(document.activeElement).toBe(current);
+    expect(current.getAttribute('aria-invalid')).toBe('true');
+    const ids = current.getAttribute('aria-describedby')!.split(' ');
+    expect(ids[0]).toBe('host-hint');
+    expect(document.getElementById(ids[1])?.textContent).toBe('This field is required.');
   });
 });

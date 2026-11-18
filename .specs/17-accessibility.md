@@ -284,3 +284,26 @@ acréscimos voltam ao usuário para confirmação junto com a entrega):
 - Enter/Esc durante composição de IME não aplicam nem fecham o funil.
 - Os menus do grid cancelam o `contextmenu` (a tecla Menu o solta no
   `keyup`, já com o foco no menu).
+
+## Frente 09 — edição (decisões)
+
+Desenho revisado pelo `a11y-reviewer` antes do aval (seção "Acessibilidade
+(aprovada)" da spec 09) e de novo na entrega. Corrigido na entrega (com
+teste em `editing.browser.test.ts`, roteiro "edição: roteiro de teclado"):
+erro da linha (`setError` sem coluna, colunas ocultas) visível na 1ª célula
+e no `aria-describedby` de todas; anúncio do salvar barrado com o 1º erro;
+modo célula só move o foco depois de salvar se salvou e o foco ainda está
+na célula (destino pela chave); "Validando…" anunciado depois de 1 s; sem
+`aria-busy` na célula; foco em célula inválida com faixa clara entre o anel
+e o vermelho; marca de alterada num `::after` com bordas (RTL e
+`forced-colors`) e barra na linha nova; editor embutido nomeado pelo
+cabeçalho (`aria-labelledby`), nunca `aria-label` vazio; Esc em qualquer
+célula da linha aberta (modo linha); mensagem com `aria-hidden` fora do
+editor (lida só pela descrição); `aria-describedby` do editor do hospedeiro
+acrescentado, não trocado; `close` do diálogo tratado.
+
+Deixados (BAIXA, justificados): `lang` da mensagem quando o texto é da i18n
+(a mensagem pode ser do hospedeiro; o `lang` do grid já é o do texto da
+interface na maioria dos casos); exemplo do formato do número (texto i18n
+novo — fica para aval); erro de salvar do modo linha na barra (não junto aos
+botões); mensagem da última linha visível pode ficar sob o rodapé fixo.

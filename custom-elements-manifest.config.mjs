@@ -62,7 +62,15 @@ const LEGACY_ATTRIBUTES = {
  * tudo-ou-nada (`remote-operations`).
  */
 const ATTRIBUTE_TYPES = {
-  DataGrid: { 'key-expr': 'string', 'remote-operations': 'boolean', 'page-size-options': 'string', 'state-storage': "'local' | 'session'" },
+  DataGrid: {
+    'key-expr': 'string',
+    'remote-operations': 'boolean',
+    'page-size-options': 'string',
+    'state-storage': "'local' | 'session'",
+    // Frente 09: a função por linha é só por propriedade.
+    'allow-editing': 'boolean',
+    'allow-removing': 'boolean',
+  },
 };
 
 /**

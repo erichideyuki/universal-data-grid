@@ -440,7 +440,7 @@ export interface GridFocusChangeEventDetail {
    * summary rows.
    */
   rowKey: unknown;
-  /** Column of the active cell; `null` in the selection and detail toggle columns, in detail rows and in group rows. */
+  /** Column of the active cell; `null` in the selection, detail toggle and row buttons (`cellType: 'command'`) columns, in detail rows and in group rows. */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
   cellType: GridCellType;
@@ -511,7 +511,7 @@ export interface GridSavingEventDetail<TItem = any> {
    * `GridDataChanges` (e.g. new rows with the keys the server created): the
    * grid applies those instead of the ones it computed. Only during the
    * event dispatch (`InvalidStateError` afterwards); several calls wait for
-   * all.
+   * all, and the first promise that resolves with an object wins.
    */
   waitUntil(promise: Promise<void | GridDataChanges<TItem>>): void;
   /** `user` or `api`. */
@@ -658,6 +658,7 @@ const restoreSnapshot = (store: EditStore, pending: PendingRow, snapshot: EditSn
   snapshot.unparsed.forEach((value, column) => pending.unparsed.set(column, value));
   pending.errors.clear();
   snapshot.errors.forEach((message, column) => pending.errors.set(column, message));
+  pending.errorRules.clear();
   pending.rowError = snapshot.rowError;
   store.touch(pending);
 };
@@ -2863,7 +2864,7 @@ export class DataGrid extends LitElement {
       pendingEdits: this.#edits.size,
       addedRows: this.#added.size,
       validations: this.#validations.size + this.#validationPromises.size,
-      editTimers: this.#savingTimer === undefined ? 0 : 1,
+      editTimers: (this.#savingTimer === undefined ? 0 : 1) + (this.#validatingTimer === undefined ? 0 : 1),
       editLightNodes: this.#lightMessage ? 1 : 0,
     };
   }
@@ -3835,6 +3836,8 @@ export class DataGrid extends LitElement {
   /** Salvando há mais de 1 s: "Salvando…" visível e anunciado. */
   #savingSlow = false;
   #savingTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Confirmação esperando validação assíncrona há mais de 1 s: "Validando…" anunciado. */
+  #validatingTimer: ReturnType<typeof setTimeout> | undefined;
   /** Mensagem persistente da barra (erro ao salvar, linhas inválidas). */
   #editStatus = '';
   /** Confirmação de exclusão aberta. */
@@ -3878,7 +3881,7 @@ export class DataGrid extends LitElement {
    * of the row (focus and selection move to the real key when it is saved),
    * or `null` without `allowAdding`, during a save or when canceled.
    */
-  addRow(data: Record<string, unknown> = {}): unknown {
+  addRow<TItem = any>(data: Partial<TItem> = {}): unknown {
     return this.#addRow(data, 'api', null);
   }
 
@@ -4251,8 +4254,14 @@ export class DataGrid extends LitElement {
   }
 
   #setCellError(pending: PendingRow, column: GridColumnDef, result: ValidationResult): void {
+    pending.errorRules.delete(column);
+
     if (result) {
       pending.errors.set(column, result.message);
+
+      if (typeof result.rule === 'object') {
+        pending.errorRules.set(column, result.rule);
+      }
     } else {
       pending.errors.delete(column);
     }
@@ -4392,8 +4401,14 @@ export class DataGrid extends LitElement {
       }
 
       if (this.#editMode === 'cell' && !editor.wholeRow && this.#edits.size && !this.#hasAnyError()) {
-        // Modo célula: salva já; o foco anda quando terminar (a linha não muda no meio).
-        void this.#save(source).then(() => then());
+        // Modo célula: salva já; o foco anda quando terminar — só se salvou e
+        // o foco ainda está na célula editada (não rouba o foco de quem saiu).
+        const column = editor.column;
+        void this.#save(source).then(saved => {
+          if (saved && column && this.#isActiveCell(editor.rowKey, column) && this.#hadFocusInGrid()) {
+            then();
+          }
+        });
         return;
       }
 
@@ -4403,7 +4418,16 @@ export class DataGrid extends LitElement {
     const result = this.#commitEditor();
 
     if (isPromiseLike(result)) {
-      void result.then(finish);
+      clearTimeout(this.#validatingTimer);
+      this.#validatingTimer = setTimeout(() => {
+        this.#validatingTimer = undefined;
+        this.#announce(this.#translation.validating);
+      }, SLOW_SAVE_DELAY);
+      void result.then(valid => {
+        clearTimeout(this.#validatingTimer);
+        this.#validatingTimer = undefined;
+        finish(valid);
+      });
     } else {
       finish(result);
     }
@@ -4560,6 +4584,11 @@ export class DataGrid extends LitElement {
     const item = this.#itemOfKey(rowKey);
 
     if (item === undefined || existing?.type === 'remove') {
+      return false;
+    }
+
+    // Linha nova sempre sai; as outras seguem `allowRemoving` (também a função por linha).
+    if (existing?.type !== 'add' && !this.#canRemoveItem(item)) {
       return false;
     }
 
@@ -4725,7 +4754,7 @@ export class DataGrid extends LitElement {
       const errors: GridValidationError[] = [];
 
       for (const [column, message] of pending.errors) {
-        errors.push({ column, rule: null, message });
+        errors.push({ column, rule: pending.errorRules.get(column) ?? null, message });
       }
 
       let rowError: string | undefined;
@@ -4739,6 +4768,7 @@ export class DataGrid extends LitElement {
 
           if (column) {
             pending.errors.set(column, String(message));
+            pending.errorRules.delete(column);
           } else {
             rowError = String(message);
           }
@@ -4758,7 +4788,7 @@ export class DataGrid extends LitElement {
 
     if (invalidRows) {
       this.#editStatus = formatMessage(this.#translation.invalidRowsMessage, { count: String(invalidRows) });
-      this.#announce(this.#editStatus);
+      this.#announce(`${this.#editStatus} ${this.#firstErrorText(rows)}`.trim());
       this.#focusFirstInvalid(rows);
       this.requestUpdate();
       return false;
@@ -4845,6 +4875,29 @@ export class DataGrid extends LitElement {
     return !!this.shadowRoot?.activeElement;
   }
 
+  /** Texto do 1º erro (anúncio do salvar barrado): "Coluna: mensagem". */
+  #firstErrorText(rows: PendingRow[]): string {
+    for (const pending of rows) {
+      if (pending.rowError) {
+        return pending.rowError;
+      }
+
+      const [entry] = pending.errors;
+
+      if (entry) {
+        return `${entry[0].label ?? ''}: ${entry[1]}`;
+      }
+
+      const [unparsed] = pending.unparsed;
+
+      if (unparsed) {
+        return unparsed[0].label ?? '';
+      }
+    }
+
+    return '';
+  }
+
   /** Foco na 1ª célula inválida (abre o editor no modo célula/linha). */
   #focusFirstInvalid(rows: PendingRow[]): void {
     for (const pending of rows) {
@@ -4864,7 +4917,8 @@ export class DataGrid extends LitElement {
           this.#setActive({ row: index, col: this.#currentNavColumns().indexOf(column) }, null, { reveal: true });
         }
       } else {
-        const col = column ? this.#currentNavColumns().indexOf(column) : this.#activeCol;
+        // Sem coluna à vista (erro da linha ou de coluna oculta): a 1ª célula, que mostra o erro da linha.
+        const col = column ? this.#currentNavColumns().indexOf(column) : this.#leadingColumns;
         this.#setActive({ row: index, col }, 'user', { focus: true, reveal: true });
       }
 
@@ -5160,13 +5214,22 @@ export class DataGrid extends LitElement {
     const column = editor.column;
     const error = pending && column ? pending.errors.get(column) : undefined;
 
-    if (column && !target.hasAttribute('aria-label') && !target.hasAttribute('aria-labelledby')) {
-      target.setAttribute('aria-label', column.label ?? '');
+    if (column?.label && !target.hasAttribute('aria-label') && !target.hasAttribute('aria-labelledby')) {
+      target.setAttribute('aria-label', column.label);
     }
 
+    const ids = (target.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    const messageId = this.#lightMessage?.id;
+
     if (!error) {
-      if (this.#lightMessage && target.getAttribute('aria-describedby') === this.#lightMessage.id) {
-        target.removeAttribute('aria-describedby');
+      if (messageId && ids.includes(messageId)) {
+        const rest = ids.filter(id => id !== messageId);
+
+        if (rest.length) {
+          target.setAttribute('aria-describedby', rest.join(' '));
+        } else {
+          target.removeAttribute('aria-describedby');
+        }
       }
 
       target.removeAttribute('aria-invalid');
@@ -5184,8 +5247,9 @@ export class DataGrid extends LitElement {
     this.#lightMessage.textContent = error;
     target.setAttribute('aria-invalid', 'true');
 
-    if (!target.hasAttribute('aria-describedby')) {
-      target.setAttribute('aria-describedby', this.#lightMessage.id);
+    // Acrescenta à descrição do hospedeiro (não troca).
+    if (!ids.includes(this.#lightMessage.id)) {
+      target.setAttribute('aria-describedby', [...ids, this.#lightMessage.id].join(' '));
     }
   }
 
@@ -5198,6 +5262,8 @@ export class DataGrid extends LitElement {
     this.#validationPromises.clear();
     clearTimeout(this.#savingTimer);
     this.#savingTimer = undefined;
+    clearTimeout(this.#validatingTimer);
+    this.#validatingTimer = undefined;
     this.#lightMessage?.remove();
     this.#lightMessage = undefined;
     this.#removeDialog = null;
@@ -8095,6 +8161,13 @@ export class DataGrid extends LitElement {
     const inEditor = inside && cell.classList.contains('editing');
     const inRowButtons = inside && editor.wholeRow && column === COMMAND_COLUMN;
 
+    if (event.key === 'Escape' && editor.wholeRow && !inside) {
+      // Modo linha: Esc em qualquer célula da linha aberta cancela a linha.
+      event.preventDefault();
+      this.#cancelEditor('user');
+      return true;
+    }
+
     if (!inEditor && !inRowButtons) {
       return false;
     }
@@ -8113,7 +8186,8 @@ export class DataGrid extends LitElement {
       if (editor.wholeRow) {
         this.#tabInRow(cell, event.shiftKey);
       } else {
-        this.#commitAndThen('user', () => this.#tabToEditable(position, event.shiftKey));
+        const back = event.shiftKey;
+        this.#commitAndThen('user', () => this.#tabToEditable(this.#positionByKey(editor.rowKey, position), back));
       }
 
       return true;
@@ -8126,13 +8200,19 @@ export class DataGrid extends LitElement {
         void this.#save('user');
       } else {
         const delta = event.shiftKey ? -1 : 1;
-        this.#commitAndThen('user', () => this.#moveAfterCommit(position, delta));
+        this.#commitAndThen('user', () => this.#moveAfterCommit(this.#positionByKey(editor.rowKey, position), delta));
       }
 
       return true;
     }
 
     return false;
+  }
+
+  /** Posição atual da linha `rowKey` (salvar pode ter mudado o índice), mesma coluna. */
+  #positionByKey(rowKey: unknown, fallback: CellPosition): CellPosition {
+    const row = this.#rowIndexOfKey(rowKey);
+    return { row: row >= 0 ? row : fallback.row, col: fallback.col };
   }
 
   /** Enter confirmou: a célula da mesma coluna na linha de dados de baixo (Shift: de cima). */
@@ -9486,7 +9566,10 @@ export class DataGrid extends LitElement {
     const readonly = edit.readonlyMarks && !this.#cellEditable(row, column, pending);
     const messageId = error || validating ? `edit-message-${rowIndex}-${col}` : undefined;
     const stateId = added ? 'edit-desc-added' : removed ? 'edit-desc-removed' : modified ? 'edit-desc-modified' : undefined;
-    const describedBy = [messageId, stateId].filter(Boolean).join(' ');
+    // Erro da linha (`setError` sem coluna, colunas ocultas): na 1ª célula, descreve todas.
+    const rowError = removed || !pending ? '' : this.#rowErrorText(pending);
+    const rowErrorId = rowError ? `edit-row-error-${rowIndex}` : undefined;
+    const describedBy = [messageId, rowErrorId, stateId].filter(Boolean).join(' ');
     const showMessage = !!messageId && (editing || active);
     const classes = [cell.cellClassName];
     const parts = ['cell'];
@@ -9527,10 +9610,26 @@ export class DataGrid extends LitElement {
           class="validation-message"
           part="validation-message"
           lang=${ifDefined(error ? undefined : this.#textLanguage)}
+          aria-hidden=${ifDefined(editing ? undefined : 'true')}
           ?hidden=${!showMessage}>${error
             ? editing && this.#editMode !== 'batch' ? `${error} ${this.#translation.validationEscapeHint}` : error
             : html`<span class="validating-spinner" aria-hidden="true"></span>${this.#translation.validating}`}</div>`
       : nothing;
+    // Visível com a linha ativa; o texto também vai pelo `aria-describedby` de cada célula.
+    const firstCell = col === this.#leadingColumns;
+    const showRowError = !!rowErrorId && firstCell && rowIndex === this.#activeRowIndex;
+    const rowMessage = rowErrorId && firstCell
+      ? html`<div
+          id=${rowErrorId}
+          class="validation-message"
+          part="validation-message"
+          aria-hidden=${ifDefined(editing ? undefined : 'true')}
+          ?hidden=${!showRowError || showMessage}>${rowError}</div>`
+      : nothing;
+
+    if (showRowError) {
+      classes.push('show-message');
+    }
 
     return html`
       <td
@@ -9541,10 +9640,22 @@ export class DataGrid extends LitElement {
         aria-colindex="${col + 1}"
         data-col=${col}
         aria-readonly=${ifDefined(readonly ? 'true' : undefined)}
-        aria-invalid=${ifDefined(error && !editing ? 'true' : undefined)}
+        aria-invalid=${ifDefined((error || rowError) && !editing ? 'true' : undefined)}
         aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}
-        aria-busy=${ifDefined(validating ? 'true' : undefined)}
-        tabindex=${active ? 0 : -1}>${showMessage && !editing ? html`<span class="cell-text">${content}</span>` : content}${message}</td>`;
+        tabindex=${active ? 0 : -1}>${(showMessage || showRowError) && !editing ? html`<span class="cell-text">${content}</span>` : content}${message}${rowMessage}</td>`;
+  }
+
+  /** Erro da linha: o de `setError` sem coluna e os das colunas que não estão à vista ("Coluna: mensagem"). */
+  #rowErrorText(pending: PendingRow): string {
+    const parts = pending.rowError ? [pending.rowError] : [];
+
+    for (const [column, message] of pending.errors) {
+      if (!this._visibleColumns.includes(column)) {
+        parts.push(`${column.label ?? ''}: ${message}`);
+      }
+    }
+
+    return parts.join(' ');
   }
 
   /** Editor da célula: o `editorRenderer` da coluna ou o embutido pelo tipo. */
@@ -9621,11 +9732,14 @@ export class DataGrid extends LitElement {
             ? formatEditorDate(current, kind === 'datetime')
             : current === null || current === undefined ? '' : String(current));
 
+    const headerIndex = this.#currentNavColumns().indexOf(column) + 1;
+
     return renderBuiltInEditor({
       kind,
       text,
       checked: current === null || current === undefined ? null : !!current,
       label,
+      labelledBy: this.showColumnHeaders && headerIndex > 0 ? `header-text-${headerIndex}` : undefined,
       invalid: !!error,
       describedBy,
       onInput: (event: Event) => {
@@ -9955,7 +10069,8 @@ export class DataGrid extends LitElement {
         @cancel=${(event: Event) => {
           event.preventDefault();
           this.#closeRemoveDialog(false);
-        }}>
+        }}
+        @close=${() => this.#closeRemoveDialog(false)}>
         <h2 id="remove-dialog-title" class="remove-dialog-title">${translation.confirmRemoveTitle}</h2>
         <p id="remove-dialog-message" class="remove-dialog-message">${translation.confirmRemoveMessage}</p>
         <div class="remove-dialog-actions">

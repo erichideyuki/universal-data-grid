@@ -1693,7 +1693,7 @@
                   "name": "data",
                   "default": "{}",
                   "type": {
-                    "text": "Record<string, unknown>"
+                    "text": "Partial<TItem>"
                   }
                 }
               ],
@@ -2326,7 +2326,7 @@
             {
               "name": "allow-editing",
               "type": {
-                "text": "boolean | ((item: any) => boolean)"
+                "text": "boolean"
               },
               "default": "false",
               "description": "Lets the user edit cells (columns with `editable`, by default those with\n`path`). A function (property only) decides per row. The grid never\nmutates the items: changes are delivered in `u-grid-saving`. With\n`dataSource`, editing needs `keyExpr`.",
@@ -2344,7 +2344,7 @@
             {
               "name": "allow-removing",
               "type": {
-                "text": "boolean | ((item: any) => boolean)"
+                "text": "boolean"
               },
               "default": "false",
               "description": "Shows the Delete button of each row and allows `removeRow()`. A function\n(property only) decides per row.",
@@ -2457,11 +2457,11 @@
         },
         {
           "kind": "variable",
-          "name": "changes"
+          "name": "column"
         },
         {
           "kind": "variable",
-          "name": "column"
+          "name": "changes"
         },
         {
           "kind": "variable",
@@ -3524,36 +3524,8 @@
     {
       "kind": "javascript-module",
       "path": "dist/grid-column-def.js",
-      "declarations": [
-        {
-          "kind": "function",
-          "name": "isColumnEditable",
-          "return": {
-            "type": {
-              "text": "boolean"
-            }
-          },
-          "parameters": [
-            {
-              "name": "column",
-              "type": {
-                "text": "GridColumnDef"
-              }
-            }
-          ],
-          "description": "A coluna é editável (sem olhar o `allowEditing` do grid)? Padrão: com\n`path` ou `valueSetter`."
-        }
-      ],
-      "exports": [
-        {
-          "kind": "js",
-          "name": "isColumnEditable",
-          "declaration": {
-            "name": "isColumnEditable",
-            "module": "dist/grid-column-def.js"
-          }
-        }
-      ]
+      "declarations": [],
+      "exports": []
     },
     {
       "kind": "javascript-module",

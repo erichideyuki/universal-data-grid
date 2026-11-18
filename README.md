@@ -1519,7 +1519,9 @@ the row), `setValue(value)`, `commit()`, `cancel()`, `column`, `rowKey`, `label`
 `Enter`, `Tab` and `Esc` unless your editor calls `preventDefault()` on the `keydown` (a combobox
 that uses `Enter`). `describedBy` is the id of the error text, for editors rendered as templates
 (the grid's shadow root); for an `HTMLElement` editor the grid sets `aria-label`, `aria-invalid` and
-`aria-describedby` itself when they are missing.
+`aria-describedby` itself when they are missing (adding to an `aria-describedby` you set). The
+renderer runs when the editor opens and again when the validity changes — keep the value with
+`setValue`.
 
 ```ts
 {
@@ -1576,7 +1578,7 @@ interface GridEditChange<TItem = any> {
 ```
 
 `detail.waitUntil(promise)` makes the grid wait (only during the dispatch; several calls wait for
-all). Rejected: `u-grid-save-error` fires, the changes stay pending and the toolbar shows "Could not
+all; the first promise that resolves with an object wins). Rejected: `u-grid-save-error` fires, the changes stay pending and the toolbar shows "Could not
 save the changes." with the error text. Resolved with `GridDataChanges` (`{ add, update, remove }`,
 e.g. new rows with the ids the server created): the grid applies those instead of the ones it
 computed. `preventDefault()` cancels the save (changes stay pending). After saving, `u-grid-save`

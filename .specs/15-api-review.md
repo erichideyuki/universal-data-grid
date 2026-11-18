@@ -118,6 +118,11 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   Dispara também por setter e `setState` (só se o estado mudou de fato).
   `GridColumnRef` (string) procura `name` antes de `path`. Tipos com nome
   `GridRowExpansionState` e `GridGroupExpansionState` (em vez de em linha).
+- Frente 09: `allowEditing`/`allowRemoving` aceitam `boolean | (item) =>
+  boolean` só por propriedade; os atributos `allow-editing`/`allow-removing`
+  são só booleanos (como `remote-operations`; tipo do atributo no CEM pelo
+  `ATTRIBUTE_TYPES`). Radicais únicos: `add`, `remove` (`removeRow`,
+  `restoreRow`, `allowRemoving`, `confirmRemove`), `edit` (`allowEditing`).
 - #33: `u-grid-loading` (08) e `u-grid-row-validating` (09) marcados
   canceláveis pela regra do gerúndio. Na spec 09, `u-grid-editing-start` é cancelável, então pela regra
   virou `u-grid-edit-starting` (não `u-grid-edit-start`).
