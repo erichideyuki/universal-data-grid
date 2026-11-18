@@ -34,8 +34,13 @@ da APG.
   server-side com `isServerSideGroup`.
 
 ## Decisão: modo do `<u-grid>`, não `<u-tree-grid>`
-**Recomendação: modo árvore do próprio `<u-grid>`** (propriedade
-`treeMode`; os dois revisores concordam).
+**Modo árvore do próprio `<u-grid>`** (propriedade `treeMode`; os dois
+revisores concordam; aval do usuário em 2026-11-18). Considerado também
+"dois componentes com a mesma base": herança não tira API (o
+`<u-tree-grid>` herdaria agrupamento e master-detail), e uma base de
+verdade exigiria partir o `grid.ts` — frente própria, se um dia valer. Um
+`<u-tree-grid>` fino (subclasse com `treeMode` ligado) pode vir depois
+sem quebra.
 - **Reaproveitamento**: filtro, busca, ordenação, resumos, seleção, foco/
   teclado, edição, exportação, estado, colunas (fixar, bandas,
   virtualização), barra/menus, intervalo, linhas fixas, paginação,
@@ -71,7 +76,7 @@ da APG.
 10. Coluna da árvore (`treeColumn`) com recuo e botão.
 11. ARIA `treegrid` e teclado da APG adaptado ao foco de célula; RTL; SSR.
 
-## API (revisada; aguarda aval)
+## API (aprovada pelo usuário em 2026-11-18)
 
 `<u-grid>` — propriedades novas:
 
