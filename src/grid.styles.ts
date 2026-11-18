@@ -330,8 +330,10 @@ export const styles = css`
     transform: scaleX(-1);
   }
 
+  /* \`clip\` (não \`hidden\`): não vira contêiner de rolagem e o conteúdo sticky segue a área visível. */
   td:where(.grid-table > * > * > *).detail-cell {
     white-space: normal;
+    overflow: clip;
   }
 
   .selection-checkbox {
@@ -988,6 +990,7 @@ export const styles = css`
   td:where(.grid-table > * > * > *).full-width-cell {
     white-space: normal;
     padding-block: 0;
+    overflow: clip;
   }
 
   .full-width-content {

@@ -3669,6 +3669,12 @@ export class DataGrid extends LitElement {
       rangeTimers: this.#rangeAnnouncer.size,
       rangeDrag: this.#rangeDrag ? 1 : 0,
       rangeSummaries: this.#rangeSummaryAbort ? 1 : 0,
+      // Linhas fixas e linha inteira (frente 20): resultados do \`rowRenderer\` (só os renderizados),
+      // alturas medidas por índice (só as já renderizadas) e as seções observadas.
+      rowRenders: this.#rowRenders.size,
+      fullWidthIndices: this.#fullWidthIndices.size,
+      primitiveFullWidthSizes: this.#primitiveFullWidthSizes.size,
+      observedFixedSections: this.#observedFixedSections.size,
     };
   }
 
@@ -8683,8 +8689,9 @@ export class DataGrid extends LitElement {
       if (entries.some(entry => entry.target === scroller)) {
         this.#layoutDirty = true;
         this.#viewportWidth = scroller.clientWidth;
-        // Largura visível: o conteúdo do detalhe não passa dela (WCAG 1.4.10).
-        scroller.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
+        // Largura visível: o conteúdo do detalhe e da linha inteira não passa dela (WCAG 1.4.10).
+        // No contêiner: o \`style\` do \`.scroll-container\` é do template (o render o sobrescreve).
+        this._containerRef.value?.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
         this.requestUpdate();
       }
 

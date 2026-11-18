@@ -360,3 +360,26 @@ describe('SSR da barra (frente 18)', () => {
     expect(output).not.toContain('>Print<');
   });
 });
+
+describe('SSR das linhas fixas e da linha inteira (frente 20)', () => {
+  it('linhas fixas e linha inteira (frente 20), em pt e ar/RTL; renderer que monta DOM fica com as colunas', async () => {
+    const flat: GridColumnDef[] = [{ path: 'country', label: 'Country' }, { path: 'year', label: 'Year' }];
+    const rowRenderer = (item: { year: number }) => item.year === 2021 && html`<b class="wide">Wide ${item.year}</b>`;
+    const output = await renderToString(html`
+      <u-grid language="pt" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'Meta', year: 1 }]}
+        .fixedBottomItems=${[{ country: 'Média', year: 2 }]} .rowRenderer=${rowRenderer}></u-grid>
+      <u-grid language="ar" dir="rtl" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'X', year: 3 }]}></u-grid>
+      <u-grid .columns=${flat} .items=${items} .rowRenderer=${() => document.createElement('div')}></u-grid>`);
+
+    expect(output).toMatch(/<tbody[^>]*class="fixed-rows fixed-top-rows"[^>]*aria-label="Linhas fixadas no topo"/);
+    expect(output).toMatch(/aria-label="Linhas fixadas no rodapé"/);
+    expect(output).toContain('Meta');
+    expect(output).toContain('Média');
+    expect(output).toMatch(/class="full-width-cell"[^>]*aria-colindex="1"[^>]*aria-colspan="2"/);
+    expect(output).toContain('class="wide"');
+    expect(output).toContain('aria-rowcount="5"');
+    expect(output).toMatch(/aria-label="الصفوف المثبتة في الأعلى"/);
+    // Sem `document` no servidor o renderer lança: a linha fica com as colunas (mesma estrutura no cliente que lança igual).
+    expect(output.match(/class="full-width-cell"/g)).toHaveLength(1);
+  });
+});

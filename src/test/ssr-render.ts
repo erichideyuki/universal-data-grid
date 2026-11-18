@@ -15,7 +15,7 @@ import '../grid.js';
  */
 export const renderScenario = (name: HydrationScenarioName): Promise<string> => {
   const scenario: HydrationScenario = hydrationScenarios[name];
-  const { language, dir, columns, items, filter, detailRenderer, ariaLabel, ariaLabelledBy, stateStorageKey } = scenario;
+  const { language, dir, columns, items, filter, detailRenderer, ariaLabel, ariaLabelledBy, stateStorageKey, fixedTopItems, fixedBottomItems, rowRenderer } = scenario;
 
   // Como o demo (`dev/dev-root.ts`): agrupado, ordenação múltipla, redimensionar, seletor.
   return collectResult(render(html`
@@ -34,6 +34,9 @@ export const renderScenario = (name: HydrationScenarioName): Promise<string> => 
       ?header-filter=${!!filter}
       ?auto-expand-rows=${!!detailRenderer}
       .detailRenderer=${detailRenderer ?? null}
+      .fixedTopItems=${fixedTopItems ?? []}
+      .fixedBottomItems=${fixedBottomItems ?? []}
+      .rowRenderer=${rowRenderer ?? null}
       search-text=${ifDefined(filter?.searchText)}
       state-storage=${ifDefined(stateStorageKey ? 'local' : undefined)}
       state-storage-key=${ifDefined(stateStorageKey)}
