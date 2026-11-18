@@ -66,6 +66,43 @@ números 2× diferentes e a linha de base não se reproduzia. Por isso:
   Endurecido em `src/test/perf.ts` (`bestOfQuiet`), sem afrouxar orçamento:
   1 execução de aquecimento descartada, heap coletado (CDP) antes de cada
   execução e **melhor de 5**.
+- **1º render (`*.firstRenderMs`)**, endurecido do mesmo jeito (main
+  75f22ca): `bestFirstRender` usa `bestOfQuiet` (aquecimento, heap coletado,
+  melhor de 5 grids novos, cada um removido antes do próximo; o grid do
+  resto do cenário é um último, fora da medida) e recalibra e coleta o heap
+  ANTES de cada medida — o lixo do benchmark de calibração caía como pausa
+  de GC dentro do 1º render. Vale também para `menus-1m` (grid montado com
+  `configure`) e `remote-5m` (`refresh()` repetido).
+
+### Deriva do fator e linha de base do 1º render (main 75f22ca)
+
+Sintoma: `flat-100k.firstRenderMs` na borda da tolerância (base 43,3 ms; a
+main media 56–68 ms) sem regressão na frente que rodava. Medido com a
+máquina ociosa, o mesmo benchmark e o mesmo 1º render (9 grids; mediana do
+benchmark e mínimo do render, sem o fator):
+
+| Código | Benchmark | 1º render 100k | 1º render 1 M |
+|---|---|---|---|
+| 6a6a0b0 (quando a base foi gravada) | 9,0–9,2 ms | 10,0–10,1 ms | 10,9–11,1 ms |
+| main 75f22ca | 9,3 ms | 13,1 ms | 14,8–15,1 ms |
+
+- **O cálculo do fator não mudou** (mesmo `benchmark()`, referência 46 ms):
+  com a máquina ociosa o benchmark dá ~9,3 ms → **4,7–5,1×**. A base do 1º
+  render foi gravada (6a6a0b0, modo `max`) com a máquina ocupada por outras
+  sessões: benchmark 15–17 ms → fator 2,7–3,1×. O benchmark (curto, cheio
+  de alocação) sofre mais com a carga que o render, então o fator baixo
+  subestimou o render normalizado e a base ficou baixa.
+- **O 1º render ficou ~30–35% mais caro** em tempo real com as frentes
+  04–20 (mais recursos montados no 1º render). Esperado e longe do
+  orçamento (500 ms); não é regressão de uma frente só.
+- No 2º arquivo de perf (`filtering.perf`) o benchmark inicial dá ~19 ms
+  (fator 2,4×), logo depois dos cenários de 5 milhões; não afeta o 1º
+  render e fica como observação.
+
+Linha de base: SÓ os `*.firstRenderMs` foram regravados, com a medida
+endurecida e a máquina ociosa (maior de 2 execuções): ex. `flat-100k` 43,3 →
+70,8 ms, `flat-1m` 46,7 → 75,8 ms, `menus-1m` 54,6 → 37,6 ms (agora melhor
+de 5). As demais métricas não mudaram.
 
 ## Como rodar
 

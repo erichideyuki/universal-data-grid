@@ -5,7 +5,7 @@
     "applyAddMs": 129.4
   },
   "bands-1m": {
-    "firstRenderMs": 41.4,
+    "firstRenderMs": 61,
     "scrollP95Ms": 13.7,
     "scrollWorstMs": 19.2,
     "jumpP95Ms": 23.8,
@@ -32,7 +32,7 @@
     "domNodes": 423
   },
   "detail-1m": {
-    "firstRenderMs": 18.9,
+    "firstRenderMs": 32.2,
     "enableDetailMs": 6.5,
     "expandRowsMs": 8.3,
     "detail.scrollP95Ms": 5.7,
@@ -72,7 +72,7 @@
     "searchMs": 1185.6
   },
   "fixed-rows-1m": {
-    "firstRenderMs": 26,
+    "firstRenderMs": 33.2,
     "enableFixedRowsMs": 6.9,
     "enableFullWidthMs": 5.4,
     "fixed.scrollP95Ms": 6.9,
@@ -83,7 +83,7 @@
     "domNodes": 282
   },
   "flat-100k": {
-    "firstRenderMs": 43.3,
+    "firstRenderMs": 70.8,
     "scrollP95Ms": 10.9,
     "scrollWorstMs": 17.1,
     "jumpP95Ms": 38.4,
@@ -102,7 +102,7 @@
     "gridHeapMiB": 1.7
   },
   "flat-1m": {
-    "firstRenderMs": 46.7,
+    "firstRenderMs": 75.8,
     "scrollP95Ms": 13.5,
     "scrollWorstMs": 16.1,
     "jumpP95Ms": 38.9,
@@ -121,7 +121,7 @@
     "gridHeapMiB": 8.5
   },
   "grouped-100k": {
-    "firstRenderMs": 40.1,
+    "firstRenderMs": 69.5,
     "groupMs": 27.1,
     "groupLevel2Ms": 47.8,
     "sortGroupedMs": 76.1,
@@ -137,7 +137,7 @@
     "gridHeapMiB": 2.2
   },
   "grouped-1m": {
-    "firstRenderMs": 47.2,
+    "firstRenderMs": 73.6,
     "groupMs": 109.4,
     "groupLevel2Ms": 177.5,
     "sortGroupedMs": 1019,
@@ -153,7 +153,7 @@
     "gridHeapMiB": 17.8
   },
   "lean-5m": {
-    "firstRenderMs": 18.5,
+    "firstRenderMs": 34.4,
     "scrollP95Ms": 8.4,
     "scrollWorstMs": 11.3,
     "jumpP95Ms": 22.6,
@@ -171,14 +171,14 @@
     "gridHeapMiB": 47
   },
   "menus-1m": {
-    "firstRenderMs": 54.6,
+    "firstRenderMs": 37.6,
     "domNodes": 217,
     "rowMenuOpenMs": 4.2,
     "headerMenuOpenMs": 4.4,
     "toolbarMoreOpenMs": 4.2
   },
   "remote-5m": {
-    "firstRenderMs": 4.1,
+    "firstRenderMs": 5.8,
     "scrollP95Ms": 3.7,
     "scrollWorstMs": 3.9,
     "jumpP95Ms": 8.3,
@@ -206,7 +206,7 @@
     "gridHeapMiB": 10.4
   },
   "summaries-1m": {
-    "firstRenderMs": 45.5,
+    "firstRenderMs": 73.3,
     "summaryMs": 301.1,
     "groupSummaryMs": 379.5,
     "groupRangeMs": 625.7,
@@ -221,7 +221,7 @@
     "gridHeapMiB": 14.3
   },
   "wide-1m": {
-    "firstRenderMs": 36.8,
+    "firstRenderMs": 55.8,
     "scrollP95Ms": 10.1,
     "scrollWorstMs": 12.3,
     "jumpP95Ms": 27.7,

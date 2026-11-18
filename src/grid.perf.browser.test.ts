@@ -26,6 +26,7 @@ import {
   measureScroll,
   measureWork,
   painted,
+  quietHeap,
   type PerfSession,
   startPerf,
   updatesDone,
@@ -41,16 +42,23 @@ let perf: PerfSession;
 const byLabel = (grid: DataGrid, label: string): GridColumnDef =>
   grid.columns.find(column => column.label === label)!;
 
-/** Cria o grid já com dados e mede o trabalho do 1º render (script, estilo e layout). */
-const firstRender = async (items: object[], columns = makeColumns()) => {
+/**
+ * Cria o grid já com dados e mede o trabalho do 1º render (script, estilo e
+ * layout). `configure` liga recursos antes de conectar. Recalibra e coleta o
+ * heap ANTES de medir: o lixo do benchmark e de grids anteriores não pode
+ * cair como pausa de GC dentro da medida (spec 16).
+ */
+const firstRender = async (items: object[], columns = makeColumns(), configure?: (grid: DataGrid) => void) => {
   const grid = document.createElement('u-grid');
 
   grid.style.display = 'block';
   grid.style.height = '600px';
+  configure?.(grid);
   grid.columns = columns;
   grid.items = items;
 
   perf.recalibrate();
+  await quietHeap();
   const start = performance.now();
 
   document.body.append(grid);
@@ -216,20 +224,21 @@ const interaction = async (name: string, grid: DataGrid, action: () => void, und
   return { [`${name}Ms`]: best };
 };
 
-/** 1º render: melhor de {@link REPEATS} grids novos (fica o último). */
-const bestFirstRender = async (items: object[], columns?: GridColumnDef[]) => {
-  let best = Infinity;
-  let grid: DataGrid | undefined;
+/**
+ * 1º render: grids novos com aquecimento, heap coletado e melhor de 5
+ * (`bestOfQuiet`, como as fatias da frente 20); cada um é removido antes do
+ * próximo. O grid devolvido é um último, fora da medida.
+ */
+const bestFirstRender = async (items: object[], columns?: GridColumnDef[], configure?: (grid: DataGrid) => void) => {
+  const { best } = await bestOfQuiet(async () => {
+    const { grid, ms } = await firstRender(items, columns, configure);
 
-  for (let i = 0; i < REPEATS; i++) {
-    grid?.remove();
-    const result = await firstRender(items, columns);
+    grid.remove();
+    return { ms };
+  });
+  const { grid } = await firstRender(items, columns, configure);
 
-    grid = result.grid;
-    best = Math.min(best, result.ms);
-  }
-
-  return { grid: grid!, firstRenderMs: best };
+  return { grid, firstRenderMs: best.ms };
 };
 
 /** Índice da última linha visível depois de rolar até o fim (altura máxima de elemento do navegador). */
@@ -829,12 +838,20 @@ const remoteScenario = (rows: number, label: string) => {
     document.body.append(grid);
     await loaded(grid);
 
-    perf.recalibrate();
-    const start = performance.now();
-    await grid.refresh();
-    grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
-    const firstRenderMs = perf.weak(performance.now() - start);
-    await loaded(grid);
+    // 1º render = recarregar a fonte: aquecimento, heap coletado, melhor de 5.
+    const { best: { firstRenderMs } } = await bestOfQuiet(async () => {
+      perf.recalibrate();
+      await quietHeap();
+      const start = performance.now();
+
+      await grid.refresh();
+      grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+
+      const ms = perf.weak(performance.now() - start);
+
+      await loaded(grid);
+      return { firstRenderMs: ms };
+    });
 
     const scroll = await scrollMetrics(grid);
     const sortRemote = await interaction(
@@ -1153,33 +1170,22 @@ const menusScenario = (rows: number, label: string) => {
 
     await perf.throttle();
 
-    const grid = document.createElement('u-grid');
-    grid.style.display = 'block';
-    grid.style.height = '600px';
-    grid.columns = makeLeanColumns();
-    grid.keyExpr = 'id';
-    grid.rowMenu = true;
-    grid.columnChooser = true;
-    grid.showSearchPanel = true;
-    grid.selectionMode = 'multiple';
-    grid.exportFormats = ['csv'];
-    grid.toolbarItems = [
-      'groupPanel',
-      'exportButton',
-      'columnChooserButton',
-      'searchPanel',
-      { text: 'Refresh', action: () => undefined },
-      { text: 'Print', action: () => undefined, locateInMenu: 'always' },
-    ];
-    grid.items = items;
-
-    perf.recalibrate();
-    const start = performance.now();
-    document.body.append(grid);
-    await updatesDone(grid);
-    grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
-    const firstRenderMs = perf.weak(performance.now() - start);
-    await painted(grid);
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeLeanColumns(), menuGrid => {
+      menuGrid.keyExpr = 'id';
+      menuGrid.rowMenu = true;
+      menuGrid.columnChooser = true;
+      menuGrid.showSearchPanel = true;
+      menuGrid.selectionMode = 'multiple';
+      menuGrid.exportFormats = ['csv'];
+      menuGrid.toolbarItems = [
+        'groupPanel',
+        'exportButton',
+        'columnChooserButton',
+        'searchPanel',
+        { text: 'Refresh', action: () => undefined },
+        { text: 'Print', action: () => undefined, locateInMenu: 'always' },
+      ];
+    });
 
     const root = grid.shadowRoot!;
     const cell = () => root.querySelector<HTMLElement>('tbody tr[data-index] td[role=gridcell]')!;
