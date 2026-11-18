@@ -59,6 +59,13 @@ números 2× diferentes e a linha de base não se reproduzia. Por isso:
   cenários grandes). Máquina rápida → fator maior; lenta ou ocupada →
   menor (1× a 20×). Nas execuções desta frente: 3,9× a 4,7×.
 - Cada medida é a **melhor de 3** (o ruído só soma tempo).
+- Medidas de MÁXIMO sobre muitas amostras (a maior fatia da exportação,
+  `*SliceMs`) são as mais sensíveis a uma pausa isolada (GC de outra
+  medida, carga de outra sessão): numa execução da frente 20 o
+  `exportDataSliceMs` deu 68 ms (orçamento 50) e 34–44 ms nas seguintes.
+  Endurecido em `src/test/perf.ts` (`bestOfQuiet`), sem afrouxar orçamento:
+  1 execução de aquecimento descartada, heap coletado (CDP) antes de cada
+  execução e **melhor de 5**.
 
 ## Como rodar
 

@@ -257,3 +257,12 @@ sem sticky quando ocupam demais; nomes dos `rowgroup`s).
   inteira em `forced-colors` por borda (conteúdo com cores do sistema).
   Restaurar uma linha inteira removida no lote: `restoreRow()`/descartar
   (a coluna de botões fica sob a célula única, como aprovado).
+- Com a frente 19 (intervalo de células): linhas fixas nunca entram num
+  intervalo (fora do corpo; `#isRangeRow` as exclui, o realce nem é
+  calculado nelas); a linha inteira não é linha de intervalo — o retângulo
+  passa por ela como por um grupo (não é canto, Shift+setas a pulam), a
+  cópia e a colagem a pulam (`#pasteRowCount` desconta as inteiras no
+  ladrilho quando há `rowRenderer`); o resumo e a contagem anunciada usam a
+  contagem do `RowList` (podem incluir as inteiras: saber quais são exigiria
+  rodar o renderer em cada linha). Menu da célula: só em células de dados
+  (nem a linha inteira nem as fixas têm itens de intervalo/colar).

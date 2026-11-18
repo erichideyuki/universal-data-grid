@@ -253,12 +253,19 @@ describe('linhas fixas: teclado e foco', () => {
       return grid.shadowRoot!.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('td, th') === cell;
     };
 
+    const where = (): string => {
+      const cell = active(grid);
+      const rect = cell.getBoundingClientRect();
+      const hit = grid.shadowRoot!.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return `${cell.tagName}.${cell.className}@${Math.round(rect.top)} hit=${hit?.tagName}.${hit?.className}/${hit?.closest('tr')?.className}/${hit?.closest('tbody,thead,tfoot')?.className}`;
+    };
+
     expect(grid.focusCell(0)).toBe(true);
     await settle(grid);
 
     for (const name of ['ArrowDown', 'PageDown', 'PageDown', 'ArrowDown', 'PageUp', 'ArrowUp']) {
       await key(grid, name);
-      expect(visible(), name).toBe(true);
+      expect(visible(), `${name} ${where()}`).toBe(true);
     }
 
     await key(grid, 'End', { ctrlKey: true });
@@ -510,5 +517,46 @@ describe('linhas fixas: barra e menu de contexto (frente 18)', () => {
 
       grid.remove();
     }
+  });
+});
+
+describe('linhas fixas: intervalo de células (frente 19)', () => {
+  it('nunca entram num intervalo: Shift+setas, Shift+clique e colar não as alcançam; nada realçado', async () => {
+    const grid = await create(5, g => {
+      g.cellSelectionMode = 'multiple';
+      g.allowEditing = true;
+      g.editMode = 'batch';
+      g.clipboardMode = 'copy-paste';
+    }, '700px');
+    const fixedCell = fixedRows(grid, 'top')[0].querySelectorAll<HTMLElement>('td[part~=cell]')[1];
+
+    // Do corpo, Shift+↑ na 1ª linha fica nela (não sobe para as fixas).
+    expect(grid.focusCell(0, grid.columns[1])).toBe(true);
+    await settle(grid);
+    await key(grid, 'ArrowUp', { shiftKey: true });
+    expect(grid.getCellRanges().every(range => range.startRowIndex === 0 && range.endRowIndex === 0)).toBe(true);
+    expect(activeRow(grid).closest('tbody.body-rows')).not.toBeNull();
+
+    // Numa fixa, Shift+↓ só navega.
+    fixedCell.focus();
+    await settle(grid);
+    await key(grid, 'ArrowDown', { shiftKey: true });
+    expect(root(grid).querySelectorAll('tbody.fixed-rows [aria-selected=true]')).toHaveLength(0);
+
+    // Shift+clique numa fixa não estende.
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'team', endColumn: 'team' });
+    await settle(grid);
+    const before = grid.getCellRanges();
+    fixedCell.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, cancelable: true, shiftKey: true, button: 0, buttons: 1, pointerType: 'mouse', pointerId: 3 }));
+    await settle(grid);
+    expect(grid.getCellRanges()).toEqual(before);
+
+    // Colar numa fixa não escreve nada.
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', 'X');
+    fixedCell.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+    expect(grid.hasChanges()).toBe(false);
+    expect(root(grid).querySelectorAll('tbody.fixed-rows [aria-selected=true]')).toHaveLength(0);
   });
 });

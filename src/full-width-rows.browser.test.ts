@@ -534,3 +534,87 @@ describe('linha inteira: menu de contexto (frente 18)', () => {
     expect(grid.hasChanges()).toBe(false);
   });
 });
+
+describe('linha inteira: intervalo de células (frente 19)', () => {
+  const copyFrom = (target: HTMLElement): string => {
+    const clipboardData = new DataTransfer();
+    target.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+    return clipboardData.getData('text/plain');
+  };
+
+  const createRange = (configure?: (grid: DataGrid) => void): Promise<DataGrid> => create(6, g => {
+    g.cellSelectionMode = 'multiple';
+    configure?.(g);
+  });
+
+  it('Shift+↓ passa por cima da linha inteira (não é canto); sem realce nela', async () => {
+    const grid = await createRange();
+    expect(grid.focusCell(0, grid.columns[0])).toBe(true);
+    await settle(grid);
+
+    await key(grid, 'ArrowDown', { shiftKey: true });
+    expect(grid.getCellRanges()[0]).toMatchObject({ startRowIndex: 0, endRowIndex: 2 });
+    expect(rowOf(grid, 1).querySelector('[aria-selected=true], .range-cell')).toBeNull();
+    expect(rowOf(grid, 2).querySelector('td[part~=cell]')!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('selectCellRange recusa canto numa linha inteira; o intervalo que a cobre copia só as linhas com células', async () => {
+    const grid = await createRange();
+    expect(grid.selectCellRange({ startRowIndex: 1, endRowIndex: 2, startColumn: 'name', endColumn: 'team' })).toBe(false);
+    expect(grid.selectCellRange({ startRowIndex: 0, endRowIndex: 2, startColumn: 'name', endColumn: 'team' })).toBe(true);
+    await settle(grid);
+
+    expect(copyFrom(rowOf(grid, 0).querySelector<HTMLElement>('td[part~=cell]')!)).toBe(['Name 0\tT0', 'Name 2\tT0'].join('\r\n'));
+  });
+
+  it('colar num intervalo que cobre uma linha inteira pula a linha inteira', async () => {
+    const grid = await createRange(g => {
+      g.allowEditing = true;
+      g.editMode = 'batch';
+      g.clipboardMode = 'copy-paste';
+    });
+    expect(grid.selectCellRange({ startRowIndex: 0, endRowIndex: 3, startColumn: 'team', endColumn: 'team' })).toBe(true);
+    await settle(grid);
+
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', 'X');
+    rowOf(grid, 0).querySelectorAll<HTMLElement>('td[part~=cell]')[1].dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+
+    expect(grid.getChanges().map(change => change.rowKey)
+      .sort()).toEqual([0, 2, 3]);
+  });
+
+  it('menu da célula: nada de intervalo/colar na linha inteira; nas fixas, nenhum menu', async () => {
+    const grid = await createRange(g => {
+      g.allowEditing = true;
+      g.editMode = 'batch';
+      g.clipboardMode = 'copy-paste';
+      g.fixedTopItems = [{ id: -1, name: 'Fixed', team: 'X', banner: false }];
+    });
+    const names: string[][] = [];
+    grid.addEventListener('u-grid-context-menu-opening', event => names.push(event.detail.menuItems.map(item => String(item.name))));
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 2, startColumn: 'name', endColumn: 'team' });
+    await settle(grid);
+
+    const fire = (target: HTMLElement): void => {
+      target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 40, clientY: 40 }));
+    };
+
+    fire(rowOf(grid, 0).querySelector<HTMLElement>('td[part~=cell]')!);
+    await settle(grid);
+    expect(names.at(-1)).toContain('copySelectedCells');
+    await key(grid, 'Escape');
+
+    fire(rowOf(grid, 1).querySelector<HTMLElement>('td.full-width-cell')!);
+    await settle(grid);
+    const fullWidth = names.at(-1) ?? [];
+    expect(fullWidth.filter(name => ['copySelectedCells', 'paste', 'extendSelectionToCell', 'addCellToSelection'].includes(name))).toEqual([]);
+    await key(grid, 'Escape');
+
+    const count = names.length;
+    fire(root(grid).querySelector<HTMLElement>('tbody.fixed-top-rows td[part~=cell]')!);
+    await settle(grid);
+    expect(names).toHaveLength(count);
+  });
+});

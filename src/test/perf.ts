@@ -88,6 +88,52 @@ export const benchmark = (runs = 9): number => {
   return percentile(times, 50) + sink * 0;
 };
 
+/**
+ * Antes de uma medida longa (exportação em fatias): coleta o lixo dos
+ * cenários anteriores. A maior fatia é um MÁXIMO — uma pausa de GC que caia
+ * no meio dela (lixo de outra medida) passa por trabalho do código medido.
+ */
+export const quietHeap = async (): Promise<void> => {
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await cdp().send('HeapProfiler.collectGarbage');
+};
+
+/**
+ * Melhor de `repeats` execuções de uma medida ruidosa, depois de `warmUp`
+ * execuções descartadas (JIT, caches de formatação) e com o heap coletado
+ * antes de cada uma. O ruído (carga da máquina, GC) só SOMA tempo: o mínimo
+ * por métrica é o estimador estável; a mediana mostra o espalhamento.
+ */
+export const bestOfQuiet = async <T extends Record<string, number>>(
+  measure: () => Promise<T>,
+  { repeats = 5, warmUp = 1 }: { repeats?: number; warmUp?: number } = {},
+): Promise<{ best: T; median: T; last: T }> => {
+  for (let i = 0; i < warmUp; i++) {
+    await quietHeap();
+    await measure();
+  }
+
+  const runs: T[] = [];
+
+  for (let i = 0; i < repeats; i++) {
+    await quietHeap();
+    runs.push(await measure());
+  }
+
+  const last = runs[runs.length - 1];
+  const keys = Object.keys(last) as (keyof T)[];
+  const best = { ...last };
+  const median = { ...last };
+
+  for (const key of keys) {
+    const values = runs.map(run => run[key]).sort((a, b) => a - b);
+    best[key] = values[0];
+    median[key] = values[Math.floor(values.length / 2)];
+  }
+
+  return { best, median, last };
+};
+
 export const percentile = (values: readonly number[], p: number): number => {
   if (!values.length) {
     return 0;

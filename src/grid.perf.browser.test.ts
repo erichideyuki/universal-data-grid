@@ -17,6 +17,7 @@ import type { DataGrid, GridDataSource, GridLoadOptions } from './grid.js';
 import { cleanup } from './test/fixture.js';
 import { makeColumns, makeIdItems, makeItems, makeLeanColumns, makeLeanItems, makeWideColumns } from './test/perf-data.js';
 import {
+  bestOfQuiet,
   domNodes,
   heapMiB,
   horizontalPositions,
@@ -579,19 +580,19 @@ const measureSlices = async (work: () => Promise<unknown>): Promise<SliceResult>
   return { sliceMs: perf.weak(worst), totalMs: perf.weak(end - start), slices: slices + 1 };
 };
 
-/** Melhor de {@link REPEATS} (só a maior fatia e o total; o resto é da última). */
+/**
+ * Maior fatia e total: a maior fatia é um máximo sobre milhares de fatias,
+ * sensível a qualquer pausa (GC de outra medida, carga da máquina). Por
+ * isso: 1 execução de aquecimento descartada, heap coletado antes de cada
+ * uma e melhor de 5 (\`bestOfQuiet\`); `slices` é o da última.
+ */
 const bestSlices = async (work: () => Promise<unknown>): Promise<SliceResult> => {
-  let best: SliceResult | undefined;
+  const { best } = await bestOfQuiet(async () => {
+    const { sliceMs, totalMs, slices } = await measureSlices(work);
+    return { sliceMs, totalMs, slices };
+  });
 
-  for (let i = 0; i < REPEATS; i++) {
-    const result = await measureSlices(work);
-
-    best = best
-      ? { sliceMs: Math.min(best.sliceMs, result.sliceMs), totalMs: Math.min(best.totalMs, result.totalMs), slices: result.slices }
-      : result;
-  }
-
-  return best!;
+  return best;
 };
 
 /** Frente 12: exportar CSV/dados de 1 milhão de linhas em fatias e copiar 10 mil selecionadas. */

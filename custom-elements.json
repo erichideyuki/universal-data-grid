@@ -894,7 +894,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. On a full-width\nrow (`rowRenderer`) Copy copies the row and there is no Edit; fixed rows\nhave no context menu (nor `u-grid-context-menu-opening`). Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
               "attribute": "row-menu"
             },
             {
@@ -2210,7 +2210,7 @@
                   }
                 }
               ],
-              "description": "Opens the context menu (built-in items and `u-grid-context-menu-opening`)\nof a data row (`{ rowKey, column? }`), a column header (`{ column }`) or\na group row (`{ groupPath }`) — e.g. from a \"⋯\" button in a cell\n`renderer`. Under `anchor` (or the cell); the focus goes back to `anchor`\n(or the cell). Returns `false` when canceled, empty, the row or column is\nnot shown, or before the first render."
+              "description": "Opens the context menu (built-in items and `u-grid-context-menu-opening`)\nof a data row (`{ rowKey, column? }`), a column header (`{ column }`) or\na group row (`{ groupPath }`) — e.g. from a \"⋯\" button in a cell\n`renderer`. Under `anchor` (or the cell); the focus goes back to `anchor`\n(or the cell). Returns `false` when canceled, empty, the row or column is\nnot shown, or before the first render. `rowKey`: body rows only; on a\nfull-width row `column` is ignored."
             },
             {
               "kind": "method",
@@ -2635,7 +2635,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. On a full-width\nrow (`rowRenderer`) Copy copies the row and there is no Edit; fixed rows\nhave no context menu (nor `u-grid-context-menu-opening`). Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
               "fieldName": "rowMenu"
             },
             {

@@ -801,7 +801,9 @@ grid.selectedKeys = [item2];                     // set without firing an event
   the active cell does not move, and the next `Shift`+arrow starts a new range from it.
 - **What is selected** — data cells only: group, detail, footer and totals rows and the checkbox,
   detail toggle and row buttons columns are never part of a range (a range over a group row
-  skips it). Fixed columns, the middle columns and bands form one flat order, as on screen. A
+  skips it). [Fixed rows](#fixed-pinned-rows) are never in a range; a range over a
+  [full-width row](#full-width-rows-rowrenderer) skips it like a group row (not a corner, not
+  copied, not pasted into). Fixed columns, the middle columns and bands form one flat order, as on screen. A
   range is a rectangle of indices: selecting a million rows × 300 columns costs nothing per cell,
   and only the rendered cells get `aria-selected="true"` and `::part(cell selected)`.
 - **Cleared** when the rows or columns change: sorting, filtering, grouping, expanding/collapsing,

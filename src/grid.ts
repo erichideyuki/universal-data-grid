@@ -6633,6 +6633,27 @@ export class DataGrid extends LitElement {
     return this.#rows.dataRowsBefore(bottom + 1) - this.#rows.dataRowsBefore(top);
   }
 
+  /**
+   * Linhas que recebem colagem entre `top` e `bottom`: as de dados menos as
+   * linhas inteiras (frente 20), contadas só com \`rowRenderer\` e num trecho
+   * que cabe no limite da colagem (acima dele a colagem é recusada mesmo).
+   */
+  #pasteRowCount(top: number, bottom: number): number {
+    if (!this.rowRenderer || bottom - top + 1 > MAX_RANGE_CLIPBOARD_CELLS) {
+      return this.#dataRowCount(top, bottom);
+    }
+
+    let count = 0;
+
+    for (let index = top; index <= bottom; index++) {
+      if (this.#isRangeRow(index)) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
   /** Linhas e colunas a que os índices se referem (o mesmo conjunto que o estado da 11 observa). */
   #rangeStructure(): unknown[] {
     return [
@@ -7380,7 +7401,8 @@ export class DataGrid extends LitElement {
       for (let index = rect.top; index <= rect.bottom; index++) {
         const row = this.#rowAt(index);
 
-        if (!row || !isDataRowLike(row)) {
+        // Linha inteira (frente 20): sem células no intervalo, fica de fora da cópia.
+        if (!row || !isDataRowLike(row) || this.#rowRenderOf(row)) {
           continue;
         }
 
@@ -7476,7 +7498,7 @@ export class DataGrid extends LitElement {
     const blockRows = values.length;
     const blockCols = Math.max(...values.map(row => row.length));
     const target = this.#pasteTarget(position);
-    const size = pasteSize(blockRows, blockCols, this.#dataRowCount(target.top, target.bottom), target.right - target.left + 1);
+    const size = pasteSize(blockRows, blockCols, this.#pasteRowCount(target.top, target.bottom), target.right - target.left + 1);
     const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
 
     if (size.rows * size.cols > MAX_RANGE_CLIPBOARD_CELLS) {
