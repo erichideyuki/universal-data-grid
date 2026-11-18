@@ -8,7 +8,7 @@
       "declarations": [
         {
           "kind": "class",
-          "description": "Data grid with row virtualization, grouping, sorting, column resizing,\nfixing, hiding and reordering, i18n and SSR.",
+          "description": "Data grid with row virtualization, grouping, sorting, filtering (filter\nrow, header filter, search panel), column resizing, fixing, hiding and\nreordering, i18n and SSR.",
           "name": "DataGrid",
           "cssProperties": [
             {
@@ -190,6 +190,30 @@
             {
               "description": "Font weight of summary cells. Default `500`.",
               "name": "--u-grid-summary-cell-font-weight"
+            },
+            {
+              "description": "Height of the filter row. Default: `--u-grid-header-cell-height` (`46px`).",
+              "name": "--u-grid-filter-row-height"
+            },
+            {
+              "description": "Background of the search matches in cells.",
+              "name": "--u-grid-search-highlight-background-color"
+            },
+            {
+              "description": "Text color of the search matches in cells.",
+              "name": "--u-grid-search-highlight-color"
+            },
+            {
+              "description": "Color of the header filter button of a filtered column.",
+              "name": "--u-grid-header-filter-button-active-color"
+            },
+            {
+              "description": "Header filter popover background.",
+              "name": "--u-grid-header-filter-background-color"
+            },
+            {
+              "description": "Header filter popover corner radius. Default `12px`.",
+              "name": "--u-grid-header-filter-shape"
             }
           ],
           "cssParts": [
@@ -256,6 +280,38 @@
             {
               "description": "The group panel context menu.",
               "name": "group-panel-menu"
+            },
+            {
+              "description": "The filter row (`<tr>`) below the column headers.",
+              "name": "filter-row"
+            },
+            {
+              "description": "Cells of the filter row.",
+              "name": "filter-cell"
+            },
+            {
+              "description": "Editors (inputs and selects) of the filter row.",
+              "name": "filter-editor"
+            },
+            {
+              "description": "The operation button of a filter row cell.",
+              "name": "filter-operation-button"
+            },
+            {
+              "description": "The search panel input.",
+              "name": "search-input"
+            },
+            {
+              "description": "The funnel button in a column header (`header-filter`).",
+              "name": "header-filter-button"
+            },
+            {
+              "description": "The header filter popover.",
+              "name": "header-filter"
+            },
+            {
+              "description": "Search matches (`<mark>`) in native cells (not in `renderer` cells).",
+              "name": "search-highlight"
             }
           ],
           "slots": [
@@ -397,6 +453,53 @@
               "default": "true",
               "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
               "attribute": "group-panel-menu"
+            },
+            {
+              "kind": "field",
+              "name": "showFilterRow",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the filter row below the column headers (an editor and an operation menu per filterable column).",
+              "attribute": "show-filter-row"
+            },
+            {
+              "kind": "field",
+              "name": "showSearchPanel",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the search box in the bar above the table (searches the displayed text of the visible filterable columns).",
+              "attribute": "show-search-panel"
+            },
+            {
+              "kind": "field",
+              "name": "headerFilter",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a filter button in the headers of filterable columns: a popover with the distinct values.",
+              "attribute": "header-filter"
+            },
+            {
+              "kind": "field",
+              "name": "filterValue",
+              "type": {
+                "text": "GridFilterExpression | null"
+              },
+              "description": "Column filter (property only): a serializable expression such as\n`[['age', '>', 30], 'and', ['name', 'contains', 'an']]`. The filter row\nand the header filter read and write it, so it always holds the current\nfilter. The grid keeps a frozen copy (never the host array). Setting it\ndoes not fire `u-grid-filter-change`."
+            },
+            {
+              "kind": "field",
+              "name": "searchText",
+              "type": {
+                "text": "string"
+              },
+              "description": "Text of the search panel (case and accent insensitive). Setting it does not fire `u-grid-filter-change`.",
+              "attribute": "search-text"
             },
             {
               "kind": "field",
@@ -779,6 +882,26 @@
             },
             {
               "kind": "method",
+              "name": "clearFilter",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Removes every filter: `filterValue` and `searchText`. Fires `u-grid-filter-change` (`source: 'api'`) when something changed."
+            },
+            {
+              "kind": "method",
+              "name": "getCombinedFilter",
+              "return": {
+                "type": {
+                  "text": "GridFilterExpression | null"
+                }
+              },
+              "description": "The effective filter: `filterValue` `and` the search, as an expression\n(copy). The search becomes `[path, 'contains', text]` joined by `or`\nover the visible filterable columns (number and date columns included:\n`contains` matches their displayed text). `null` without filter."
+            },
+            {
+              "kind": "method",
               "name": "openColumnChooser",
               "return": {
                 "type": {
@@ -850,6 +973,13 @@
                 "text": "CustomEvent<GridColumnResizeEventDetail>"
               },
               "description": "The user finished resizing a column (pointer release, keyboard or double-click auto-size)."
+            },
+            {
+              "name": "u-grid-filter-change",
+              "type": {
+                "text": "CustomEvent<GridFilterEventDetail>"
+              },
+              "description": "After the user filtered (filter row, header filter, search panel) or `clearFilter()` ran. Setting `filterValue`/`searchText` does not fire it."
             },
             {
               "name": "u-grid-sort-change",
@@ -964,6 +1094,41 @@
               "default": "true",
               "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
               "fieldName": "groupPanelMenu"
+            },
+            {
+              "name": "show-filter-row",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the filter row below the column headers (an editor and an operation menu per filterable column).",
+              "fieldName": "showFilterRow"
+            },
+            {
+              "name": "show-search-panel",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the search box in the bar above the table (searches the displayed text of the visible filterable columns).",
+              "fieldName": "showSearchPanel"
+            },
+            {
+              "name": "header-filter",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a filter button in the headers of filterable columns: a popover with the distinct values.",
+              "fieldName": "headerFilter"
+            },
+            {
+              "name": "search-text",
+              "type": {
+                "text": "string"
+              },
+              "description": "Text of the search panel (case and accent insensitive). Setting it does not fire `u-grid-filter-change`.",
+              "fieldName": "searchText"
             },
             {
               "name": "column-resizing",
@@ -1148,6 +1313,30 @@
           "name": "GridGroupSummaryItem",
           "declaration": {
             "name": "GridGroupSummaryItem",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridFilterCondition",
+          "declaration": {
+            "name": "GridFilterCondition",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridFilterExpression",
+          "declaration": {
+            "name": "GridFilterExpression",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridFilterOperation",
+          "declaration": {
+            "name": "GridFilterOperation",
             "module": "dist/grid-column-def.js"
           }
         },
@@ -1530,6 +1719,36 @@
             },
             {
               "kind": "field",
+              "name": "filterable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` when the column has\na `path`. `filterable=\"false\"` disables it.",
+              "attribute": "filterable"
+            },
+            {
+              "kind": "field",
+              "name": "filterOperations",
+              "type": {
+                "text": "readonly GridFilterOperation[] | null"
+              },
+              "default": "null",
+              "description": "Operations of the filter row operation menu. Attribute: space separated\nlist (`filter-operations=\"contains startswith =\"`); unknown tokens are\nignored with a warning. Default by data type.",
+              "attribute": "filter-operations"
+            },
+            {
+              "kind": "field",
+              "name": "defaultFilterOperation",
+              "type": {
+                "text": "GridFilterOperation | null"
+              },
+              "default": "null",
+              "description": "Operation of the filter row editor. Default: `contains` for text, `=`\notherwise; one outside `filterOperations` falls back to the first of the\nlist. Unknown attribute values are ignored with a warning.",
+              "attribute": "default-filter-operation"
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
@@ -1698,6 +1917,33 @@
               "default": "null",
               "description": "Allows the user to group by this column (`groupable=\"false\"` prevents\nit). Default: `true` when it has a `path`, `valueGetter` or\n`groupValueGetter`. Only limits the user: `groupColumn()` still works.",
               "fieldName": "groupable"
+            },
+            {
+              "name": "filterable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` when the column has\na `path`. `filterable=\"false\"` disables it.",
+              "fieldName": "filterable"
+            },
+            {
+              "name": "filter-operations",
+              "type": {
+                "text": "readonly GridFilterOperation[] | null"
+              },
+              "default": "null",
+              "description": "Operations of the filter row operation menu. Attribute: space separated\nlist (`filter-operations=\"contains startswith =\"`); unknown tokens are\nignored with a warning. Default by data type.",
+              "fieldName": "filterOperations"
+            },
+            {
+              "name": "default-filter-operation",
+              "type": {
+                "text": "GridFilterOperation | null"
+              },
+              "default": "null",
+              "description": "Operation of the filter row editor. Default: `contains` for text, `=`\notherwise; one outside `filterOperations` falls back to the first of the\nlist. Unknown attribute values are ignored with a warning.",
+              "fieldName": "defaultFilterOperation"
             },
             {
               "name": "data-type",

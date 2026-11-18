@@ -21,13 +21,13 @@ import { isRtl } from './features/drop-position.js';
 import { FilterRowController, renderFilterCell, renderFilterMenu } from './features/filter-row.js';
 import { FilteringController } from './features/filtering.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
-import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import {
   type GroupPanelMenuAction,
   GroupPanelMenuController,
   isContextMenuKey,
   renderGroupPanelMenu,
 } from './features/group-panel-menu.js';
+import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import {
   clampWidth,
   ColumnResizeController,

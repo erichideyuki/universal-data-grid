@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { GridColumnDef, GridFilterExpression } from './grid-column-def.js';
 import type { DataGrid, GridFilterEventDetail } from './grid.js';
-import { cellText, cleanup, createGrid, dataRows, groupLabels, settle } from './test/fixture.js';
+import { cellText, cleanup, createGrid, dataRows, groupInfos, groupLabels, settle } from './test/fixture.js';
 
 afterEach(cleanup);
 
@@ -134,6 +134,38 @@ describe('filterValue / searchText (API)', () => {
 
     expect(groupLabels(grid)).toEqual(['City: Lima', 'City: São Paulo']);
     expect(dataRows(grid).map(row => cellText(row.cells[1]))).toEqual(['José', '<b>x</b>', 'Ana']);
+  });
+});
+
+describe('filtro + resumos (frente 07)', () => {
+  it('totais e resumos de grupo valem sobre as linhas filtradas (e voltam ao limpar)', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, { path: 'name', label: 'Name' }, { path: 'age', label: 'Age', dataType: 'number' }],
+      items: people(),
+      configure: g => {
+        g.language = 'en';
+        g.summary = { total: [{ column: 'age', type: 'sum' }, { column: 'name', type: 'count' }], group: [{ column: 'age', type: 'sum' }] };
+      },
+    });
+    const totals = () => [...root(grid).querySelectorAll<HTMLTableCellElement>('tfoot tr.total-row td[aria-colindex]')]
+      .map(td => td.textContent.trim());
+
+    expect(totals()).toEqual(['Count: 5', 'Sum: 126']);
+
+    grid.filterValue = ['age', '>=', 30];
+    await settle(grid);
+
+    expect(totals()).toEqual(['Count: 3', 'Sum: 101']);
+    expect(groupLabels(grid)).toEqual(['City: Lima', 'City: São Paulo']);
+    expect(groupInfos(grid)).toEqual(['(2, Sum of Age: 71)', '(1, Sum of Age: 30)']);
+
+    grid.searchText = 'lima';
+    await settle(grid);
+    expect(totals()).toEqual(['Count: 2', 'Sum: 71']);
+
+    grid.clearFilter();
+    await settle(grid);
+    expect(totals()).toEqual(['Count: 5', 'Sum: 126']);
   });
 });
 
