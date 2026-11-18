@@ -246,6 +246,26 @@
             {
               "description": "Minimum height of the pager. Default `56px`.",
               "name": "--u-grid-pager-height"
+            },
+            {
+              "description": "Background of edited, unsaved cells (`editMode=\"batch\"`). Default: primary color at 10%.",
+              "name": "--u-grid-modified-cell-background-color"
+            },
+            {
+              "description": "Corner mark of edited, unsaved cells (not shown by color alone). Default: primary color.",
+              "name": "--u-grid-modified-cell-indicator-color"
+            },
+            {
+              "description": "Border and message accent of cells with a validation error. Default: error token (`rgb(179, 38, 30)`).",
+              "name": "--u-grid-invalid-cell-color"
+            },
+            {
+              "description": "Background of new, unsaved rows. Default: primary color at 6%.",
+              "name": "--u-grid-added-row-background-color"
+            },
+            {
+              "description": "Opacity of rows marked for removal (their text is also struck through). Default `0.7`.",
+              "name": "--u-grid-removed-row-opacity"
             }
           ],
           "cssParts": [
@@ -416,6 +436,54 @@
             {
               "description": "Search matches (`<mark>`) in native cells (not in `renderer` cells).",
               "name": "search-highlight"
+            },
+            {
+              "description": "Edited, unsaved data cells (with `cell`).",
+              "name": "modified"
+            },
+            {
+              "description": "Data cells with a validation error (with `cell`).",
+              "name": "invalid"
+            },
+            {
+              "description": "New, unsaved rows (with `row`).",
+              "name": "added"
+            },
+            {
+              "description": "Rows marked for removal (with `row`, `editMode=\"batch\"`).",
+              "name": "removed"
+            },
+            {
+              "description": "The built-in cell editors (`<input>`).",
+              "name": "cell-editor"
+            },
+            {
+              "description": "The validation error shown below an invalid cell.",
+              "name": "validation-message"
+            },
+            {
+              "description": "Cells and header of the row buttons column (edit, delete).",
+              "name": "command-cell"
+            },
+            {
+              "description": "The row buttons (edit, save, cancel, delete, restore).",
+              "name": "command-button"
+            },
+            {
+              "description": "The toolbar \"Add row\" button.",
+              "name": "add-row-button"
+            },
+            {
+              "description": "The toolbar \"Save changes\" button (`editMode=\"batch\"`).",
+              "name": "save-button"
+            },
+            {
+              "description": "The toolbar \"Discard changes\" button (`editMode=\"batch\"`).",
+              "name": "discard-button"
+            },
+            {
+              "description": "The delete confirmation dialog.",
+              "name": "remove-dialog"
             }
           ],
           "slots": [
@@ -791,6 +859,66 @@
               "default": "'copy'",
               "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected\nrows (or, without a selection, the focused cell) as tab separated text\nand an HTML table; `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
               "attribute": "clipboard-mode"
+            },
+            {
+              "kind": "field",
+              "name": "editMode",
+              "type": {
+                "text": "GridEditMode"
+              },
+              "default": "'cell'",
+              "description": "How rows are edited: `cell` (default; a committed cell is saved at once),\n`row` (Edit/Save/Cancel buttons per row) or `batch` (changes stay pending\nuntil \"Save changes\" or `saveChanges()`).",
+              "attribute": "edit-mode"
+            },
+            {
+              "kind": "field",
+              "name": "allowEditing",
+              "type": {
+                "text": "boolean | ((item: any) => boolean)"
+              },
+              "default": "false",
+              "description": "Lets the user edit cells (columns with `editable`, by default those with\n`path`). A function (property only) decides per row. The grid never\nmutates the items: changes are delivered in `u-grid-saving`. With\n`dataSource`, editing needs `keyExpr`.",
+              "attribute": "allow-editing"
+            },
+            {
+              "kind": "field",
+              "name": "allowAdding",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the \"Add row\" button and allows `addRow()`.",
+              "attribute": "allow-adding"
+            },
+            {
+              "kind": "field",
+              "name": "allowRemoving",
+              "type": {
+                "text": "boolean | ((item: any) => boolean)"
+              },
+              "default": "false",
+              "description": "Shows the Delete button of each row and allows `removeRow()`. A function\n(property only) decides per row.",
+              "attribute": "allow-removing"
+            },
+            {
+              "kind": "field",
+              "name": "editTrigger",
+              "type": {
+                "text": "GridEditTrigger"
+              },
+              "default": "'click'",
+              "description": "Pointer gesture that opens a cell editor: `click` (default) or `dblclick`. Enter and F2 always open it.",
+              "attribute": "edit-trigger"
+            },
+            {
+              "kind": "field",
+              "name": "confirmRemove",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Asks before deleting a row with the Delete button (not in `batch` mode, where removal is pending, nor with `removeRow()`).",
+              "attribute": "confirm-remove"
             },
             {
               "kind": "field",
@@ -1512,6 +1640,143 @@
             },
             {
               "kind": "method",
+              "name": "editCell",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                },
+                {
+                  "name": "column",
+                  "type": {
+                    "text": "GridColumnDef"
+                  }
+                }
+              ],
+              "description": "Opens the editor of a cell (focus goes to it). In `row` mode it opens the\nwhole row with the focus on that cell. Returns `false` when the row is\nnot in the grid, the cell is not editable, a save is running or\n`u-grid-edit-starting` was canceled."
+            },
+            {
+              "kind": "method",
+              "name": "editRow",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Opens a whole row for editing (`editMode=\"row\"` only; `false` otherwise or as `editCell`)."
+            },
+            {
+              "kind": "method",
+              "name": "addRow",
+              "return": {
+                "type": {
+                  "text": "unknown"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "data",
+                  "default": "{}",
+                  "type": {
+                    "text": "Record<string, unknown>"
+                  }
+                }
+              ],
+              "description": "Adds a new row at the top of the visible rows (of the current page with\n`paging`) and opens its first editable cell. `data` gives initial values\n(also editable in `u-grid-row-adding`). Returns the opaque provisional key\nof the row (focus and selection move to the real key when it is saved),\nor `null` without `allowAdding`, during a save or when canceled."
+            },
+            {
+              "kind": "method",
+              "name": "removeRow",
+              "return": {
+                "type": {
+                  "text": "Promise<boolean>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Deletes a row: in `cell` and `row` modes it is saved at once\n(`u-grid-saving`); in `batch` mode it is marked for removal. Never asks\nfor confirmation. Resolves `false` when nothing was removed (row not\nfound, `u-grid-row-removing` or `u-grid-saving` canceled, save failed)."
+            },
+            {
+              "kind": "method",
+              "name": "restoreRow",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Restores a row marked for removal (`editMode=\"batch\"`)."
+            },
+            {
+              "kind": "method",
+              "name": "saveChanges",
+              "return": {
+                "type": {
+                  "text": "Promise<boolean>"
+                }
+              },
+              "description": "Commits the open editor, validates and saves every pending change\n(`u-grid-row-validating`, `u-grid-saving`, `u-grid-save`). Resolves\n`true` when saved (or nothing was pending)."
+            },
+            {
+              "kind": "method",
+              "name": "discardChanges",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Closes the editor and discards every pending change (`u-grid-edit-cancel` when there was any)."
+            },
+            {
+              "kind": "method",
+              "name": "hasChanges",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "description": "Whether there are pending changes (or an editor with a changed value)."
+            },
+            {
+              "kind": "method",
+              "name": "getChanges",
+              "return": {
+                "type": {
+                  "text": "GridEditChange[]"
+                }
+              },
+              "description": "The pending changes, in the order they started (copies). The value of an open editor is not included until committed."
+            },
+            {
+              "kind": "method",
               "name": "getExportData",
               "return": {
                 "type": {
@@ -1624,6 +1889,55 @@
               "description": "After the grouping changed (user — drag, Ctrl+G, group panel or column header menu — or API)."
             },
             {
+              "name": "u-grid-edit-starting",
+              "type": {
+                "text": "CustomEvent<GridEditStartingEventDetail>"
+              },
+              "description": "Before a cell editor (or a row, `editMode=\"row\"`) opens (user or API). Cancelable."
+            },
+            {
+              "name": "u-grid-edit-cancel",
+              "type": {
+                "text": "CustomEvent<GridEditCancelEventDetail>"
+              },
+              "description": "Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`)."
+            },
+            {
+              "name": "u-grid-row-adding",
+              "type": {
+                "text": "CustomEvent<GridRowAddingEventDetail>"
+              },
+              "description": "Before a new row is added (Add row button or `addRow`): set its initial values in `detail.data`. Cancelable."
+            },
+            {
+              "name": "u-grid-row-removing",
+              "type": {
+                "text": "CustomEvent<GridRowRemovingEventDetail>"
+              },
+              "description": "Before a row is deleted or marked for removal (Delete button, before the confirmation, or `removeRow`). Cancelable."
+            },
+            {
+              "name": "u-grid-saving",
+              "type": {
+                "text": "CustomEvent<GridSavingEventDetail>"
+              },
+              "description": "Before saving the pending changes: save on the server with `waitUntil(promise)`. Cancelable: the changes stay pending."
+            },
+            {
+              "name": "u-grid-save-error",
+              "type": {
+                "text": "CustomEvent<GridSaveErrorEventDetail>"
+              },
+              "description": "The `waitUntil` promise rejected; the changes stay pending."
+            },
+            {
+              "name": "u-grid-save",
+              "type": {
+                "text": "CustomEvent<GridSaveEventDetail>"
+              },
+              "description": "The changes were saved and applied (`items` copy or `dataSource.applyChanges`)."
+            },
+            {
               "name": "u-grid-column-reorder",
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
@@ -1713,6 +2027,13 @@
               },
               "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.",
               "name": "u-grid-copying"
+            },
+            {
+              "type": {
+                "text": "CustomEvent<GridRowValidatingEventDetail>"
+              },
+              "description": "Before saving, for each added or edited row. Cancelable: `preventDefault()`/`setError` marks the row invalid.",
+              "name": "u-grid-row-validating"
             }
           ],
           "attributes": [
@@ -1994,6 +2315,60 @@
               "fieldName": "clipboardMode"
             },
             {
+              "name": "edit-mode",
+              "type": {
+                "text": "GridEditMode"
+              },
+              "default": "'cell'",
+              "description": "How rows are edited: `cell` (default; a committed cell is saved at once),\n`row` (Edit/Save/Cancel buttons per row) or `batch` (changes stay pending\nuntil \"Save changes\" or `saveChanges()`).",
+              "fieldName": "editMode"
+            },
+            {
+              "name": "allow-editing",
+              "type": {
+                "text": "boolean | ((item: any) => boolean)"
+              },
+              "default": "false",
+              "description": "Lets the user edit cells (columns with `editable`, by default those with\n`path`). A function (property only) decides per row. The grid never\nmutates the items: changes are delivered in `u-grid-saving`. With\n`dataSource`, editing needs `keyExpr`.",
+              "fieldName": "allowEditing"
+            },
+            {
+              "name": "allow-adding",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the \"Add row\" button and allows `addRow()`.",
+              "fieldName": "allowAdding"
+            },
+            {
+              "name": "allow-removing",
+              "type": {
+                "text": "boolean | ((item: any) => boolean)"
+              },
+              "default": "false",
+              "description": "Shows the Delete button of each row and allows `removeRow()`. A function\n(property only) decides per row.",
+              "fieldName": "allowRemoving"
+            },
+            {
+              "name": "edit-trigger",
+              "type": {
+                "text": "GridEditTrigger"
+              },
+              "default": "'click'",
+              "description": "Pointer gesture that opens a cell editor: `click` (default) or `dblclick`. Enter and F2 always open it.",
+              "fieldName": "editTrigger"
+            },
+            {
+              "name": "confirm-remove",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Asks before deleting a row with the Delete button (not in `batch` mode, where removal is pending, nor with `removeRow()`).",
+              "fieldName": "confirmRemove"
+            },
+            {
               "name": "stripped",
               "type": {
                 "text": "boolean"
@@ -2079,6 +2454,18 @@
           "summary": "Data grid web component.",
           "tagName": "u-grid",
           "customElement": true
+        },
+        {
+          "kind": "variable",
+          "name": "changes"
+        },
+        {
+          "kind": "variable",
+          "name": "column"
+        },
+        {
+          "kind": "variable",
+          "name": "value"
         },
         {
           "kind": "variable",
@@ -2355,6 +2742,102 @@
           "name": "GridSummaryValue",
           "declaration": {
             "name": "GridSummaryValue",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridCustomRule",
+          "declaration": {
+            "name": "GridCustomRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridEditorRenderContext",
+          "declaration": {
+            "name": "GridEditorRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridEditorRenderer",
+          "declaration": {
+            "name": "GridEditorRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridEmailRule",
+          "declaration": {
+            "name": "GridEmailRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridPatternRule",
+          "declaration": {
+            "name": "GridPatternRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRangeRule",
+          "declaration": {
+            "name": "GridRangeRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRequiredRule",
+          "declaration": {
+            "name": "GridRequiredRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridStringLengthRule",
+          "declaration": {
+            "name": "GridStringLengthRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridValidationContext",
+          "declaration": {
+            "name": "GridValidationContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridValidationRule",
+          "declaration": {
+            "name": "GridValidationRule",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridValidationRuleBase",
+          "declaration": {
+            "name": "GridValidationRuleBase",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridValueSetter",
+          "declaration": {
+            "name": "GridValueSetter",
             "module": "dist/grid-column-def.js"
           }
         },
@@ -2741,6 +3224,43 @@
             },
             {
               "kind": "field",
+              "name": "editable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows editing the cells of this column (with `allow-editing` on the\ngrid). Default (`null`): `true` when it has a `path` or a\n`valueSetter`. `editable=\"false\"` makes it read-only.",
+              "attribute": "editable"
+            },
+            {
+              "kind": "field",
+              "name": "editorRenderer",
+              "type": {
+                "text": "GridEditorRenderer | null"
+              },
+              "default": "null",
+              "description": "Builds the cell editor instead of the built-in one (property only). See `GridEditorRenderer`."
+            },
+            {
+              "kind": "field",
+              "name": "validationRules",
+              "type": {
+                "text": "readonly GridValidationRule[] | null"
+              },
+              "default": "null",
+              "description": "Rules checked when a value is committed and before saving (property only). See `GridValidationRule`."
+            },
+            {
+              "kind": "field",
+              "name": "valueSetter",
+              "type": {
+                "text": "GridValueSetter | null"
+              },
+              "default": "null",
+              "description": "Writes an edited value into the pending change of the row (property only). Default: sets `path`."
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
@@ -2956,6 +3476,15 @@
               "fieldName": "defaultFilterOperation"
             },
             {
+              "name": "editable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Allows editing the cells of this column (with `allow-editing` on the\ngrid). Default (`null`): `true` when it has a `path` or a\n`valueSetter`. `editable=\"false\"` makes it read-only.",
+              "fieldName": "editable"
+            },
+            {
               "name": "data-type",
               "type": {
                 "text": "GridColumnDataType | null"
@@ -2995,8 +3524,36 @@
     {
       "kind": "javascript-module",
       "path": "dist/grid-column-def.js",
-      "declarations": [],
-      "exports": []
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "isColumnEditable",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "column",
+              "type": {
+                "text": "GridColumnDef"
+              }
+            }
+          ],
+          "description": "A coluna é editável (sem olhar o `allowEditing` do grid)? Padrão: com\n`path` ou `valueSetter`."
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "isColumnEditable",
+          "declaration": {
+            "name": "isColumnEditable",
+            "module": "dist/grid-column-def.js"
+          }
+        }
+      ]
     },
     {
       "kind": "javascript-module",

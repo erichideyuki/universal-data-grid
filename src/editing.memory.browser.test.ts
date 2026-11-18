@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { GridColumnDef } from './grid-column-def.js';
-import type { DataGrid, GridSavingEventDetail } from './grid.js';
+import type { DataGrid } from './grid.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
 import { aliveAfterGc, expectCollected, heapDelta, kib, measureHeap, track, type Tracked } from './test/leak.js';
 
@@ -32,7 +32,7 @@ const makeColumns = (pendingForever = { on: false }): GridColumnDef[] => [
     path: 'age',
     label: 'Age',
     dataType: 'number',
-    editorRenderer: (item, ctx) => {
+    editorRenderer: (_item, ctx) => {
       const input = document.createElement('input');
       input.value = String(ctx.value ?? '');
       input.addEventListener('input', () => ctx.setValue(Number(input.value)));
@@ -112,7 +112,7 @@ describe('memória da edição', () => {
 
       // Salvar que nunca termina (servidor fora do ar) e o diálogo de exclusão aberto.
       grid.addEventListener('u-grid-saving', event => {
-        (event as CustomEvent<GridSavingEventDetail>).detail.waitUntil(new Promise<void>(() => undefined));
+        event.detail.waitUntil(new Promise<void>(() => undefined));
       });
       void grid.saveChanges();
       grid.editMode = 'cell';

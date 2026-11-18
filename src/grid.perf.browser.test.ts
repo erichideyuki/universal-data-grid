@@ -924,6 +924,120 @@ const stateScenario = (rows: number, label: string) => {
     };
 
     checkBudgets(rows, metrics, perf.report(`state-${label}`, metrics));
+/**
+ * Frente 09: edição em `rows` linhas locais ordenadas e filtradas — abrir o
+ * editor, confirmar uma célula (lote), salvar 100 linhas pendentes de uma vez
+ * (cópia de `items` sem reordenar) e salvar uma célula no modo célula.
+ */
+const editingScenario = (rows: number, label: string) => {
+  it(`${label} linhas: abrir editor, confirmar, salvar lote de 100 e salvar célula`, async () => {
+    let items: object[] = makeLeanItems(rows);
+
+    await perf.throttle();
+
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '600px';
+    grid.columns = makeLeanColumns();
+    grid.keyExpr = 'id';
+    grid.allowEditing = true;
+    grid.editMode = 'batch';
+    grid.items = items;
+    document.body.append(grid);
+    await painted(grid);
+
+    grid.sortColumn(byLabel(grid, 'Country'), 'asc');
+    grid.filterValue = ['status', '<>', 'Archived'];
+    await painted(grid);
+
+    const name = byLabel(grid, 'Name');
+    const quantity = byLabel(grid, 'Quantity');
+    const visibleKey = () => (grid.items.find(item => (item as { status: string }).status !== 'Archived') as { id: number }).id;
+    const editor = () => grid.shadowRoot!.querySelector<HTMLInputElement>('td.editing .cell-editor')!;
+
+    const typeAndEnter = (text: string) => {
+      const input = editor();
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true }));
+    };
+
+    const open = await interaction('editOpen', grid, () => grid.editCell(visibleKey(), name), () => grid.discardChanges());
+    grid.discardChanges();
+    grid.editCell(visibleKey(), name);
+    await painted(grid);
+
+    const commit = await interaction(
+      'editCommit',
+      grid,
+      () => typeAndEnter('Edited'),
+      () => {
+        grid.discardChanges();
+        grid.editCell(visibleKey(), name);
+      },
+    );
+
+    // 100 linhas pendentes espalhadas (fora da medida), depois salvar tudo.
+    const ids = Array.from({ length: 100 }, (_, n) => n * Math.floor(rows / 100));
+    let version = 0;
+
+    const pend = async () => {
+      grid.discardChanges();
+      version++;
+
+      for (const id of ids) {
+        if (grid.editCell(id, quantity)) {
+          await grid.updateComplete;
+          typeAndEnter(String(version * 1000 + (id % 1000)));
+          await grid.updateComplete;
+        }
+      }
+    };
+
+    let best = Infinity;
+
+    for (let i = 0; i < 3; i++) {
+      await perf.unthrottle();
+      await pend();
+      await perf.throttle();
+      await painted(grid);
+      perf.recalibrate();
+      const start = performance.now();
+      await grid.saveChanges();
+      await updatesDone(grid);
+      best = Math.min(best, perf.weak(performance.now() - start));
+      await painted(grid);
+    }
+
+    const saved = grid.items;
+
+    // Modo célula: Enter confirma e salva já.
+    grid.editMode = 'cell';
+    await painted(grid);
+    let cellBest = Infinity;
+
+    for (let i = 0; i < 3; i++) {
+      grid.editCell(visibleKey(), name);
+      await painted(grid);
+      perf.recalibrate();
+      const done = new Promise(resolve => grid.addEventListener('u-grid-save', resolve, { once: true }));
+      const start = performance.now();
+      typeAndEnter(`Cell ${i}`);
+      await done;
+      await updatesDone(grid);
+      cellBest = Math.min(cellBest, perf.weak(performance.now() - start));
+      await painted(grid);
+    }
+
+    await perf.unthrottle();
+    grid.remove();
+    items = [];
+
+    const metrics = { ...open, ...commit, editSave100Ms: best, editCellSaveMs: cellBest };
+
+    checkBudgets(rows, metrics, perf.report(`editing-${label}`, metrics));
+    expect(saved).not.toBe(items);
+    expect(saved.length).toBe(rows);
   });
 };
 
@@ -940,4 +1054,5 @@ describe('perfil de máquina fraca', () => {
   exportScenario(1_000_000, '1m');
   detailScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');
+  editingScenario(1_000_000, '1m');
 });

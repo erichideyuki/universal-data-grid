@@ -29,6 +29,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
 - [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
+- [Editing](#editing) (cell, row and batch modes, editors, validation, add and delete rows)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Appearance & behavior](#appearance--behavior)
 - [Theming (CSS custom properties & parts)](#theming)
@@ -77,6 +78,10 @@ React, Vue, Svelte — or with no framework at all.
 - **Templates & master-detail** — Lit templates (also server-rendered), text or elements for
   cells, headers, group rows and the empty state; expandable detail rows of any height (even a
   nested grid) without slowing down scrolling.
+- **Editing** — cell, row and batch modes, built-in editors per data type (numbers in the
+  language's format), your own editors, synchronous and server-side validation, add and delete rows
+  with an accessible confirmation; the grid never mutates your items and hands you the changes to
+  save on the server.
 - **Internationalization** — a `language` property with built-in translations for 14 languages,
   automatic language detection, and hooks to override strings or set a global default.
 - **Server-side rendering** — compatible with `@lit-labs/ssr` and client hydration.
@@ -308,6 +313,14 @@ interface GridColumnDef<TItem = any> {
   defaultFilterOperation?: GridFilterOperation | null;
   /** Include in exports and Ctrl+C. Default: true when it has a `path`, `valueGetter` or `displayValue`. */
   exportable?: boolean | null;
+  /** Lets the user edit cells of this column (with `allowEditing`). Default: true when it has a `path` or `valueSetter`. */
+  editable?: boolean | null;
+  /** Cell editor: (item, ctx) => template | string | element — see "Editing". */
+  editorRenderer?: GridEditorRenderer<TItem> | null;
+  /** Rules checked on commit and before saving — see "Editing". */
+  validationRules?: readonly GridValidationRule<TItem>[] | null;
+  /** Writes an edited value into the pending change: (data, value, item) => void. Default: sets `path`. */
+  valueSetter?: GridValueSetter<TItem> | null;
 }
 ```
 
@@ -317,7 +330,7 @@ interface GridColumnDef<TItem = any> {
 primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
 is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
 with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `groupable="false"`,
-`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`, `exportable="false"`. `filter-operations` takes a space separated list.
+`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`, `exportable="false"`, `editable="false"`. `filter-operations` takes a space separated list.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -765,7 +778,7 @@ column chooser button are separate stops in the bar above.
 | `Home` / `End` | First / last cell of the row. |
 | `Ctrl`+`Home` / `Ctrl`+`End` | First cell of the first row / last cell of the last row. |
 | `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). With `paging`, the previous / next page (on the first / last page, the first / last row). |
-| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons and resize handle. |
+| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons and resize handle. With editing on, opens the editor of an editable cell — see [Editing](#keyboard-and-screen-readers). |
 | `Tab` / `Shift`+`Tab` inside a cell | Cycle through the interactive content of that cell. |
 | `Esc` | Back from the content to the cell. |
 | `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
@@ -807,7 +820,7 @@ grid.focusedRowKey = null;             // back to the first header (ignored with
 when `focusedRowKey` is set, nor when the active cell moves because its row or column left the grid
 (read `focusedRowKey` then): `detail` is
 `{ rowKey, column, cellType, previousRowKey, previousColumn, source }`, where `cellType` is
-`'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail'` and `column` is
+`'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command'` and `column` is
 `null` in the checkbox and detail toggle columns, in detail rows and in group rows (in a detail row,
 `rowKey` is the key of its master row).
 
@@ -1437,6 +1450,180 @@ grid.addEventListener('u-grid-state-change', e => saveView(e.detail.state));
 With server-side rendering and `stateStorage`, the server (which has no storage) renders the
 "loading state" panel instead of the default layout; the client hydrates it and restores the
 state in the next render.
+## Editing
+
+Cells are edited in place, rows are added and deleted, and values are validated — but the grid
+**never mutates your items or your array**. It keeps the pending changes by row key and hands them
+to you in `u-grid-saving`; once saved, it applies them to a copy of `items` (or to the data source
+with `applyChanges`).
+
+```html
+<u-grid key-expr="id" allow-editing allow-adding allow-removing edit-mode="batch"></u-grid>
+```
+
+```ts
+grid.columns = [
+  { path: 'id', label: 'Id', editable: false },
+  { path: 'name', label: 'Name', validationRules: [{ type: 'required' }, { type: 'stringLength', max: 40 }] },
+  { path: 'email', label: 'E-mail', validationRules: [{ type: 'email' }] },
+  { path: 'price', label: 'Price', dataType: 'number', validationRules: [{ type: 'range', min: 0 }] },
+  { path: 'shipped', label: 'Shipped', dataType: 'date' },
+  { path: 'active', label: 'Active', dataType: 'boolean' },
+];
+
+grid.addEventListener('u-grid-saving', event => {
+  // Save on the server; the grid waits. Reject to keep the changes pending.
+  event.detail.waitUntil(api.save(event.detail.changes));
+});
+
+grid.addEventListener('u-grid-save', event => {
+  // With `items`: the new array the grid now shows (your array is untouched). Keep it in your state.
+  state.items = event.detail.items;
+});
+```
+
+### Modes
+
+| `edit-mode` | How it works |
+| ----------- | ------------ |
+| `cell` (default) | One cell at a time. `Enter`, `Tab` or clicking elsewhere commits the value and **saves at once** (`u-grid-saving`). |
+| `row` | A row opens whole (Edit button, `Enter`/`F2`, `editRow()`), with **Save** and **Cancel** buttons in the row. |
+| `batch` | Changes stay pending — edited cells are marked (tint + corner mark), new rows are tinted, deleted rows are struck through with a **Restore** button — until **Save changes** (toolbar) or `saveChanges()`; **Discard changes** drops them. |
+
+`allow-editing` turns on editing (columns with `path` or `valueSetter` are editable unless
+`editable: false`); `allow-adding` shows the **Add row** button (the new row appears at the top of
+the visible rows, its first editable cell open); `allow-removing` adds a **Delete** button to each
+row, in a last "Actions" column. `allowEditing` and `allowRemoving` also take a function
+`(item) => boolean` (property only) to decide per row. Deleting asks for confirmation in an
+accessible dialog (`confirm-remove="false"` skips it; `batch` mode never asks, the removal is
+pending). `edit-trigger="dblclick"` opens editors with a double-click instead of a click.
+
+With `dataSource`, editing needs `keyExpr` (a console error turns it off otherwise). Pending
+changes are kept by key: they survive scrolling (an open editor stays in the DOM while scrolled
+away), sorting, filtering and new `items` with the same keys; changes of keys no longer present are
+dropped with `u-grid-edit-cancel` (`source: 'api'`).
+
+### Editors
+
+| Data type | Built-in editor |
+| --------- | --------------- |
+| `string` | `<input type="text">` |
+| `number` | `<input inputmode="decimal">` with the decimal separator of the grid's `language` (`1234,5` in `pt`); text that is not a number is a validation error. |
+| `date` / `datetime` | `<input type="date">` / `<input type="datetime-local">`; the value keeps the type of the original (`Date`, ISO string or timestamp). |
+| `boolean` | A 24×24 checkbox: `Enter`/`F2` focuses it, `Space` toggles, a click toggles and commits. |
+
+Your own editor: `editorRenderer(item, ctx)` returns a template, text or element (like the cell
+`renderer`). `item` is the original row; `ctx` has `value` (pending), `data` (the pending change of
+the row), `setValue(value)`, `commit()`, `cancel()`, `column`, `rowKey`, `label` (use it as
+`aria-label`), `invalid`, `errorMessage`, `describedBy`, `signal` and `grid`. The grid handles
+`Enter`, `Tab` and `Esc` unless your editor calls `preventDefault()` on the `keydown` (a combobox
+that uses `Enter`). `describedBy` is the id of the error text, for editors rendered as templates
+(the grid's shadow root); for an `HTMLElement` editor the grid sets `aria-label`, `aria-invalid` and
+`aria-describedby` itself when they are missing.
+
+```ts
+{
+  path: 'status',
+  label: 'Status',
+  editorRenderer: (item, ctx) => html`
+    <select aria-label=${ctx.label} aria-describedby=${ctx.describedBy || nothing}
+      @change=${(e: Event) => ctx.setValue((e.target as HTMLSelectElement).value)}>
+      ${['Open', 'Closed'].map(s => html`<option ?selected=${s === ctx.value}>${s}</option>`)}
+    </select>`,
+}
+```
+
+`valueSetter(data, value, item)` writes an edited value into the pending change (default: sets
+`path`; dots create nested objects) — use it to edit computed columns or several fields at once.
+
+### Validation
+
+`validationRules` run when a value is committed and, for new rows, on every column before saving.
+One message per cell (the first rule that fails); empty values only fail `required`.
+
+| Rule | Options |
+| ---- | ------- |
+| `{ type: 'required' }` | `trim` (default `true`: spaces only count as empty) |
+| `{ type: 'range' }` | `min`, `max` (numbers or dates, inclusive) |
+| `{ type: 'stringLength' }` | `min`, `max` |
+| `{ type: 'pattern' }` | `pattern`: a `RegExp`, or a string matched against the whole value like the HTML `pattern` attribute |
+| `{ type: 'email' }` | the rule of `<input type="email">` |
+| `{ type: 'custom' }` | `validate(ctx, signal)` returns `true`, `false`, an error text or a promise of it (server check) |
+
+Every rule takes `message` (default: the grid's translation). `ctx` is
+`{ value, item, data, column, rowKey }`. An asynchronous rule shows "Validating…"; `Enter`/`Tab`
+wait for its answer, and typing again aborts it (`signal`) — a late answer to an old value is
+ignored. An invalid cell gets an error border, `aria-invalid` and a visible message below it
+(above it on the last row) linked by `aria-describedby`; while its editor is open (`cell`/`row`),
+`Enter` and `Tab` stay and `Esc` cancels. In `batch` mode invalid values stay pending, marked.
+
+Before saving, `u-grid-row-validating` fires for each added or edited row with the broken rules in
+`errors`; `detail.setError(message, column?)` (or `preventDefault()`) marks the row invalid —
+cross-field checks. Saving is then blocked: the toolbar shows "Rows with errors: n" and the focus
+goes to the first invalid cell.
+
+### Saving
+
+`u-grid-saving` carries `changes: GridEditChange[]`:
+
+```ts
+interface GridEditChange<TItem = any> {
+  type: 'add' | 'update' | 'remove';
+  rowKey: unknown;        // a new row has an opaque provisional key
+  data?: Partial<TItem>;  // add: the new item; update: only the edited fields
+  item?: TItem;           // the original item (update, remove)
+}
+```
+
+`detail.waitUntil(promise)` makes the grid wait (only during the dispatch; several calls wait for
+all). Rejected: `u-grid-save-error` fires, the changes stay pending and the toolbar shows "Could not
+save the changes." with the error text. Resolved with `GridDataChanges` (`{ add, update, remove }`,
+e.g. new rows with the ids the server created): the grid applies those instead of the ones it
+computed. `preventDefault()` cancels the save (changes stay pending). After saving, `u-grid-save`
+fires with `items` (the new array, `null` with `dataSource`); edited rows keep their position (no
+re-sorting or re-filtering, like `applyChanges`) and new rows go to the end. Focus and selection on
+a new row move to its real key.
+
+### Editing API
+
+```ts
+grid.editCell(rowKey, column);     // open a cell editor (row mode: the row) — false if not possible
+grid.editRow(rowKey);              // row mode only
+grid.addRow({ status: 'Open' });   // returns the provisional key (null when not added)
+await grid.removeRow(rowKey);      // cell/row: saved at once; batch: marked. Never asks.
+grid.restoreRow(rowKey);           // batch: undo a removal
+await grid.saveChanges();          // commit the editor, validate and save everything pending
+grid.discardChanges();             // close the editor and drop every pending change
+grid.hasChanges();                 // pending changes (or a changed open editor)
+grid.getChanges();                 // GridEditChange[] (copies)
+```
+
+| Event | `detail` | Description |
+| ----- | -------- | ----------- |
+| `u-grid-edit-starting` | `{ rowKey, item, column, source }` | Before an editor (or a row) opens. Cancelable. |
+| `u-grid-row-adding` | `{ data, source }` | Before a row is added: fill `detail.data` with initial values. Cancelable. |
+| `u-grid-row-removing` | `{ rowKey, item, source }` | Before a row is deleted or marked (before the confirmation). Cancelable: `preventDefault()` + `removeRow(key)` for your own dialog. |
+| `u-grid-row-validating` | `{ rowKey, item, change, errors, setError(), source }` | Before saving each added or edited row. Cancelable. |
+| `u-grid-saving` | `{ changes, waitUntil(), source }` | Before saving. Cancelable. |
+| `u-grid-save` | `{ changes, items, source }` | Saved and applied. |
+| `u-grid-save-error` | `{ changes, error, source }` | `waitUntil` rejected. |
+| `u-grid-edit-cancel` | `{ changes, source }` | Pending changes were discarded (`Esc`, Cancel, Discard changes, `discardChanges()`, rows gone from new `items`). |
+
+### Keyboard and screen readers
+
+| Key | Action |
+| --- | ------ |
+| `Enter` / `F2` on an editable cell | Open its editor (row mode: the whole row), focus in the editor. A click (`edit-trigger`) too. |
+| `Enter` in an editor | Commit and go to the cell below (last row: stay). `Shift`+`Enter`: above. Row mode: save the row. |
+| `Tab` / `Shift`+`Tab` in an editor | Commit and open the next / previous editable cell (skips read-only cells, group and detail rows, deleted rows; continues on the next row). At the ends, commit and stay on the cell. Row mode: cycle through the row's editors and its Save / Cancel buttons. |
+| `Esc` in an editor | Cancel and return the focus to the cell (a new row in `cell`/`row` mode is removed and the focus goes back to **Add row**). |
+| `Enter` / `F2` on the Actions cell | Into its buttons (`Tab` cycles, `Esc` back). |
+
+Read-only data cells get `aria-readonly="true"` while editing is on. Edited cells, new rows and rows
+marked for removal are described to screen readers ("Changed, not saved", "New row, not saved",
+"Marked for removal"). Saving, discarding, deleting, restoring and errors are announced; "Saving…"
+appears (and is announced) when saving takes more than a second. The delete dialog is a modal
+`alertdialog` with the focus on **Cancel**; `Esc` returns the focus to the Delete button.
 
 ---
 
@@ -1603,6 +1790,15 @@ interface GridI18n {
   previousPage: string;
   nextPage: string;
   lastPage: string;
+  // Editing: editRow, saveRow, removeRow, restoreRow, addRow, saveChanges, discardChanges,
+  // commandColumn, confirmRemoveTitle, confirmRemoveMessage, addedRowDescription,
+  // removedRowDescription, modifiedCellDescription, changesSavedAnnouncement,
+  // changesDiscardedAnnouncement ({count}), rowRemovedAnnouncement, rowMarkedForRemovalAnnouncement,
+  // rowRestoredAnnouncement, rowAddedAnnouncement, saveError, invalidRowsMessage ({count}),
+  // saving, validating, validationEscapeHint, validationRequired, validationRange ({min}, {max}),
+  // validationRangeMin, validationRangeMax, validationStringLength ({min}, {max}),
+  // validationStringLengthMin, validationStringLengthMax, validationPattern, validationEmail,
+  // validationNumber, validationDate, validationInvalid
 }
 ```
 
@@ -1666,6 +1862,12 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
+| `editMode`         | `edit-mode`           | `'cell' \| 'row' \| 'batch'` | `'cell'` | How rows are edited. See [Editing](#editing). |
+| `allowEditing`     | `allow-editing`       | `boolean \| (item) => boolean` | `false` | Let the user edit cells (the function: property only). |
+| `allowAdding`      | `allow-adding`        | `boolean` | `false` | "Add row" button and `addRow()`. |
+| `allowRemoving`    | `allow-removing`      | `boolean \| (item) => boolean` | `false` | Delete button per row and `removeRow()` (the function: property only). |
+| `editTrigger`      | `edit-trigger`        | `'click' \| 'dblclick'` | `'click'` | Pointer gesture that opens a cell editor (`Enter`/`F2` always do). |
+| `confirmRemove`    | `confirm-remove`      | `boolean` | `true`  | Ask before deleting with the Delete button (not in `batch` mode nor with `removeRow()`). |
 
 ```html
 <u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
@@ -1739,6 +1941,11 @@ tint derive from it.
 | `--u-grid-load-panel-background-color` | surface-container-high token | Background of the load panel. |
 | `--u-grid-skeleton-row-color` | text color at 12% | Placeholders of rows still loading. |
 | `--u-grid-pager-height` | `56px` | Minimum height of the pager (it wraps on narrow grids; the rows take the rest). |
+| `--u-grid-modified-cell-background-color` | primary token at 10% | Background of edited, unsaved cells (`batch`). |
+| `--u-grid-modified-cell-indicator-color` | primary token | Corner mark of edited, unsaved cells (not shown by color alone). |
+| `--u-grid-invalid-cell-color` | error token | Border and message accent of cells with a validation error. |
+| `--u-grid-added-row-background-color` | primary token at 6% | Background of new, unsaved rows. |
+| `--u-grid-removed-row-opacity` | `0.7` | Opacity of rows marked for removal (their text is also struck through). |
 
 ```css
 u-grid {
@@ -1797,6 +2004,13 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `skeleton-row` | Rows of a remote source not loaded yet (with `row`). |
 | `error-row` | The bar shown when the data source failed. |
 | `retry-button` | Its "Retry" button. |
+| `modified` / `invalid` | Edited, unsaved data cells / cells with a validation error (with `cell`). |
+| `added` / `removed` | New, unsaved rows / rows marked for removal (with `row`). |
+| `cell-editor` | The built-in cell editors (`<input>`). |
+| `validation-message` | The validation error shown below an invalid cell. |
+| `command-cell` / `command-button` | Cells and header of the row buttons column / the row buttons (edit, save, cancel, delete, restore). |
+| `add-row-button`, `save-button`, `discard-button` | The toolbar buttons of editing. |
+| `remove-dialog` | The delete confirmation dialog. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -1882,6 +2096,7 @@ CSS property and part for IDEs and tooling.
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
 | `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -1922,6 +2137,11 @@ CSS property and part for IDEs and tooling.
 | `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
 | `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
 | `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
+| `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row) / a row (`row` mode only). See [Editing](#editing). |
+| `addRow(data?)` | Add a row at the top of the visible rows; returns its provisional key (`null` when not added). |
+| `removeRow(rowKey)` / `restoreRow(rowKey)` | Delete a row (saved at once; `batch`: marked) / restore a marked row. |
+| `saveChanges()` / `discardChanges()` | Save every pending change (`Promise<boolean>`) / drop them. |
+| `hasChanges()` / `getChanges()` | Whether there are pending changes / the pending changes (copies). |
 
 ### `<u-grid>` events
 
@@ -1947,6 +2167,14 @@ All bubble and are `composed`.
 | `u-grid-page-change` | `GridPageChangeEventDetail` | corrections only (not the setters) | The page or page size changed (pager, `PageUp`/`PageDown`, new filter, clamp). |
 | `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
 | `u-grid-state-change` | `GridStateChangeEventDetail` (`{ state, sources }`) | yes (also setters and `setState`) | `state-change-delay` ms after the last change of the state, once per burst, only if it really changed; after a restore from `stateStorage` with `sources: ['storage']`. |
+| `u-grid-edit-starting` | `GridEditStartingEventDetail` | yes | Before an editor (or a row) opens. Cancelable. |
+| `u-grid-row-adding` | `GridRowAddingEventDetail` | yes | Before a row is added (initial values in `data`). Cancelable. |
+| `u-grid-row-removing` | `GridRowRemovingEventDetail` | yes | Before a row is deleted or marked for removal. Cancelable. |
+| `u-grid-row-validating` | `GridRowValidatingEventDetail` | yes | Before saving each added or edited row. Cancelable. |
+| `u-grid-saving` | `GridSavingEventDetail` | yes | Before saving; `waitUntil(promise)`. Cancelable. |
+| `u-grid-save` | `GridSaveEventDetail` | yes | The changes were saved and applied. |
+| `u-grid-save-error` | `GridSaveErrorEventDetail` | yes | The `waitUntil` promise rejected (changes stay pending). |
+| `u-grid-edit-cancel` | `GridEditCancelEventDetail` | yes | Pending changes were discarded. |
 
 The state-change events that also fire for API calls carry `source: 'user' | 'api'` in `detail`
 
@@ -1974,7 +2202,7 @@ import {
   type GridChangeSource,    // 'user' | 'api'
   type GridSelectionMode,   // 'none' | 'single' | 'multiple'
   type GridSelectionChangeEventDetail, // { selectedKeys, previous, added, removed, source }
-  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail'
+  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command'
   type GridFocusChangeEventDetail, // { rowKey, column, cellType, previousRowKey, previousColumn, source }
   type GridSortEventDetail, // { sorting, previous, source }
   type GridGroupEventDetail, // { grouping, previous, source }
@@ -2046,6 +2274,23 @@ import {
   type GridStateStorage,    // { load(): GridState | null | Promise<…>; save(state): void | Promise<void> }
   type GridStateChangeSource, // 'user' | 'api' | 'storage'
   type GridStateChangeEventDetail, // { state, sources }
+  type GridEditMode,        // 'cell' | 'row' | 'batch'
+  type GridEditTrigger,     // 'click' | 'dblclick'
+  type GridEditChange,      // { type: 'add' | 'update' | 'remove', rowKey, data?, item? }
+  type GridValidationError, // { column, rule, message }
+  type GridValidationRule,  // GridRequiredRule | GridRangeRule | GridStringLengthRule | GridPatternRule | GridEmailRule | GridCustomRule
+  type GridValidationContext, // { value, item, data, column, rowKey }
+  type GridEditorRenderer,  // (item, GridEditorRenderContext) => GridRenderResult
+  type GridEditorRenderContext, // { item, value, data, column, rowKey, label, invalid, errorMessage, describedBy, setValue, commit, cancel, grid, signal }
+  type GridValueSetter,     // (data, value, item) => void
+  type GridEditStartingEventDetail, // { rowKey, item, column, source }
+  type GridRowAddingEventDetail,    // { data, source }
+  type GridRowRemovingEventDetail,  // { rowKey, item, source }
+  type GridRowValidatingEventDetail, // { rowKey, item, change, errors, setError, source }
+  type GridSavingEventDetail,       // { changes, waitUntil, source }
+  type GridSaveEventDetail,         // { changes, items, source }
+  type GridSaveErrorEventDetail,    // { changes, error, source }
+  type GridEditCancelEventDetail,   // { changes, source }
 } from '@universal-material/data-grid';
 
 import {

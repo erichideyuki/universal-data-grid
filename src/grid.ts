@@ -4883,6 +4883,8 @@ export class DataGrid extends LitElement {
     const remove: unknown[] = [];
     // Linha nova → item salvo (o foco e a seleção vão para a chave real).
     const addedItems = new Map<unknown, unknown>();
+    // Chave → item velho das alteradas (troca no lugar, sem varrer 1 milhão de chaves).
+    const originals = new Map<unknown, unknown>();
 
     if (replacement) {
       add.push(...replacement.add ?? []);
@@ -4908,6 +4910,7 @@ export class DataGrid extends LitElement {
           addedItems.set(pending.rowKey, item);
         } else {
           updates.set(pending.rowKey, this.#edits.mergedOf(pending));
+          originals.set(pending.rowKey, pending.item);
         }
       }
     }
@@ -4929,7 +4932,7 @@ export class DataGrid extends LitElement {
       this.applyChanges({ add, update: [...updates.values()], remove });
     } else {
       this.#ensureRows();
-      this.#applyLocalChanges(add, updates, new Set(remove));
+      this.#applyLocalChanges(add, updates, new Set(remove), originals);
       this.#hostItems = this.#items;
 
       if (!keyed) {
@@ -6745,7 +6748,17 @@ export class DataGrid extends LitElement {
   }
 
   /** Atualizações por chave na carga única: sem reordenar nem refiltrar (como o `push` da referência). */
-  #applyLocalChanges(add: readonly unknown[], updates: ReadonlyMap<unknown, unknown>, removals: ReadonlySet<unknown>): void {
+  #applyLocalChanges(
+    add: readonly unknown[],
+    updates: ReadonlyMap<unknown, unknown>,
+    removals: ReadonlySet<unknown>,
+    originals?: ReadonlyMap<unknown, unknown>,
+  ): void {
+    // Poucas linhas trocadas e o item velho conhecido (edição): troca no lugar, sem varrer por chave.
+    if (originals && !add.length && !removals.size && updates.size && updates.size <= 256 && this.#replaceInPlace(updates, originals)) {
+      return;
+    }
+
     const keyOf = this.#baseKeyOf;
 
     const items = this.#items;
@@ -6861,6 +6874,54 @@ export class DataGrid extends LitElement {
     }
 
     this.requestUpdate();
+  }
+
+  /**
+   * Troca itens pelo índice do item velho (`indexOf` nativo; mesma ordem,
+   * mesma máscara, sem refiltrar nem reordenar — como o `push` da
+   * referência). `false` se algum item velho não está nas linhas.
+   */
+  #replaceInPlace(updates: ReadonlyMap<unknown, unknown>, originals: ReadonlyMap<unknown, unknown>): boolean {
+    const items = this.#items;
+    const shared = this.#sortedItems === items;
+    const next = items.slice();
+    const view = shared ? next : this.#sortedItems.slice();
+
+    for (const [key, item] of updates) {
+      const previous = originals.get(key);
+      const index = previous === undefined ? -1 : items.indexOf(previous);
+
+      if (index < 0) {
+        return false;
+      }
+
+      next[index] = item;
+
+      if (!shared) {
+        const position = view.indexOf(previous);
+
+        if (position >= 0) {
+          view[position] = item;
+        }
+      }
+    }
+
+    this.#pageCause ??= 'api';
+    this.#items = next;
+    this.#sortedItems = view;
+    this.#filtering.adopt(next, this.#appliedMask);
+    this.#rankCache.clear();
+    this.#allConvert.clear();
+    this.#totalsDirty = true;
+
+    if (this._groupColumns.length) {
+      this.#groupsDirty = true;
+    } else {
+      this.#rowsDirty = true;
+    }
+
+    this.requestUpdate();
+    return true;
   }
 
   // ----------------------------------------------------------------- filtro
