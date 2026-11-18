@@ -23,6 +23,9 @@ const PLAIN_NUMBER = /^(?:[+-][ \u00a0\u202f]?)?(?:\p{Sc}[ \u00a0\u202f]?)?[\d.,
 export const escapeFormula = (text: string): string =>
   FORMULA_START.test(text) && !PLAIN_NUMBER.test(text) ? `'${text}` : text;
 
+/** O campo saiu de {@link escapeFormula} com o prefixo `'` (começa com `'` e um gatilho de fórmula). */
+export const isFormulaEscaped = (field: string): boolean => field.startsWith('\'') && FORMULA_START.test(field.slice(1));
+
 /** Campo de CSV (RFC 4180): entre aspas quando tem separador, aspas, CR ou LF; aspas dobradas. */
 export const csvField = (text: string, separator: string): string =>
   text.includes('"') || text.includes('\n') || text.includes('\r') || text.includes(separator)

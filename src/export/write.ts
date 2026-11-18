@@ -2,7 +2,7 @@
  * Escritores de texto da exportação (frente 12): CSV em blocos (sem travar a
  * interface) e o conteúdo da área de transferência (TSV + tabela HTML).
  */
-import { BOM, CRLF, csvField, escapeFormula, escapeHtml, resolveSeparator, tsvField } from './csv.js';
+import { BOM, CRLF, csvField, escapeFormula, escapeHtml, isFormulaEscaped, resolveSeparator, tsvField } from './csv.js';
 import { type ExportColumnSource, exportRows, type ExportSource } from './rows.js';
 import { createSlicer, type Slicer } from './slice.js';
 import type { GridCsvOptions, GridExportRow } from './types.js';
@@ -177,7 +177,28 @@ export interface ClipboardContent {
   html: string;
 }
 
-export const clipboardContent = (rows: readonly GridExportRow[], columns: readonly ExportColumnSource[]): ClipboardContent => {
+/** Direção e idioma do grid, levados para a `<table>` copiada. */
+export interface ClipboardHtmlOptions {
+  rtl?: boolean;
+  lang?: string;
+}
+
+/**
+ * Célula HTML. Texto protegido contra fórmula vai com
+ * `mso-number-format:"\@"` (o Excel cola como célula de texto) e MANTÉM o
+ * `'`: o LibreOffice ignora o `mso-number-format` na colagem e avaliaria o
+ * `=` (spec 12, "Referência medida").
+ */
+const htmlCell = (field: string): string =>
+  isFormulaEscaped(field)
+    ? `<td style='mso-number-format:"\\@"'>${escapeHtml(field)}</td>`
+    : `<td>${escapeHtml(field)}</td>`;
+
+export const clipboardContent = (
+  rows: readonly GridExportRow[],
+  columns: readonly ExportColumnSource[],
+  options: ClipboardHtmlOptions = {},
+): ClipboardContent => {
   const lines: string[] = [];
   const htmlRows: string[] = [];
   const withHtml = rows.length <= CLIPBOARD_HTML_LIMIT;
@@ -187,12 +208,15 @@ export const clipboardContent = (rows: readonly GridExportRow[], columns: readon
     lines.push(fields.map(tsvField).join('\t'));
 
     if (withHtml) {
-      htmlRows.push(`<tr>${fields.map(field => `<td>${escapeHtml(field)}</td>`).join('')}</tr>`);
+      htmlRows.push(`<tr>${fields.map(htmlCell).join('')}</tr>`);
     }
   }
 
+  const dir = options.rtl ? ' dir="rtl"' : '';
+  const lang = options.lang ? ` lang="${escapeHtml(options.lang)}"` : '';
+
   return {
     text: lines.join(CRLF),
-    html: withHtml ? `<table><tbody>${htmlRows.join('')}</tbody></table>` : '',
+    html: withHtml ? `<table${dir}${lang}><tbody>${htmlRows.join('')}</tbody></table>` : '',
   };
 };

@@ -270,11 +270,28 @@ describe('Ctrl+C', () => {
     expect(copied?.prevented).toBe(true);
     expect(copied?.text).toBe('Bia\tChile\t-5.00\t\'=1+1\r\nDuda\tChile\t40.00\t<b>bold</b> & co');
     expect(copied?.html).toBe(
-      '<table><tbody><tr><td>Bia</td><td>Chile</td><td>-5.00</td><td>&#39;=1+1</td></tr>'
+      '<table lang="en"><tbody><tr><td>Bia</td><td>Chile</td><td>-5.00</td><td style=\'mso-number-format:"\\@"\'>&#39;=1+1</td></tr>'
       + '<tr><td>Duda</td><td>Chile</td><td>40.00</td><td>&lt;b&gt;bold&lt;/b&gt; &amp; co</td></tr></tbody></table>',
     );
     await settle(grid);
     expect(grid.shadowRoot!.textContent).toContain('Copied rows: 2');
+  });
+
+  it('HTML com `dir="rtl"` e o `lang` efetivo do grid', async () => {
+    const grid = await create(g => {
+      g.language = 'ar';
+      g.dir = 'rtl';
+    });
+    firstCell(grid).focus();
+
+    expect((await pressCopy())?.html).toBe('<table dir="rtl" lang="ar"><tbody><tr><td>Ana</td></tr></tbody></table>');
+
+    grid.dir = '';
+    grid.language = 'pt-BR';
+    await settle(grid);
+    firstCell(grid).focus();
+
+    expect((await pressCopy())?.html).toBe('<table lang="pt-BR"><tbody><tr><td>Ana</td></tr></tbody></table>');
   });
 
   it('sem seleção copia a célula focada', async () => {

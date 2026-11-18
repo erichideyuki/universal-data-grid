@@ -179,4 +179,14 @@ describe('clipboardContent', () => {
     });
     expect(clipboardContent(await collectRows({ ...source(), items: [{ name: '=1+1', amount: 1 }] }, undefined), source().columns).text).toBe('\'=1+1\t1');
   });
+
+  it('HTML: célula protegida com mso-number-format de texto (e o `\'`); dir/lang na tabela', async () => {
+    const rows = await collectRows({ ...source(), items: [{ name: '=1+1', amount: 1 }, { name: '-x', amount: -2 }] }, undefined);
+
+    expect(clipboardContent(rows, source().columns, { rtl: true, lang: 'ar"x' }).html).toBe(
+      '<table dir="rtl" lang="ar&quot;x"><tbody>'
+      + '<tr><td style=\'mso-number-format:"\\@"\'>&#39;=1+1</td><td>1</td></tr>'
+      + '<tr><td style=\'mso-number-format:"\\@"\'>&#39;-x</td><td>-2</td></tr></tbody></table>',
+    );
+  });
 });
