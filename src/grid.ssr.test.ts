@@ -152,4 +152,27 @@ describe('SSR', () => {
     // Um ponto de Tab na tabela (e outro no chip da barra de grupos).
     expect(output.slice(output.indexOf('<table')).match(/tabindex="0"/g)).toHaveLength(1);
   });
+
+  it('renderiza com clipboard-mode e colunas exportáveis/não exportáveis (pt e ar/RTL)', async () => {
+    const exportColumns: GridColumnDef[] = [
+      { path: 'country', label: 'Country', exportable: false },
+      { path: 'year', label: 'Year' },
+    ];
+
+    for (const [language, dir] of [['pt', 'ltr'], ['ar', 'rtl']] as const) {
+      const output = await renderToString(html`
+        <u-grid dir=${dir} language=${language} clipboard-mode="none" selection-mode="multiple"
+          .columns=${exportColumns} .items=${items}></u-grid>`);
+
+      expect(output).toContain('Country');
+      expect(output).toContain('2021');
+    }
+  });
+
+  it('o módulo do adaptador xlsx carrega no servidor (sem DOM nem ExcelJS)', async () => {
+    const adapter = await import('./export-xlsx/index.js');
+
+    expect(typeof adapter.exportXlsx).toBe('function');
+    expect(Object.keys(adapter).sort()).toEqual(['downloadXlsx', 'exportXlsx']);
+  });
 });

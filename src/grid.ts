@@ -249,19 +249,19 @@ export interface GridSelectionChangeEventDetail {
 /** `detail` of `u-grid-copying`. */
 export interface GridCopyEventDetail<TItem = any> {
   /** Copied rows: the selected rows in the current order, or the row of the focused cell. */
-  items: TItem[];
+  readonly items: readonly TItem[];
   /** Copied columns: the visible exportable columns, or the focused column. */
-  columns: GridColumnDef<TItem>[];
-  /** Tab separated text the grid writes as `text/plain`. */
-  text: string;
+  readonly columns: readonly GridColumnDef<TItem>[];
+  /** Tab separated text the grid writes as `text/plain` (read only: cancel to write your own). */
+  readonly text: string;
   /** Escaped `<table>` the grid writes as `text/html` (empty above 10,000 rows). */
-  html: string;
+  readonly html: string;
   /**
    * The clipboard of the native `copy` event. After `preventDefault()` the
    * grid writes nothing and lets the native copy go on: call `setData` here
    * to write your own content (synchronously, in the listener).
    */
-  clipboardData: DataTransfer;
+  readonly clipboardData: DataTransfer;
 }
 
 /** Kind of the active cell: column header, data cell, selection checkbox cell, group row or summary row (group footer, totals). */
@@ -1879,7 +1879,8 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const copy = this.#selection.size ? this.#copySelection() : this.#copyActiveCell();
+    // Seleção toda fora do filtro: copia a célula focada, como sem seleção.
+    const copy = (this.#selection.size ? this.#copySelection() : undefined) ?? this.#copyActiveCell();
 
     if (!copy) {
       return;
@@ -1893,7 +1894,8 @@ export class DataGrid extends LitElement {
     }
 
     event.preventDefault();
-    writeClipboard(clipboardData, detail);
+    // O conteúdo do grid, não o `detail` (que o ouvinte pode ter mexido sem cancelar).
+    writeClipboard(clipboardData, copy.detail);
     this.#announce(copy.announcement);
   };
 

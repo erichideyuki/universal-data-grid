@@ -5,7 +5,7 @@
  */
 
 /** Orçamento de uma fatia, em ms de relógio — numa máquina 4× mais lenta continua abaixo de 50 ms. */
-export const SLICE_MS = 8;
+export const SLICE_MS = 6;
 
 /** Linhas entre duas leituras do relógio (`performance.now()` custa). */
 const CHECK_EVERY = 256;

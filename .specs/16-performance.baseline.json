@@ -1,4 +1,13 @@
 {
+  "export-1m": {
+    "exportCsvSliceMs": 30.7,
+    "exportCsvTotalMs": 12080.6,
+    "exportDataSliceMs": 45,
+    "exportDataTotalMs": 6343.9,
+    "exportGroupedCsvSliceMs": 34.7,
+    "exportGroupedCsvTotalMs": 12269.1,
+    "copy10kMs": 210.7
+  },
   "filter-100k": {
     "filterTextMs": 37.1,
     "filterNumberMs": 42,
@@ -101,6 +110,14 @@
     "domNodes": 223,
     "gridHeapMiB": 47
   },
+  "selection-1m": {
+    "selectAllMs": 438.2,
+    "clearSelectionMs": 44.3,
+    "arrowDownMs": 2.3,
+    "pageDownMs": 2.1,
+    "gridEndMs": 2.4,
+    "domNodes": 259
+  },
   "summaries-1m": {
     "firstRenderMs": 45.5,
     "summaryMs": 301.1,
@@ -115,13 +132,5 @@
     "replaceItemsMs": 956.1,
     "domNodes": 619,
     "gridHeapMiB": 14.3
-  },
-  "selection-1m": {
-    "selectAllMs": 438.2,
-    "clearSelectionMs": 44.3,
-    "arrowDownMs": 2.3,
-    "pageDownMs": 2.1,
-    "gridEndMs": 2.4,
-    "domNodes": 259
   }
 }

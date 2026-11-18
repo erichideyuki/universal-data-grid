@@ -25,6 +25,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Summaries](#summaries) (totals and group summaries)
 - [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
+- [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Custom cell rendering](#custom-cell-rendering)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Appearance & behavior](#appearance--behavior)
@@ -63,6 +64,10 @@ React, Vue, Svelte — or with no framework at all.
   grid ARIA, checked with `axe-core`.
 - **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
   columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
+- **Export & clipboard** — CSV of what the user sees (columns, order, filter, groups, summaries,
+  selected rows only), an optional Excel adapter with ExcelJS injected by you, export data for any
+  other format (PDF…), and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
+  by default; a million rows export without freezing the page.
 - **Custom cell renderers** — return any `HTMLElement` per column to fully control a cell.
 - **Internationalization** — a `language` property with built-in translations for 14 languages,
   automatic language detection, and hooks to override strings or set a global default.
@@ -286,6 +291,8 @@ interface GridColumnDef<TItem = any> {
   filterOperations?: readonly GridFilterOperation[] | null;
   /** Operation of the filter row editor. Default: 'contains' for text, '=' otherwise (outside `filterOperations`: the first of the list). */
   defaultFilterOperation?: GridFilterOperation | null;
+  /** Include in exports and Ctrl+C. Default: true when it has a `path`, `valueGetter` or `displayValue`. */
+  exportable?: boolean | null;
 }
 ```
 
@@ -295,7 +302,7 @@ interface GridColumnDef<TItem = any> {
 primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
 is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
 with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `groupable="false"`,
-`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`. `filter-operations` takes a space separated list.
+`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`, `exportable="false"`. `filter-operations` takes a space separated list.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -923,6 +930,109 @@ for user gestures**: changes made through the API (`setColumnWidth`, `moveColumn
 
 ---
 
+## Export & clipboard
+
+The grid exports **what the user sees**: the visible columns in their current order, the filter,
+the sorting, the groups (collapsed groups are exported whole) and the summaries. The state is read
+when the method is called; rows are produced in time slices, so exporting a million rows does not
+freeze the page.
+
+```js
+await grid.downloadCsv({ fileName: 'orders.csv' });          // build and download
+const blob = await grid.exportCsv({ selectedOnly: true });    // or get the Blob
+```
+
+`exportCsv(options)` returns a `Blob` (`text/csv;charset=utf-8`), RFC 4180: fields with the
+separator, quotes or line breaks are quoted, lines end with CRLF. A group row puts its label
+(`"Country: Brazil (3)"`) in the first field and its column summaries under their columns; the
+nesting level is not written as empty columns.
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `selectedOnly` | `false` | Only the selected rows, in the current order and filter (not the selection order of `getSelectedItems()`). Group counts and summaries are computed over them. |
+| `includeGroups` | `true` | Group rows. `false` exports a flat list in the current order with the grouped columns first. |
+| `includeSummaries` | `true` | Group footers, totals and the summaries of group rows. |
+| `separator` | `'auto'` | Field separator. `auto`: `;` when the grid language uses a decimal comma (pt, de, fr…: what Excel expects there), `,` otherwise. |
+| `bom` | `true` | UTF-8 byte order mark, so Excel opens the file as UTF-8. |
+| `includeHeaders` | `true` | First line with the column labels. |
+| `escapeFormulas` | `true` | Prefix `'` to text starting with `=`, `+`, `-`, `@`, tab or CR ([CSV injection](https://owasp.org/www-community/attacks/CSV_Injection)). Numbers and dates formatted by the grid (`-5`, `-$5.00`) are not prefixed. |
+| `rawValues` | `false` | Cell values instead of the displayed text: numbers with `.`, dates in ISO 8601, `true`/`false`, empty values as empty fields. Group labels and summaries stay text. |
+| `signal` | — | An `AbortSignal`; aborting rejects the promise with an `AbortError`. |
+| `fileName` | `'export.csv'` | `downloadCsv()` only. |
+
+Leave a column out with `exportable: false` (`exportable="false"` on `<u-grid-column>`); columns that
+only have a `renderer` are left out by default.
+
+### Export data (Excel, PDF, anything)
+
+`getExportData(options)` (same options as above, without the CSV ones) resolves to the rows ready
+for any library:
+
+```ts
+const { columns, rows } = await grid.getExportData();
+// columns: { column, label, dataType, alignment, width }[]
+for (const row of rows) {
+  switch (row.rowType) {
+    case 'data':         row.level; row.item; row.values; row.texts; break;   // values/texts per column
+    case 'group':        row.level; row.groupPath; row.label; row.text; row.itemCount; row.texts; break;
+    case 'group-footer': // falls through
+    case 'total':        row.summaries; row.texts; break;                    // GridSummaryValue[] per column
+  }
+}
+```
+
+`values[i]`, `texts[i]` and `summaries[i]` belong to `columns[i]`; several summaries in one column
+are joined in `texts[i]` with the list separator of the language, as on screen.
+
+### Excel (`export-xlsx`)
+
+An optional entry point writes an `.xlsx` with [ExcelJS](https://github.com/exceljs/exceljs). The
+grid does not depend on ExcelJS: install it yourself and pass the module.
+
+```js
+import ExcelJS from 'exceljs';
+import { downloadXlsx, exportXlsx } from '@universal-material/data-grid/export-xlsx';
+
+await downloadXlsx(grid, ExcelJS, { fileName: 'orders.xlsx', sheetName: 'Orders' });
+
+const blob = await exportXlsx(grid, ExcelJS, {
+  selectedOnly: true,
+  customize: (worksheet, workbook) => {  // typed with ExcelJS's own types
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FF1565C0' } };
+  },
+});
+```
+
+Group rows become Excel row outline levels; numbers, dates and booleans are typed cells with a
+number format close to the column `format`; columns with `displayValue`, a `format` function or
+`booleanDisplay` are written as their displayed text. Text is always a text cell (never a
+formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `sheetName`
+(`'Sheet1'`), `includeHeaders` (`true`), `customize` and, for `downloadXlsx`, `fileName`
+(`'export.xlsx'`).
+
+### Clipboard (Ctrl+C)
+
+With the focus on a cell, **Ctrl+C** (⌘C, or Copy in the browser menu) copies the selected rows in
+the current order — or, without a selection (or when no selected row passes the filter), the
+focused cell — as tab separated text
+(`text/plain`) and an HTML table (`text/html`, escaped; above 10,000 rows only the text), with the
+visible exportable columns, formatted values, no header and formula injection blocked. Text the
+user selected with the mouse, and copies from the filter row or search box, are left to the
+browser. Screen readers announce the copy.
+
+`clipboard-mode="none"` turns it off. The cancelable `u-grid-copying` event fires before the grid
+writes; `detail` is `{ items, columns, text, html, clipboardData }`. After `preventDefault()` the
+grid writes nothing — write your own content in `clipboardData` (synchronously):
+
+```js
+grid.addEventListener('u-grid-copying', event => {
+  event.preventDefault();
+  event.detail.clipboardData.setData('text/plain', event.detail.items.map(item => item.id).join('\n'));
+});
+```
+
+---
+
 ## Custom cell rendering
 
 Provide a `renderer` that receives the row item and returns any `HTMLElement` (or `null` for an empty
@@ -1083,6 +1193,8 @@ interface GridI18n {
   selectRow: string;           // row checkbox label: "Select row"
   selectAllRows: string;       // "select all" checkbox label: "Select all rows"
   rowsSelectedAnnouncement: string; // after a bulk selection: "Selected rows: {count}"
+  rowsCopiedAnnouncement: string;   // after Ctrl+C: "Copied rows: {count}"
+  cellCopiedAnnouncement: string;   // after Ctrl+C on a cell: "Cell copied"
   columnMovedAnnouncement: string;  // "{column} moved to position {position} of {count}"
   groupedAnnouncement: string;      // "Grouped by {column}"
   ungroupedAnnouncement: string;    // "Ungrouped {column}"
@@ -1161,6 +1273,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `showCheckboxes`   | `show-checkboxes`     | `boolean` | `false` | Checkbox column with "select all" (`multiple` only). |
 | `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (the items, until `keyExpr`). Setting it fires no event. |
 | `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell. Setting it fires no event. |
+| `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'none'` | `'copy'` | Ctrl+C copies the selected rows or the focused cell. See [Export & clipboard](#export--clipboard). |
 
 ```html
 <u-grid striped show-column-lines show-group-panel="false" row-height="40" language="fr"></u-grid>
@@ -1354,7 +1467,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `comparator`, `groupValueGetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -1384,6 +1497,9 @@ CSS property and part for IDEs and tooling.
 | `getSelectedItems()` | Selected items present in `items`, in selection order. |
 | `focusCell(rowKey, column?)` | Scroll to a cell and focus it; `false` if the row or column is not shown (groups are not expanded). |
 | `focus(options?)` | Focus the active cell. |
+| `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
+| `exportCsv(options?)` | `Promise<Blob>`: CSV of what the user sees. |
+| `downloadCsv(options?)` | Build the CSV and download it (`fileName`, default `export.csv`). |
 
 ### `<u-grid>` events
 
@@ -1402,6 +1518,7 @@ All bubble and are `composed`.
 | `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
+| `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
 
 The events that also fire for API calls carry `source: 'user' | 'api'` in `detail`.
 
@@ -1453,7 +1570,32 @@ import {
   type GridColumnReorderEventDetail,
   type GridI18n,
   type GridI18nInput,       // Partial<GridI18n> that still accepts the deprecated keys
+  type GridExportOptions,   // { selectedOnly?, includeGroups?, includeSummaries?, signal? }
+  type GridCsvOptions,      // + { separator?, bom?, includeHeaders?, escapeFormulas?, rawValues? }
+  type GridCsvDownloadOptions, // + { fileName? }
+  type GridExportData,      // { columns: GridExportColumn[]; rows: GridExportRow[] }
+  type GridExportColumn,    // { column, label, dataType?, alignment, width? }
+  type GridExportRow,       // GridExportDataRow | GridExportGroupRow | GridExportSummaryRow (by rowType)
+  type GridExportDataRow,
+  type GridExportGroupRow,
+  type GridExportSummaryRow,
+  type GridClipboardMode,   // 'copy' | 'none'
+  type GridCopyEventDetail, // { items, columns, text, html, clipboardData }
 } from '@universal-material/data-grid';
+
+import {
+  exportXlsx,              // (grid, ExcelJS, GridXlsxOptions?) => Promise<Blob>
+  downloadXlsx,            // (grid, ExcelJS, GridXlsxDownloadOptions?) => Promise<void>
+  type GridXlsxOptions,    // GridExportOptions + { sheetName?, includeHeaders?, customize? }
+  type GridXlsxDownloadOptions, // + { fileName? }
+  type ExcelJSModule,      // the minimal ExcelJS shape the adapter needs ({ Workbook })
+  type ExcelJSWorkbook,    // the part of an ExcelJS workbook it uses
+  type ExcelJSWorksheet,   // the part of an ExcelJS worksheet it uses
+  type ExcelJSRow,         // the part of an ExcelJS row it writes
+  type ExcelJSCell,        // the part of an ExcelJS cell it writes
+  type WorkbookOf,         // WorkbookOf<typeof ExcelJS>: the real workbook type (for `customize`)
+  type WorksheetOf,        // WorksheetOf<typeof ExcelJS>: the real worksheet type
+} from '@universal-material/data-grid/export-xlsx';
 ```
 
 ### Deprecated names

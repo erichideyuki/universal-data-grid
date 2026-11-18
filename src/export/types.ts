@@ -28,7 +28,8 @@ export interface GridExportOptions {
 /** Options of `exportCsv()`. */
 export interface GridCsvOptions extends GridExportOptions {
   /**
-   * Field separator (one character). `auto` (default): `;` when the grid
+   * Field separator: one character other than `"`, CR and LF (a `RangeError`
+   * otherwise). `auto` (default): `;` when the grid
    * language uses a decimal comma (what Excel expects there), `,` otherwise.
    */
   separator?: 'auto' | (string & {});
@@ -81,7 +82,10 @@ export interface GridExportDataRow<TItem = any> {
   texts: string[];
 }
 
-/** A group row. `summaries[i]` / `texts[i]` are the summaries shown under `columns[i]` (`display: 'column'`). */
+/**
+ * A group row. `summaries[i]` / `texts[i]` are the summaries shown under `columns[i]`
+ * (`display: 'column'`); those of the first column, or of a column not exported, are part of `label`.
+ */
 export interface GridExportGroupRow<TItem = any> {
   rowType: 'group';
   /** Grouping level (0 = outermost). */
@@ -93,7 +97,7 @@ export interface GridExportGroupRow<TItem = any> {
   value: unknown;
   /** Formatted group value (`"Brazil"`). */
   text: string;
-  /** Whole group label with the count and inline summaries (`"Country: Brazil (Count: 3)"`). */
+  /** Whole group label with the count and inline summaries (`"Country: Brazil (3)"`). */
   label: string;
   /** Rows in the group. */
   itemCount: number;

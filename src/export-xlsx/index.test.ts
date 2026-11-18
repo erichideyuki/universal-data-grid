@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import type { GridExportData } from '../export/types.js';
 import type { GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
-import { datePatternOf, exportXlsx, numberFormatOf } from './index.js';
+import { datePatternOf, numberFormatOf } from './formats.js';
+import { exportXlsx } from './index.js';
 
 class FakeCell {
   value: unknown = null;

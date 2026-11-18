@@ -201,6 +201,13 @@ describe('exportCsv', () => {
     expect(lines.slice(0, 3)).toEqual(['Name,Amount,Note', 'Country: Brazil (2),"Sum: 1,500.50",', 'Ana,"1,200.50",ok']);
   });
 
+  it('separador inválido rejeita com RangeError', async () => {
+    const grid = await create();
+
+    await expect(grid.exportCsv({ separator: '"' })).rejects.toBeInstanceOf(RangeError);
+    await expect(grid.exportCsv({ separator: ';;' })).rejects.toBeInstanceOf(RangeError);
+  });
+
   it('downloadCsv baixa com o nome pedido e revoga a URL', async () => {
     const grid = await create();
     const clicks: { name: string; href: string }[] = [];
@@ -295,6 +302,19 @@ describe('Ctrl+C', () => {
 
     expect(detail).toMatchObject({ items: [grid.items[0]], columns: [column(grid, 'name')], text: 'Ana' });
     expect(copied).toMatchObject({ prevented: false, text: 'custom' });
+  });
+
+  it('seleção toda fora do filtro copia a célula focada; mexer no `detail` não muda o que é escrito', async () => {
+    const grid = await create(g => g.selectionMode = 'multiple');
+    grid.selectRows([grid.items[1]]);
+    grid.filterValue = ['country', '=', 'Brazil'];
+    await settle(grid);
+    grid.addEventListener('u-grid-copying', event => {
+      (event.detail as { text: string }).text = 'tampered';
+    });
+    firstCell(grid).focus();
+
+    expect(await pressCopy()).toMatchObject({ text: 'Ana', prevented: true });
   });
 
   it('`clipboard-mode="none"`, campo editável e texto selecionado: o grid não mexe', async () => {

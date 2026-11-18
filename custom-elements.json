@@ -613,6 +613,16 @@
             },
             {
               "kind": "field",
+              "name": "clipboardMode",
+              "type": {
+                "text": "GridClipboardMode"
+              },
+              "default": "'copy'",
+              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected\nrows (or, without a selection, the focused cell) as tab separated text\nand an HTML table; `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
+              "attribute": "clipboard-mode"
+            },
+            {
+              "kind": "field",
               "name": "selectedKeys",
               "type": {
                 "text": "readonly unknown[]"
@@ -1144,6 +1154,63 @@
             },
             {
               "kind": "method",
+              "name": "getExportData",
+              "return": {
+                "type": {
+                  "text": "Promise<GridExportData>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "GridExportOptions"
+                  }
+                }
+              ],
+              "description": "The columns and rows the user sees, ready to build any file (Excel, PDF):\nvisible exportable columns in the current order, filter, sorting, groups\n(collapsed ones included) and summaries. The state is read when called;\nrows are built in time slices, so a million rows do not freeze the page."
+            },
+            {
+              "kind": "method",
+              "name": "exportCsv",
+              "return": {
+                "type": {
+                  "text": "Promise<Blob>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "GridCsvOptions"
+                  }
+                }
+              ],
+              "description": "CSV (RFC 4180) of what the user sees (see `getExportData`): formatted\ntexts, UTF-8 with BOM, `;` as separator in languages with a decimal\ncomma, cells that a spreadsheet would run as formulas prefixed with `'`."
+            },
+            {
+              "kind": "method",
+              "name": "downloadCsv",
+              "return": {
+                "type": {
+                  "text": "Promise<void>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "GridCsvDownloadOptions"
+                  }
+                }
+              ],
+              "description": "Builds the CSV (`exportCsv`) and downloads it as `fileName` (default `export.csv`)."
+            },
+            {
+              "kind": "method",
               "name": "focus",
               "return": {
                 "type": {
@@ -1239,6 +1306,13 @@
               },
               "description": "Before the sorting changes (user or API). Cancelable.",
               "name": "u-grid-sorting"
+            },
+            {
+              "type": {
+                "text": "CustomEvent<GridCopyEventDetail>"
+              },
+              "description": "Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.",
+              "name": "u-grid-copying"
             }
           ],
           "attributes": [
@@ -1439,6 +1513,15 @@
               "fieldName": "showCheckboxes"
             },
             {
+              "name": "clipboard-mode",
+              "type": {
+                "text": "GridClipboardMode"
+              },
+              "default": "'copy'",
+              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected\nrows (or, without a selection, the focused cell) as tab separated text\nand an HTML table; `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
+              "fieldName": "clipboardMode"
+            },
+            {
               "name": "stripped",
               "type": {
                 "text": "boolean"
@@ -1497,6 +1580,11 @@
           "summary": "Data grid web component.",
           "tagName": "u-grid",
           "customElement": true
+        },
+        {
+          "kind": "variable",
+          "name": "clipboardData",
+          "default": "event.clipboardData!"
         }
       ],
       "exports": [
@@ -2001,6 +2089,16 @@
             },
             {
               "kind": "field",
+              "name": "exportable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Includes this column in exports (`exportCsv`, `getExportData`, the\nxlsx adapter) and in Ctrl+C. Default (`null`): `true` when it has a\n`path`, `valueGetter` or `displayValue` (a `renderer`-only column has no\ntext). `exportable=\"false\"` leaves it out.",
+              "attribute": "exportable"
+            },
+            {
+              "kind": "field",
               "name": "filterOperations",
               "type": {
                 "text": "readonly GridFilterOperation[] | null"
@@ -2198,6 +2296,15 @@
               "default": "null",
               "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` when the column has\na `path`. `filterable=\"false\"` disables it.",
               "fieldName": "filterable"
+            },
+            {
+              "name": "exportable",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Includes this column in exports (`exportCsv`, `getExportData`, the\nxlsx adapter) and in Ctrl+C. Default (`null`): `true` when it has a\n`path`, `valueGetter` or `displayValue` (a `renderer`-only column has no\ntext). `exportable=\"false\"` leaves it out.",
+              "fieldName": "exportable"
             },
             {
               "name": "filter-operations",

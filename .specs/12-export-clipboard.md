@@ -38,7 +38,7 @@ GridExportRow<TItem>[] }`; `GridExportColumn { column, label, dataType?,
 alignment, width? }`; linhas com `rowType`:
 - `'data'`: `level`, `item`, `values: unknown[]`, `texts: string[]`;
 - `'group'`: `level`, `groupPath`, `column`, `value`, `text` (valor
-  formatado), `label` (`"País: Brasil (Count: 3)"`), `itemCount`,
+  formatado), `label` (`"País: Brasil (3)"`), `itemCount`,
   `summaries: GridSummaryValue[][]` (resumos `display: 'column'`),
   `texts: string[]`;
 - `'group-footer'` (`groupPath`) e `'total'` (`groupPath: null`): `level`,
@@ -142,3 +142,20 @@ recolhido, seleção e valores `=1+1`, `-5`, `@x`:
 - Sem proteção contra fórmula: `=1+1`, `-5`, `@x` saem iguais (no xlsx são
   células de texto, então não executam; no CSV executariam). Nós protegemos
   por padrão (seção Segurança).
+
+### Nossa medida (perfil de máquina fraca, spec 16 — cenário `export-1m`)
+
+1 milhão de linhas × 8 colunas (`npm run test:perf`, linha de base gravada
+com `=1` e `=max` no commit da frente): maior fatia de trabalho sem ceder
+a vez ≈ 22–31 ms no CSV plano, 34 ms no agrupado com totais e 29–45 ms no
+`getExportData` (1 milhão de objetos de linha: pausas de GC) — orçamento
+50 ms (nenhuma tarefa longa); exportação inteira 8–12 s (orçamento 20 s);
+Ctrl+C de 10 mil selecionadas 135–210 ms (síncrono: o `copy` nativo só
+aceita `setData` durante o evento). Fatias de 6 ms de relógio,
+`scheduler.yield()` quando existe; cada fatia vira um `Blob` na hora
+(juntar 64 de uma vez codificava ~20 MB num só passo: fatia de 60 ms).
+
+Conferido à mão contra o exceljs 4 real (fora do repositório): os tipos do
+módulo passam no `ExcelJSModule` e o `customize` recebe os tipos reais; o
+arquivo gerado lido de volta tem outline, mesclagem do rótulo do grupo,
+datas e números tipados com `numFmt` e `=1+1` como texto.

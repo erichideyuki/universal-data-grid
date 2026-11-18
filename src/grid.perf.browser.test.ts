@@ -114,6 +114,13 @@ const BUDGET = {
   domNodes: 2500,
   /** Heap do grid (fora os itens) por milhão de linhas. */
   gridHeapMiBPerMillion: 64,
+  /**
+   * Exportação em fatias (frente 12): nenhuma tarefa longa — a maior fatia
+   * de trabalho entre duas cessões de vez cabe num quadro de 20 fps.
+   */
+  exportSliceMs: 50,
+  /** Exportação inteira: 20 ms por mil linhas (1 milhão × 8 colunas: 20 s na máquina fraca). */
+  exportTotalMs: (rows: number) => Math.max(2000, rows * 20 / 1000),
 };
 
 const checkBudgets = (rows: number, metrics: Record<string, number>, regressions: string[]) => {
@@ -136,6 +143,10 @@ const checkBudgets = (rows: number, metrics: Record<string, number>, regressions
       check(name, value, BUDGET.scrollWorstMs);
     } else if (name.endsWith('jumpP95Ms')) {
       check(name, value, BUDGET.jumpP95Ms);
+    } else if (name.endsWith('SliceMs')) {
+      check(name, value, BUDGET.exportSliceMs);
+    } else if (name.endsWith('TotalMs')) {
+      check(name, value, BUDGET.exportTotalMs(rows));
     } else if (name === 'sortUniqueMs') {
       check(name, value, BUDGET.uniqueSortMs(rows));
     } else if (name.endsWith('Ms') && !(/(firstRender|jumpWorst)Ms$/).test(name)) {
@@ -514,6 +525,130 @@ const selectionScenario = (rows: number, label: string) => {
   });
 };
 
+interface SliceResult {
+  /** Maior trabalho síncrono entre duas cessões de vez (o 1º inclui o instantâneo). */
+  sliceMs: number;
+  totalMs: number;
+  slices: number;
+}
+
+/**
+ * Mede uma exportação em fatias: intercepta `scheduler.yield()` (o ponto em
+ * que o exportador devolve a vez) e guarda a maior fatia de trabalho — o
+ * tempo em que a página fica sem responder. Tempos na máquina fraca.
+ */
+const measureSlices = async (work: () => Promise<unknown>): Promise<SliceResult> => {
+  const scheduler = (window as unknown as { scheduler: { yield: () => Promise<void> } }).scheduler;
+  const original = scheduler.yield;
+  let sliceStart = 0;
+  let worst = 0;
+  let slices = 0;
+
+  scheduler.yield = () => {
+    worst = Math.max(worst, performance.now() - sliceStart);
+    slices++;
+    return original.call(scheduler).then(() => {
+      sliceStart = performance.now();
+    });
+  };
+
+  perf.recalibrate();
+  const start = performance.now();
+  sliceStart = start;
+
+  try {
+    await work();
+  } finally {
+    scheduler.yield = original;
+  }
+
+  const end = performance.now();
+  worst = Math.max(worst, end - sliceStart);
+
+  return { sliceMs: perf.weak(worst), totalMs: perf.weak(end - start), slices: slices + 1 };
+};
+
+/** Melhor de {@link REPEATS} (só a maior fatia e o total; o resto é da última). */
+const bestSlices = async (work: () => Promise<unknown>): Promise<SliceResult> => {
+  let best: SliceResult | undefined;
+
+  for (let i = 0; i < REPEATS; i++) {
+    const result = await measureSlices(work);
+
+    best = best
+      ? { sliceMs: Math.min(best.sliceMs, result.sliceMs), totalMs: Math.min(best.totalMs, result.totalMs), slices: result.slices }
+      : result;
+  }
+
+  return best!;
+};
+
+/** Frente 12: exportar CSV/dados de 1 milhão de linhas em fatias e copiar 10 mil selecionadas. */
+const exportScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 8 colunas: exportar CSV (plano e agrupado com totais), getExportData, Ctrl+C de 10 mil`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+    const { grid } = await bestFirstRender(items, makeLeanColumns());
+    grid.language = 'en';
+    await painted(grid);
+
+    let size = 0;
+    const flat = await bestSlices(async () => {
+      size = (await grid.exportCsv()).size;
+    });
+
+    let dataRows = 0;
+    const data = await bestSlices(async () => {
+      dataRows = (await grid.getExportData()).rows.length;
+    });
+
+    grid.summary = { total: [{ column: 'quantity', type: 'sum' }], group: [{ column: 'quantity', type: 'max', display: 'column' }] };
+    grid.groupColumn(byLabel(grid, 'Country'));
+    await painted(grid);
+
+    let groupedSize = 0;
+    const grouped = await bestSlices(async () => {
+      groupedSize = (await grid.exportCsv()).size;
+    });
+
+    grid.ungroupColumn(byLabel(grid, 'Country'));
+    grid.selectionMode = 'multiple';
+    grid.selectRows(items.slice(0, 10_000));
+    await painted(grid);
+
+    let copied = '';
+    const copy = await interaction('copy10k', grid, () => {
+      const clipboardData = new DataTransfer();
+      const cell = grid.shadowRoot!.querySelector<HTMLElement>('tbody tr[data-index] td[role=gridcell]')!;
+      cell.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+      copied = clipboardData.getData('text/plain');
+    }, () => undefined);
+
+    await perf.unthrottle();
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      exportCsvSliceMs: flat.sliceMs,
+      exportCsvTotalMs: flat.totalMs,
+      exportDataSliceMs: data.sliceMs,
+      exportDataTotalMs: data.totalMs,
+      exportGroupedCsvSliceMs: grouped.sliceMs,
+      exportGroupedCsvTotalMs: grouped.totalMs,
+      ...copy,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`export-${label}`, metrics));
+    expect(flat.slices, 'a exportação cede a vez').toBeGreaterThan(10);
+    expect(size).toBeGreaterThan(rows * 30);
+    expect(dataRows).toBe(rows);
+    // Sem a coluna agrupada (vira linha de grupo), com as linhas de grupo e os totais.
+    expect(groupedSize).toBeGreaterThan(rows * 25);
+    expect(copied.split('\r\n')).toHaveLength(10_000);
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -522,4 +657,5 @@ describe('perfil de máquina fraca', () => {
   summaryScenario(1_000_000, '1m');
   hugeScenario(5_000_000, '5m');
   selectionScenario(1_000_000, '1m');
+  exportScenario(1_000_000, '1m');
 });

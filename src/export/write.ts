@@ -10,7 +10,11 @@ import type { GridCsvOptions, GridExportRow } from './types.js';
 /** Linhas de HTML da área de transferência; acima disso, só o TSV (montar a tabela custaria caro). */
 export const CLIPBOARD_HTML_LIMIT = 10_000;
 
-/** Partes do CSV juntadas num `Blob` a cada tantas: tira as strings do heap do JS. */
+/**
+ * Blobs de fatia juntados num só a cada tantos (juntar blobs não copia os
+ * bytes; só encurta a lista). Cada fatia vira `Blob` na hora: codificar
+ * pouco texto por vez evita uma pausa longa, e o texto sai do heap do JS.
+ */
 const PARTS_PER_BLOB = 64;
 
 const pad = (value: number, length = 2): string => String(value).padStart(length, '0');
@@ -101,6 +105,11 @@ export const writeCsv = async (
   checkAborted(signal);
 
   const separator = resolveSeparator(options.separator, language);
+
+  if (separator.length !== 1 || ['"', '\r', '\n'].includes(separator)) {
+    throw new RangeError(`Invalid CSV separator: ${JSON.stringify(separator)} (one character other than a quote, CR or LF).`);
+  }
+
   const escape = options.escapeFormulas !== false;
   const raw = options.rawValues === true;
   const columns = source.columns;
@@ -113,7 +122,7 @@ export const writeCsv = async (
 
   const flush = (): void => {
     if (lines.length) {
-      parts.push(lines.join(''));
+      parts.push(new Blob([lines.join('')]));
       lines = [];
     }
 

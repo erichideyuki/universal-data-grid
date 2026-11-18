@@ -70,6 +70,9 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 29 | Frente 04: filtragem em fatias (`MessageChannel`, máscara parcial, segura `items` e o predicado) | `features/filtering.ts` | OK | Cancelada (porta fechada) no `hostDisconnected` e a cada nova mudança de filtro; a máscara guardada é do tamanho de `items` e trocada com eles. |
 | 30 | Frente 04: listener `pointerdown` (captura) no `document` do menu de operação e do popover do filtro do cabeçalho; valores distintos do popover | `features/filter-row.ts`, `features/header-filter.ts` | OK | Só enquanto aberto; removido ao fechar e no `hostDisconnected`; coluna removida fecha o popover/menu. `_memoryStats.headerFilterOpen`. |
 | 31 | Frente 04: rascunho e operação escolhida por coluna da linha de filtro | `features/filter-row.ts` | L | No máximo uma entrada por coluna; podados em `#syncColumns`. `_memoryStats.filterRowState`. Testes em `filtering.memory.browser.test.ts`. |
+| 32 | Frente 12: exportação em fatias (promessa pendente segura o instantâneo: `items`, grupos, colunas, formatadores) | `export/write.ts` | OK | Termina ou rejeita (`AbortError`) na próxima fatia depois do `signal`; nada de módulo. Grid removido com exportação abortada no meio é coletado (`export.memory.browser.test.ts`). |
+| 33 | Frente 12: download (`URL.createObjectURL` + `setTimeout` de 1 s para revogar) e `<a download>` temporário | `export/download.ts` | OK | O `<a>` sai do DOM na hora; o timer só segura a URL (não o grid) e revoga o `Blob`. |
+| 34 | Frente 12: Ctrl+C — listener `copy` na tabela (binding do Lit) | `grid.ts`, `features/clipboard.ts` | OK | Sai com o DOM do grid; sem listener no `document`. |
 
 ## Medição (`src/test/leak.ts`)
 
