@@ -127,11 +127,11 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Templates | Célula | ✅ | ✅ | ✅ |
 | Templates | Cabeçalho, linha de grupo, linha inteira, vazio | ✅ | ✅ | ✅ |
 | Detalhe | Master-detail (linha expansível) | ✅ | ✅ | ✅ (Enterprise) |
-| Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
+| Hierarquia | Dados em árvore | ✅ | ◐ | ✅ (Enterprise) |
 | Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | ✅ | ✅ | ✅ |
 | Exportação | CSV / Excel / PDF / área de transferência | ◐ (CSV, Excel por adaptador, Ctrl+C; PDF pelo hospedeiro) | ✅ | ✅ (Excel: Enterprise) |
 | UI | Barra de ferramentas, menu de contexto, painel de carregamento | ✅ | ✅ | ✅ |
-| UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
+| UI | Responsivo (colunas ocultas por prioridade) | ✅ | ✅ | — |
 | A11y | Padrão grid ARIA completo, leitor de tela | ✅ | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
 | i18n | RTL | ✅ | ✅ | ✅ |
@@ -188,11 +188,11 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Barra e menus | `18-toolbar-context-menu.md` | barra de ferramentas configurável, menus de contexto de linha/célula/grupo/cabeçalho num motor só | feito |
 | Intervalo de células | `19-cell-range.md` | seleção retangular, vários intervalos, copiar/colar intervalo, ações no menu da célula | feito |
 | Linhas fixas e linha inteira | `20-pinned-rows-row-template.md` | linhas fixadas no topo/rodapé; `rowRenderer` de largura total | feito |
-| Responsivo | `21-*` | colunas ocultas por prioridade com linha adaptativa | — |
+| Responsivo | `21-responsive.md` | colunas ocultas por prioridade com linha adaptativa | feito |
 | Arrastar linhas | `22-*` | reordenar linhas e arrastar entre grids | — |
 | Edição por formulário e desfazer | `23-*` | modos formulário/popup; desfazer/refazer | — |
 | Construtor de filtro | `24-*` | construtor visual e painel de filtro | — |
-| Árvore | `25-*` | dados hierárquicos (talvez um `<u-tree-grid>` à parte) | — |
+| Árvore | `25-tree-data.md` | dados hierárquicos no próprio `<u-grid>` (`treeMode`) | feito |
 
 ### Pendências deixadas pelas frentes
 
