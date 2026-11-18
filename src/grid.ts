@@ -2199,6 +2199,8 @@ export class DataGrid extends LitElement {
   #adaptiveTimer: ReturnType<typeof setTimeout> | undefined;
   /** Recalcular as ocultas no próximo update (largura, colunas, congelamento acabou). */
   #adaptiveDirty = true;
+  /** A última coluna que sobra encolhida até caber (spec 21): só no `<col>`, não muda a largura escolhida. */
+  #adaptiveCap: { column: GridColumnDef; width: number } | undefined;
   /** Escala do `font-size` do grid (1 = 16px): a largura padrão acompanha o zoom só de texto. */
   #fontScale = 1;
   /** Valor focado na linha adaptativa: a coluna (foco do grid e `u-grid-focus-change`). */
@@ -8332,6 +8334,7 @@ export class DataGrid extends LitElement {
 
   #computeAdaptiveColumns(): GridColumnDef[] {
     const viewport = this.#viewportWidth;
+    this.#adaptiveCap = undefined;
     const shown = this._shownColumns;
 
     if (!this.autoHideColumns || isServer || viewport <= 0 || shown.length < 2) {
@@ -8371,6 +8374,24 @@ export class DataGrid extends LitElement {
 
       if (relaxed.length <= previous) {
         hidden = relaxed;
+      }
+    }
+
+    // Ainda não cabe (sobrou uma só, ou as que nunca saem): a última comum com
+    // largura escolhida encolhe até a disponível (sem rolagem em 320 px, 1.4.10).
+    const kept = inputs.filter((_, index) => !hidden.includes(index));
+    const overflow = kept.reduce((sum, input) => sum + input.width, 0) - available;
+
+    if (hidden.length && overflow > 0) {
+      for (let index = shown.length - 1; index >= 0; index--) {
+        const column = shown[index];
+        const width = this.#widthOf(column);
+
+        if (!hidden.includes(index) && !inputs[index].fixed && width !== undefined) {
+          const min = Math.max(column.minWidth ?? 0, DEFAULT_MIN_COLUMN_WIDTH);
+          this.#adaptiveCap = { column, width: Math.max(min, width - overflow) };
+          break;
+        }
       }
     }
 
@@ -9343,9 +9364,20 @@ export class DataGrid extends LitElement {
    */
   #columnLayout(plan?: ColumnPlan): ColumnLayout[] {
     const columns = this._visibleColumns;
-    const fixed = columns.map(column => this._fixedOf(column));
     const sizeOf = (column: GridColumnDef): number =>
       this.#renderedWidths.get(column) ?? this.#widthOf(column) ?? 0;
+    let fixed = columns.map(column => this._fixedOf(column));
+
+    // Responsivo (spec 21, WCAG 2.4.11/1.4.10): o que gruda (fixas + recuos +
+    // expansão + caixas) passando de metade da largura deixa de grudar — as
+    // fixas continuam no lugar, só rolam junto (como as linhas fixas da 20).
+    if (this.autoHideColumns && this.#viewportWidth && fixed.some(Boolean)) {
+      const stuck = columns.reduce((sum, column, index) => sum + (fixed[index] ? sizeOf(column) : 0), this.#stickyStart());
+
+      if (stuck > this.#viewportWidth / 2) {
+        fixed = fixed.map(() => null);
+      }
+    }
 
     const offsets: number[] = [];
     let start = this.#stickyStart();
@@ -10585,11 +10617,26 @@ export class DataGrid extends LitElement {
   #textsByColumn(summaries: readonly ResolvedSummary[], values: readonly unknown[], include: (summary: ResolvedSummary, index: number) => boolean): Map<GridColumnDef, SummaryText[]> {
     const texts = new Map<GridColumnDef, SummaryText[]>();
 
+    const adaptive = this.#adaptiveColumns;
+    const lastShown = this._visibleColumns[this._visibleColumns.length - 1];
+
     summaries.forEach((summary, index) => {
-      const { column } = summary.spec;
+      let { column } = summary.spec;
 
       if (!column || !include(summary, index)) {
         return;
+      }
+
+      let text = this.#summaryText(summary, values[index]);
+
+      // Coluna oculta por falta de espaço (spec 21): o resumo vai à última exibida, com o texto completo.
+      if (adaptive.length && adaptive.includes(column)) {
+        if (!lastShown) {
+          return;
+        }
+
+        column = lastShown;
+        text = { text: text.label, label: text.label };
       }
 
       let list = texts.get(column);
@@ -10599,10 +10646,25 @@ export class DataGrid extends LitElement {
         texts.set(column, list);
       }
 
-      list.push(this.#summaryText(summary, values[index]));
+      list.push(text);
     });
 
     return texts;
+  }
+
+  /**
+   * Rodapé de totais com colunas ocultas por falta de espaço (spec 21): a
+   * última exibida recebe os resumos delas e quebra linha (WCAG 1.4.10). O
+   * rodapé de grupo está no virtualizador (altura fixa): lá ela não quebra.
+   */
+  #summaryLayout(layout: ColumnLayout[]): ColumnLayout[] {
+    const last = this._visibleColumns[this._visibleColumns.length - 1];
+
+    if (!this.#adaptiveColumns.length || !last) {
+      return layout;
+    }
+
+    return layout.map(cell => cell.column === last ? { ...cell, className: `${cell.className} adaptive-summaries` } : cell);
   }
 
   /** Separador de lista do idioma (sem "e"/"and"), calculado uma vez por idioma. */
@@ -11973,6 +12035,11 @@ export class DataGrid extends LitElement {
 
   /** Perda de foco do editor (clique fora): válido confirma; inválido fica pendente marcado. */
   readonly #onGridFocusOut = (event: FocusEvent): void => {
+    // Responsivo congelado pelo editor da linha de filtro (spec 21): recalcula quando o foco sai dele.
+    if (this.#adaptiveDirty && this.autoHideColumns) {
+      queueMicrotask(() => this.isConnected && this.requestUpdate());
+    }
+
     // Foco saindo do grid desliga o "adicionar à seleção" (Shift+F8, spec 19).
     if (this.#rangeAddMode && (typeof document.hasFocus !== 'function' || document.hasFocus())) {
       const next = event.relatedTarget as Node | null;
@@ -12573,7 +12640,9 @@ export class DataGrid extends LitElement {
       ${this.#showDetailColumn ? html`<col class="detail-toggle-column"/>` : nothing}
       ${this.#showSelectionColumn ? html`<col class="selection-column"/>` : nothing}
       ${map(layout, ({ column, gapBefore }) => {
-        const width = this.#widthOf(column);
+        const cap = this.#adaptiveCap;
+        const chosen = this.#widthOf(column);
+        const width = cap?.column === column && chosen !== undefined ? Math.min(chosen, cap.width) : chosen;
         const colStyles: { width?: string } = {};
 
         if (width !== undefined) {
@@ -12772,8 +12841,12 @@ export class DataGrid extends LitElement {
           aria-colindex="1"
           data-col="0"
           data-level=${bottom}
+          aria-describedby=${ifDefined(this.#adaptiveColumns.length ? 'adaptive-columns-description' : undefined)}
           tabindex=${active === column ? 0 : -1}
-          style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span></th>`;
+          style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span>${this.#adaptiveColumns.length
+            // Quem chega depois do anúncio (spec 21): o mesmo texto na descrição do cabeçalho.
+            ? html`<span hidden id="adaptive-columns-description">${this.#adaptiveAnnouncementText()}</span>`
+            : nothing}</th>`;
     }
 
     if (column === SELECTION_COLUMN) {
@@ -13456,6 +13529,31 @@ export class DataGrid extends LitElement {
     })}</dl>`;
   }
 
+  /**
+   * Estado da edição nas colunas ocultas por falta de espaço de uma linha
+   * (marca na célula de expansão com a linha fechada): alterada e o 1º erro
+   * ("Coluna: mensagem").
+   */
+  #adaptiveMarks(row: DataRow): { modified: boolean; error: string } | undefined {
+    const adaptive = this.#adaptiveColumns;
+
+    if (!adaptive.length || !this.#editingOn || row.fixed || row.skeleton) {
+      return undefined;
+    }
+
+    const pending = this.#pendingOf(row);
+
+    if (!pending || pending.type === 'remove') {
+      return undefined;
+    }
+
+    const modified = pending.type !== 'add' && adaptive.some(column => pending.modified.has(column));
+    const invalid = adaptive.find(column => pending.errors.has(column));
+    const error = invalid ? `${invalid.label ?? ''}: ${pending.errors.get(invalid)}` : '';
+
+    return modified || error ? { modified, error } : undefined;
+  }
+
   /** Layout de célula de uma coluna oculta por espaço (render do valor e do editor na linha adaptativa). */
   #adaptiveCellLayout(column: GridColumnDef, id: number): ColumnLayout {
     const format = this.#formatContext(column);
@@ -13613,7 +13711,7 @@ export class DataGrid extends LitElement {
     const rowIndex = this.#rows.length;
 
     return renderTotalFooter({
-      layout,
+      layout: this.#summaryLayout(layout),
       texts: this.#textsByColumn(this.#totalSpecs, this.#totals, () => true),
       groupColumns: this._groupColumns.length,
       groupColumnWidth: GROUP_COLUMN_WIDTH,
@@ -13681,6 +13779,10 @@ export class DataGrid extends LitElement {
   /** Células antes das colunas comuns: recuos de grupo, expansão e caixa (vazias nas fixas). */
   #renderLeadingCells(row: DataRow, rowIndex: number, selected: boolean, expanded: boolean) {
     const selectionCol = this.#selectionCol;
+    // Valor alterado/inválido numa coluna oculta por falta de espaço com a linha fechada (spec 21).
+    const marks = expanded ? undefined : this.#adaptiveMarks(row);
+    const marksId = marks?.error ? `adaptive-error-${rowIndex}` : undefined;
+    const marksDescription = marksId ?? (marks?.modified ? 'edit-desc-modified' : undefined);
 
     return html`
       ${map(this._groupColumns, (_, index) => html`
@@ -13692,12 +13794,14 @@ export class DataGrid extends LitElement {
       ${this.#showDetailColumn && !row.skeleton && !row.fixed
         ? html`
           <td
-            class="detail-toggle-cell sticky-cell"
+            class=${classMap({ 'detail-toggle-cell': true, 'sticky-cell': true, 'adaptive-invalid': !!marks?.error, 'adaptive-modified': !!marks?.modified })}
             part="detail-toggle-cell"
             role="gridcell"
             aria-colindex="1"
             data-col="0"
             aria-expanded=${expanded ? 'true' : 'false'}
+            aria-invalid=${ifDefined(marks?.error ? 'true' : undefined)}
+            aria-describedby=${ifDefined(marksDescription)}
             tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
             style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><button
               class="detail-toggle"
@@ -13717,7 +13821,9 @@ export class DataGrid extends LitElement {
                 width="1em"
                 viewBox="0 -960 960 960"
                 fill="currentColor"
-                aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span></button></td>`
+                aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span></button>${marksId
+                ? html`<span class="visually-hidden" id=${marksId}>${marks!.error}</span>`
+                : nothing}</td>`
         : nothing}
       ${this.#showSelectionColumn && row.fixed ? this.#renderEmptySelectionCell(rowIndex) : nothing}
       ${this.#showSelectionColumn && !row.fixed
