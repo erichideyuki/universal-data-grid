@@ -575,3 +575,75 @@ describe('virtualização de colunas', () => {
     warn.mockRestore();
   });
 });
+
+describe('estado (frente 11) com bandas', () => {
+  /** Definições novas a cada grid (o estado identifica pelo `name`/`path`, não pelo objeto). */
+  const named = () => {
+    const c = makeColumns();
+
+    return {
+      ...c,
+      all: [
+        c.country,
+        { ...c.population, name: 'population', columns: [c.popTotal, c.urban] },
+        { ...c.gdp, name: 'gdp', columns: [c.gdpTotal, { ...c.sectors, name: 'sectors', columns: [c.agro, c.industry, c.services] }] },
+      ],
+    };
+  };
+
+  it('ordem dentro das bandas, visibilidade e fixação das bandas e larguras vão e voltam', async () => {
+    const a = named();
+    const grid = await createGrid({ columns: a.all, items });
+    const [, population, gdp] = a.all;
+    const sectors = gdp.columns![1];
+
+    grid.moveColumn(gdp, 0);
+    grid.moveColumn(a.services, 0);
+    grid.moveColumn(a.urban, 0);
+    grid._userSetVisible(a.industry, false);
+    grid._userSetVisible(sectors, false);
+    grid._userSetFixed(population, 'end');
+    grid.setColumnWidth(a.agro, 140);
+    await settle(grid);
+
+    const header = describeHeader(grid);
+    const json = JSON.stringify(grid.getState());
+    const state = JSON.parse(json);
+
+    // Setores oculta: sobram 2 níveis.
+    expect(header).toEqual([
+      'Gdp Country^2 Population/2',
+      'GdpTotal Urban PopTotal',
+    ]);
+    expect(state.columns.find((entry: { name: string }) => entry.name === 'sectors')).toEqual({ name: 'sectors', visible: false });
+    expect(state.columns.find((entry: { name: string }) => entry.name === 'population')).toEqual({ name: 'population', visible: true, fixed: 'end' });
+    // Coluna de banda: visibilidade própria, sem `fixed`.
+    expect(state.columns.find((entry: { name: string }) => entry.name === 'industry')).toMatchObject({ visible: false });
+    expect(state.columns.find((entry: { name: string }) => entry.name === 'agro')).not.toHaveProperty('fixed');
+
+    // Grid novo, definições novas: mesmo estado.
+    const b = named();
+    const restored = await createGrid({ columns: b.all, items });
+    restored.setState(state);
+    await settle(restored);
+
+    expect(describeHeader(restored)).toEqual(header);
+    expect(headerCell(restored, 'Urban').classList.contains('fixed-end')).toBe(true);
+    expect(JSON.stringify(restored.getState())).toBe(json);
+
+    // A banda oculta volta com o estado próprio das colunas (Industry continua oculta).
+    restored._userSetVisible(b.all[2].columns![1], true);
+    await settle(restored);
+    expect(describeHeader(restored)).toEqual([
+      'Gdp/3 Country^3 Population/2',
+      'GdpTotal^2 Sectors/2 Urban^2 PopTotal^2',
+      'Services Agro',
+    ]);
+    expect(headerCell(restored, 'Agro').getBoundingClientRect().width).toBeCloseTo(140, 0);
+
+    // resetState: definição de novo.
+    restored.resetState();
+    await settle(restored);
+    expect(describeHeader(restored)[0]).toBe('Country^3 Population/2 Gdp/4');
+  });
+});

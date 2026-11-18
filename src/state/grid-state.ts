@@ -23,9 +23,12 @@ export interface GridColumnState {
   name: string;
   /** Width chosen by the user (px); `null` = the width of the definition. */
   width?: number | null;
-  /** Shown (`false` = hidden in the column chooser). */
+  /**
+   * Shown (`false` = hidden in the column chooser). The column's own
+   * visibility: a column of a hidden band keeps its own.
+   */
   visible?: boolean;
-  /** Side the column is fixed to; `null` = not fixed. */
+  /** Side the column is fixed to; `null` = not fixed. Left out for columns inside a band (they follow the top band). */
   fixed?: GridColumnFixed;
   /** Grouping level (0-based); `null` = not grouped. */
   groupIndex?: number | null;
@@ -69,7 +72,9 @@ export interface GridState {
   /**
    * Columns in the order of `moveColumn` (the regular columns; hidden ones
    * count), then the grouped ones (their order does not matter: `groupIndex`
-   * gives it).
+   * gives it), then the bands that have a `name` (only `visible` and, at the
+   * top level, `fixed`; the order of bands and of the columns inside them
+   * follows the order of the columns).
    */
   columns?: GridColumnState[];
   /** Column filter (like the `filterValue` property: columns by `path`, dates as ISO text). */

@@ -1498,6 +1498,10 @@ grid.resetState();                      // back to the column definitions and in
   without one. A column without either is left out of the state (console warning); give two
   columns with the same `path` different names. `filterValue` refers to columns by `path`, like the
   property.
+- With [bands](#bands-multi-level-headers), the order of the columns inside each band and of the
+  bands themselves comes from the column order. A band with a `name` also keeps its own visibility
+  and, at the top level, its fixed side (a band without `name` is left out silently); each column
+  keeps its own visibility, so a column of a hidden band comes back as it was.
 - `setState()` validates the state first; an invalid one is ignored with a warning. A state of an
   older version is migrated, an unknown version ignored. Unknown column names are ignored; columns
   missing from `columns` go back to their definition, at the end, in definition order. Only page

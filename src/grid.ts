@@ -2210,14 +2210,28 @@ export class DataGrid extends LitElement {
       const sort = sortIndex.get(column);
       const groupIndex = this._groupColumns.indexOf(column);
 
+      const nested = !!this._parentBandOf(column);
+
       columns.push({
         name,
         width: this.#userWidths.get(column) ?? null,
-        visible: this._isColumnVisible(column),
-        fixed: this._fixedOf(column),
+        // Visibilidade PRÓPRIA: coluna de banda oculta guarda o seu estado (frente 13).
+        visible: this.#ownVisible(column),
+        // Coluna de banda segue o `fixed` da banda de cima (não é dela).
+        ...nested ? {} : { fixed: this._fixedOf(column) },
         groupIndex: groupIndex >= 0 ? groupIndex : null,
         sortOrder: sort === undefined ? null : this.#sorting[sort].order,
         sortIndex: sort ?? null,
+      });
+    }
+
+    // Bandas com `name` (frente 13): visibilidade própria e, no nível de cima, o lado
+    // fixo. A ordem delas sai da das colunas (a 1ª coluna de cada banda).
+    for (const [name, band] of this.#namedColumns(this.#columnTree.bands, true)) {
+      columns.push({
+        name,
+        visible: this.#ownVisible(band),
+        ...this._parentBandOf(band) ? {} : { fixed: this._fixedOf(band) },
       });
     }
 
@@ -2325,13 +2339,14 @@ export class DataGrid extends LitElement {
   }
 
   /** Colunas com id no estado, uma por id (a 1ª vence); avisa as sem id e as repetidas. */
-  #namedColumns(columns: readonly GridColumnDef[]): Map<string, GridColumnDef> {
+  /** `quiet`: bandas sem `name` ficam fora do estado sem aviso (a ordem vem das colunas). */
+  #namedColumns(columns: readonly GridColumnDef[], quiet = false): Map<string, GridColumnDef> {
     const named = new Map<string, GridColumnDef>();
 
     for (const column of columns) {
       const name = columnNameOf(column);
 
-      const warn = this.#stateInUse || !!this.#stateStorage;
+      const warn = (this.#stateInUse || !!this.#stateStorage) && !(quiet && !name);
 
       if (!name) {
         if (warn) {
@@ -2483,16 +2498,22 @@ export class DataGrid extends LitElement {
   }
 
   #restoreColumns(list: readonly GridColumnState[]): void {
-    const definitions = this.columns;
+    // Só as folhas têm ordem, largura, grupo e ordenação; bandas (frente 13): visibilidade e lado fixo.
+    const definitions = this.#columnTree.leaves;
     const named = this.#namedColumns(definitions);
+    const namedBands = this.#namedColumns(this.#columnTree.bands, true);
     const entries = new Map<GridColumnDef, GridColumnState>();
+    const bandEntries = new Map<GridColumnDef, GridColumnState>();
 
     for (const entry of list) {
       const column = named.get(entry.name);
+      const band = column ? undefined : namedBands.get(entry.name);
 
       // Coluna que não existe mais: ignorada.
       if (column && !entries.has(column)) {
         entries.set(column, entry);
+      } else if (band && !bandEntries.has(band)) {
+        bandEntries.set(band, entry);
       }
     }
 
@@ -2523,10 +2544,22 @@ export class DataGrid extends LitElement {
         this.#userVisible.set(column, entry.visible);
       }
 
-      if (entry.fixed !== undefined && entry.fixed !== normalizeFixed(column.fixed)) {
+      if (entry.fixed !== undefined && entry.fixed !== normalizeFixed(column.fixed) && !this._parentBandOf(column)) {
         this.#userFixed.set(column, entry.fixed);
       }
     }
+
+    for (const [band, entry] of bandEntries) {
+      if (entry.visible !== undefined && entry.visible !== (band.visible !== false)) {
+        this.#userVisible.set(band, entry.visible);
+      }
+
+      if (entry.fixed !== undefined && entry.fixed !== normalizeFixed(band.fixed) && !this._parentBandOf(band)) {
+        this.#userFixed.set(band, entry.fixed);
+      }
+    }
+
+    this.#visibleBands = undefined;
 
     const regular = ordered.filter(column => groupIndexOf(column) === null);
     const group = ordered
@@ -2535,9 +2568,11 @@ export class DataGrid extends LitElement {
       .sort((a, b) => a.index - b.index || a.position - b.position)
       .map(entry => entry.column);
 
-    // Nenhuma coluna comum visível: volta a visibilidade à definição.
+    // Nenhuma coluna comum visível: volta a visibilidade à definição (bandas incluídas).
     if (regular.length && !regular.some(column => this._isColumnVisible(column))) {
       regular.forEach(column => this.#userVisible.delete(column));
+      bandEntries.forEach((_, band) => this.#userVisible.delete(band));
+      this.#visibleBands = undefined;
     }
 
     this.#sorting = ordered
