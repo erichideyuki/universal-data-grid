@@ -146,6 +146,33 @@ DevExtreme, demo "Master-Detail View" (jQuery, 2026-11-18):
   sticky, limitado à largura visível (WCAG 1.4.10).
 - `groupRenderer` com resumos alinhados: nome = conteúdo + resumos
   (`aria-labelledby` com texto oculto).
-- Pendente (exige aval de API): repassar `aria-label`/`aria-labelledby` do
-  `<u-grid>` para a tabela (grids aninhados sem nome). Conteúdo inserido
-  depois do render não é rebaixado (documentado no README).
+- Aprovado (2026-11-18) e implementado: `aria-label`/`aria-labelledby` do
+  `<u-grid>` nomeiam a tabela (`grid`/`treegrid`), também em grid aninhado
+  no detalhe (`features/host-label.ts`). Como IDREF não atravessa o shadow
+  root, os ids do `aria-labelledby` são resolvidos na raiz do hospedeiro
+  (documento, ou o shadow root do grid externo para o aninhado) e os alvos
+  vão para a tabela em `ariaLabelledByElements` (referência do shadow root
+  para fora é válida: o navegador calcula o accname de verdade — conferido
+  pela árvore de acessibilidade via CDP) e, como reserva (SSR, navegador
+  sem a reflexão), o TEXTO deles no `aria-label` da tabela (accname
+  aproximado: `aria-label` do alvo, senão o texto da árvore achatada, sem
+  `aria-hidden`/não renderizado, com `aria-label`/`alt` de descendentes;
+  alvo oculto conta inteiro; vários ids juntados por espaço;
+  `aria-labelledby` vence o `aria-label`, alvo vazio cai nele). Um
+  `MutationObserver` observa o texto dos alvos e a raiz (`childList` +
+  atributo `id`, callback só compara `getElementById`: pega alvo que
+  aparece, sai, muda de id ou cujo ancestral foi trocado); solto no
+  `disconnect`, quando a tabela também solta os elementos
+  (`_memoryStats.hostLabelObservers`). Alvo que é o hospedeiro ou o contém:
+  só o `aria-label` dele, aviso no console (senão o nome seria o grid
+  inteiro e cada render acordaria o observador). Na hidratação o Lit não
+  grava o valor do cliente (`noCommit`): o `aria-label` é garantido no
+  `updated` (teste de hidratação com `aria-labelledby`). `grid.ariaLabel`
+  (reflexão ARIA) funciona por ser o atributo. No SSR só o `aria-label` (o
+  Lit não chama o `attributeChangedCallback` do elemento no servidor: lido
+  no `willUpdate`). O hospedeiro mantém os atributos (o autor/framework é
+  dono deles); o axe não acusa nem deixa `incomplete` por isso — ler com
+  VoiceOver se o hospedeiro vira "grupo" com nome repetido (🔎 na spec 17).
+  Fora: `ariaLabelledByElements` posto no `<u-grid>` e `aria-describedby`
+  (documentado).
+- Conteúdo inserido depois do render não é rebaixado (documentado no README).

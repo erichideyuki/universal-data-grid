@@ -78,6 +78,7 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 36 | Frente 08: temporizador dos pedidos de blocos (30 ms depois do render) | `grid.ts` | OK | `clearTimeout` no `disconnectedCallback` e a cada render. `_memoryStats.loadTimers`. |
 | 37 | Frente 08: cache de blocos da fonte remota (segura itens do servidor) e grupos carregados | `data/remote-loader.ts` (`LruCache`) | L | Por geração (consulta): no máximo `BLOCK_CACHE_LIMIT` (200) blocos; a geração velha é solta quando a nova responde; trocar `dataSource` solta tudo. Grupos: só listas de grupos expandidos da geração atual. `_memoryStats.cachedBlocks`. Testes em `data-source.memory.browser.test.ts`. |
 | 38 | Frente 08: `keyExpr` (função do hospedeiro) e seleção por chave | `grid.ts` | OK | Por instância. Com `keyExpr`, a seleção guarda as chaves (não os itens): trocar `items` solta os objetos velhos. |
+| 39 | Nome do grid pelo hospedeiro: `MutationObserver` dos alvos do `aria-labelledby` e da raiz; `ariaLabelledByElements` da tabela (segura os alvos) | `features/host-label.ts` | OK | Alvos (texto) e a raiz (documento ou shadow root externo: só `childList` + `id`). No `disconnectedCallback` os observadores saem e a tabela solta os elementos; refeito ao reconectar (`_memoryStats.hostLabelObservers`). Teste em `host-label.browser.test.ts` (grid removido coletado com o alvo vivo; 2000 trocas sem crescer). |
 
 ## Medição (`src/test/leak.ts`)
 

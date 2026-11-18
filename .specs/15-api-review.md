@@ -73,6 +73,12 @@ novos está no README ("Deprecated names").
 | 32 | README "frameworks" | Sem exemplo de eventos; React 19 grava atributo se o elemento não estiver definido | Exemplos React/Angular/Vue de evento + nota de importar antes do 1º render | não | BAIXA || aprovado |
 | 33 | Eventos previstos nas specs 08/09 (`u-grid-loaded`, `u-grid-saved`, `u-grid-edit-canceled`, `u-grid-editing-start`) | Fogem da regra de eventos | `u-grid-load`, `u-grid-save`, `u-grid-edit-cancel`, `u-grid-edit-start` (ajustar as specs) | não | BAIXA || aprovado |
 
+Depois da revisão (aval do usuário em 2026-11-18): chave `GridI18n`
+`groupPanelMenu` → `groupPanelMenuLabel` (mesmo nome da propriedade
+booleana `groupPanelMenu`; sufixo `Label` dos nomes acessíveis), alias em
+`setGridTranslation` com aviso, como #28. Como em #28, quebra só de tipo
+para quem declara um objeto `GridI18n` completo (a chave some do tipo).
+
 ## Decisões tomadas na implementação
 
 - #2/#13: conversor `booleanAttribute(padrão)` em `src/attribute-converters.ts`

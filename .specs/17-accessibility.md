@@ -114,6 +114,22 @@ desagrupar, menu do painel, expandir grupo, seletor: fixar e Tab),
 (Ctrl+G recusado, repetido, Espaço), contraste (placeholder, editor),
 `forced-colors` e movimento reduzido.
 
+Ajustes aprovados depois (2026-11-18): nome do grid pelo hospedeiro
+(`aria-label`/`aria-labelledby` → tabela, spec 10;
+`src/host-label.browser.test.ts`, com axe e vazamento do observador),
+`dir`/`lang` no HTML do Ctrl+C (spec 12), `groupPanelMenuLabel`.
+Revisão de a11y dessa entrega: aplicado o que não muda API
+(`ariaLabelledByElements`, cópia de texto sem `aria-hidden`, ancestral do
+alvo trocado, alvo que contém o grid, hidratação). 🔎 Com VoiceOver/JAWS:
+o hospedeiro com `aria-label` (genérico) é lido como "grupo" com o nome
+repetido antes da tabela? Se sim, a saída é um rótulo não ARIA (vai ao
+usuário). ⏳ Propostas que mudam o `detail.html` do `u-grid-copying` (vão
+ao usuário): `lang` da tabela copiada = idioma do CONTEÚDO (o `[lang]`
+mais próximo do hospedeiro, sem cair no idioma do navegador), não o da
+interface — o Ctrl+C só copia dados do app (decisão "`lang`" acima); e
+`dir="ltr"` explícito em grid LTR (colado num documento RTL, inverteria as
+colunas).
+
 ## Roteiro manual (leitor de tela)
 NVDA + Chrome e JAWS + Edge no Windows, VoiceOver + Safari no macOS:
 percorrer cabeçalho → corpo → rodapé; ordenar (ouvir o anúncio); filtrar
@@ -243,10 +259,11 @@ acréscimos voltam ao usuário para confirmação junto com a entrega):
   ícone.
 - **Barra da alça (A3)**: cor por `--u-grid-resize-handle-color` (fallback
   `--u-grid-group-toggle-color`), não direto pelo token do grupo.
-- **Recusado na revisão da implementação**: renomear a chave existente
-  `groupPanelMenu` (nome do menu) para `groupPanelMenuLabel` — é API anterior
-  a esta frente; fica como pendência (alias + aviso) para quando houver
-  outra revisão de i18n.
+- **Renomeação da chave `groupPanelMenu`** (nome do menu do painel) para
+  `groupPanelMenuLabel`: recusada na revisão desta frente (API anterior),
+  aprovada pelo usuário depois (2026-11-18) e feita com alias:
+  `setGridTranslation` aceita `groupPanelMenu` com aviso uma vez por página
+  (spec 15, "Deprecated names" no README).
 - **Barra (A9)**: a altura medida vai numa variável interna do contêiner
   (`--_toolbar-offset`, `ResizeObserver` já existente, solto no
   disconnect) e alimenta o `top` do `thead` e do indicador de soltura.

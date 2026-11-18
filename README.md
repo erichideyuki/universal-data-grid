@@ -820,6 +820,22 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 
 ### Accessibility
 
+- **Name the grid**: `aria-label` or `aria-labelledby` set on `<u-grid>` names the table
+  (`role="grid"`/`"treegrid"`) inside the shadow root. `aria-labelledby` points to ids in the same
+  root as the grid (the page, or the template of the outer grid for a nested grid). The grid hands
+  those elements to the table (`ariaLabelledByElements`, so the browser computes the name) and also
+  copies their text as a fallback for server rendering and older browsers — an approximation that
+  uses each element's `aria-label`, `alt` and visible text and skips `aria-hidden` content. It
+  follows text changes and elements added, removed or replaced later. An `aria-labelledby` that
+  points to the grid itself or to an element containing it uses only that element's `aria-label`
+  (with a console warning). Element references set on `<u-grid>` (`ariaLabelledByElements`) and
+  `aria-describedby` are not forwarded; use the `aria-labelledby` attribute. Give every grid a name, especially nested and side-by-side grids:
+
+  ```html
+  <h2 id="orders-title">Orders</h2>
+  <u-grid aria-labelledby="orders-title"></u-grid>
+  ```
+
 - `role="grid"` (`role="treegrid"` while grouped), with `aria-rowcount`/`aria-colcount` for the whole
   data set (not just the rendered rows), the real `aria-rowindex`/`aria-colindex` of every cell,
   `aria-multiselectable` in `multiple` mode, `aria-selected` on data rows, `aria-expanded` on group
@@ -1158,7 +1174,10 @@ With the focus on a cell, **Ctrl+C** (⌘C, or Copy in the browser menu) copies 
 the current order — or, without a selection (or when no selected row passes the filter), the
 focused data cell — as tab separated text (`text/plain`) and an HTML table (`text/html`, escaped;
 above 10,000 rows only the text), with the visible exportable columns, formatted values, no header
-and formula injection blocked. Screen readers announce the copy (again when repeated). Without a
+and formula injection blocked. The HTML table carries `dir="rtl"` when the grid is right-to-left and
+the grid's effective `language` as `lang`. Text a spreadsheet would run as a formula keeps the `'`
+prefix in both formats; in the HTML its cell is also marked as text (`mso-number-format:"\@"`),
+because LibreOffice ignores that mark when pasting and would run the formula. Screen readers announce the copy (again when repeated). Without a
 selection, Ctrl+C on a header, group row, summary or checkbox cell copies nothing. Text the user
 selected with the mouse inside the grid, and copies from the filter row, the search box or an
 editable control inside a cell, are left to the browser.
@@ -1174,6 +1193,9 @@ grid.addEventListener('u-grid-copying', event => {
   event.detail.clipboardData.setData('text/plain', event.detail.items.map(item => item.id).join('\n'));
 });
 ```
+
+The exact markup of `detail.html` may gain attributes in minor versions — don't compare it as a
+fixed string.
 
 ---
 
@@ -1319,6 +1341,8 @@ grid.isRowExpanded(orders[0]);       // false
   reaches it only through inheritance and `--u-grid-*` custom properties (return an `HTMLElement`
   to style it with page selectors). Their `u-grid-*` events bubble (`composed`) through the outer grid. Listen on
   the inner grid, or check `event.composedPath()[0] === grid`.
+- Name each nested grid with `aria-label`, or `aria-labelledby` pointing to a heading in the same
+  template (see [Accessibility](#accessibility)).
 - Style with the `detail-toggle-cell`, `detail-toggle-button`, `detail-row`, `detail-cell` and
   `expanded` parts.
 
@@ -1421,7 +1445,7 @@ interface GridI18n {
   ungroupAll: string;          // "Ungroup all"
   expandAllGroups: string;     // "Expand all groups"
   collapseAllGroups: string;   // "Collapse all groups"
-  groupPanelMenu: string;      // accessible name of the group panel menu
+  groupPanelMenuLabel: string; // accessible name of the group panel menu
   filterEquals: string;        // one key per operation: filterEquals, filterNotEquals, filterLessThan,
   // filterLessThanOrEqual, filterGreaterThan, filterGreaterThanOrEqual, filterContains,
   // filterNotContains, filterStartsWith, filterEndsWith, filterBetween, filterAnyOf,
@@ -1492,7 +1516,7 @@ interface GridI18n {
 
 `{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}` and
 `{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
-`sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd` and `unpin` were renamed;
+`sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` and `groupPanelMenu` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
 ### SSR note
@@ -1942,7 +1966,7 @@ They will be removed in the next major version.
 | changing `groupIndex` of a rendered `<u-grid-column>` | `groupColumn()` / `ungroupColumn()` |
 | `detail.fromIndex` / `detail.toIndex` of `u-grid-column-reorder` | `previousIndex` / `index` |
 | type `UmDataGridColumn` | `DataGridColumn` |
-| i18n keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix` |
+| i18n keys `clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix`, `groupPanelMenuLabel` |
 | `--u-grid-header-height` (bar) | `--u-grid-toolbar-height` (the header cells use `--u-grid-header-cell-height`) |
 | `--u-table-header-padding`, `-block-padding`, `-inline-padding` | `--u-grid-toolbar-padding`, `-block-padding`, `-inline-padding` |
 | `--u-table-cell-padding`, `--u-grid-data-cell-padding` | `--u-grid-cell-padding` |

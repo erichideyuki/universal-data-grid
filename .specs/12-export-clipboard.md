@@ -103,10 +103,13 @@ seleção de texto esquecida fora do grid não bloqueia; campo editável inclui
 aninhados; README com Ctrl+C na tabela de teclado, o que não copia e o
 anúncio a cargo do hospedeiro quando ele cancela. Testes desses casos.
 
-Pendente (muda o `detail.html` do `u-grid-copying`, decisão do usuário):
-`<table dir="rtl" lang="ar">` no HTML copiado com o grid em RTL; trocar o
-`'` visível no HTML por `mso-number-format:'\@'` (decisão de segurança —
-conferir antes se o Excel não avalia `=` assim). Não testado em WebKit/
+Aprovado pelo usuário (2026-11-18) e implementado (muda o `detail.html`
+do `u-grid-copying`): a `<table>` copiada leva `dir="rtl"` com o grid em
+RTL e `lang` = idioma efetivo do grid (`language`: propriedade, context,
+página ou navegador). Na célula protegida contra fórmula, o HTML leva
+`style='mso-number-format:"\@"'` (texto) — e MANTÉM o `'` (ver "Colar
+HTML nas planilhas" em "Referência medida": o LibreOffice avaliaria a
+fórmula sem ele). TSV e CSV continuam com o `'`. Não testado em WebKit/
 Firefox (o Vitest do projeto só roda Chromium).
 
 ## Segurança
@@ -134,7 +137,8 @@ exportar (barra de ferramentas, Fase D), `copySelection()` por API.
 
 ## Testes
 Escapes do CSV; injeção de fórmula; grupos e resumos; idioma pt (`;`);
-Ctrl+C com HTML escapado.
+Ctrl+C com HTML escapado; `mso-number-format` na célula protegida;
+`dir="rtl"`/`lang` na tabela copiada.
 
 ## Referência medida
 
@@ -159,6 +163,39 @@ recolhido, seleção e valores `=1+1`, `-5`, `@x`:
 - Sem proteção contra fórmula: `=1+1`, `-5`, `@x` saem iguais (no xlsx são
   células de texto, então não executam; no CSV executariam). Nós protegemos
   por padrão (seção Segurança).
+
+### Colar HTML nas planilhas (proteção contra fórmula, 2026-11-18)
+
+Pergunta: com `mso-number-format:"\@"` na célula, dá para tirar o `'`
+visível do `text/html`?
+
+- **Excel 16 (Microsoft 365, build 20527), medido** — HTML aberto pelo
+  importador HTML do Excel via COM (o sandbox não deixa escrever na área de
+  transferência; colar HTML usa o mesmo importador). Sem marca: `=1+1` e
+  `+1+1` viram FÓRMULA (`2`); `@SUM(1,1)` e `-5` ficam texto/número. Com
+  `mso-number-format:"\@"` (inline com aspas duplas ou simples, ou por
+  classe num `<style>`): célula de texto `@`, `=1+1`/`+1+1`/`-1+1`/`@…`
+  literais, nada avaliado. Com `'=1+1` (com ou sem a marca): texto, mas o
+  `'` APARECE na célula. `sdnum` e `data-sheets-value` não mudam nada.
+- **LibreOffice Calc, pelo código-fonte** (não instalado aqui): a colagem
+  HTML usa o `ScHTMLLayoutParser` (`ScHTMLImport` com
+  `bCalcWidthHeight`), cujo `TableDataOn` NÃO lê `style`/`class` —
+  `mso-number-format` só existe no `ScHTMLTable` (consulta web). Sem
+  formato de texto, `ScEEImport::WriteToDocument` grava com
+  `SpecialNumberOnly` e o `ScColumn::ParseString` compila `=…` como
+  fórmula (`mbCheckLinkFormula` só barra funções de link externo). Com
+  `'=1+1`, `mbHandleApostrophe = false`: texto literal, `'` visível. Honra
+  `sdnum="1033;0;@"` (formato próprio) e `data-sheets-value` (tipo 2 =
+  texto) — não verificados executando.
+- **Google Sheets: não verificado** (sem conta Google no navegador do
+  ambiente). Não há documentação de que leia `mso-number-format`.
+
+Decisão (regra do usuário: "se algum avaliar a fórmula, mantenha o `'`
+também no HTML"): o LibreOffice avalia `=` com só o `mso-number-format`, e
+o HTML copiado não sabe onde vai ser colado, então o `'` fica no HTML; a
+célula protegida leva também o `mso-number-format:"\@"` (no Excel vira
+célula de texto). Para tirar o `'` seria preciso confirmar, colando de
+verdade, `sdnum` no LibreOffice e algum marcador no Sheets.
 
 ### Nossa medida (perfil de máquina fraca, spec 16 — cenário `export-1m`)
 
