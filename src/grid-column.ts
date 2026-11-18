@@ -175,8 +175,10 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /**
    * Order in which the column leaves the table when the grid is too narrow
    * (`auto-hide-columns`; its values move to the row details): the lowest
-   * goes first. When any column has one, only those columns hide. Empty or
-   * not a number = none. Ignored on bands.
+   * goes first, ties from the end. When any column has a `hiding-priority`
+   * (grouped or hidden ones included), only those columns hide; otherwise
+   * columns hide from the last one. Fixed columns never hide. Empty or not a
+   * number = none. Ignored on bands.
    */
   @property({ converter: optionalNumberAttribute, attribute: 'hiding-priority' }) hidingPriority: number | null = null;
 

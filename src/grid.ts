@@ -589,7 +589,8 @@ export interface GridFocusChangeEventDetail {
    * `null` in the selection, detail toggle and row buttons (`cellType: 'command'`)
    * columns, in detail rows, in group rows and in full-width cells. In a
    * detail row with the values of the columns hidden by `autoHideColumns`,
-   * the column of the focused value (`cellType: 'detail'`).
+   * the column of the focused value (`cellType: 'detail'`; `null` on the
+   * detail cell itself).
    */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
@@ -606,7 +607,7 @@ export interface GridFocusChangeEventDetail {
   rowFixed: GridRowFixed;
   /** `rowFixed` before the change. */
   previousRowFixed: GridRowFixed;
-  /** `user` (keyboard, click) or `api` (`focusCell`). */
+  /** `user` (keyboard, click) or `api` (`focusCell`, or the active column hidden by `autoHideColumns`). */
   source: GridChangeSource;
 }
 /** `detail` of `u-grid-edit-starting` (cancelable: `preventDefault()` keeps the cell or row closed). */
@@ -1490,7 +1491,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * width, the columns, their widths or the property itself), after the render. Layout only: no `source`, not cancelable.
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
- * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter nor a relocation).
+ * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter;
+ * a relocation fires only when the active column hides or comes back with `autoHideColumns`, `source: 'api'`).
  * @fires {CustomEvent<GridEditStartingEventDetail>} u-grid-edit-starting - Before a cell editor (or a row, `editMode="row"`) opens (user or API). Cancelable.
  * @fires {CustomEvent<GridRowAddingEventDetail>} u-grid-row-adding - Before a new row is added (Add row button or `addRow`): set its initial values in `detail.data`. Cancelable.
  * @fires {CustomEvent<GridRowRemovingEventDetail>} u-grid-row-removing - Before a row is deleted or marked for removal (Delete button, before the confirmation, or `removeRow`). Cancelable.
@@ -1616,7 +1618,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart search-input - The search panel input.
  * @csspart header-filter-button - The funnel button in a column header (`header-filter`).
  * @csspart header-filter - The header filter popover.
- * @csspart detail-toggle-cell - Cells and header of the master-detail toggle column.
+ * @csspart detail-toggle-cell - Cells and header of the row details toggle column (master-detail and `autoHideColumns`).
  * @csspart detail-toggle-button - The expand/collapse button of a master row.
  * @csspart detail-row - Detail rows (with `row`).
  * @csspart detail-cell - The full-width cell of a detail row.
@@ -1641,12 +1643,12 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart error-row - The bar shown when the data source failed.
  * @csspart retry-button - The "Retry" button of the error bar.
  * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
- * @csspart modified - Edited, unsaved data cells (with `cell`).
- * @csspart invalid - Data cells with a validation error (with `cell`).
+ * @csspart modified - Edited, unsaved data cells (with `cell` or `adaptive-value`).
+ * @csspart invalid - Data cells with a validation error (with `cell` or `adaptive-value`).
  * @csspart added - New, unsaved rows (with `row`).
  * @csspart removed - Rows marked for removal (with `row`, `editMode="batch"`).
  * @csspart cell-editor - The built-in cell editors (`<input>`).
- * @csspart validation-message - The validation error shown below an invalid cell.
+ * @csspart validation-message - The validation error shown below an invalid cell or row details value.
  * @csspart cell-range-summary - The bar below the grid with the count, sum and average of the selected cells (`show-cell-range-summary`) and the "Adding to selection" text (Shift+F8).
  * @csspart command-cell - Cells and header of the row buttons column (edit, delete).
  * @csspart command-button - The row buttons (edit, save, cancel, delete, restore).
@@ -2217,7 +2219,7 @@ export class DataGrid extends LitElement {
   /** Linha aberta pela edição no modo linha (fecha ao sair dela, com a mesma origem). */
   #editOpenedRow: { rowKey: unknown; source: GridChangeSource } | undefined;
   /** Valor da linha adaptativa que recebe o foco depois do render (Esc/Enter no editor, `focusCell`). */
-  #adaptiveRefocus: { rowKey: unknown; column: GridColumnDef } | undefined;
+  #adaptiveRefocus: { rowKey: unknown; column: GridColumnDef; fixed?: 'top' | 'bottom' } | undefined;
 
   // Estado do usuário por coluna — nunca escrito nos objetos do hospedeiro.
   readonly #userWidths = new VersionedMap<GridColumnDef, number>();
@@ -4248,8 +4250,8 @@ export class DataGrid extends LitElement {
 
   /**
    * Expands the detail of the row `rowKey` (master-detail, and the values of
-   * the columns hidden by `autoHideColumns`; without `detailRenderer` and
-   * `autoHideColumns` it does nothing; with `autoHideColumns` the state is
+   * the columns hidden by `autoHideColumns`; with neither `detailRenderer`
+   * nor `autoHideColumns` it does nothing; with `autoHideColumns` the state is
    * kept even while no column is hidden). A key not in the rows (filtered out,
    * in a collapsed group, not in `items`) keeps the state — and the key —
    * until collapsed; parent groups are not expanded.
@@ -4265,7 +4267,7 @@ export class DataGrid extends LitElement {
 
   /**
    * Whether the detail of the row `rowKey` is (or would be) expanded; `false`
-   * without `detailRenderer` and `autoHideColumns`.
+   * with neither `detailRenderer` nor `autoHideColumns`.
    */
   isRowExpanded(rowKey: unknown): boolean {
     return this.#expandable && this.#isRowExpandedKey(rowKey);
@@ -4913,8 +4915,10 @@ export class DataGrid extends LitElement {
    * Scrolls to the cell of the row `rowKey` and `column` (default: the first
    * visible column) and moves the DOM focus to it. Returns `false` when the
    * row is not in the grid (filtered out or in a collapsed group — groups are
-   * not expanded) or `column` is not a visible, ungrouped column (a band
-   * returns `false`). Before the
+   * not expanded) or `column` is not a shown (user-visible), ungrouped
+   * column (a band returns `false`). A column hidden by `autoHideColumns`
+   * opens the row details (`u-grid-row-expansion-change`, `source: 'api'`)
+   * and focuses its value. Before the
    * first render it only sets the active cell (the focus moves when it is
    * rendered) and fires no event. `options.rowFixed` looks for the row among
    * the fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead
@@ -4937,8 +4941,8 @@ export class DataGrid extends LitElement {
     const col = target ? navColumns.indexOf(target) : column === undefined || column === null ? navColumns.indexOf(this._visibleColumns[0]) : -1;
 
     // Coluna oculta por falta de espaço (spec 21): abre a linha e vai ao valor.
-    if (target && col < 0 && !fixed && this.#adaptiveColumns.includes(target)) {
-      return this.#revealAdaptive(rowKey, target, 'api');
+    if (target && col < 0 && this.#adaptiveColumns.includes(target)) {
+      return this.#revealAdaptive(rowKey, target, 'api', fixed ?? undefined);
     }
 
     if (column !== undefined && column !== null && col < 0) {
@@ -4985,7 +4989,9 @@ export class DataGrid extends LitElement {
 
   /**
    * Opens the editor of a cell (focus goes to it). In `row` mode it opens the
-   * whole row with the focus on that cell. Returns `false` when the row is
+   * whole row with the focus on that cell. A column hidden by
+   * `autoHideColumns` opens the row details (`u-grid-row-expansion-change`,
+   * `source: 'api'`) and edits its value there. Returns `false` when the row is
    * not in the grid, the cell is not editable, a save is running or
    * `u-grid-edit-starting` was canceled.
    */
@@ -8622,7 +8628,8 @@ export class DataGrid extends LitElement {
     const columns = this.#adaptiveColumns;
     const index = columns.indexOf(column);
     const target = step && index >= 0 ? columns[(index + step + columns.length) % columns.length] : column;
-    this.#adaptiveRefocus = { rowKey, column: target };
+    const fixed = this.#rowAt(this.#activeRowIndex)?.isDetail ? (this.#rowAt(this.#activeRowIndex) as DetailRow).fixed : undefined;
+    this.#adaptiveRefocus = { rowKey, column: target, fixed };
     this.requestUpdate();
   }
 
@@ -8630,8 +8637,8 @@ export class DataGrid extends LitElement {
    * Abre a linha (evento com `source`) e leva a célula ativa e o foco ao valor
    * da coluna oculta por falta de espaço (`focusCell`, erro de validação).
    */
-  #revealAdaptive(rowKey: unknown, column: GridColumnDef, source: GridChangeSource): boolean {
-    if (this.#rowIndexOfKey(rowKey) < 0) {
+  #revealAdaptive(rowKey: unknown, column: GridColumnDef, source: GridChangeSource, fixed?: 'top' | 'bottom'): boolean {
+    if (this.#masterIndexOf(rowKey, fixed) < 0) {
       return false;
     }
 
@@ -8640,10 +8647,19 @@ export class DataGrid extends LitElement {
       this.#ensureRows();
     }
 
-    const master = this.#rowIndexOfKey(rowKey);
-    this.#setActive({ row: master + 1, col: this.#activeCol }, source, { reveal: true });
-    this.#adaptiveRefocus = { rowKey, column };
+    this.#setActive({ row: this.#masterIndexOf(rowKey, fixed) + 1, col: this.#activeCol }, source, { reveal: true });
+    this.#adaptiveRefocus = { rowKey, column, fixed };
     return true;
+  }
+
+  /** Índice interno da linha mestre da chave: no corpo, ou entre as fixas de um lado. */
+  #masterIndexOf(rowKey: unknown, fixed?: 'top' | 'bottom'): number {
+    if (!fixed) {
+      return this.#rowIndexOfKey(rowKey);
+    }
+
+    const position = this.#fixedRows()[fixed].findIndex(entry => !entry.isDetail && this.#keyOf(entry.item) === rowKey);
+    return position < 0 ? -1 : this.#fixedIndex(fixed, position);
   }
 
   /** Depois do render: foco no valor pedido (`#adaptiveRefocus`). */
@@ -8655,7 +8671,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#adaptiveRefocus = undefined;
-    const element = this.#adaptiveValueElement(this.#rowIndexOfKey(target.rowKey) + 1, target.column);
+    const element = this.#adaptiveValueElement(this.#masterIndexOf(target.rowKey, target.fixed) + 1, target.column);
 
     if (element) {
       this.#focusPending = false;

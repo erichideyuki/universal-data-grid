@@ -116,8 +116,8 @@ fixas ficam inalcançáveis. Vale também para `detailRenderer`.
   de rolagem (nenhum observer novo), e quando mudam colunas, larguras
   (usuário, hospedeiro, auto-ajuste), fixação, agrupamento,
   `autoHideColumns` ou a coluna de expansão. Só larguras em memória:
-  O(colunas), nada por linha. Histerese de 1 px para não oscilar quando a
-  barra de rolagem aparece/some.
+  O(colunas), nada por linha. Folga de 24 px para uma coluna voltar (não
+  oscila quando a barra de rolagem aparece/some).
 - **Congelado** enquanto há editor aberto (célula, lote, linha de filtro)
   ou popover/menu ancorado em cabeçalho/célula (funil, menu de coluna,
   menu de contexto): o conjunto só é recalculado ao fechar (zoom ou girar

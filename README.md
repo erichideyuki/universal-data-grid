@@ -1282,10 +1282,11 @@ to the row details — an expandable row below each row, the same one as
 ```
 
 - **Which columns leave:** when any column has a `hidingPriority`, only those hide, the lowest
-  first (ties: the one further right goes first); without any, columns hide from the last one.
+  first (ties: the later one in column order goes first) — any column counts, grouped or hidden
+  ones included; without any, columns hide from the last one.
   Fixed columns, grouped columns, checkboxes, the toggle and the row buttons never hide, and at
   least one column always stays. The grid needs a width per column: the chosen width (user,
-  `width`, auto-size) or `max(minWidth, 150)` px scaled by the grid's `font-size` (text-only zoom).
+  `width`, auto-size) or `max(minWidth, 150 × font-size/16)` px within `maxWidth` (follows text-only zoom).
   If what is left still doesn't fit, the last column with a width shrinks to the available space.
   A hidden column comes back only when it fits with a small margin (no flicker when the scrollbar
   appears).
@@ -1759,7 +1760,8 @@ grid.isRowExpanded(orders[0]);       // false
   event). Expansion is grid state, kept across sorting, filtering and new `items` (by key). A key
   that is not in the rows keeps its state — and is retained — until it is collapsed.
 - `u-grid-row-expansion-change` (`{ rowKey, expanded, source }`) fires for the toggle button, the
-  keyboard and `expandRow`/`collapseRow`, not for `auto-expand-rows`.
+  keyboard and `expandRow`/`collapseRow` (and, with `autoHideColumns`, a row edit and
+  `focusCell`/`editCell` on a hidden column), not for `auto-expand-rows`.
 - Without `detailRenderer` (and without [`autoHideColumns`](#responsive-columns-auto-hide)),
   `expandRow`/`collapseRow` do nothing and `isRowExpanded` is `false`. Returning `null` from it
   renders an empty detail row.
@@ -2015,7 +2017,7 @@ pending change.
 Your own editor: `editorRenderer(item, ctx)` returns a template, text or element (like the cell
 `renderer`). `item` is the original row; `ctx` has `value` (pending), `data` (the pending change of
 the row), `setValue(value)`, `commit()`, `cancel()`, `column`, `rowKey`, `label` (use it as
-`aria-label`), `invalid`, `errorMessage`, `describedBy`, `signal` and `grid`. The grid handles
+`aria-label`), `adaptive` (`true` in the row details of a column hidden by `autoHideColumns`), `invalid`, `errorMessage`, `describedBy`, `signal` and `grid`. The grid handles
 `Enter`, `Tab` and `Esc` unless your editor calls `preventDefault()` on the `keydown` (a combobox
 that uses `Enter`). `describedBy` is the id of the error text, for editors rendered as templates
 (the grid's shadow root); for an `HTMLElement` editor the grid sets `aria-label`, `aria-invalid` and
@@ -2545,7 +2547,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `header-filter-button` | The funnel button in a header. |
 | `header-filter` | The header filter popover. |
 | `search-highlight` | Search matches (`<mark>`) in native cells. |
-| `detail-toggle-cell` | Cells and header of the master-detail toggle column. |
+| `detail-toggle-cell` | Cells and header of the row details toggle column (master-detail and `autoHideColumns`). |
 | `detail-toggle-button` | The expand/collapse button of a master row. |
 | `detail-row` | Detail rows (with `row`). |
 | `detail-cell` | The full-width cell of a detail row. |
@@ -2568,10 +2570,10 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `skeleton-row` | Rows of a remote source not loaded yet (with `row`). |
 | `error-row` | The bar shown when the data source failed. |
 | `retry-button` | Its "Retry" button. |
-| `modified` / `invalid` | Edited, unsaved data cells / cells with a validation error (with `cell`). |
+| `modified` / `invalid` | Edited, unsaved data cells / cells with a validation error (with `cell` or `adaptive-value`). |
 | `added` / `removed` | New, unsaved rows / rows marked for removal (with `row`). |
 | `cell-editor` | The built-in cell editors (`<input>`). |
-| `validation-message` | The validation error shown below an invalid cell. |
+| `validation-message` | The validation error shown below an invalid cell or row details value. |
 | `command-cell` / `command-button` | Cells and header of the row buttons column / the row buttons (edit, save, cancel, delete, restore). |
 | `add-row-button`, `save-button`, `discard-button` | The toolbar buttons of editing. |
 | `remove-dialog` | The delete confirmation dialog. |
@@ -2660,8 +2662,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -2695,7 +2696,7 @@ CSS property and part for IDEs and tooling.
 | `refresh()` | Reload the data source (or recompute local data); resolves when done. |
 | `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
 | `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
-| `focusCell(rowKey, column?, options?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded). `{ rowFixed: 'top' \| 'bottom' }` looks among the fixed rows. |
+| `focusCell(rowKey, column?, options?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded); a column hidden by `autoHideColumns` opens the row details and focuses its value. `{ rowFixed: 'top' \| 'bottom' }` looks among the fixed rows. |
 | `selectCellRange(range, { append })` | Select a range of data cells (`append`: add it, `multiple` only); `false` (nothing changes) when the mode is `none`, a column is not a visible data column, a row is not a data row of the displayed body, or the range is a single cell without `append` and another range. See [Cell ranges](#cell-ranges). |
 | `getCellRanges()` / `clearCellRanges()` | The cell ranges (copies, frozen) / clear them. |
 | `getCellRangeSummary({ signal })` | `Promise<GridCellRangeSummary>`: count, sum and average of the selected cells. |
@@ -2709,7 +2710,7 @@ CSS property and part for IDEs and tooling.
 | `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
 | `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
 | `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
-| `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row; `column`: definition, `name` or `path`) / a row (`row` mode only). See [Editing](#editing). |
+| `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row; `column`: definition, `name` or `path`; a column hidden by `autoHideColumns`: in the row details) / a row (`row` mode only). See [Editing](#editing). |
 | `addRow(data?)` | Add a row at the top of the visible rows; returns its provisional key (`null` when not added). |
 | `removeRow(rowKey)` / `restoreRow(rowKey)` | Delete a row (saved at once; `batch`: marked) / restore a marked row. |
 | `saveChanges()` / `discardChanges()` | Save every pending change (`Promise<boolean>`) / drop them. |
@@ -2733,7 +2734,7 @@ All bubble and are `composed`.
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed (also by a row edit or `focusCell`/`editCell` on a hidden column). |
 | `u-grid-adaptive-columns-change` | `GridAdaptiveColumnsChangeEventDetail` (`{ columns, previous }`) | layout (width, columns, `autoHideColumns`) | The columns hidden for lack of space changed (after the render). |
-| `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`, `selectCellRange`; not the `focusedRowKey` setter) | The active cell changed. |
+| `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`, `selectCellRange`, the active column hidden or back with `autoHideColumns`; not the `focusedRowKey` setter) | The active cell changed. |
 | `u-grid-loading` | `GridLoadingEventDetail` (`{ options }`) | — (every load: scroll, sort, filter, `refresh()`…) | Before each `dataSource.load` call. Cancelable (the call is skipped). |
 | `u-grid-load` | `GridLoadEventDetail` (`{ options, result }`) | — (every load) | A `load` call resolved (aborted calls fire nothing). |
 | `u-grid-load-error` | `GridLoadErrorEventDetail` (`{ options, error }`) | — (every load) | A `load` call rejected; the error bar is shown. |
@@ -2811,7 +2812,7 @@ import {
   type GridDetailRenderer,  // (item, GridDetailRenderContext) => GridRenderResult
   type GridNoDataRenderer,  // (GridNoDataRenderContext) => GridRenderResult
   type GridRenderContextBase, // { grid, signal } — shared by every context
-  type GridCellRenderContext, // { item, value, text, column, rowKey, grid, signal }
+  type GridCellRenderContext, // { item, value, text, column, rowKey, adaptive, grid, signal }
   type GridHeaderRenderContext, // { column, grid, signal }
   type GridGroupRenderContext, // { column, value, text, groupPath, groupIndex, itemCount, expanded, summaries, defaultText, grid, signal }
   type GridDetailRenderContext, // { item, rowKey, grid, signal }
@@ -2894,7 +2895,7 @@ import {
   type GridValidationRule,  // GridRequiredRule | GridRangeRule | GridStringLengthRule | GridPatternRule | GridEmailRule | GridCustomRule
   type GridValidationContext, // { value, item, data, column, rowKey }
   type GridEditorRenderer,  // (item, GridEditorRenderContext) => GridRenderResult
-  type GridEditorRenderContext, // { item, value, data, column, rowKey, label, invalid, errorMessage, describedBy, setValue, commit, cancel, grid, signal }
+  type GridEditorRenderContext, // { item, value, data, column, rowKey, label, adaptive, invalid, errorMessage, describedBy, setValue, commit, cancel, grid, signal }
   type GridValueSetter,     // (data, value, item) => void
   type GridEditStartingEventDetail, // { rowKey, item, column, source }
   type GridRowAddingEventDetail,    // { data, source }

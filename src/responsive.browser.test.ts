@@ -318,6 +318,19 @@ describe('linha adaptativa: linhas fixas, resumos, exportação', () => {
     expect(result.violations.map(v => v.id)).toEqual([]);
   });
 
+  it('focusCell numa coluna oculta de uma linha fixa abre a linha fixa e foca o valor', async () => {
+    const items = sales(5);
+    const top = { ...items[0], id: 100, invoice: 'TOP', amount: 999 };
+    const grid = await createResponsive(500, g => {
+      g.fixedTopItems = [top];
+    }, items);
+
+    expect(grid.focusCell(top, 'amount', { rowFixed: 'top' })).toBe(true);
+    await settle(grid);
+    expect(focused(grid)?.closest('tbody')?.classList.contains('fixed-top-rows')).toBe(true);
+    expect((focused(grid) as HTMLElement).textContent).toContain('$999.00');
+  });
+
   it('total de coluna oculta vai para a última exibida, com o texto completo', async () => {
     const grid = await createResponsive(500, g => {
       g.summary = { total: [{ column: 'amount', type: 'sum' }, { column: 'invoice', type: 'count' }] };

@@ -153,8 +153,9 @@ export interface GridColumnDef<TItem = any> {
   /**
    * Order in which the column leaves the table when the grid is too narrow
    * (`autoHideColumns`; its values move to the row details): the lowest goes
-   * first, ties from the end. When any column has a `hidingPriority`, only
-   * those columns hide; otherwise columns hide from the last one. Fixed
+   * first, ties from the end. When any column of `columns` has a
+   * `hidingPriority` (grouped or hidden ones included), only those columns
+   * hide; otherwise columns hide from the last one. Fixed
    * columns never hide. Ignored on bands.
    */
   hidingPriority?: number | null;
