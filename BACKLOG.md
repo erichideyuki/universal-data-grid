@@ -97,9 +97,9 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Área | Recurso | `<u-grid>` | DevExtreme | AG Grid |
 |---|---|---|---|---|
 | Dados | Array local | ✅ | ✅ | ✅ |
-| Dados | Fonte remota (sort/filter/group/paginação no servidor) | — | ✅ | ✅ (server-side row model) |
-| Dados | Chave de linha (`keyExpr`/`getRowId`) e atualização incremental | — | ✅ | ✅ |
-| Dados | Paginação / rolagem infinita | — | ✅ | ✅ |
+| Dados | Fonte remota (sort/filter/group/paginação no servidor) | ✅ | ✅ | ✅ (server-side row model) |
+| Dados | Chave de linha (`keyExpr`/`getRowId`) e atualização incremental | ✅ | ✅ | ✅ |
+| Dados | Paginação / rolagem infinita | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de linhas | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de colunas | — | ✅ | ✅ |
 | Colunas | Definição por propriedade e por `<u-grid-column>` | ✅ | ✅ | ✅ |
@@ -124,15 +124,15 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | ✅ | ✅ | ✅ |
 | Edição | Célula, linha, lote, formulário/popup | — | ✅ | ✅ |
 | Edição | Validação, inserir/excluir linha, desfazer | — | ✅ | ✅ |
-| Templates | Célula | ✅ (`HTMLElement`; `TemplateResult` na frente 10) | ✅ | ✅ |
-| Templates | Cabeçalho, linha de grupo, linha inteira, vazio | — | ✅ | ✅ |
-| Detalhe | Master-detail (linha expansível) | — | ✅ | ✅ (Enterprise) |
+| Templates | Célula | ✅ | ✅ | ✅ |
+| Templates | Cabeçalho, linha de grupo, linha inteira, vazio | ◐ (cabeçalho, grupo e vazio; linha inteira — fase D) | ✅ | ✅ |
+| Detalhe | Master-detail (linha expansível) | ✅ | ✅ | ✅ (Enterprise) |
 | Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
 | Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | — | ✅ | ✅ |
-| Exportação | CSV / Excel / PDF / área de transferência | — | ✅ | ✅ (Excel: Enterprise) |
+| Exportação | CSV / Excel / PDF / área de transferência | ◐ (CSV, Excel por adaptador, Ctrl+C; PDF pelo hospedeiro) | ✅ | ✅ (Excel: Enterprise) |
 | UI | Barra de ferramentas, menu de contexto, painel de carregamento | — | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
-| A11y | Padrão grid ARIA completo, leitor de tela | ✅ (revisão de acessibilidade em curso) | ✅ | ✅ |
+| A11y | Padrão grid ARIA completo, leitor de tela | ✅ | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
 | i18n | RTL | ✅ | ✅ | ✅ |
 | SSR | Lit SSR + hidratação | ✅ | — | — |
@@ -152,7 +152,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
 | Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | feito |
 | Desempenho em máquina fraca | `16-performance.md` | perfil fraco calibrado (`npm run test:perf`); orçamentos e linha de base de 100 mil a 5 milhões de linhas; virtualizador próprio com escala; row model sem objeto por linha; postos rápidos | feito |
-| Revisão de acessibilidade | `17-accessibility.md` | subagente `a11y-reviewer` no fluxo (desenho e entrega); auditoria WCAG 2.2 AA do grid atual; correções sem mudança de API; as que mudam API/comportamento aguardam aval | em curso |
+| Revisão de acessibilidade | `17-accessibility.md` | subagente `a11y-reviewer` no fluxo (desenho e entrega); auditoria WCAG 2.2 AA do grid atual; correções sem mudança de API; as que mudam API/comportamento aguardam aval | feito |
 
 ### Fase A — o dia a dia de qualquer grid
 
@@ -169,16 +169,16 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
 | Resumos e grupos | `07-summaries-groups.md` | totais, resumos por grupo, contagem, expandir/recolher tudo, estado mantido | feito |
-| Fonte de dados | `08-data-source-paging.md` | `keyExpr`, `DataSource` remota, paginação, rolagem infinita, painel de carregamento | — |
+| Fonte de dados | `08-data-source-paging.md` | `keyExpr`, `DataSource` remota, paginação, rolagem infinita, painel de carregamento | feito |
 | Edição | `09-editing.md` | célula/linha/lote, editores por tipo, validação, inserir/excluir, eventos | — |
-| Templates e detalhe | `10-templates-master-detail.md` | templates de cabeçalho, grupo, vazio; master-detail; refazer o renderer de célula | — |
+| Templates e detalhe | `10-templates-master-detail.md` | templates de cabeçalho, grupo, vazio; master-detail; refazer o renderer de célula | feito |
 
 ### Fase C — produtividade
 
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
 | Estado | `11-state-persistence.md` | `getState`/`setState`, salvamento automático, evento de mudança | — |
-| Exportação | `12-export-clipboard.md` | CSV, área de transferência; Excel por adaptador opcional | — |
+| Exportação | `12-export-clipboard.md` | CSV, área de transferência; Excel por adaptador opcional | feito |
 | Bandas e virtualização de colunas | `13-bands-column-virtualization.md` | cabeçalho multinível, virtualizar colunas | — |
 
 ### Fase D — avançado (escopo decidido quando chegar a vez)
@@ -201,3 +201,6 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Fundação | Sem `keyExpr`, trocar `items` por objetos novos recria as linhas (a chave é a identidade do objeto) — frente 08 |
 | Fundação | Expansão de grupos ainda não tem API (`expandAll` etc.) — frente 07 |
 | Memória | Chromium retém ~0,6 KiB por grid criado (`<thead>` em shadow root, item 20 da spec 14); reportar ao Chromium e decidir se troca o `<thead>` |
+| Acessibilidade | Renomeações e 4 adições sugeridas pelo `a11y-reviewer` — aval do usuário |
+| Exportação | Ctrl+C: `dir`/`lang` na tabela copiada e `mso-number-format` no lugar do `'` visível — aval do usuário |
+| Templates | Repassar o `aria-label` do `<u-grid>` para a tabela (grids aninhados) — aval do usuário |
