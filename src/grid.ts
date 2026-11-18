@@ -307,6 +307,14 @@ const LEGACY_ATTRIBUTES: LegacyAttributes = {
  * `Intl.ListFormat`: o 1º separador de pontuação entre dois itens, sem a
  * conjunção (o árabe só pontua no tipo `unit`).
  */
+/**
+ * Região `aria-live`: um texto igual ao anterior não muda o DOM e não é lido
+ * de novo (ex.: a mesma contagem após outro filtro). Alterna um espaço
+ * inquebrável no fim para forçar a releitura (spec 17).
+ */
+const withRepeatMark = (text: string, previous: string): string =>
+  text && previous.replace(/\u00A0$/, '') === text && !previous.endsWith('\u00A0') ? `${text}\u00A0` : text;
+
 const listSeparatorOf = (language: string): string => {
   const options: Intl.ListFormatOptions[] = [{ type: 'conjunction', style: 'long' }, { type: 'unit', style: 'short' }];
 
@@ -920,6 +928,12 @@ export class DataGrid extends LitElement {
   /** Chip do painel de grupos com `tabindex="0"` (roving na barra). */
   #activeChip = 0;
   #chipFocusPending = false;
+  /**
+   * O foco do DOM estava dentro do grid antes do render (spec 17): se o render
+   * remover o elemento focado (linha filtrada, chip desagrupado, coluna
+   * ocultada), o foco vai à célula ativa realocada em vez de cair no `<body>`.
+   */
+  #hadFocusBeforeRender = false;
   /** Colunas navegáveis do último render (caixa de seleção + visíveis). */
   #navColumns: NavColumn[] = [];
   readonly #tableRef: Ref<HTMLTableElement> = createRef();
@@ -1035,6 +1049,23 @@ export class DataGrid extends LitElement {
 
   get #translation(): GridI18n {
     return resolveGridTranslation(this.#effectiveLanguage);
+  }
+
+  /**
+   * Idioma dos textos da interface (o da tradução usada; sem tradução, o
+   * padrão). Vai no `lang` dos elementos com texto da i18n, para o leitor de
+   * tela usar a voz certa quando difere da página (WCAG 3.1.2, spec 17).
+   */
+  get #textLanguage(): string {
+    const language = this.#effectiveLanguage;
+    const translation = resolveGridTranslation(language);
+
+    return language && translation !== resolveGridTranslation(DEFAULT_GRID_LANGUAGE) ? language : DEFAULT_GRID_LANGUAGE;
+  }
+
+  /** Envolve conteúdo só com texto da i18n num `lang` próprio (`display: contents`). */
+  #inTextLanguage(content: unknown): unknown {
+    return content === nothing ? nothing : html`<div class="lang-scope" lang=${this.#textLanguage}>${content}</div>`;
   }
 
   // ------------------------------------------------------- refs/controllers
@@ -1165,6 +1196,8 @@ export class DataGrid extends LitElement {
   }
 
   override willUpdate(changed: PropertyValues<this>) {
+    this.#hadFocusBeforeRender = !!this.shadowRoot?.activeElement;
+
     // `single` guarda uma chave só. Evento só na troca `multiple` → `single`
     // de um grid já renderizado; na inicialização (setters) corta calado.
     if (changed.has('selectionMode') && this.#selectionMode === 'single' && this.#selection.size > 1) {
@@ -1260,6 +1293,12 @@ export class DataGrid extends LitElement {
     if (this.#chipFocusPending) {
       this.#chipFocusPending = false;
       this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]')?.focus();
+    }
+
+    if (this.#hadFocusBeforeRender && !this.shadowRoot?.activeElement) {
+      this.#hadFocusBeforeRender = false;
+      this.#focusPending = true;
+      this.#afterActiveRender();
     }
 
     if (
@@ -2421,7 +2460,7 @@ export class DataGrid extends LitElement {
 
     if (this.#announceFilter && !this.#filtering.pending) {
       this.#announceFilter = false;
-      this.#announcement = formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#sortedItems.length) });
+      this.#announcement = withRepeatMark(formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#sortedItems.length) }), this.#announcement);
     }
 
     if (this.#groupsDirty || (languageChanged && this._groupColumns.length)) {
@@ -2640,12 +2679,12 @@ export class DataGrid extends LitElement {
     const order = this.#orderOf(column);
     const params = { column: column.label ?? '' };
 
-    this.#announcement = order
+    this.#announcement = withRepeatMark(order
       ? formatMessage(translation.sortedAnnouncement, {
         ...params,
         order: order === 'asc' ? translation.sortAscending : translation.sortDescending,
       })
-      : formatMessage(translation.sortClearedAnnouncement, params);
+      : formatMessage(translation.sortClearedAnnouncement, params), this.#announcement);
   }
 
   readonly #canSortByUser = (column: GridColumnDef): boolean =>
@@ -2898,6 +2937,9 @@ export class DataGrid extends LitElement {
     } else {
       this.#applySelection(selected ? this.#selection.remove([key]) : this.#selection.add([key]), 'user');
     }
+
+    // O foco está na célula: o `aria-selected` da linha (ancestral) não é lido ao mudar (spec 17).
+    this.#announceSelectionCount();
   }
 
   /** Shift+clique/Shift+setas: da âncora até `rowIndex` (só linhas de dados). */
@@ -2946,7 +2988,7 @@ export class DataGrid extends LitElement {
   }
 
   #announce(text: string): void {
-    this.#announcement = text;
+    this.#announcement = withRepeatMark(text, this.#announcement);
     this.requestUpdate();
   }
 
@@ -3228,8 +3270,11 @@ export class DataGrid extends LitElement {
     const scroller = this._scrollContainerRef.value;
 
     if (scroller) {
-      // Cabeçalho/barra presos no topo: a célula não para embaixo deles.
+      // Cabeçalho/barra presos no topo e rodapé de totais preso embaixo: a
+      // célula do corpo não para embaixo deles (WCAG 2.4.11).
+      const inBody = cell.closest('tbody') !== null;
       scroller.style.scrollPaddingBlockStart = cell.tagName === 'TH' ? '0px' : `${this.#stickyTop()}px`;
+      scroller.style.scrollPaddingBlockEnd = inBody ? `${this.#stickyBottom()}px` : '0px';
     }
 
     cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -3250,6 +3295,11 @@ export class DataGrid extends LitElement {
     return (thead?.offsetHeight ?? 0) + (toolbar?.offsetHeight ?? 0);
   }
 
+  /** Altura do rodapé de totais (preso no fim da rolagem). */
+  #stickyBottom(): number {
+    return this.renderRoot.querySelector<HTMLElement>('tfoot')?.offsetHeight ?? 0;
+  }
+
   /** Linhas do corpo que cabem na área visível. */
   #pageSize(): number {
     const scroller = this._scrollContainerRef.value;
@@ -3258,7 +3308,7 @@ export class DataGrid extends LitElement {
       return 1;
     }
 
-    return Math.max(1, Math.floor((scroller.clientHeight - this.#stickyTop()) / this.rowHeight));
+    return Math.max(1, Math.floor((scroller.clientHeight - this.#stickyTop() - this.#stickyBottom()) / this.rowHeight));
   }
 
   /** Célula navegável (td/th com `data-col`) no caminho do evento. */
@@ -3337,6 +3387,12 @@ export class DataGrid extends LitElement {
       if (event.key === 'Escape') {
         event.preventDefault();
         cell.focus();
+      } else if (event.key === 'F2' && position.row === HEADER_ROW) {
+        // F2 percorre o conteúdo do cabeçalho (spec 05: funil, depois a alça) e volta à célula.
+        const controls = [...cell.querySelectorAll<HTMLElement>('.header-filter-button, .resize-handle')];
+        const next = controls[controls.indexOf(path[0] as HTMLElement) + 1] ?? cell;
+        event.preventDefault();
+        next.focus();
       }
 
       return;
@@ -3346,7 +3402,7 @@ export class DataGrid extends LitElement {
     const column = this.#navColumns[position.col];
     const row = this.#rowAt(position.row);
 
-    if (!row && this.#onHeaderKeyDown(event, cell, column)) {
+    if (position.row === HEADER_ROW && this.#onHeaderKeyDown(event, cell, column)) {
       return;
     }
 
@@ -3432,7 +3488,12 @@ export class DataGrid extends LitElement {
     if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
       event.preventDefault();
       this._userGroupColumn(column, this._groupColumns.length);
-      this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+
+      // `groupable: false` recusa: nada a anunciar (spec 17).
+      if (this._groupColumns.includes(column)) {
+        this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+      }
+
       this.#focusPending = true;
       return true;
     }
@@ -3649,6 +3710,7 @@ export class DataGrid extends LitElement {
             aria-rowcount="${rows.length + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
+            aria-busy=${ifDefined(this.#filtering.pending ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
@@ -3663,14 +3725,14 @@ export class DataGrid extends LitElement {
             ${footerRows ? this.#renderTotalFooter(layout, rows.length + headerRows + 1) : nothing}
           </table>
         </div>
-        ${this.#chooser.open ? this.#renderColumnChooser() : nothing}
-        ${this.headerFilter ? renderHeaderFilter(this.#headerFilterPopover, this.#translation) : nothing}
-        ${this.#filterRow.menuColumn
+        ${this.#inTextLanguage(this.#chooser.open ? this.#renderColumnChooser() : nothing)}
+        ${this.#inTextLanguage(this.headerFilter ? renderHeaderFilter(this.#headerFilterPopover, this.#translation) : nothing)}
+        ${this.#inTextLanguage(this.#filterRow.menuColumn
           ? renderFilterMenu(this.#filterRow, this.#filterRow.menuColumn, this.#dataTypeOf(this.#filterRow.menuColumn), this.#translation)
-          : nothing}
+          : nothing)}
       </div>
-      ${this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing}
-      <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">${this.#announcement}</div>
+      ${this.#inTextLanguage(this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing)}
+      <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" lang=${this.#textLanguage}>${this.#announcement}</div>
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
   }
@@ -3859,7 +3921,7 @@ export class DataGrid extends LitElement {
     if (!this.#rows.length) {
       return html`
         <tr role="row" class="no-data-row">
-          <td role="gridcell" part="no-data" colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.#translation.noData}</td>
+          <td role="gridcell" part="no-data" lang=${this.#textLanguage} colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.#translation.noData}</td>
         </tr>
       `;
     }
@@ -3900,6 +3962,18 @@ export class DataGrid extends LitElement {
     return this._groupColumns.length + (this.#showSelectionColumn ? 1 : 0) + layout.length;
   }
 
+  /**
+   * Nível no `treegrid` (só agrupado): grupo = nível + 1; rodapé do grupo e
+   * linhas de dados ficam um nível abaixo do grupo que as contém (spec 17).
+   */
+  #ariaLevelOf(row: Row): number | typeof nothing {
+    if (!this._groupColumns.length) {
+      return nothing;
+    }
+
+    return row.isGroup ? row.level + 1 : row.isFooter ? row.level + 2 : this._groupColumns.length + 1;
+  }
+
   #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[], pinned: boolean) {
     const parity = row.isGroup || row.isFooter
       ? ''
@@ -3932,7 +4006,7 @@ export class DataGrid extends LitElement {
         data-index=${index}
         role="row"
         aria-rowindex="${index + 1 + headerRows}"
-        aria-level=${row.isGroup ? row.level + 1 : nothing}
+        aria-level=${this.#ariaLevelOf(row)}
         aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : undefined)}
         aria-selected=${ifDefined(selectable ? (selected ? 'true' : 'false') : undefined)}
         class="${classMap(classes)}"
@@ -4110,7 +4184,7 @@ export class DataGrid extends LitElement {
     return html`
       <div class="header" role="toolbar">
         ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
-        ${this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing}
+        ${this.#inTextLanguage(this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing)}
         ${this.columnChooser
           ? html`
             <button
@@ -4133,7 +4207,7 @@ export class DataGrid extends LitElement {
           ? html`
             ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index))}
             <div class="group-end-dropzone"></div>`
-          : html`<div class="drag-here">${this.#translation.dragToGroup}</div>`}
+          : html`<div class="drag-here" lang=${this.#textLanguage}>${this.#translation.dragToGroup}</div>`}
       </div>
     `;
   }
@@ -4196,7 +4270,9 @@ export class DataGrid extends LitElement {
     const chip = event.composedPath().find(target => target instanceof HTMLElement && target.classList.contains('group')) as HTMLElement | undefined;
     const column = chip ? this._nativeColumnMap.get(chip) ?? null : null;
 
-    this.#groupMenu.show({ column, returnFocus: chip ?? null, x: event.clientX, y: event.clientY });
+    // Na área vazia o foco volta ao chip ativo da barra (não ao `<body>`; spec 17).
+    const returnFocus = chip ?? this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]');
+    this.#groupMenu.show({ column, returnFocus, x: event.clientX, y: event.clientY });
   };
 
   #renderGroupPanelMenu() {
@@ -4260,6 +4336,7 @@ export class DataGrid extends LitElement {
       onVisibleChange: (column, visible) => this._userSetVisible(column, visible),
       onFixedChange: (column, fixed) => this._userSetFixed(column, fixed),
       onKeyDown: this.#chooser.onKeyDown,
+      onFocusOut: this.#chooser.onFocusOut,
     });
   }
 

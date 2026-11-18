@@ -88,6 +88,8 @@ export class GroupDragAndDropAdapter {
         moveContainer.style.top = `${rect.top}px`;
         moveContainer.style.left = `${rect.left}px`;
         moveContainer.classList.add('move-container');
+        // Só visual: fora da árvore de acessibilidade (spec 17).
+        moveContainer.setAttribute('aria-hidden', 'true');
         moveContainer.appendChild(draggable);
 
         this.#grid._containerRef.value!.appendChild(moveContainer);

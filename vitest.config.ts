@@ -16,6 +16,16 @@ const renderGridSsr: BrowserCommand<[name: string]> = async ({ project }, name) 
   return renderScenario(name);
 };
 
+/**
+ * Emula preferências de mídia do usuário (spec 17): `forced-colors: active`
+ * (alto contraste do Windows) e `prefers-reduced-motion: reduce`. `null`
+ * volta ao padrão.
+ */
+const emulateMedia: BrowserCommand<[options: {
+  forcedColors?: 'active' | 'none' | null;
+  reducedMotion?: 'reduce' | 'no-preference' | null;
+}]> = ({ page }, options) => page.emulateMedia(options);
+
 // ------------------------------------------------------- perfil "máquina fraca"
 // Spec 16. O teste de perf lê a linha de base e grava os resultados pelo Node
 // (o navegador não acessa o disco).
@@ -107,7 +117,7 @@ export default defineConfig({
             headless: true,
             provider: playwright(),
             instances: [{ browser: 'chromium' }],
-            commands: { renderGridSsr },
+            commands: { renderGridSsr, emulateMedia },
           },
         },
       },

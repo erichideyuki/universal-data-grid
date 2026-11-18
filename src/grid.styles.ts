@@ -498,6 +498,11 @@ export const styles = css`
     margin-inline-start: 4px;
   }
 
+  /* Só leva o \`lang\` dos textos da i18n (spec 17); não muda o layout. */
+  .lang-scope {
+    display: contents;
+  }
+
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -825,9 +830,11 @@ export const styles = css`
     color: var(--u-color-on-surface, rgb(29, 27, 32));
   }
 
+  /* Único rótulo visível do campo: ≥ 4,5:1 sobre o fundo do campo (WCAG 1.4.3, spec 17). */
   .search-input::placeholder,
   .header-filter-search::placeholder {
-    color: color-mix(in srgb, currentColor 60%, transparent);
+    color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    opacity: 1;
   }
 
   .search-highlight {
@@ -886,6 +893,11 @@ export const styles = css`
     outline-offset: 1px;
   }
 
+  /* Item de largura total num menu com \`overflow\`: o anel fica para dentro (não é cortado). */
+  .filter-menu-item:focus-visible {
+    outline-offset: -2px;
+  }
+
   .filter-editor {
     flex: 1;
     min-width: 0;
@@ -893,7 +905,8 @@ export const styles = css`
     height: 32px;
     padding-inline: 8px;
     border: none;
-    border-bottom: 1px solid var(--_border-color);
+    /* Limite do campo ≥ 3:1 (WCAG 1.4.11, spec 17); as linhas da grade (20%) não bastam. */
+    border-bottom: 1px solid var(--u-color-outline, rgb(121, 116, 126));
     border-radius: 4px 4px 0 0;
     background-color: color-mix(in srgb, currentColor 4%, transparent);
     font: inherit;
@@ -1106,5 +1119,78 @@ export const styles = css`
 
   .header-filter-actions button:hover {
     background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  /* ------------------------------------------------ preferências do usuário */
+
+  @media (prefers-reduced-motion: reduce) {
+    .move-container::before,
+    .move-container::after,
+    .resize-handle::after {
+      transition: none;
+    }
+  }
+
+  /*
+   * Alto contraste (forced-colors, spec 17): fundos e box-shadow somem, então
+   * seleção, realces, linhas da grade, bordas das fixas e estados ganham
+   * cores do sistema ou bordas reais.
+   */
+  @media (forced-colors: active) {
+    tbody tr[role=row].selected:not(.group-row) > td,
+    .search-highlight {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    thead,
+    .row-lines tbody tr[role=row]:not(.last) > td,
+    .group-row > td {
+      border-block-end: 1px solid CanvasText;
+    }
+
+    .column-lines td:not(.group-column):not(:last-child),
+    .column-lines th:not(.group-column):not(:last-child),
+    .fixed-start-edge {
+      border-inline-end: 1px solid CanvasText;
+    }
+
+    .fixed-end-edge {
+      border-inline-start: 1px solid CanvasText;
+    }
+
+    .total-row > td {
+      border-block-start: 1px solid CanvasText;
+    }
+
+    .container.drop-target::after,
+    .group-container.drop-target::before,
+    .resize-handle::after {
+      forced-color-adjust: none;
+      background-color: Highlight;
+    }
+
+    .header-filter-button.active,
+    .column-chooser-pin[aria-pressed="true"],
+    .column-chooser-button[aria-expanded="true"],
+    .filter-menu-item[aria-checked="true"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
+    .column-chooser,
+    .group-panel-menu,
+    .filter-menu,
+    .header-filter {
+      border: 1px solid CanvasText;
+    }
+
+    .selection-checkbox:is([aria-checked="true"], [aria-checked="mixed"]) {
+      forced-color-adjust: none;
+      border-color: Highlight;
+      background-color: Highlight;
+      color: HighlightText;
+    }
   }
 `;

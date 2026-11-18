@@ -33,6 +33,8 @@ export interface ColumnChooserContext {
   onVisibleChange: (column: GridColumnDef, visible: boolean) => void;
   onFixedChange: (column: GridColumnDef, fixed: GridColumnFixed) => void;
   onKeyDown: (event: KeyboardEvent) => void;
+  /** Tab para fora do painel fecha (não modal; spec 17). */
+  onFocusOut?: (event: FocusEvent) => void;
 }
 
 const pinStartIcon = svg`<path d="M4 4h2v16H4zM20 11h-9.2l3.6-3.6L13 6l-6 6 6 6 1.4-1.4-3.6-3.6H20z"/>`;
@@ -68,7 +70,7 @@ const pinButton = (
 
 /** Painel do seletor de colunas (popover leve, sem dependência nova). */
 export const renderColumnChooser = (context: ColumnChooserContext): TemplateResult => {
-  const { items, translation, onVisibleChange, onKeyDown } = context;
+  const { items, translation, onVisibleChange, onKeyDown, onFocusOut } = context;
 
   return html`
     <div
@@ -77,7 +79,8 @@ export const renderColumnChooser = (context: ColumnChooserContext): TemplateResu
       .popover=${'manual'}
       role="dialog"
       aria-label=${translation.columnChooser}
-      @keydown=${onKeyDown}>
+      @keydown=${onKeyDown}
+      @focusout=${onFocusOut}>
       <div class="column-chooser-title" aria-hidden="true">${translation.columnChooser}</div>
       <ul class="column-chooser-list">
         ${repeat(items, item => item.id, item => html`
@@ -110,6 +113,8 @@ export class ColumnChooserController implements ReactiveController {
   #open = false;
   #shown = false;
   #restoreFocus = false;
+  /** Controle focado no painel antes do render (fixar reordena a lista e o `repeat` move o item focado). */
+  #focused: { labelId: string; selector: string } | null = null;
 
   constructor(host: ColumnChooserHost) {
     this.#host = host;
@@ -163,8 +168,32 @@ export class ColumnChooserController implements ReactiveController {
     }
   };
 
+  /** O foco saiu do painel para outro lugar (Tab, Shift+Tab): fecha sem roubar o foco. */
+  readonly onFocusOut = (event: FocusEvent): void => {
+    const next = event.relatedTarget;
+
+    // Sem destino: elemento movido/removido pelo render ou clique fora (tratado no pointerdown).
+    if (!(next instanceof Node) || this.#panel?.contains(next) || this.#button?.contains(next)) {
+      return;
+    }
+
+    this.hide();
+  };
+
   get #panel(): HTMLElement | null {
     return this.#host.renderRoot.querySelector<HTMLElement>('.column-chooser');
+  }
+
+  hostUpdate(): void {
+    const root = this.#host.renderRoot as ShadowRoot;
+    const active = root.activeElement as HTMLElement | null;
+    const labelId = active && this.#panel?.contains(active)
+      ? active.closest('li')?.querySelector('[id^="column-chooser-label-"]')?.id
+      : undefined;
+
+    this.#focused = labelId
+      ? { labelId, selector: active!.classList.contains('pin-start') ? '.pin-start' : active!.classList.contains('pin-end') ? '.pin-end' : 'input' }
+      : null;
   }
 
   get #button(): HTMLElement | null {
@@ -173,6 +202,15 @@ export class ColumnChooserController implements ReactiveController {
 
   hostUpdated(): void {
     this.#dropzones.prune();
+
+    const focused = this.#focused;
+    this.#focused = null;
+
+    if (this.#open && focused && !(this.#host.renderRoot as ShadowRoot).activeElement) {
+      this.#host.renderRoot.querySelector(`#${focused.labelId}`)?.closest('li')
+        ?.querySelector<HTMLElement>(focused.selector)
+        ?.focus();
+    }
 
     if (!this.#open) {
       if (this.#restoreFocus) {

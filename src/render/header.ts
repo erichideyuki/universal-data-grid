@@ -82,6 +82,7 @@ export const renderHeaderCell = ({
     part="header-cell"
     role="columnheader"
     aria-colindex="${colIndex}"
+    aria-labelledby="header-text-${colIndex}"
     aria-sort=${ifDefined(sortable || order ? ariaSort(order) : undefined)}
     data-col=${colIndex - 1}
     tabindex=${tabIndex}
@@ -97,5 +98,5 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}
+    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}
   </th>`;

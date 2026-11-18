@@ -52,6 +52,10 @@ export class ColumnDragAndDropAdapter {
         moveContainer.style.top = rect.top + 'px';
         moveContainer.style.left = rect.left + 'px';
         moveContainer.classList.add('move-container');
+        // Só visual: fora da árvore de acessibilidade e sem focáveis (spec 17). Sem
+        // \`inert\`: o fantasma precisa continuar recebendo o clique que termina o arrasto.
+        moveContainer.setAttribute('aria-hidden', 'true');
+        [clone, ...clone.querySelectorAll('[tabindex]')].forEach(element => element.removeAttribute('tabindex'));
         moveContainer.appendChild(clone);
 
         this.#grid._containerRef.value!.appendChild(moveContainer);

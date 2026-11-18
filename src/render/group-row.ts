@@ -56,7 +56,14 @@ export const renderGroupRowCells = ({
         tabindex="-1"
         aria-hidden="true"
         aria-expanded=${row.expanded ? 'true' : 'false'}
-        @click=${() => onToggle(row)}>
+        @mousedown=${(event: MouseEvent) => event.preventDefault()}
+        @click=${(event: MouseEvent) => {
+          // O botão fica fora da navegação (aria-hidden): o foco vai à célula
+          // do rótulo, que vira a ativa, em vez de parar nele (spec 17).
+          (event.currentTarget as HTMLElement).closest('tr')?.querySelector<HTMLElement>('.grouping-cell')
+            ?.focus();
+          onToggle(row);
+        }}>
         <span class="toggle-icon">
           <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="currentColor" aria-hidden="true">
             <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>

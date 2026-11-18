@@ -756,7 +756,7 @@ column chooser button are separate stops in the bar above.
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
 | `Shift`+`F10` / menu key on a group chip | Open the group panel menu. |
-| `F2` / `Alt`+`↓` on a header | Focus the header filter button / open the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `F2` / `Alt`+`↓` on a header | Focus the header filter button (`F2` again: the resize handle, then back to the header) / open the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
 
 The grid calls `preventDefault()` on the keys it handles, so `Ctrl`+`A`/`Ctrl`+`G` do not reach the
 browser while the focus is in a cell. The active cell survives virtualization (its row stays in the
@@ -791,15 +791,22 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 
 - `role="grid"` (`role="treegrid"` while grouped), with `aria-rowcount`/`aria-colcount` for the whole
   data set (not just the rendered rows), the real `aria-rowindex`/`aria-colindex` of every cell,
-  `aria-multiselectable` in `multiple` mode, `aria-selected` on data rows and `aria-level` +
-  `aria-expanded` on group rows.
+  `aria-multiselectable` in `multiple` mode, `aria-selected` on data rows, `aria-expanded` on group
+  rows and, while grouped, `aria-level` on every row (data rows and group footers one level below
+  their group). `aria-busy` is set while a large data set is filtered in slices.
 - Checkboxes are `role="checkbox"` with `aria-checked` (`mixed` in "select all").
 - A visible focus ring (`:focus-visible`, `--u-grid-focus-ring-color`/`-width`) on the keyboard
   focus only.
-- Sorting, grouping, column moves and bulk selections are announced through an `aria-live` region
-  (translatable).
-- Every drag gesture has a keyboard alternative (WCAG 2.1.1 and 2.5.7). The browser tests run
-  `axe-core` with zero violations.
+- Sorting, filtering, grouping, column moves and selections are announced through an `aria-live`
+  region (translatable). Interface texts carry the `lang` of the translation in use, so screen
+  readers switch voice when the grid language differs from the page.
+- When a render removes the focused element (a row filtered out, an ungrouped chip, a hidden
+  column), focus moves to the relocated active cell instead of the page.
+- Windows high contrast (`forced-colors: active`): selection, search highlights, grid lines,
+  pinned-column edges and active states use system colors. Transitions are off with
+  `prefers-reduced-motion: reduce`.
+- Every drag gesture has a keyboard alternative (WCAG 2.1.1). The browser tests run `axe-core`
+  with zero violations.
 
 ---
 
