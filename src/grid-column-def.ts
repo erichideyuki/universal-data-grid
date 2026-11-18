@@ -341,6 +341,25 @@ export interface GridDetailRenderContext<TItem = any> extends GridRenderContextB
   readonly rowKey: unknown;
 }
 
+/** Side a row is fixed to (`fixedTopItems` / `fixedBottomItems`); `null` = a body row. */
+export type GridRowFixed = 'top' | 'bottom' | null;
+
+/** Context of the grid `rowRenderer`. */
+export interface GridRowRenderContext<TItem = any> extends GridRenderContextBase {
+  /** The row item. */
+  readonly item: TItem;
+  /** Row key (without `keyExpr`, the item itself). */
+  readonly rowKey: unknown;
+  /** `'top'`/`'bottom'` in a fixed row, `null` in a body row. */
+  readonly fixed: GridRowFixed;
+  /**
+   * Aborted when the grid discards this content (the row leaves the virtual
+   * window, the item or the renderer changes, the grid is disconnected) and
+   * immediately when the renderer returns `false`. Created on first access.
+   */
+  readonly signal: AbortSignal;
+}
+
 /** Context of the grid `noDataRenderer`. */
 export interface GridNoDataRenderContext extends GridRenderContextBase {
   /** `true` when there are items but the filter or the search hides them all. */
@@ -364,6 +383,32 @@ export type GridGroupRenderer<TItem = any> = (ctx: GridGroupRenderContext<TItem>
 
 /** Detail row renderer (master-detail). `null` renders an empty detail row (the toggle stays). */
 export type GridDetailRenderer<TItem = any> = (item: TItem, ctx: GridDetailRenderContext<TItem>) => GridRenderResult;
+
+/**
+ * What a `rowRenderer` returns: the content of a full-width row, or `false`
+ * to keep the row's columns. `null`, `undefined`, `''` and Lit's `nothing`
+ * are an EMPTY full-width row, not a normal one.
+ */
+export type GridRowRenderResult = GridRenderResult | false;
+
+/**
+ * Full-width row renderer: the content of ONE cell spanning the data
+ * columns of a data or fixed row (the group indents, the detail toggle and
+ * the selection checkbox stay). Return `false` (not `nothing`/`null`/`''`)
+ * to keep that row's columns — `cond && html\`…\`` works,
+ * `cond ? html\`…\` : nothing` gives empty full-width rows.
+ *
+ * Called for every rendered data or fixed row: decide `false` first,
+ * deterministically and without touching `document` (the server and the
+ * client must take the same decision), before building any content. The
+ * result (including `false`) is cached per row: it runs again when the item
+ * object, the `rowRenderer` function or the language change and when the
+ * row comes back to the virtual window — to re-decide, assign a new item
+ * object or a new function. A renderer that throws keeps the row's columns
+ * (one `console.error`). Never called for group, summary, detail and
+ * skeleton rows nor for a row being added (`addRow`).
+ */
+export type GridRowRenderer<TItem = any> = (item: TItem, ctx: GridRowRenderContext<TItem>) => GridRowRenderResult;
 
 /** Empty state renderer (no rows to show). */
 export type GridNoDataRenderer = (ctx: GridNoDataRenderContext) => GridRenderResult;

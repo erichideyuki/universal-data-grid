@@ -35,14 +35,17 @@ virtualização de colunas e altura variável.
    (ele segue também no corpo, como no AG Grid). Fixar pelo usuário
    (menu de contexto) fica para a frente 18 por cima desta API. Radical
    `fixed` (decisão #28 da spec 15); o README cita "pinned rows".
-2. **Linha inteira por item**: `rowRenderer` + `fullWidthRows` (`true` =
-   todas as linhas de dados, modelo `dataRowTemplate`; função = só os
-   itens para os quais devolve `true`, modelo AG Grid). A função é
-   chamada sob demanda (linhas renderizadas e o teclado fora da janela),
-   possivelmente várias vezes: deve ser pura e barata. Nada por linha não
-   visível.
+2. **Linha inteira por item** (aval do usuário, 2026-11-18): só
+   `rowRenderer`; devolver `false` = aquela linha é normal (com colunas).
+   Cobre o modelo `dataRowTemplate` (nunca devolve `false`) e o do AG
+   Grid (decide por item) sem uma 2ª propriedade. `null`/`undefined`/`''`
+   continuam "conteúdo vazio", como nos outros renderers. O grid só sabe
+   se a linha é inteira ao renderizá-la: o renderer deve decidir no
+   começo (devolver `false` antes de montar conteúdo). Nada por linha não
+   visível; o teclado que cai numa linha fora da janela usa a coluna
+   lembrada e, se ela vier inteira, o foco passa à célula única.
 
-## API (revisada)
+## API (aprovada pelo usuário em 2026-11-18)
 
 `<u-grid>` (todas só propriedade, `attribute: false`):
 
@@ -51,9 +54,7 @@ virtualização de colunas e altura variável.
 - `fixedBottomItems: readonly TItem[]` (padrão `[]`) — linhas presas logo
   ACIMA do rodapé de totais (o rodapé continua a última linha).
 - `rowRenderer: GridRowRenderer | null` (padrão `null`) — só linhas de
-  dados e fixas, e só onde `fullWidthRows` aceita.
-- `fullWidthRows: boolean | ((item: TItem) => boolean)` (padrão `true`;
-  como `allowEditing`): `false` desliga sem tirar o renderer.
+  dados e fixas; devolver `false` deixa a linha normal.
 - `focusCell(rowKey, column?, options?: { rowFixed?: GridRowFixed })` —
   opção nova para focar a linha fixa (sem ela: só o corpo, como hoje).
 
@@ -64,7 +65,7 @@ Tipos exportados:
   GridRowFixed; grid; signal }` (mesmo contrato dos contextos da spec 10:
   sem `rowIndex`/`selected`/`expanded`, que mudam sem o item mudar).
 - `type GridRowRenderer<TItem> = (item: TItem, ctx:
-  GridRowRenderContext<TItem>) => GridRenderResult`.
+  GridRowRenderContext<TItem>) => GridRenderResult | false`.
 - `GridCellType` ganha `'full-width'` (JSDoc de `column` no foco: `null`
   nela).
 - `GridFocusChangeEventDetail` ganha `rowFixed: GridRowFixed` e
@@ -129,7 +130,7 @@ Custom properties: `--u-grid-fixed-row-background-color` (padrão
   dos totais.
 
 ### Linha inteira
-- Linha de dados (ou fixa) aceita por `fullWidthRows` com `rowRenderer`:
+- Linha de dados (ou fixa) cujo `rowRenderer` não devolve `false`:
   as células iniciais continuam reais (recuos de grupo, célula de expansão
   com `aria-expanded`, caixa de seleção) e UMA `gridcell` de largura total
   cobre as colunas comuns e a de botões (`colspan` = colunas do DOM,
@@ -152,7 +153,8 @@ Custom properties: `--u-grid-fixed-row-background-color` (padrão
 - Foco: a célula ativa numa coluna comum de uma linha que vira inteira vai
   à célula única; quando deixa de ser, volta à coluna lembrada.
 - Renderer: mesmas regras da spec 10 (diretiva `render/content.ts`, roda
-  de novo quando item, `rowRenderer`, `fullWidthRows` ou idioma mudam;
+  de novo quando item, `rowRenderer` ou idioma mudam (a decisão
+  `false` fica guardada com o resultado);
   `ctx.signal` abortado ao sair da janela/grid desconectado; exceção →
   `console.error` uma vez e célula vazia; `HTMLElement` por slot no light
   DOM).
@@ -196,7 +198,7 @@ dividida por seção de colunas fixas (`embedFullWidthRows`).
 ## Testes
 Navegador: fixas presas ao rolar, fora de ordenação/filtro/grupo/página,
 com totais, colunas fixas, virtualização de colunas e RTL; linha inteira
-com/sem função, seleção (com e sem caixas), detalhe, altura medida e
+com `false` em parte das linhas, seleção (com e sem caixas), detalhe, altura medida e
 rolagem estável, colunas fixas/virtualizadas, grupo. Roteiro de teclado
 (entra e sai das fixas e da linha inteira, Enter/F2/Esc, PageUp/PageDown
 por blocos; com 3+3 fixas e totais, `elementFromPoint` no centro da célula
@@ -219,7 +221,8 @@ teclado nas fixas; a sequência adotada segue a ordem visual e o
 `aria-rowindex`.
 
 Revisão do desenho (`webcomponent-api-reviewer` e `a11y-reviewer`): todos
-os achados acatados (`isFullWidthRow` → `fullWidthRows`; `rowFixed` no
+os achados acatados (`isFullWidthRow` → `fullWidthRows`, depois
+trocado pelo `false` do próprio `rowRenderer` a pedido do usuário; `rowFixed` no
 foco; `GridRowFixed` com `null`; parts com sufixo `-row`/`-row-group`;
 `focusCell` com `rowFixed`; células iniciais reais na linha inteira; fixas
 sem sticky quando ocupam demais; nomes dos `rowgroup`s).

@@ -939,6 +939,63 @@ export const styles = css`
     font-weight: var(--u-font-weight-medium, 500);
   }
 
+  /* ------------------------------------------------------------- linhas fixas e linha inteira (frente 20) */
+
+  /*
+   * Linhas fixas: \`<tbody>\` sticky abaixo do cabeçalho / acima dos totais
+   * (deslocamentos medidos pelo grid). Fundo opaco no \`<tbody>\` (a linha
+   * põe só a tinta da listra/realce por cima): o corpo rola por baixo.
+   */
+  tbody:where(.grid-table > *).fixed-rows {
+    --_fixed-row-background: var(--u-grid-fixed-row-background-color, var(--u-grid-header-background-color, var(--_background-color)));
+    position: sticky;
+    z-index: 2;
+    background-color: var(--_fixed-row-background);
+  }
+
+  tbody:where(.grid-table > *).fixed-top-rows {
+    top: var(--_fixed-top-offset, 0px);
+  }
+
+  tbody:where(.grid-table > *).fixed-bottom-rows {
+    bottom: var(--_fixed-bottom-offset, 0px);
+  }
+
+  /* Zoom/reflow (WCAG 1.4.10/2.4.11): ocupando demais, as fixas rolam com o conteúdo. */
+  .fixed-rows-scroll tbody:where(.grid-table > *).fixed-rows {
+    position: static;
+  }
+
+  tbody.fixed-rows > tr > td:where(.grid-table > * > * > *):is(.fixed, .sticky-cell) {
+    background: linear-gradient(var(--_row-tint), var(--_row-tint)) var(--_fixed-row-background);
+  }
+
+  /* Divisa entre as fixas e o corpo (e entre as do fundo e os totais). */
+  tbody.fixed-top-rows > tr:where(.grid-table > * > *):last-child,
+  tbody.fixed-top-rows > tr:where(.grid-table > * > *):last-child > :is(.fixed, .sticky-cell) {
+    box-shadow: inset 0 calc(var(--_row-lines-height) * -2) 0 0 var(--u-grid-fixed-row-shadow-color, var(--_border-color));
+  }
+
+  tbody.fixed-bottom-rows > tr:where(.grid-table > * > *):first-child,
+  tbody.fixed-bottom-rows > tr:where(.grid-table > * > *):first-child > :is(.fixed, .sticky-cell) {
+    box-shadow: inset 0 calc(var(--_row-lines-height) * 2) 0 0 var(--u-grid-fixed-row-shadow-color, var(--_border-color));
+  }
+
+  /*
+   * Linha inteira: o conteúdo fica na largura visível menos as células
+   * iniciais (WCAG 1.4.10), preso ao início na rolagem horizontal.
+   */
+  td:where(.grid-table > * > * > *).full-width-cell {
+    white-space: normal;
+    padding-block: 0;
+  }
+
+  .full-width-content {
+    position: sticky;
+    inset-inline-start: calc(var(--_full-width-start, 0px) + var(--_cell-inline-padding));
+    max-inline-size: calc(var(--_viewport-inline-size, 100%) - var(--_full-width-start, 0px) - 2 * var(--_cell-inline-padding));
+  }
+
   /* ------------------------------------------------------------- resumos */
 
   /* Fundo opaco: o rodapé fixo cobre as linhas que rolam por baixo. */
@@ -1528,6 +1585,15 @@ export const styles = css`
 
     .total-row > td {
       border-block-start: 1px solid CanvasText;
+    }
+
+    tbody.fixed-top-rows > tr:last-child > td {
+      border-block-end: 2px solid CanvasText;
+    }
+
+    tbody.fixed-bottom-rows > tr:first-child > td,
+    tbody.fixed-bottom-rows + tfoot .total-row > td {
+      border-block-start: 2px solid CanvasText;
     }
 
     .container.drop-target::after,

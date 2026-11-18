@@ -93,7 +93,7 @@ const data: GridExportData = {
       rowType: 'group', level: 0, groupPath: ['BR'], column: nameColumn, value: 'BR', text: 'BR', label: 'Country: BR (1)', itemCount: 1,
       summaries: [[], [], [], [], []], texts: ['', '', '', '', ''],
     },
-    { rowType: 'data', level: 1, item: {}, values: ['=1+1', 1200.5, new Date(2024, 0, 15), 7, true], texts: ['=1+1', '1,200.50', '1/15/2024', '#7', 'Yes'] },
+    { rowType: 'data', level: 1, item: {}, values: ['=1+1', 1200.5, new Date(2024, 0, 15), 7, true], texts: ['=1+1', '1,200.50', '1/15/2024', '#7', 'Yes'], fixed: null },
     { rowType: 'group-footer', level: 1, groupPath: ['BR'], summaries: [], texts: ['', 'Max: 1,200.50', '', '', ''] },
     { rowType: 'total', level: 0, groupPath: null, summaries: [], texts: ['', 'Sum: 1,200.50', '', '', ''] },
   ],

@@ -33,6 +33,8 @@ export interface RowVirtualizerOptions {
   getScrollMargin?: () => number;
   /** Altura do que fica grudado no topo por cima das linhas (cabeçalho `sticky`). */
   getStickyHeight?: () => number;
+  /** Altura do que fica grudado embaixo por cima das linhas (totais, linhas fixas do fundo). */
+  getStickyBottomHeight?: () => number;
 }
 
 /**
@@ -615,7 +617,8 @@ export class RowVirtualizer implements ReactiveController {
     // Linha em coordenadas do conteúdo rolável; a área útil fica abaixo do cabeçalho grudado.
     const start = this.startOf(row) + margin - sticky;
     const end = this.startOf(row) + this.sizeOf(row) + margin;
-    const viewport = this.#viewport || scroller.clientHeight;
+    // A área útil termina acima do que gruda embaixo.
+    const viewport = Math.max((this.#viewport || scroller.clientHeight) - (this.#options.getStickyBottomHeight?.() ?? 0), this.sizeOf(row));
     const current = this.#virtual;
     let target = current;
 

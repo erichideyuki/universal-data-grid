@@ -153,6 +153,10 @@ import {
   type GridColumnRenderingMode,
   type GridDetailRenderer,
   type GridNoDataRenderer,
+  type GridRenderResult,
+  type GridRowFixed,
+  type GridRowRenderer,
+  type GridRowRenderResult,
   type GridColumnRef,
   type GridGroupPath,
   type GridGroupSummaryItem,
@@ -282,6 +286,10 @@ export type {
   GridNoDataRenderer,
   GridRenderContextBase,
   GridRenderResult,
+  GridRowFixed,
+  GridRowRenderContext,
+  GridRowRenderer,
+  GridRowRenderResult,
   GridColumnAlignment,
   GridColumnBooleanDisplay,
   GridColumnComparator,
@@ -549,10 +557,10 @@ export interface GridPageChangeEventDetail {
 /**
  * Kind of the active cell: column header, data cell, selection checkbox
  * cell, group row, summary row (group footer, totals), detail toggle cell or
- * detail row (master-detail), row buttons column (editing). May gain
- * members in minor versions.
+ * detail row (master-detail), row buttons column (editing), the cell of a
+ * full-width row (`rowRenderer`). May gain members in minor versions.
  */
-export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command';
+export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command' | 'full-width';
 
 /** `detail` of `u-grid-focus-change`. */
 export interface GridFocusChangeEventDetail {
@@ -565,7 +573,7 @@ export interface GridFocusChangeEventDetail {
   /**
    * Column of the active cell (in a band header, the band, with `cellType: 'header'`);
    * `null` in the selection, detail toggle and row buttons (`cellType: 'command'`)
-   * columns, in detail rows and in group rows.
+   * columns, in detail rows, in group rows and in full-width cells.
    */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
@@ -574,6 +582,14 @@ export interface GridFocusChangeEventDetail {
   previousRowKey: unknown;
   /** `column` before the change. */
   previousColumn: GridColumnDef | null;
+  /**
+   * `'top'`/`'bottom'` when the active cell is in a fixed row
+   * (`fixedTopItems`/`fixedBottomItems`; the same key may also be in the
+   * body), `null` otherwise.
+   */
+  rowFixed: GridRowFixed;
+  /** `rowFixed` before the change. */
+  previousRowFixed: GridRowFixed;
   /** `user` (keyboard, click) or `api` (`focusCell`). */
   source: GridChangeSource;
 }
@@ -1011,6 +1027,7 @@ interface PublicFocus {
   rowKey: unknown;
   column: GridColumnDef | null;
   cellType: GridCellType;
+  rowFixed: GridRowFixed;
 }
 
 /**
@@ -1345,7 +1362,11 @@ interface InitialHostState {
 const isDataRowLike = (row: Row): row is DataRow => !row.isGroup && !row.isFooter && !row.isDetail;
 
 /** Linha de dados carregada (não grupo, rodapé de grupo, detalhe nem esqueleto). */
-const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter && !row.isDetail && !row.skeleton;
+const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter && !row.isDetail && !row.skeleton && !row.fixed;
+
+/** Linha fixa (frente 20): item do hospedeiro no topo ou no fundo, fora do corpo. */
+const isFixedRow = (row: Row | undefined): row is DataRow & { fixed: 'top' | 'bottom' } =>
+  !!row && !row.isGroup && !row.isFooter && !row.isDetail && !!row.fixed;
 
 /** Índice da linha de detalhe da chave ou, recolhido, da linha mestre (`keyOf` ausente = a chave é o item). */
 const detailOrMaster = (rows: Rows, key: unknown, keyOf?: (item: unknown) => unknown): number => {
@@ -1357,7 +1378,35 @@ const detailOrMaster = (rows: Rows, key: unknown, keyOf?: (item: unknown) => unk
 const isDetailRow = (row: Row | undefined): row is DetailRow => !!row && !!row.isDetail;
 
 /** Identidade estável da linha ativa: item (dados), detalhe do item, chave (grupo, rodapé de grupo) ou o rodapé de totais. */
-type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true };
+/**
+ * Resultado do `rowRenderer` de uma linha (frente 20), calculado ANTES de
+ * montar o `<tr>` (a decisão `false` muda a estrutura da linha) e entregue
+ * pronto à diretiva `rendererContent`. Um por linha renderizada (ou pedida
+ * pelo teclado): o que não foi renderizado no último render é solto
+ * (`signal` abortado) no `updated`.
+ */
+interface RowRenderEntry {
+  item: unknown;
+  renderer: GridRowRenderer;
+  epoch: object;
+  fixed: GridRowFixed;
+  result: GridRowRenderResult;
+  controller: AbortController | undefined;
+  /** Render em que foi usado por último. */
+  pass: number;
+  /** Solto: a diretiva não mostra mais o resultado (reconexão antes do próximo render). */
+  dead: boolean;
+}
+
+/** `rowRenderer` que já lançou ou devolveu valor inválido (um `console.error` por função). */
+const reportedRowRenderers = new WeakSet<object>();
+
+const isRenderResult = (value: unknown): value is GridRenderResult =>
+  value === null || value === undefined || value === nothing || typeof value === 'string'
+  || (typeof value === 'object' && ('_$litType$' in (value as object) || typeof (value as Node).nodeType === 'number'));
+
+type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true }
+  | { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number };
 
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
@@ -1607,6 +1656,140 @@ export class DataGrid extends LitElement {
    * event).
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-rows' }) autoExpandRows = false;
+
+  /**
+   * Rows fixed ("pinned") right below the column headers (property only):
+   * the host's own items, rendered with the grid columns (formatting, cell
+   * `renderer`, `rowRenderer`). They stay out of sorting, filtering, the
+   * search, grouping, paging (shown on every page), `getTotalCount()` and
+   * the summaries; they are not selectable, editable nor expandable. The
+   * same object may also be in `items` (it shows in both places).
+   */
+  @property({ attribute: false })
+  get fixedTopItems(): readonly any[] {
+    return this.#fixedTopItems;
+  }
+
+  set fixedTopItems(items: readonly any[] | null | undefined) {
+    this.#fixedTopItems = items ?? [];
+  }
+
+  /** Like `fixedTopItems`, fixed right above the totals footer (property only). */
+  @property({ attribute: false })
+  get fixedBottomItems(): readonly any[] {
+    return this.#fixedBottomItems;
+  }
+
+  set fixedBottomItems(items: readonly any[] | null | undefined) {
+    this.#fixedBottomItems = items ?? [];
+  }
+
+  #fixedTopItems: readonly unknown[] = [];
+  #fixedBottomItems: readonly unknown[] = [];
+  /** Linhas fixas (objetos `DataRow` com `fixed`), refeitas quando a lista muda. */
+  #fixedRowsCache: { top: readonly unknown[]; bottom: readonly unknown[]; rows: { top: DataRow[]; bottom: DataRow[] } } | undefined;
+
+  /**
+   * Full-width rows (property only): builds the content of ONE cell spanning
+   * the data columns of a data or fixed row (group indents, detail toggle
+   * and selection checkbox stay). Return `false` to keep that row's columns
+   * — `null`/`nothing`/`''` give an EMPTY full-width row. See
+   * `GridRowRenderer` for when it runs.
+   */
+  @property({ attribute: false }) rowRenderer: GridRowRenderer | null = null;
+
+  /** Resultados do `rowRenderer` por chave de linha (só as renderizadas). */
+  readonly #rowRenders = new Map<string, RowRenderEntry>();
+  #rowRenderPass = 0;
+
+  /**
+   * Linha inteira? Roda (ou reaproveita) o `rowRenderer` da linha; devolve
+   * o resultado quando ela é inteira, `undefined` quando fica com as colunas
+   * (`false`, sem renderer, grupo/rodapé/detalhe/esqueleto, linha nova).
+   */
+  #rowRenderOf(row: Row | undefined): RowRenderEntry | undefined {
+    const renderer = this.rowRenderer;
+
+    if (!renderer || !row || row.isGroup || row.isFooter || row.isDetail || row.skeleton || row.key.startsWith('n:')) {
+      return undefined;
+    }
+
+    const epoch = this.#renderEpoch();
+    const fixed = row.fixed ?? null;
+    let entry = this.#rowRenders.get(row.key);
+
+    if (!entry || entry.item !== row.item || entry.renderer !== renderer || entry.epoch !== epoch || entry.fixed !== fixed) {
+      this.#releaseRowRender(entry);
+      entry = this.#invokeRowRenderer(row.item, renderer, epoch, fixed);
+      this.#rowRenders.set(row.key, entry);
+    }
+
+    entry.pass = this.#rowRenderPass;
+
+    return entry.result === false ? undefined : entry;
+  }
+
+  #invokeRowRenderer(item: unknown, renderer: GridRowRenderer, epoch: object, fixed: GridRowFixed): RowRenderEntry {
+    const entry: RowRenderEntry = { item, renderer, epoch, fixed, result: false, controller: undefined, pass: this.#rowRenderPass, dead: false };
+    const grid = this;
+    const report = (message: string, error?: unknown): void => {
+      if (!reportedRowRenderers.has(renderer)) {
+        reportedRowRenderers.add(renderer);
+        console.error(message, error);
+      }
+    };
+
+    try {
+      const result = renderer(item, {
+        item,
+        rowKey: this.#keyOf(item),
+        fixed,
+        grid,
+        get signal() {
+          return (entry.controller ??= new AbortController()).signal;
+        },
+      });
+
+      if (result === false || isRenderResult(result)) {
+        entry.result = result;
+      } else {
+        report('[u-grid] rowRenderer returned an invalid value (use false to keep the columns); the full-width row was left empty.', result);
+        entry.result = nothing;
+      }
+    } catch (error) {
+      // Linha normal (a mesma estrutura no servidor e no cliente).
+      report('[u-grid] rowRenderer threw; the row keeps its columns.', error);
+      entry.result = false;
+    }
+
+    if (entry.result === false) {
+      entry.controller?.abort();
+    }
+
+    return entry;
+  }
+
+  #releaseRowRender(entry: RowRenderEntry | undefined): void {
+    if (entry && !entry.dead) {
+      entry.dead = true;
+      entry.controller?.abort();
+    }
+  }
+
+  /** Depois do render: solta os resultados das linhas que não foram renderizadas nele. */
+  #pruneRowRenders(all = false): void {
+    for (const [key, entry] of this.#rowRenders) {
+      if (all || entry.pass < this.#rowRenderPass) {
+        this.#releaseRowRender(entry);
+        this.#rowRenders.delete(key);
+      }
+    }
+  }
+
+  /** A linha de índice interno `index` é uma linha inteira? */
+  #isFullWidthIndex(index: number): boolean {
+    return !!this.rowRenderer && !!this.#rowRenderOf(this.#rowAt(index));
+  }
 
   /**
    * Chaves de linha cuja expansão difere do padrão (`autoExpandRows`). Retém
@@ -2366,7 +2549,9 @@ export class DataGrid extends LitElement {
    */
   @property({ attribute: false })
   get focusedRowKey(): unknown {
-    return this.#publicFocus().rowKey;
+    const focus = this.#publicFocus();
+    // Linha fixa: `null` (o setter só acha linhas do corpo).
+    return focus.rowFixed ? null : focus.rowKey;
   }
 
   set focusedRowKey(key: unknown) {
@@ -3314,18 +3499,88 @@ export class DataGrid extends LitElement {
       const scroller = this._scrollContainerRef.value;
       const table = scroller?.querySelector<HTMLTableElement>('table.grid-table');
 
+      // O corpo começa depois do cabeçalho e das linhas fixas do topo (no fluxo, sticky ou não).
       return scroller && table
         ? table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (table.tHead?.offsetHeight ?? 0)
+          + (table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows')?.offsetHeight ?? 0)
         : 0;
     },
-    // Barra e cabeçalho grudam no topo: a área coberta vai até o fim do `<thead>`.
+    // Barra, cabeçalho e fixas do topo grudam: a área coberta vai até o fim do último.
     getStickyHeight: () => {
       const scroller = this._scrollContainerRef.value;
       const thead = scroller?.querySelector('thead');
+      const fixedTop = this.#stickyFixed ? scroller?.querySelector('tbody.fixed-top-rows') : null;
+      const bottom = Math.max(thead?.getBoundingClientRect().bottom ?? -Infinity, fixedTop?.getBoundingClientRect().bottom ?? -Infinity);
 
-      return scroller && thead ? Math.max(0, thead.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top) : 0;
+      return scroller && bottom > -Infinity ? Math.max(0, bottom - scroller.getBoundingClientRect().top) : 0;
     },
+    // Totais e fixas do fundo grudam embaixo.
+    getStickyBottomHeight: () => this.#stickyBottom(),
   });
+
+  /** Linhas fixas grudadas (não no modo "rolam com o conteúdo" do zoom alto). */
+  #stickyFixed = true;
+  readonly #observedFixedSections = new Set<Element>();
+
+  /** Observa cabeçalho, totais e fixas: deslocamentos sticky medidos e a regra dos 50% (spec 20). */
+  #observeFixedSections(): void {
+    const table = this.#tableRef.value;
+    const observer = this.#resizeObserver;
+    const wanted = new Set<Element>();
+
+    if (table && observer && (this.#fixedTopItems.length || this.#fixedBottomItems.length)) {
+      for (const element of [table.tHead, table.tFoot, ...table.querySelectorAll(':scope > tbody.fixed-rows')]) {
+        if (element) {
+          wanted.add(element);
+        }
+      }
+    }
+
+    for (const element of this.#observedFixedSections) {
+      if (!wanted.has(element)) {
+        observer?.unobserve(element);
+        this.#observedFixedSections.delete(element);
+      }
+    }
+
+    for (const element of wanted) {
+      if (!this.#observedFixedSections.has(element)) {
+        observer!.observe(element);
+        this.#observedFixedSections.add(element);
+      }
+    }
+
+    if (wanted.size) {
+      this.#syncFixedRows();
+    }
+  }
+
+  /** Deslocamentos sticky das fixas (medidos: o cabeçalho cresce com o zoom de texto) e a regra dos 50%. */
+  #syncFixedRows(): void {
+    const table = this.#tableRef.value;
+    const scroller = this._scrollContainerRef.value;
+    const container = this._containerRef.value;
+
+    if (!table || !scroller || !container) {
+      return;
+    }
+
+    const top = table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows');
+    const bottom = table.querySelector<HTMLElement>(':scope > tbody.fixed-bottom-rows');
+    const toolbar = this.#observedToolbar?.isConnected ? this.#observedToolbar.offsetHeight : 0;
+    const head = table.tHead?.offsetHeight ?? 0;
+    const foot = table.tFoot?.offsetHeight ?? 0;
+    const covered = toolbar + head + foot + (top?.offsetHeight ?? 0) + (bottom?.offsetHeight ?? 0);
+    const sticky = !(top || bottom) || covered <= scroller.clientHeight * 0.5 || !scroller.clientHeight;
+
+    container.style.setProperty('--_fixed-top-offset', `${toolbar + head}px`);
+    container.style.setProperty('--_fixed-bottom-offset', `${foot}px`);
+
+    if (sticky !== this.#stickyFixed) {
+      this.#stickyFixed = sticky;
+      container.classList.toggle('fixed-rows-scroll', !sticky);
+    }
+  }
 
   readonly #columnDragAndDrop = new ColumnDragAndDropAdapter(this);
   readonly #groupDragAndDrop = new GroupDragAndDropAdapter(this);
@@ -3485,9 +3740,12 @@ export class DataGrid extends LitElement {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
     this.#observedToolbar = null;
+    this.#observedFixedSections.clear();
     this.#detailObserver?.disconnect();
     this.#detailObserver = undefined;
     this.#observedDetails.clear();
+    // Linhas inteiras: `signal` abortado (grid desconectado, spec 10/20).
+    this.#pruneRowRenders(true);
     // Pedidos em voo e o temporizador da fonte (spec 14): ao reconectar, carrega de novo.
     clearTimeout(this.#flushTimer);
     this.#flushTimer = undefined;
@@ -3516,6 +3774,12 @@ export class DataGrid extends LitElement {
 
     // Estado pedido antes de haver colunas (`setState` cedo, storage).
     this.#applyPendingStates();
+
+    // Outro `rowRenderer`: as alturas medidas das linhas inteiras não valem mais (frente 20).
+    if (changed.has('rowRenderer') && this.#fullWidthIndices.size) {
+      this.#fullWidthIndices.clear();
+      this.#applyVariableRows();
+    }
 
     // \`:focus-within\` cobre também o conteúdo do renderer (light DOM projetado por slot).
     // (No SSR não há \`matches\` nem foco.)
@@ -3632,7 +3896,9 @@ export class DataGrid extends LitElement {
 
   override updated(changed: PropertyValues<this>) {
     const virtualizer = this.#virtualizer;
+    this.#pruneRowRenders();
     this.#observeToolbar();
+    this.#observeFixedSections();
     this.#syncTableLabel();
 
     // Com `wrap` a linha pode crescer: mede as renderizadas a cada render
@@ -3650,6 +3916,10 @@ export class DataGrid extends LitElement {
     }
 
     this.#measureDetails(!this.#hasWrap);
+
+    if (!this.#hasWrap) {
+      this.#measureFullWidth();
+    }
 
     if (this.#layoutDirty) {
       this.#layoutDirty = false;
@@ -3962,8 +4232,110 @@ export class DataGrid extends LitElement {
       sizes[i] = this.#detailSizeOf((rows.at(index) as DetailRow).item) ?? estimate;
     });
 
+    // Outras linhas: as linhas inteiras medidas voltam ao serem renderizadas (pela altura do item).
+    this.#fullWidthIndices.clear();
+    this.#detailIndices = indices;
     this.#virtualizer.count = rows.length;
     this.#virtualizer.setVariableRows(indices, sizes);
+  }
+
+  /** Índices (do corpo) das linhas de detalhe na camada esparsa do virtualizador. */
+  #detailIndices: Int32Array = NO_POSITIONS;
+  /** Linhas inteiras do corpo já medidas (frente 20): índice → altura. Só as que já foram renderizadas. */
+  readonly #fullWidthIndices = new Map<number, number>();
+  /** Altura medida da linha inteira por item (objetos: fraca; primitivos: limitada). */
+  readonly #fullWidthSizes = new WeakMap<object, number>();
+  readonly #primitiveFullWidthSizes = new LruCache<unknown, number>(256);
+
+  /** Detalhes + linhas inteiras medidas → camada esparsa (alturas atuais das já registradas). */
+  #applyVariableRows(): void {
+    const virtualizer = this.#virtualizer;
+    const details = this.#detailIndices;
+    const fullWidth = [...this.#fullWidthIndices.keys()].sort((a, b) => a - b);
+    const indices = new Int32Array(details.length + fullWidth.length);
+    const sizes = new Float64Array(indices.length);
+    let d = 0;
+    let f = 0;
+
+    for (let i = 0; i < indices.length; i++) {
+      if (f >= fullWidth.length || (d < details.length && details[d] < fullWidth[f])) {
+        indices[i] = details[d];
+        sizes[i] = virtualizer.sizeOf(details[d++]);
+      } else {
+        indices[i] = fullWidth[f];
+        sizes[i] = this.#fullWidthIndices.get(fullWidth[f++])!;
+      }
+    }
+
+    virtualizer.setVariableRows(indices, sizes);
+  }
+
+  #fullWidthSizeOf(item: unknown): number | undefined {
+    return item !== null && typeof item === 'object' ? this.#fullWidthSizes.get(item) : this.#primitiveFullWidthSizes.get(item);
+  }
+
+  /**
+   * Mede as linhas inteiras do corpo renderizadas (fora do modo `wrap`, que
+   * já mede todas): entram na camada esparsa com a altura conhecida do item
+   * (ou `rowHeight`) e a medida acerta a rolagem como a do detalhe.
+   */
+  #measureFullWidth(): void {
+    const map = this.#fullWidthIndices;
+
+    if (!this.rowRenderer && !map.size) {
+      return;
+    }
+
+    const virtualizer = this.#virtualizer;
+    const body = this.#tableRef.value?.querySelector(':scope > tbody.body-rows');
+    const trs = body ? [...body.querySelectorAll<HTMLElement>(':scope > tr[data-index]:not(.pinned)')] : [];
+    const measured: HTMLElement[] = [];
+    let changed = false;
+
+    for (const tr of trs) {
+      const index = Number(tr.getAttribute('data-index'));
+
+      if (tr.classList.contains('full-width-row')) {
+        measured.push(tr);
+
+        if (!map.has(index)) {
+          const row = this.#rowAt(index);
+          map.set(index, (row && !row.isGroup && !row.isFooter ? this.#fullWidthSizeOf(row.item) : undefined) ?? this.rowHeight);
+          changed = true;
+        }
+      } else if (map.delete(index)) {
+        // Deixou de ser inteira (o renderer devolveu `false`): volta à altura base.
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.#applyVariableRows();
+    }
+
+    if (!measured.length) {
+      return;
+    }
+
+    virtualizer.measureRows(measured, false);
+
+    for (const tr of measured) {
+      const index = Number(tr.getAttribute('data-index'));
+      const size = virtualizer.sizeOf(index);
+      const row = this.#rowAt(index);
+
+      map.set(index, size);
+
+      if (row && !row.isGroup && !row.isFooter) {
+        const { item } = row;
+
+        if (item !== null && typeof item === 'object') {
+          this.#fullWidthSizes.set(item, size);
+        } else {
+          this.#primitiveFullWidthSizes.set(item, size);
+        }
+      }
+    }
   }
 
   /** Mede as linhas de detalhe renderizadas e observa as que crescem depois. */
@@ -4394,12 +4766,16 @@ export class DataGrid extends LitElement {
    * not expanded) or `column` is not a visible, ungrouped column (a band
    * returns `false`). Before the
    * first render it only sets the active cell (the focus moves when it is
-   * rendered) and fires no event.
+   * rendered) and fires no event. `options.rowFixed` looks for the row among
+   * the fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead
+   * of the body.
    */
-  focusCell(rowKey: unknown, column?: GridColumnRef | null): boolean {
+  focusCell(rowKey: unknown, column?: GridColumnRef | null, options?: { rowFixed?: GridRowFixed } | null): boolean {
     this.#ensureRows();
 
-    const row = this.#rowIndexOfKey(rowKey);
+    const fixed = options?.rowFixed;
+    const fixedPosition = fixed ? this.#fixedRows()[fixed].findIndex(entry => this.#keyOf(entry.item) === rowKey) : -1;
+    const row = fixed ? fixedPosition < 0 ? -1 : this.#fixedIndex(fixed, fixedPosition) : this.#rowIndexOfKey(rowKey);
 
     if (row < 0) {
       return false;
@@ -4616,7 +4992,8 @@ export class DataGrid extends LitElement {
 
     const row = this.#rowAt(rowIndex);
 
-    if (!isDataRow(row) || row.skeleton) {
+    // Linha inteira (frente 20) não tem células para editar.
+    if (!isDataRow(row) || row.skeleton || this.#rowRenderOf(row)) {
       return false;
     }
 
@@ -5113,7 +5490,7 @@ export class DataGrid extends LitElement {
   /** 1ª linha renderizada visível abaixo do que é fixo no topo (0 sem layout). */
   #firstVisibleRowIndex(): number {
     const scroller = this._scrollContainerRef.value;
-    const rows = this.#tableRef.value?.querySelectorAll<HTMLElement>(':scope > tbody > tr[data-index]:not(.pinned)');
+    const rows = this.#tableRef.value?.querySelectorAll<HTMLElement>(':scope > tbody.body-rows > tr[data-index]:not(.pinned)');
 
     if (!scroller || !rows?.length) {
       return 0;
@@ -5933,9 +6310,14 @@ export class DataGrid extends LitElement {
     const listSeparator = this.#listSeparatorText;
     const countFormat = getNumberFormat(this.language, { maximumFractionDigits: 0 });
 
+    // Linhas fixas: fora com `selectedOnly` (não são selecionáveis).
+    const fixed = options.includeFixedRows !== false && !options.selectedOnly;
+
     return {
       columns,
       items,
+      fixedTop: fixed ? this.#fixedTopItems : undefined,
+      fixedBottom: fixed ? this.#fixedBottomItems : undefined,
       groups,
       includeGroups,
       includeSummaries,
@@ -6109,19 +6491,34 @@ export class DataGrid extends LitElement {
   /** A célula de onde veio o Ctrl+C (só célula de dados de coluna exportável). */
   #copyCell({ position }: { position: CellPosition }): CopyContent | undefined {
     const row = this.#rowAt(position.row);
-    const column = dataColumnOf(this.#currentNavColumns()[position.col]);
 
-    if (!row || !isDataRow(row) || !column || !isColumnExportable(column)) {
+    if (!row || !(isDataRow(row) || isFixedRow(row))) {
       return undefined;
     }
 
-    const source = this.#exportColumn(column);
-    const value = source.read(row.item);
-    const cell: GridExportDataRow = { rowType: 'data', level: 0, item: row.item, values: [value], texts: [source.text(value, row.item)] };
+    // Célula de largura total (frente 20): a linha inteira, nas colunas exportáveis.
+    const fullWidth = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+    const navColumn = dataColumnOf(this.#currentNavColumns()[position.col]);
+    const columns = fullWidth ? this._visibleColumns.filter(isColumnExportable) : navColumn && isColumnExportable(navColumn) ? [navColumn] : [];
+
+    if (!columns.length) {
+      return undefined;
+    }
+
+    const sources = columns.map(column => this.#exportColumn(column));
+    const values = sources.map(source => source.read(row.item));
+    const cell: GridExportDataRow = {
+      rowType: 'data',
+      level: 0,
+      item: row.item,
+      values,
+      texts: sources.map((source, index) => source.text(values[index], row.item)),
+      fixed: row.fixed ?? null,
+    };
 
     return {
-      detail: { items: [row.item], columns: [column], ranges: EMPTY_RANGES, ...clipboardContent([cell], [source], this.#clipboardHtmlOptions()) },
-      announcement: this.#translation.cellCopiedAnnouncement,
+      detail: { items: [row.item], columns, ranges: EMPTY_RANGES, ...clipboardContent([cell], sources, this.#clipboardHtmlOptions()) },
+      announcement: fullWidth ? formatMessage(this.#translation.rowsCopiedAnnouncement, { count: '1' }) : this.#translation.cellCopiedAnnouncement,
     };
   }
 
@@ -6168,10 +6565,14 @@ export class DataGrid extends LitElement {
     return [first, first + this._visibleColumns.length - 1];
   }
 
-  /** Linha que entra num intervalo: de dados (carregada ou não). */
+  /**
+   * Linha que entra num intervalo: de dados (carregada ou não). Linhas fixas
+   * nunca (frente 20: fora do corpo); a linha inteira não tem células: o
+   * intervalo passa por ela como por um grupo (não é canto, não recebe colagem).
+   */
   #isRangeRow(index: number): boolean {
     const row = this.#rowAt(index);
-    return !!row && isDataRowLike(row);
+    return !!row && isDataRowLike(row) && !row.fixed && !this.#rowRenderOf(row);
   }
 
   #isRangeCell(row: number, col: number): boolean {
@@ -6965,7 +7366,7 @@ export class DataGrid extends LitElement {
 
         const item = this.#displayedItem(row);
         const values = columns.map(column => column.read(item));
-        rows.push({ rowType: 'data', level: 0, item, values, texts: values.map((value, i) => columns[i].text(value, item)) });
+        rows.push({ rowType: 'data', level: 0, item, values, texts: values.map((value, i) => columns[i].text(value, item)), fixed: null });
       }
 
       blocks.push({ rows, columns });
@@ -8289,6 +8690,10 @@ export class DataGrid extends LitElement {
 
       this.#syncToolbarOffset();
       this.#measureToolbar();
+
+      if (this.#observedFixedSections.size) {
+        this.#syncFixedRows();
+      }
     });
 
     this.#resizeObserver.observe(scroller);
@@ -9903,7 +10308,131 @@ export class DataGrid extends LitElement {
 
   /** Linha `index` (ou `undefined` fora da lista). */
   #rowAt(index: number): Row | undefined {
-    return index >= 0 && index < this.#rows.length ? this.#rows.at(index) : undefined;
+    if (index >= 0 && index < this.#rows.length) {
+      return this.#rows.at(index);
+    }
+
+    const { top, bottom } = this.#fixedRows();
+    const position = index - this.#fixedBase;
+
+    return position < 0 ? undefined : position < top.length ? top[position] : bottom[position - top.length];
+  }
+
+  // ------------------------------------------------------------- linhas fixas (frente 20)
+
+  /** Linhas fixas como `DataRow` (chave `f:t:N`/`f:b:N`), refeitas só quando a lista muda. */
+  #fixedRows(): { top: DataRow[]; bottom: DataRow[] } {
+    const cache = this.#fixedRowsCache;
+    const top = this.#fixedTopItems;
+    const bottom = this.#fixedBottomItems;
+
+    if (cache?.top === top && cache.bottom === bottom) {
+      return cache.rows;
+    }
+
+    const build = (items: readonly unknown[], fixed: 'top' | 'bottom'): DataRow[] =>
+      items.map((item, index) => ({ isGroup: false, key: `f:${fixed === 'top' ? 't' : 'b'}:${index}`, item, index, fixed }));
+    const rows = { top: build(top, 'top'), bottom: build(bottom, 'bottom') };
+
+    this.#fixedRowsCache = { top, bottom, rows };
+    return rows;
+  }
+
+  /**
+   * Índice (interno) da 1ª linha fixa: depois do corpo e dos totais. A ordem
+   * VISUAL (cabeçalho, fixas do topo, corpo, fixas do fundo, totais) é
+   * outra: `#toVisual`/`#fromVisual` (navegação) e `#ariaRowIndexOf`.
+   */
+  get #fixedBase(): number {
+    return this.#rows.length + 1;
+  }
+
+  /** Índice interno da linha fixa `position` do lado `fixed`. */
+  #fixedIndex(fixed: 'top' | 'bottom', position: number): number {
+    return this.#fixedBase + (fixed === 'top' ? 0 : this.#fixedTopItems.length) + position;
+  }
+
+  #isFixedIndex(index: number): boolean {
+    return index >= this.#fixedBase && index < this.#fixedBase + this.#fixedTopItems.length + this.#fixedBottomItems.length;
+  }
+
+  /** Índice de corpo (`0..length-1`): rolagem vertical, seleção por intervalo, paginação. */
+  #isBodyIndex(index: number): boolean {
+    return index >= 0 && index < this.#rows.length;
+  }
+
+  /** Quantas linhas há na ordem visual depois do cabeçalho (fixas, corpo, totais). */
+  get #visualRowCount(): number {
+    return this.#fixedTopItems.length + this.#rows.length + this.#fixedBottomItems.length + (this.#hasTotals ? 1 : 0);
+  }
+
+  /** Índice interno → posição visual (cabeçalho negativo inalterado). */
+  #toVisual(index: number): number {
+    const top = this.#fixedTopItems.length;
+    const body = this.#rows.length;
+
+    if (index < 0) {
+      return index;
+    }
+
+    if (index < body) {
+      return top + index;
+    }
+
+    if (index === body) {
+      return top + body + this.#fixedBottomItems.length;
+    }
+
+    const position = index - this.#fixedBase;
+
+    return position < top ? position : body + position;
+  }
+
+  /** Posição visual → índice interno. */
+  #fromVisual(visual: number): number {
+    const top = this.#fixedTopItems.length;
+    const body = this.#rows.length;
+    const bottom = this.#fixedBottomItems.length;
+
+    if (visual < 0) {
+      return visual;
+    }
+
+    if (visual < top) {
+      return this.#fixedBase + visual;
+    }
+
+    if (visual < top + body) {
+      return visual - top;
+    }
+
+    if (visual < top + body + bottom) {
+      return this.#fixedBase + top + visual - top - body;
+    }
+
+    return body;
+  }
+
+  /** Linhas do corpo no `aria-rowcount` (todas as páginas, com as novas da edição). */
+  get #bodyRowCount(): number {
+    return this.#allRows.length + this.#added.size;
+  }
+
+  /** `aria-rowindex` da linha de índice interno `index` (ordem visual, 1-based). */
+  #ariaRowIndexOf(index: number, headerRows: number): number {
+    const top = this.#fixedTopItems.length;
+
+    if (this.#isBodyIndex(index)) {
+      return index + 1 + headerRows + top + this.#rows.offset;
+    }
+
+    if (index === this.#rows.length) {
+      return this.#bodyRowCount + headerRows + top + this.#fixedBottomItems.length + 1;
+    }
+
+    const position = index - this.#fixedBase;
+
+    return position < top ? headerRows + position + 1 : headerRows + top + this.#bodyRowCount + position - top + 1;
   }
 
   /** Rodapé de totais: navegável como a última linha (índice = número de linhas do corpo). */
@@ -9923,6 +10452,10 @@ export class DataGrid extends LitElement {
       return null;
     }
 
+    if (isFixedRow(row)) {
+      return { fixed: row.fixed, fixedKey: this.#keyOf(row.item), position: row.index };
+    }
+
     return isDataRow(row) ? { key: this.#keyOf(row.item) } : isDetailRow(row) ? { detailOf: this.#keyOf(row.item) } : { rowKey: row.key };
   }
 
@@ -9935,6 +10468,10 @@ export class DataGrid extends LitElement {
 
     if (!row) {
       return false;
+    }
+
+    if ('fixed' in target || isFixedRow(row)) {
+      return 'fixed' in target && isFixedRow(row) && row.fixed === target.fixed && this.#keyOf(row.item) === target.fixedKey;
     }
 
     if ('detailOf' in target) {
@@ -10010,6 +10547,19 @@ export class DataGrid extends LitElement {
   }
 
   #publicFocus(): PublicFocus {
+    const focus = this.#publicFocusOf();
+    const row = this.#rowAt(this.#activeRowIndex);
+    const rowFixed = isFixedRow(row) ? row.fixed : null;
+
+    // Célula de largura total (frente 20): sem coluna.
+    if ((focus.cellType === 'data' || focus.cellType === 'command') && this.#activeCol >= this.#leadingColumns && this.#isFullWidthIndex(this.#activeRowIndex)) {
+      return { rowKey: focus.rowKey, column: null, cellType: 'full-width', rowFixed };
+    }
+
+    return { ...focus, rowFixed };
+  }
+
+  #publicFocusOf(): Omit<PublicFocus, 'rowFixed'> {
     const column = this.#activeColumn;
     const row = this.#rowAt(this.#activeRowIndex);
 
@@ -10080,7 +10630,7 @@ export class DataGrid extends LitElement {
     if (
       !source
       || !previous
-      || (previous.rowKey === next.rowKey && previous.column === next.column && previous.cellType === next.cellType)
+      || (previous.rowKey === next.rowKey && previous.column === next.column && previous.cellType === next.cellType && previous.rowFixed === next.rowFixed)
     ) {
       return;
     }
@@ -10091,6 +10641,8 @@ export class DataGrid extends LitElement {
       cellType: next.cellType,
       previousRowKey: previous.rowKey,
       previousColumn: previous.column,
+      rowFixed: next.rowFixed,
+      previousRowFixed: previous.rowFixed,
       source,
     })));
   }
@@ -10114,19 +10666,21 @@ export class DataGrid extends LitElement {
       if (found >= 0) {
         index = found;
       }
+    } else if (active && 'fixed' in active && !this.#isRefAt(index, active)) {
+      index = this.#relocateFixed(active);
     } else if (active && !this.#isRefAt(index, active)) {
       // Detalhe recolhido com o foco nele: o foco volta à linha mestre.
       const found = 'totals' in active
         ? this.#hasTotals ? rows.length : -1
         : 'detailOf' in active
           ? detailOrMaster(rows, active.detailOf, this.#keyExpr ? this.#keyOf : undefined)
-          : 'key' in active ? rows.indexOfDataKey(active.key, this.#keyExpr ? this.#keyOf : undefined) : rows.indexOfKey(active.rowKey);
+          : 'key' in active ? rows.indexOfDataKey(active.key, this.#keyExpr ? this.#keyOf : undefined) : 'rowKey' in active ? rows.indexOfKey(active.rowKey) : -1;
       index = found >= 0 ? found : index;
     }
 
     const lastRow = rows.length - (this.#hasTotals ? 0 : 1);
 
-    if (index > lastRow) {
+    if (index > lastRow && !this.#isFixedIndex(index)) {
       index = lastRow;
     }
 
@@ -10155,6 +10709,33 @@ export class DataGrid extends LitElement {
       this.#activeResolved = true;
       this.#reportedFocus = this.#publicFocus();
     }
+  }
+
+  /**
+   * A linha fixa ativa saiu do lugar (lista trocada, corpo mudou de tamanho):
+   * a mesma chave no mesmo lado; senão a mesma posição (limitada); lado
+   * vazio: a vizinha no corpo (WCAG 2.4.3).
+   */
+  #relocateFixed(active: { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number }): number {
+    const list = this.#fixedRows()[active.fixed];
+    const found = list.findIndex(row => this.#keyOf(row.item) === active.fixedKey);
+
+    if (found >= 0) {
+      return this.#fixedIndex(active.fixed, found);
+    }
+
+    if (list.length) {
+      return this.#fixedIndex(active.fixed, Math.min(active.position, list.length - 1));
+    }
+
+    const body = this.#rows.length;
+
+    if (active.fixed === 'top') {
+      const bottom = this.#fixedBottomItems.length;
+      return body ? 0 : bottom ? this.#fixedIndex('bottom', 0) : this.#hasTotals ? body : -1;
+    }
+
+    return body ? body - 1 : this.#hasTotals ? body : this.#fixedTopItems.length ? this.#fixedIndex('top', this.#fixedTopItems.length - 1) : -1;
   }
 
   /** `col` negativo: qualquer coluna (linha de grupo, célula única). */
@@ -10204,8 +10785,10 @@ export class DataGrid extends LitElement {
     if (scroller) {
       // Cabeçalho/barra presos no topo e rodapé de totais preso embaixo: a
       // célula do corpo não para embaixo deles (WCAG 2.4.11).
-      const inBody = cell.closest('tbody') !== null;
-      scroller.style.scrollPaddingBlockStart = cell.tagName === 'TH' ? '0px' : `${this.#stickyTop()}px`;
+      // Célula numa linha fixa grudada: só a revelação horizontal (a rolagem do corpo não pula, WCAG 2.4.3).
+      const inFixed = cell.closest('tbody.fixed-rows') !== null;
+      const inBody = cell.closest('tbody') !== null && !inFixed;
+      scroller.style.scrollPaddingBlockStart = cell.tagName === 'TH' || inFixed ? '0px' : `${this.#stickyTop()}px`;
       scroller.style.scrollPaddingBlockEnd = inBody ? `${this.#stickyBottom()}px` : '0px';
     }
 
@@ -10214,7 +10797,10 @@ export class DataGrid extends LitElement {
 
   /** Rola até a linha `index` sem depender de ela estar renderizada (abaixo do que é fixo no topo). */
   #scrollRowIntoView(index: number): void {
-    this.#virtualizer.scrollToIndex(index);
+    // Linhas fixas não rolam na vertical.
+    if (this.#isBodyIndex(index)) {
+      this.#virtualizer.scrollToIndex(index);
+    }
   }
 
   /** Altura do que fica preso no topo da rolagem (cabeçalho das colunas ou barra). */
@@ -10223,13 +10809,18 @@ export class DataGrid extends LitElement {
     const thead = root.querySelector<HTMLElement>('thead');
     const toolbar = root.querySelector<HTMLElement>('.header');
 
-    // Com a barra, o cabeçalho prende logo abaixo dela (\`.header + table thead\`).
-    return (thead?.offsetHeight ?? 0) + (toolbar?.offsetHeight ?? 0);
+    // Com a barra, o cabeçalho prende logo abaixo dela (\`.header + table thead\`); as fixas do topo, abaixo dele.
+    return (thead?.offsetHeight ?? 0) + (toolbar?.offsetHeight ?? 0) + this.#fixedHeight('top');
   }
 
-  /** Altura do rodapé de totais (preso no fim da rolagem). */
+  /** Altura do rodapé de totais e das fixas do fundo (presos no fim da rolagem). */
   #stickyBottom(): number {
-    return this.renderRoot.querySelector<HTMLElement>('tfoot')?.offsetHeight ?? 0;
+    return (this.renderRoot.querySelector<HTMLElement>('tfoot')?.offsetHeight ?? 0) + this.#fixedHeight('bottom');
+  }
+
+  /** Altura das linhas fixas grudadas de um lado (0 sem elas ou no modo que rola). */
+  #fixedHeight(fixed: 'top' | 'bottom'): number {
+    return this.#stickyFixed ? this.renderRoot.querySelector<HTMLElement>(`tbody.fixed-${fixed}-rows`)?.offsetHeight ?? 0 : 0;
   }
 
   /** Linhas do corpo que cabem na área visível. */
@@ -10307,7 +10898,11 @@ export class DataGrid extends LitElement {
 
     const singleCell = this.#rowAt(position.row);
 
-    if (!sameRow || (position.col !== this.#activeCol && !singleCell?.isGroup && !singleCell?.isDetail)) {
+    // Célula de largura total com a coluna lembrada (frente 20): a mesma célula.
+    const sameFullWidthCell = sameRow && position.col >= this.#leadingColumns && this.#activeCol >= this.#leadingColumns
+      && this.#isFullWidthIndex(position.row);
+
+    if (!sameRow || (position.col !== this.#activeCol && !singleCell?.isGroup && !singleCell?.isDetail && !sameFullWidthCell)) {
       this.#setActive(position, 'user');
     } else if (path[0] === cell && cell.closest('tr')?.classList.contains('pinned')) {
       // Tab de volta para a célula ativa que está fora da tela: traz a linha.
@@ -10435,6 +11030,15 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    if (isFixedRow(row)) {
+      // Linha fixa: só leitura; Enter/F2 levam ao conteúdo do renderer da célula.
+      if ((event.key === 'Enter' || event.key === 'F2') && focusFirstWithin(cell)) {
+        event.preventDefault();
+      }
+
+      return;
+    }
+
     if (!isDataRow(row)) {
       return;
     }
@@ -10457,7 +11061,9 @@ export class DataGrid extends LitElement {
         this.#toggleRow(row);
       }
     } else if ((event.key === 'Enter' || event.key === 'F2') && column !== SELECTION_COLUMN) {
-      if (typeof column === 'object' && this.#editingOn && this.#editFromCell(position, column)) {
+      const fullWidthCell = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+
+      if (!fullWidthCell && typeof column === 'object' && this.#editingOn && this.#editFromCell(position, column)) {
         event.preventDefault();
       } else if (focusFirstWithin(cell)) {
         event.preventDefault();
@@ -10887,12 +11493,13 @@ export class DataGrid extends LitElement {
       const next = nextHeaderCell(position, key, {
         levels: this.#headerLevels,
         colCount: this.#navColumns.length,
-        hasBody: this.#rows.length + (this.#hasTotals ? 1 : 0) > 0,
+        hasBody: this.#visualRowCount > 0,
         cellAt: (level, col) => headerCellAt(this.#headerGrid, level, col),
       });
 
       if (next) {
-        this.#setActive(next, 'user', { focus: true });
+        // Abaixo do cabeçalho vem a 1ª linha VISUAL (fixa do topo, se houver).
+        this.#setActive({ row: this.#fromVisual(next.row), col: next.col }, 'user', { focus: true });
         return;
       }
     }
@@ -10903,7 +11510,7 @@ export class DataGrid extends LitElement {
     }
 
     // Com paginação, PageUp/PageDown no corpo trocam de página (como a referência).
-    if (this.paging && (key === 'pageUp' || key === 'pageDown') && position.row >= 0 && !event.shiftKey) {
+    if (this.paging && (key === 'pageUp' || key === 'pageDown') && this.#isBodyIndex(position.row) && !event.shiftKey) {
       const target = this.#pageIndex + (key === 'pageDown' ? 1 : -1);
 
       if (target >= 0 && target < this.#pageCount()) {
@@ -10913,25 +11520,101 @@ export class DataGrid extends LitElement {
       }
     }
 
-    const next = nextCell({ row: position.row, col: row?.isGroup || row?.isDetail ? this.#activeCol : position.col }, key, {
-      rowCount: this.#rows.length + (this.#hasTotals ? 1 : 0),
-      colCount: this.#navColumns.length,
-      hasHeader: this.showColumnHeaders,
-      pageSize: this.#pageSize(),
-      // Linha de grupo e de detalhe: uma célula só.
-      isGroupRow: index => {
-        const target = this.#rowAt(index);
-        return !!target?.isGroup || !!target?.isDetail;
-      },
-    });
+    // Linha inteira (frente 20): células iniciais e UMA célula depois delas.
+    const leading = this.#leadingColumns;
+    const inFullWidth = position.row >= 0 && position.col >= leading && this.#isFullWidthIndex(position.row);
+
+    if (position.row >= 0 && (key === 'left' || key === 'right' || key === 'home' || key === 'end') && this.#isFullWidthIndex(position.row)) {
+      const stay = this.#activeCol;
+      const col = inFullWidth
+        ? key === 'left' || key === 'home' ? leading ? (key === 'home' ? 0 : leading - 1) : stay : stay
+        : key === 'left' ? Math.max(position.col - 1, 0) : key === 'home' ? 0 : key === 'end' ? leading : position.col + 1;
+
+      this.#setActive({ row: position.row, col }, 'user', { focus: true });
+      return;
+    }
+
+    const fixedRows = this.#fixedTopItems.length + this.#fixedBottomItems.length;
+    // Com linhas fixas, PageUp/PageDown andam por blocos (spec 20); sem elas, como antes.
+    const paged = fixedRows && (key === 'pageUp' || key === 'pageDown') ? this.#pageTarget(position.row, key) : undefined;
+    const visual = paged === undefined
+      ? nextCell({ row: this.#toVisual(position.row), col: row?.isGroup || row?.isDetail || inFullWidth ? this.#activeCol : position.col }, key, {
+        rowCount: this.#visualRowCount,
+        colCount: this.#navColumns.length,
+        hasHeader: this.showColumnHeaders,
+        pageSize: this.#pageSize(),
+        // Linha de grupo e de detalhe: uma célula só.
+        isGroupRow: index => {
+          const target = this.#rowAt(this.#fromVisual(index));
+          return !!target?.isGroup || !!target?.isDetail;
+        },
+      })
+      : undefined;
+    const next = visual
+      ? { row: this.#fromVisual(visual.row), col: visual.col }
+      : { row: paged!, col: inFullWidth || row?.isGroup || row?.isDetail ? this.#activeCol : position.col };
 
     this.#setActive(next, 'user', { focus: true });
 
     const vertical = key === 'up' || key === 'down' || key === 'pageUp' || key === 'pageDown';
 
-    if (event.shiftKey && vertical && next.row >= 0 && this.#selectionMode === 'multiple') {
+    if (event.shiftKey && vertical && this.#isBodyIndex(next.row) && this.#selectionMode === 'multiple') {
       this.#extendSelection(next.row, event.ctrlKey || event.metaKey);
     }
+  }
+
+  /**
+   * PageUp/PageDown com linhas fixas (spec 20): o passo é o do corpo e um
+   * bloco (fixas do topo, corpo, fixas do fundo, totais) nunca é
+   * atravessado de uma vez. Devolve o índice interno.
+   */
+  #pageTarget(from: number, key: 'pageUp' | 'pageDown'): number {
+    const top = this.#fixedTopItems.length;
+    const bottom = this.#fixedBottomItems.length;
+    const body = this.#rows.length;
+    const totals = this.#hasTotals ? body : undefined;
+    const page = Math.max(this.#pageSize(), 1);
+    const firstVisible = Math.min(this.#firstVisibleRowIndex(), Math.max(body - 1, 0));
+    const firstBottom = bottom ? this.#fixedIndex('bottom', 0) : undefined;
+    const lastTop = top ? this.#fixedIndex('top', top - 1) : undefined;
+    const isTop = from >= 0 && this.#isFixedIndex(from) && from - this.#fixedBase < top;
+    const isBottom = this.#isFixedIndex(from) && !isTop;
+
+    if (key === 'pageDown') {
+      if (from < 0 || isTop) {
+        return body ? Math.min(body - 1, firstVisible + page - 1) : firstBottom ?? totals ?? from;
+      }
+
+      if (this.#isBodyIndex(from)) {
+        return from < body - 1 ? Math.min(body - 1, from + page) : firstBottom ?? totals ?? from;
+      }
+
+      if (isBottom) {
+        const last = this.#fixedIndex('bottom', bottom - 1);
+        return from < last ? last : totals ?? from;
+      }
+
+      return from;
+    }
+
+    if (from < 0) {
+      return from;
+    }
+
+    if (isTop) {
+      return this.#fixedIndex('top', 0);
+    }
+
+    if (this.#isBodyIndex(from)) {
+      return from > 0 ? Math.max(0, from - page) : lastTop ?? from;
+    }
+
+    if (isBottom) {
+      return from > firstBottom! ? firstBottom! : body ? firstVisible : lastTop ?? from;
+    }
+
+    // Totais.
+    return bottom ? this.#fixedIndex('bottom', bottom - 1) : body ? firstVisible : lastTop ?? from;
   }
 
   #parentGroupIndex(index: number): number {
@@ -11061,6 +11744,8 @@ export class DataGrid extends LitElement {
     // sem linhas (nem o cálculo delas), conteúdo oculto, painel de carga.
     const waiting = this.#waitingForState;
 
+    this.#rowRenderPass++;
+
     if (!waiting) {
       this.#renderedData = true;
       this.#ensureRows();
@@ -11087,6 +11772,7 @@ export class DataGrid extends LitElement {
     const layout = this.#columnLayout(this.#columnPlan());
     const headerRows = this.#headerLevels + (this.showFilterRow ? 1 : 0);
     const footerRows = this.#totalSpecs.length ? 1 : 0;
+    const { top: fixedTop, bottom: fixedBottom } = waiting ? { top: [], bottom: [] } : this.#fixedRows();
     const selectionMode = this.#selectionMode;
     const classes = {
       striped: this.striped,
@@ -11120,7 +11806,7 @@ export class DataGrid extends LitElement {
             class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
-            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#allRows.length + this.#added.size + headerRows + footerRows}"
+            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined)}
             aria-busy=${ifDefined(waiting || this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
@@ -11138,7 +11824,9 @@ export class DataGrid extends LitElement {
             @focusout=${this.#onGridFocusOut}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
+            ${fixedTop.length ? this.#renderFixedRows('top', fixedTop, headerRows, layout) : nothing}
             <tbody
+              class="body-rows"
               role="rowgroup"
               style="height: ${virtualizer.getTotalSize()}px;"
               @click=${this.#onBodyClick}
@@ -11148,7 +11836,8 @@ export class DataGrid extends LitElement {
               ${this.#renderBody(window, headerRows, layout)}
               <tr role="presentation"></tr>
             </tbody>
-            ${footerRows ? this.#renderTotalFooter(layout, this.#allRows.length + headerRows + 1) : nothing}
+            ${fixedBottom.length ? this.#renderFixedRows('bottom', fixedBottom, headerRows, layout) : nothing}
+            ${footerRows ? this.#renderTotalFooter(layout, this.#ariaRowIndexOf(this.#rows.length, headerRows)) : nothing}
           </table>
         </div>
         ${this.#inTextLanguage(this.#renderLoadState())}
@@ -11660,6 +12349,29 @@ export class DataGrid extends LitElement {
     );
   }
 
+  /**
+   * Linhas fixas de um lado (frente 20): `<tbody>` próprio, sticky abaixo do
+   * cabeçalho ou acima dos totais (deslocamento medido), fora do
+   * virtualizador. Índices internos depois do corpo (`#fixedBase`).
+   */
+  #renderFixedRows(fixed: 'top' | 'bottom', rows: readonly DataRow[], headerRows: number, layout: ColumnLayout[]) {
+    const translation = this.#translation;
+
+    return html`
+      <tbody
+        class="fixed-rows fixed-${fixed}-rows"
+        part="fixed-${fixed}-row-group"
+        role="rowgroup"
+        aria-label=${fixed === 'top' ? translation.fixedTopRowsLabel : translation.fixedBottomRowsLabel}>
+        ${keyedRows(
+          rows,
+          row => row.key,
+          row => this.#renderRow(this.#fixedIndex(fixed, row.index), row, headerRows, layout, false),
+        )}
+      </tbody>
+    `;
+  }
+
   /** Total de linhas desconhecido (rolagem infinita antes do fim): `aria-rowcount="-1"`. */
   get #unknownRowCount(): boolean {
     return this.#lazy && this.#totalCount < 0;
@@ -11823,6 +12535,11 @@ export class DataGrid extends LitElement {
       return nothing;
     }
 
+    // Linha fixa (frente 20): fora da árvore de grupos.
+    if (isFixedRow(row)) {
+      return 1;
+    }
+
     if (!row.isGroup && !row.isFooter && !row.isDetail && row.skeleton && row.level !== undefined) {
       // Esqueleto de uma lista de subgrupos remota: no nível dos grupos que ela representa.
       return row.level + 1;
@@ -11839,6 +12556,8 @@ export class DataGrid extends LitElement {
     const parity = row.isGroup || row.isFooter
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
+    const fixed = isFixedRow(row) ? row.fixed : undefined;
+    const fullWidth = !row.isGroup && !row.isFooter ? this.#rowRenderOf(row) : undefined;
     const selectable = isDataRow(row) && this.#selectionMode !== 'none';
     const selected = selectable && this.#selection.has(this.#keyOf(row.item));
     const expanded = isDataRow(row) && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
@@ -11857,6 +12576,8 @@ export class DataGrid extends LitElement {
       added: pending?.type === 'add',
       removed: pending?.type === 'remove',
       editing,
+      'fixed-row': !!fixed,
+      'full-width-row': !!fullWidth,
     };
 
     if (parity) {
@@ -11864,6 +12585,14 @@ export class DataGrid extends LitElement {
     }
 
     const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : row.skeleton ? 'skeleton-row' : parity];
+
+    if (fixed) {
+      parts.push(`fixed-row fixed-${fixed}-row`);
+    }
+
+    if (fullWidth) {
+      parts.push('full-width-row');
+    }
 
     if (selected) {
       parts.push('selected');
@@ -11883,7 +12612,7 @@ export class DataGrid extends LitElement {
         style="height: ${this.rowHeight}px;"
         data-index=${index}
         role="row"
-        aria-rowindex="${index + 1 + headerRows + this.#rows.offset}"
+        aria-rowindex="${this.#ariaRowIndexOf(index, headerRows)}"
         aria-busy=${ifDefined(isDataRowLike(row) && row.skeleton ? 'true' : undefined)}
         aria-level=${this.#ariaLevelOf(row)}
         aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : undefined)}
@@ -11894,7 +12623,9 @@ export class DataGrid extends LitElement {
           ? this.#renderGroupRowCells(row, index, layout)
           : row.isFooter
             ? this.#renderGroupFooterCells(row, index, layout)
-            : this.#renderDataRowCells(row, index, layout, selected, expanded)}
+            : fullWidth
+              ? this.#renderFullWidthCells(row, index, layout, selected, expanded, fullWidth)
+              : this.#renderDataRowCells(row, index, layout, selected, expanded)}
       </tr>
     `;
   }
@@ -11914,7 +12645,7 @@ export class DataGrid extends LitElement {
       <tr
         data-index=${index}
         role="row"
-        aria-rowindex="${index + 1 + headerRows + this.#rows.offset}"
+        aria-rowindex="${this.#ariaRowIndexOf(index, headerRows)}"
         aria-labelledby=${ifDefined(index > 0 ? `row-${index - 1}` : undefined)}
         aria-level=${this.#ariaLevelOf(row)}
         style="height: 1px;"
@@ -12100,11 +12831,52 @@ export class DataGrid extends LitElement {
   }
 
   #renderDataRowCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean, expanded: boolean) {
-    const selectionCol = this.#selectionCol;
-    const matcher = this.#highlightMatcher();
-    const edit: RowEditState | undefined = this.#editingOn && !row.skeleton
+    const fixed = !!row.fixed;
+    // Linha fixa: sem realce da busca nem edição (fora do row model).
+    const matcher = fixed ? null : this.#highlightMatcher();
+    const edit: RowEditState | undefined = this.#editingOn && !row.skeleton && !fixed
       ? { pending: this.#pendingOf(row), rowKey: this.#keyOf(row.item), readonlyMarks: !!this.allowEditing || this.allowAdding }
       : undefined;
+    // Intervalo de células (frente 19): só no corpo; uma linha fixa nunca entra nele.
+    const rangeEdges = (col: number): RangeEdges | null => fixed ? null : this.#rangeEdgesAt(rowIndex, col);
+
+    return html`
+      ${this.#renderLeadingCells(row, rowIndex, selected, expanded)}
+      ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${row.skeleton
+        ? html`
+          <td
+            part=${rangeEdges(cell.col) ? 'cell selected' : 'cell'}
+            class=${cell.cellClassName + this.#rangeClass(rangeEdges(cell.col))}
+            style=${cell.style}
+            role="gridcell"
+            aria-colindex="${cell.col + 1}"
+            data-col=${cell.col}
+            aria-selected=${ifDefined(rangeEdges(cell.col) ? 'true' : undefined)}
+            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
+        : edit
+          ? this.#renderEditableCell(row, rowIndex, cell, cell.col, matcher, edit)
+          : html`
+          <td
+            part=${rangeEdges(cell.col) ? 'cell selected' : 'cell'}
+            class=${cell.cellClassName + this.#rangeClass(rangeEdges(cell.col))}
+            style=${cell.style}
+            role="gridcell"
+            aria-colindex="${cell.col + 1}"
+            data-col=${cell.col}
+            aria-selected=${ifDefined(rangeEdges(cell.col) ? 'true' : undefined)}
+            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
+      ${this.#trailingSpacerCell()}
+      ${this.#showCommandColumn
+        ? fixed
+          ? this.#renderEmptyCommandCell(rowIndex, this.#leadingColumns + this._visibleColumns.length)
+          : this.#renderCommandCell(row, rowIndex, this.#leadingColumns + this._visibleColumns.length, edit?.pending)
+        : nothing}
+    `;
+  }
+
+  /** Células antes das colunas comuns: recuos de grupo, expansão e caixa (vazias nas fixas). */
+  #renderLeadingCells(row: DataRow, rowIndex: number, selected: boolean, expanded: boolean) {
+    const selectionCol = this.#selectionCol;
 
     return html`
       ${map(this._groupColumns, (_, index) => html`
@@ -12112,8 +12884,8 @@ export class DataGrid extends LitElement {
           role="presentation"
           class="group-column sticky-cell"
           style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
-      ${this.#showDetailColumn && row.skeleton ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
-      ${this.#showDetailColumn && !row.skeleton
+      ${this.#showDetailColumn && (row.skeleton || row.fixed) ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
+      ${this.#showDetailColumn && !row.skeleton && !row.fixed
         ? html`
           <td
             class="detail-toggle-cell sticky-cell"
@@ -12143,7 +12915,8 @@ export class DataGrid extends LitElement {
                 fill="currentColor"
                 aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span></button></td>`
         : nothing}
-      ${this.#showSelectionColumn
+      ${this.#showSelectionColumn && row.fixed ? this.#renderEmptySelectionCell(rowIndex) : nothing}
+      ${this.#showSelectionColumn && !row.fixed
         ? html`
           <td
             class="selection-cell sticky-cell"
@@ -12156,31 +12929,36 @@ export class DataGrid extends LitElement {
               ? nothing
               : this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
-      ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${row.skeleton
-        ? html`
-          <td
-            part=${this.#rangeEdgesAt(rowIndex, cell.col) ? 'cell selected' : 'cell'}
-            class=${cell.cellClassName + this.#rangeClass(this.#rangeEdgesAt(rowIndex, cell.col))}
-            style=${cell.style}
-            role="gridcell"
-            aria-colindex="${cell.col + 1}"
-            data-col=${cell.col}
-            aria-selected=${ifDefined(this.#rangeEdgesAt(rowIndex, cell.col) ? 'true' : undefined)}
-            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
-        : edit
-          ? this.#renderEditableCell(row, rowIndex, cell, cell.col, matcher, edit)
-          : html`
-          <td
-            part=${this.#rangeEdgesAt(rowIndex, cell.col) ? 'cell selected' : 'cell'}
-            class=${cell.cellClassName + this.#rangeClass(this.#rangeEdgesAt(rowIndex, cell.col))}
-            style=${cell.style}
-            role="gridcell"
-            aria-colindex="${cell.col + 1}"
-            data-col=${cell.col}
-            aria-selected=${ifDefined(this.#rangeEdgesAt(rowIndex, cell.col) ? 'true' : undefined)}
-            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
-      ${this.#trailingSpacerCell()}
-      ${this.#showCommandColumn ? this.#renderCommandCell(row, rowIndex, this.#leadingColumns + this._visibleColumns.length, edit?.pending) : nothing}
+    `;
+  }
+
+  /**
+   * Linha inteira (frente 20): as células iniciais reais e UMA célula que
+   * cobre as colunas comuns e a de botões, com o conteúdo do `rowRenderer`
+   * num bloco sticky na largura visível.
+   */
+  #renderFullWidthCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean, expanded: boolean, entry: RowRenderEntry) {
+    const leading = this.#leadingColumns;
+    const span = this.#totalColumns(layout) - this._groupColumns.length - leading;
+
+    return html`
+      ${this.#renderLeadingCells(row, rowIndex, selected, expanded)}
+      <td
+        class="full-width-cell"
+        part="full-width-cell"
+        role="gridcell"
+        aria-colindex=${leading + 1}
+        aria-colspan=${Math.max(this.#navColumns.length - leading, 1)}
+        data-col=${leading}
+        colspan=${Math.max(span, 1)}
+        style="--_full-width-start: ${this.#stickyStart()}px"
+        tabindex=${this.#isActive(rowIndex, -1) && this.#activeCol >= leading ? 0 : -1}><div class="full-width-content">${rendererContent({
+          host: this,
+          slotName: `u-grid-internal:row:${row.key}`,
+          deps: [entry],
+          renderer: entry.renderer,
+          invoke: () => entry.dead ? nothing : entry.result as GridRenderResult,
+        })}</div></td>
     `;
   }
 
@@ -13902,7 +14680,8 @@ export class DataGrid extends LitElement {
     for (let index = target.top; index <= target.bottom && budget > 0; index++) {
       const row = this.#rowAt(index);
 
-      if (!isDataRow(row)) {
+      // Linha inteira (frente 20): sem células para colar.
+      if (!isDataRow(row) || this.#rowRenderOf(row)) {
         continue;
       }
 

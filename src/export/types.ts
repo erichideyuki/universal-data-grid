@@ -3,6 +3,7 @@ import type {
   GridColumnDataType,
   GridColumnDef,
   GridGroupPath,
+  GridRowFixed,
   GridSummaryValue,
 } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
@@ -22,6 +23,12 @@ export interface GridExportOptions {
   includeGroups?: boolean;
   /** Group footers and totals (`group-footer` / `total` rows) and summaries in group rows. Default `true`. */
   includeSummaries?: boolean;
+  /**
+   * Fixed rows (`fixedTopItems` before the body rows, `fixedBottomItems`
+   * before the totals; `rowType: 'data'` with `fixed`, `level: 0`).
+   * Default `true`; `selectedOnly: true` leaves them out.
+   */
+  includeFixedRows?: boolean;
   /** Aborts the export: the promise rejects with an `AbortError`. */
   signal?: AbortSignal | null;
 }
@@ -81,6 +88,8 @@ export interface GridExportDataRow<TItem = any> {
   values: unknown[];
   /** Displayed texts (`displayValue` / `format`). */
   texts: string[];
+  /** `'top'`/`'bottom'` for a fixed row (`fixedTopItems`/`fixedBottomItems`), `null` for a body row. */
+  fixed: GridRowFixed;
 }
 
 /**

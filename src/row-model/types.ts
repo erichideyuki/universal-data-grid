@@ -60,6 +60,8 @@ export interface DataRow {
   skeleton?: true;
   /** Esqueleto de uma lista de subgrupos remota: nível (0-based) dos grupos dela. */
   level?: number;
+  /** Linha fixa (frente 20): item do hospedeiro fora do row model, no topo ou no fundo. */
+  fixed?: 'top' | 'bottom';
 }
 
 /** Item de bloco remoto ainda não carregado (linha-esqueleto). */

@@ -7,7 +7,7 @@
  * É um gerador SÍNCRONO: quem consome decide quando ceder a vez
  * (`slice.ts`) — uma promessa por linha custaria caro em 1 milhão de linhas.
  */
-import type { GridColumnDef, GridSummaryItem, GridSummaryValue } from '../grid-column-def.js';
+import type { GridColumnDef, GridRowFixed, GridSummaryItem, GridSummaryValue } from '../grid-column-def.js';
 import type { GroupNode } from '../row-model/types.js';
 import type {
   GridExportColumn,
@@ -44,6 +44,9 @@ export interface ExportSource {
   columns: readonly ExportColumnSource[];
   /** Itens na ordem da tela (filtrados; só os selecionados com `selectedOnly`). */
   items: readonly unknown[];
+  /** Linhas fixas (frente 20): as do topo antes do corpo, as do fundo antes dos totais. */
+  fixedTop?: readonly unknown[];
+  fixedBottom?: readonly unknown[];
   /** Árvore de grupos sobre `items` (vazia sem agrupamento). */
   groups: readonly GroupNode[];
   /** Emite linhas de grupo; `false` = lista plana na ordem dos grupos. */
@@ -62,7 +65,7 @@ export interface ExportSource {
 }
 
 /** Célula de dados: valor e texto. */
-export const dataRow = (source: ExportSource, item: unknown, level: number): GridExportDataRow => {
+export const dataRow = (source: ExportSource, item: unknown, level: number, fixed: GridRowFixed = null): GridExportDataRow => {
   const { columns } = source;
   const values = new Array<unknown>(columns.length);
   const texts = new Array<string>(columns.length);
@@ -74,7 +77,7 @@ export const dataRow = (source: ExportSource, item: unknown, level: number): Gri
     texts[i] = column.text(value, item);
   }
 
-  return { rowType: 'data', level, item, values, texts };
+  return { rowType: 'data', level, item, values, texts, fixed };
 };
 
 /** Onde um resumo entra: na célula da coluna, no rótulo do grupo, ou fica de fora. */
@@ -167,6 +170,10 @@ export function* exportRows(source: ExportSource): Generator<GridExportRow, void
   const footers = includeGroups && source.includeSummaries
     && source.groupSummaries.some(summary => summary.item.display === 'footer');
 
+  for (const item of source.fixedTop ?? []) {
+    yield dataRow(source, item, 0, 'top');
+  }
+
   if (!groups.length) {
     for (const item of source.items) {
       yield dataRow(source, item, 0);
@@ -209,6 +216,10 @@ export function* exportRows(source: ExportSource): Generator<GridExportRow, void
         yield footerRow(source, node);
       }
     }
+  }
+
+  for (const item of source.fixedBottom ?? []) {
+    yield dataRow(source, item, 0, 'bottom');
   }
 
   const totals = totalRow(source);
