@@ -1,6 +1,5 @@
 import { type ChildPart, noChange } from 'lit';
 import {
-  clearPart,
   getCommittedValue,
   insertPart,
   removePart,
@@ -24,8 +23,8 @@ type TemplateOf<T> = (item: T) => unknown;
  * seguinte; partes sem chave na lista nova são removidas por inteiro.
  */
 class KeyedRowsDirective<T> extends Directive {
-  #parts: ChildPart[] = [];
-  #keys: unknown[] = [];
+  /** Chaves na ordem das partes hoje no DOM; `undefined` até o 1º render. */
+  #keys?: unknown[];
 
   constructor(partInfo: PartInfo) {
     super(partInfo);
@@ -41,16 +40,23 @@ class KeyedRowsDirective<T> extends Directive {
   }
 
   override update(containerPart: ChildPart, [items, keyOf, template]: [readonly T[], KeyOf<T>, TemplateOf<T>]): unknown {
-    let oldParts = this.#parts;
-    let oldKeys = this.#keys;
+    const committed = getCommittedValue(containerPart);
 
-    // A parte mostrava outra coisa (ex.: "sem dados") ou é a 1ª vez: limpa.
-    if (getCommittedValue(containerPart) !== oldParts) {
-      clearPart(containerPart);
-      oldParts = [];
-      oldKeys = [];
+    // 1º render desta instância (inclusive vindo de "sem dados") ou
+    // hidratação de SSR: devolve a lista e deixa o Lit criar as partes, como
+    // o `repeat` faz. Na hidratação o `@lit-labs/ssr-client` chama este
+    // `update` e precisa de um iterável para casar com os marcadores das
+    // linhas que vieram do servidor; mexer no DOM aqui e devolver `noChange`
+    // quebra a hidratação ("Primitive found where TemplateResult expected").
+    // O iterável commitado pelo Lit é um array de `ChildPart`, um por item,
+    // que os renders seguintes reaproveitam pela chave.
+    if (!this.#keys || !Array.isArray(committed) || committed.length !== this.#keys.length) {
+      this.#keys = items.map(keyOf);
+      return this.render(items, keyOf, template);
     }
 
+    const oldParts = committed as ChildPart[];
+    const oldKeys = this.#keys;
     const reusable = new Map<unknown, ChildPart>();
     const stale: ChildPart[] = [];
 
@@ -93,7 +99,6 @@ class KeyedRowsDirective<T> extends Directive {
     }
 
     setCommittedValue(containerPart, newParts);
-    this.#parts = newParts;
     this.#keys = newKeys;
 
     return noChange;
