@@ -96,12 +96,15 @@ const renderChooserItems = (items: ColumnChooserItem[], context: ColumnChooserCo
           .indeterminate=${live(!!item.indeterminate)}
           ?disabled=${!item.canToggle}
           title=${item.visible ? translation.hideColumn : translation.showColumn}
-          aria-describedby=${ifDefined(item.adaptive ? `column-chooser-hint-${item.id}` : undefined)}
+          aria-describedby=${ifDefined(item.adaptive ? `column-chooser-title-${item.id} column-chooser-hint-${item.id}` : undefined)}
           @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
         <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
       </label>
       ${item.adaptive
-        ? html`<span class="column-chooser-hint" id="column-chooser-hint-${item.id}">${translation.adaptiveColumnDescription}</span>`
+        // A descrição que o `title` dava ("Hide column") continua, junto da dica.
+        ? html`<span hidden id="column-chooser-title-${item.id}">${item.visible ? translation.hideColumn : translation.showColumn}</span><span
+            class="column-chooser-hint"
+            id="column-chooser-hint-${item.id}">${translation.adaptiveColumnDescription}</span>`
         : nothing}
       ${item.fixed === undefined ? nothing : pinButton(item, 'start', context)}
       ${item.fixed === undefined ? nothing : pinButton(item, 'end', context)}

@@ -432,6 +432,14 @@ export const styles = css`
     outline-offset: -2px;
   }
 
+  /* Foco com erro: anel + faixa clara + borda de erro (o anel não some atrás do vermelho, 2.4.7). */
+  td:where(.grid-table > * > * > *).detail-toggle-cell.adaptive-invalid[tabindex]:focus-visible {
+    outline: var(--_focus-ring);
+    box-shadow:
+      inset 0 0 0 4px var(--u-color-surface, #fff),
+      inset 0 0 0 6px var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30)));
+  }
+
   td:where(.grid-table > * > * > *).detail-toggle-cell.adaptive-modified {
     box-shadow: inset calc(3px * var(--_dir)) 0 0 0 var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
   }
@@ -455,6 +463,11 @@ export const styles = css`
     .adaptive-value.invalid,
     td.detail-toggle-cell.adaptive-invalid {
       outline: 2px dashed CanvasText;
+    }
+
+    .adaptive-value.invalid:focus-visible,
+    td.detail-toggle-cell.adaptive-invalid[tabindex]:focus-visible {
+      outline: 2px solid Highlight;
     }
 
     .adaptive-value.modified,

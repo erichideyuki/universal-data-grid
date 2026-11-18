@@ -1042,6 +1042,16 @@ const CHEVRON_PATH = 'M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z';
 const SORT_ARROW_PATH = 'M440-160v-487L216-423l-56-57 320-320 320 320-56 57-224-224v487h-80Z';
 const FILTER_MARK_PATH = 'M400-240v-80h160v80H400ZM240-440v-80h480v80H240ZM120-640v-80h720v80H120Z';
 
+/** Ícone decorativo do rótulo da linha adaptativa (o sentido vai em texto oculto ao lado). */
+const adaptiveMark = (className: string, path: string) => html`<svg
+  class="adaptive-mark ${className}"
+  xmlns="http://www.w3.org/2000/svg"
+  height="1em"
+  width="1em"
+  viewBox="0 -960 960 960"
+  fill="currentColor"
+  aria-hidden="true"><path d=${path}/></svg>`;
+
 /** Célula ativa como o hospedeiro a vê (eventos). */
 interface PublicFocus {
   rowKey: unknown;
@@ -6093,7 +6103,7 @@ export class DataGrid extends LitElement {
           this.#startEdit(index, column, 'user');
         } else {
           this.#revealAdaptive(pending.rowKey, column, 'user');
-          const editor = this.#editor as OpenEditor | null;
+          const editor = this.#editor;
 
           if (editor && editor.rowKey === pending.rowKey) {
             editor.column = column;
@@ -6400,6 +6410,7 @@ export class DataGrid extends LitElement {
     if (editor.column && this.#adaptiveColumns.includes(editor.column)) {
       return this.#adaptiveValueElement(index + 1, editor.column, '.editing');
     }
+
     const col = editor.column ? this.#currentNavColumns().indexOf(editor.column) : -1;
     const tr = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${index}"]`);
     return tr?.querySelector<HTMLElement>(`:scope > td.editing[data-col="${col}"]`) ?? tr?.querySelector<HTMLElement>(':scope > td.editing') ?? null;
@@ -6737,7 +6748,7 @@ export class DataGrid extends LitElement {
       return undefined;
     }
 
-    const sources = columns.map(column => this.#exportColumn(column));
+    const sources = columns.map(target => this.#exportColumn(target));
     const values = sources.map(source => source.read(row.item));
     const cell: GridExportDataRow = {
       rowType: 'data',
@@ -8480,6 +8491,28 @@ export class DataGrid extends LitElement {
     return formatMessage(translation.adaptiveColumnsAnnouncement, { columns: names });
   }
 
+  /**
+   * Descrição do cabeçalho da coluna de expansão (spec 21): o texto do
+   * anúncio e a ordenação/filtro das colunas ocultas (com as linhas
+   * fechadas, não aparecem em outro lugar).
+   */
+  #adaptiveHeaderDescription(): string {
+    const translation = this.#translation;
+    const filterValue = this.#filtering.filterValue;
+    const sorting = this.#sorting;
+    const states = this.#adaptiveColumns.flatMap(column => {
+      const order = sorting.find(spec => spec.column === column)?.order;
+      const parts = [
+        ...order ? [order === 'asc' ? translation.sortAscending : translation.sortDescending] : [],
+        ...hasColumnCondition(filterValue, column) ? [translation.columnFiltered] : [],
+      ];
+
+      return parts.length ? [`${column.label ?? ''}${translation.adaptiveLabelSeparator}${parts.join(', ')}`] : [];
+    });
+
+    return [this.#adaptiveAnnouncementText(), ...states].join('. ');
+  }
+
   #focusWithin(): boolean {
     return !!this.shadowRoot?.activeElement || (typeof this.matches === 'function' && this.matches(':focus-within'));
   }
@@ -8526,7 +8559,7 @@ export class DataGrid extends LitElement {
    * confirmam e Esc cancela (o foco volta ao valor). O resto (Tab entre os
    * valores, Esc para a célula) segue o conteúdo da célula de detalhe.
    */
-  #onAdaptiveKeyDown(event: KeyboardEvent, value: AdaptiveValueTarget, cell: HTMLElement, position: CellPosition): boolean {
+  #onAdaptiveKeyDown(event: KeyboardEvent, value: AdaptiveValueTarget, cell: HTMLElement): boolean {
     const { element, column, masterIndex, rowKey } = value;
     const master = this.#rowAt(masterIndex);
     const ctrl = event.ctrlKey || event.metaKey;
@@ -8587,7 +8620,8 @@ export class DataGrid extends LitElement {
         this.#startEdit(masterIndex, column, 'user');
       } else {
         // Conteúdo interativo do renderer dentro do valor.
-        focusTargetsWithin(element).find(target => target !== element)?.focus();
+        focusTargetsWithin(element).find(target => target !== element)
+          ?.focus();
       }
 
       return true;
@@ -8598,7 +8632,6 @@ export class DataGrid extends LitElement {
       return true;
     }
 
-    void position;
     return false;
   }
 
@@ -8664,6 +8697,16 @@ export class DataGrid extends LitElement {
 
   /** Depois do render: foco no valor pedido (`#adaptiveRefocus`). */
   #afterAdaptiveRender(): void {
+    // Reforço: o valor focado é sempre o da coluna lembrada.
+    const active = this.shadowRoot?.activeElement;
+    const remembered = this.#adaptiveFocus;
+
+    if (!this.#adaptiveRefocus && remembered && active instanceof HTMLElement && active.classList.contains('adaptive-value')
+      && Number(active.getAttribute('data-column')) !== columnIdOf(remembered.column)) {
+      active.closest('.detail-cell')?.querySelector<HTMLElement>(`.adaptive-value.focus-target[data-column="${columnIdOf(remembered.column)}"]`)
+        ?.focus();
+    }
+
     const target = this.#adaptiveRefocus;
 
     if (!target || this.#editor?.focus) {
@@ -11027,6 +11070,7 @@ export class DataGrid extends LitElement {
 
       return rows;
     };
+
     const rows = { top: build(top, 'top'), bottom: build(bottom, 'bottom') };
 
     this.#fixedRowsCache = { top, bottom, expansion, rows };
@@ -11160,7 +11204,7 @@ export class DataGrid extends LitElement {
       const position = index - this.#fixedBase - (row.fixed === 'top' ? 0 : this.#fixedTopCount);
       return row.isDetail
         ? { fixed: row.fixed!, fixedKey: this.#keyOf(row.item), position, detail: true }
-        : { fixed: row.fixed!, fixedKey: this.#keyOf(row.item), position };
+        : { fixed: row.fixed, fixedKey: this.#keyOf(row.item), position };
     }
 
     return isDataRow(row) ? { key: this.#keyOf(row.item) } : isDetailRow(row) ? { detailOf: this.#keyOf(row.item) } : { rowKey: row.key };
@@ -11420,8 +11464,11 @@ export class DataGrid extends LitElement {
     // Valor focado da linha adaptativa cuja coluna voltou à tabela: a célula dela na mestre.
     const adaptiveFocus = this.#adaptiveFocus;
 
-    if (adaptiveMoved && adaptiveFocus && rows.at(index)?.isDetail && navColumns.includes(adaptiveFocus.column)) {
-      index -= 1;
+    // (A linha adaptativa pode já ter sumido — todas voltaram: aí a ativa já é a mestre.)
+    const wasDetail = !!active && ('detailOf' in active || ('fixed' in active && !!active.detail));
+
+    if (adaptiveMoved && adaptiveFocus && wasDetail && navColumns.includes(adaptiveFocus.column)) {
+      index -= this.#rowAt(index)?.isDetail ? 1 : 0;
       col = navColumns.indexOf(adaptiveFocus.column);
       this.#adaptiveFocus = undefined;
     }
@@ -11721,7 +11768,7 @@ export class DataGrid extends LitElement {
     // Valor (ou editor) da linha adaptativa (spec 21).
     const adaptiveValue = this.#adaptiveValueOf(path);
 
-    if (adaptiveValue && this.#onAdaptiveKeyDown(event, adaptiveValue, cell, position)) {
+    if (adaptiveValue && this.#onAdaptiveKeyDown(event, adaptiveValue, cell)) {
       return;
     }
 
@@ -12625,8 +12672,9 @@ export class DataGrid extends LitElement {
       this.#userWidths.has(column) || (column.width !== null && column.width !== undefined)));
 
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
-    const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
-    const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
+    // Pelas classes do layout: fixas que deixaram de grudar (responsivo, spec 21) não reservam espaço.
+    const fixedEnd = layout.reduce((sum, { headerClasses, width }) => sum + (headerClasses['fixed-end'] ? width ?? 0 : 0), 0);
+    const fixedStart = layout.reduce((sum, { headerClasses, width }) => sum + (headerClasses['fixed-start'] ? width ?? 0 : 0), 0);
     // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
     // `--_fixed-*`: o rótulo da banda prende entre as áreas fixas (frente 13).
     const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
@@ -12914,7 +12962,7 @@ export class DataGrid extends LitElement {
           tabindex=${active === column ? 0 : -1}
           style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span>${this.#adaptiveColumns.length
             // Quem chega depois do anúncio (spec 21): o mesmo texto na descrição do cabeçalho.
-            ? html`<span hidden id="adaptive-columns-description">${this.#adaptiveAnnouncementText()}</span>`
+            ? html`<span hidden id="adaptive-columns-description">${this.#adaptiveHeaderDescription()}</span>`
             : nothing}</th>`;
     }
 
@@ -13007,7 +13055,8 @@ export class DataGrid extends LitElement {
     }
 
     const translation = this.#translation;
-    const side = this._fixedOf(column);
+    // Banda fixa só gruda se as filhas grudam (as fixas deixam de grudar no responsivo, spec 21).
+    const side = first.className.split(' ').includes('fixed') ? this._fixedOf(column) : null;
     const alignment = column.alignment ?? 'center';
     const classes: Record<string, boolean> = {
       fixed: !!side,
@@ -13552,12 +13601,21 @@ export class DataGrid extends LitElement {
     const separator = this.#listSeparatorText;
     const last = columns.length - 1;
 
-    return html`<dl class="adaptive-fields" part="adaptive-fields">${map(columns, (column, position) => {
+    // Com chave (a11y): o `<dd>` focado nunca passa a mostrar outra coluna quando uma anterior sai.
+    return html`<dl class="adaptive-fields" part="adaptive-fields">${keyedRows(columns, columnIdOf, column => {
+      const position = columns.indexOf(column);
       const id = columnIdOf(column);
       const labelId = `adaptive-${index}-${id}`;
       const textId = `${labelId}-value`;
-      const bands = this._bandChainOf(column).map(band => band.label ?? '').filter(Boolean);
-      const order = sorting.find(spec => spec.column === column)?.order;
+      const bands = this._bandChainOf(column).map(band => band.label ?? '')
+        .filter(Boolean);
+      const sortPosition = sorting.findIndex(spec => spec.column === column);
+      const order = sorting[sortPosition]?.order;
+      const orderText = order === 'asc' ? translation.sortAscending : translation.sortDescending;
+      // Ordenação múltipla: a prioridade, como na descrição do cabeçalho.
+      const sortText = order && sorting.length > 1 && sortPosition > 0
+        ? formatMessage(translation.columnSortPriority, { order: orderText, priority: String(sortPosition + 1) })
+        : orderText;
       const filtered = hasColumnCondition(filterValue, column);
       const cell = this.#adaptiveCellLayout(column, id);
       const removed = pending?.type === 'remove';
@@ -13585,9 +13643,9 @@ export class DataGrid extends LitElement {
           class="adaptive-label"
           part="adaptive-label"
           id=${labelId}>${bands.length ? html`<span class="adaptive-band">${bands.join(' ')}</span> ` : nothing}<span class="adaptive-label-text">${column.label ?? ''}</span>${order
-            ? html`<svg class="adaptive-mark adaptive-sort ${order}" xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d=${SORT_ARROW_PATH}/></svg><span class="visually-hidden"> ${order === 'asc' ? translation.sortAscending : translation.sortDescending}</span>`
+            ? html`${adaptiveMark(`adaptive-sort ${order}`, SORT_ARROW_PATH)}<span class="visually-hidden"> ${sortText}</span>`
             : nothing}${filtered
-            ? html`<svg class="adaptive-mark adaptive-filter" xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d=${FILTER_MARK_PATH}/></svg><span class="visually-hidden"> ${translation.columnFiltered}</span>`
+            ? html`${adaptiveMark('adaptive-filter', FILTER_MARK_PATH)}<span class="visually-hidden"> ${translation.columnFiltered}</span>`
             : nothing}<span class="adaptive-separator">${translation.adaptiveLabelSeparator}</span></dt><dd
           class=${classMap({ 'adaptive-value': true, modified, invalid: !!error, editing, 'focus-target': !editing })}
           part=${parts.join(' ')}
@@ -13596,7 +13654,7 @@ export class DataGrid extends LitElement {
           aria-labelledby=${ifDefined(editing ? undefined : `${labelId} ${textId}`)}
           aria-invalid=${ifDefined(error && !editing ? 'true' : undefined)}
           aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}>${editing ? content : html`<span class="adaptive-text" id=${textId}>${content}</span>`}${error
-            ? html`<div id=${messageId} class="validation-message" part="validation-message">${error}</div>`
+            ? html`<div id=${ifDefined(messageId)} class="validation-message" part="validation-message">${error}</div>`
             : nothing}${position < last ? html`<span class="visually-hidden">${separator}</span>` : nothing}</dd></div>`;
     })}</dl>`;
   }
@@ -13903,8 +13961,8 @@ export class DataGrid extends LitElement {
                 viewBox="0 -960 960 960"
                 fill="currentColor"
                 aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span></button>${marksId
-                ? html`<span class="visually-hidden" id=${marksId}>${marks!.error}</span>`
-                : nothing}</td>`
+                  ? html`<span hidden id=${marksId}>${marks!.error}</span>`
+                  : nothing}</td>`
         : nothing}
       ${this.#showSelectionColumn && row.fixed ? this.#renderEmptySelectionCell(rowIndex) : nothing}
       ${this.#showSelectionColumn && !row.fixed

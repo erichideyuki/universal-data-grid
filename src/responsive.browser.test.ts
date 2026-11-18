@@ -7,12 +7,25 @@ import { html } from 'lit';
 
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import { commands } from 'vitest/browser';
 
 import type { GridAdaptiveColumnsChangeEventDetail, GridColumnDef, GridRowExpansionChangeEventDetail } from './grid.js';
 import type { DataGrid } from './grid.js';
 import { bodyRows, cleanup, createGrid, headerLabels, settle } from './test/fixture.js';
 
-afterEach(cleanup);
+declare module 'vitest/browser' {
+  interface BrowserCommands {
+    emulateMedia: (options: {
+      forcedColors?: 'active' | 'none' | null;
+      reducedMotion?: 'reduce' | 'no-preference' | null;
+    }) => Promise<void>;
+  }
+}
+
+afterEach(async () => {
+  cleanup();
+  await commands.emulateMedia({ forcedColors: null, reducedMotion: null });
+});
 
 interface Sale {
   id: number;
@@ -119,6 +132,29 @@ describe('colunas ocultas por falta de espaço', () => {
     expect(headerLabels(grid)).toEqual(['Invoice', 'Employee', 'Amount']);
   });
 
+  it('declarativo: auto-hide-columns e hiding-priority (vazio ou texto = sem prioridade)', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <u-grid auto-hide-columns style="display: block; height: 300px; width: 320px">
+        <u-grid-column path="invoice" width="120">Invoice</u-grid-column>
+        <u-grid-column path="city" width="120" hiding-priority="">City</u-grid-column>
+        <u-grid-column path="state" width="120" hiding-priority="x">State</u-grid-column>
+        <u-grid-column path="amount" width="120" hiding-priority="0">Amount</u-grid-column>
+      </u-grid>`;
+    document.body.append(host);
+    const grid = host.querySelector('u-grid')!;
+    grid.items = sales(3);
+    await settle(grid);
+    await settle(grid);
+
+    const [, city, state, amount] = [...host.querySelectorAll('u-grid-column')];
+    expect([city.hidingPriority, state.hidingPriority, amount.hidingPriority]).toEqual([null, null, 0]);
+    expect(grid.autoHideColumns).toBe(true);
+    // Só a com prioridade sai (as outras nunca, mesmo sem caber).
+    expect(grid.getAdaptiveColumns().map(column => column.label)).toEqual(['Amount']);
+    host.remove();
+  });
+
   it('expandir mostra rótulo: valor formatado; evento e aria-expanded', async () => {
     const grid = await createResponsive(500);
     const events: GridRowExpansionChangeEventDetail[] = [];
@@ -149,9 +185,7 @@ describe('colunas ocultas por falta de espaço', () => {
     grid.addEventListener('u-grid-adaptive-columns-change', event => events.push(event.detail));
 
     await resize(grid, 500);
-    expect(events.map(detail => [detail.columns.map(c => c.label), detail.previous.map(c => c.label)])).toEqual([
-      [['Employee', 'Order date', 'Amount'], []],
-    ]);
+    expect(events.map(detail => [detail.columns.map(c => c.label), detail.previous.map(c => c.label)])).toEqual([[['Employee', 'Order date', 'Amount'], []]]);
     expect(Object.isFrozen(events[0].columns)).toBe(true);
   });
 
@@ -175,10 +209,12 @@ describe('colunas ocultas por falta de espaço', () => {
   it('renderer recebe ctx.adaptive', async () => {
     const seen: boolean[] = [];
     const cols = columns();
+
     cols[5].renderer = (item: Sale, ctx) => {
       seen.push(ctx.adaptive);
       return html`<b class="amount">${item.amount}</b>`;
     };
+
     const grid = await createResponsive(500, undefined, sales(3), cols);
     grid.expandRow(grid.items[0]);
     await settle(grid);
@@ -225,7 +261,8 @@ describe('linha adaptativa: teclado', () => {
     const values = [...detailRows(grid)[0].querySelectorAll<HTMLElement>('.adaptive-value')];
     expect(focused(grid)).toBe(values[0]);
     expect(focus.at(-1)?.column?.label).toBe('Employee');
-    expect(values[0].getAttribute('aria-labelledby')?.split(' ').map(id => root(grid).getElementById(id)?.textContent?.trim()))
+    expect(values[0].getAttribute('aria-labelledby')?.split(' ')
+      .map(id => root(grid).getElementById(id)?.textContent?.trim()))
       .toEqual(['Employee:', 'Employee 0']);
 
     await key(grid, 'Tab');
@@ -368,7 +405,6 @@ describe('linha adaptativa: linhas fixas, resumos, exportação', () => {
     expect(hints).toEqual(grid.getAdaptiveColumns().map(() => 'In row details'));
     const input = root(grid).querySelector<HTMLInputElement>('.column-chooser-adaptive input')!;
     expect(input.checked).toBe(true);
-    expect(root(grid).getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBe('In row details');
   });
 });
 
@@ -434,5 +470,172 @@ describe('linha adaptativa: edição', () => {
     await key(grid, 'Escape');
     expect(expansion.map(e => e.expanded)).toEqual([true, false]);
     expect(root(grid).querySelector('.cell-editor')).toBeNull();
+  });
+});
+
+const violations = async (grid: DataGrid): Promise<string[]> =>
+  (await axe.run(grid as unknown as Element)).violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`);
+
+const announcement = (grid: DataGrid): string =>
+  root(grid).querySelector('[role=status][aria-live]')?.textContent?.replace(/\u200b|\u00a0/g, '').trim() ?? '';
+
+const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+describe('acessibilidade do responsivo (entrega)', () => {
+  it('axe: editando, em RTL (ar) e a 320 px', async () => {
+    const grid = await createResponsive(500, g => {
+      g.allowEditing = true;
+    });
+    grid.editCell(grid.items[0], 'amount');
+    await settle(grid);
+    expect(root(grid).querySelector('.adaptive-value .cell-editor')).not.toBeNull();
+    expect(await violations(grid)).toEqual([]);
+
+    const rtl = await createResponsive(320, g => {
+      g.language = 'ar';
+      g.dir = 'rtl';
+    });
+    rtl.expandRow(rtl.items[0]);
+    await settle(rtl);
+    expect(await violations(rtl)).toEqual([]);
+  });
+
+  it('reflow a 320 px: sem rolagem horizontal; fixas que passariam de 50% deixam de grudar', async () => {
+    const cols = columns();
+    cols[0].fixed = 'start';
+    cols[0].width = 140;
+    const grid = await createResponsive(320, undefined, sales(10), cols);
+    const scroller = grid._scrollContainerRef.value!;
+
+    expect(scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth + 1);
+    // 40 (expansão) + 140 (fixa) > 50% de ~305 px: a fixa não gruda.
+    expect(root(grid).querySelector('th.header-column.fixed')).toBeNull();
+    expect(scroller.getAttribute('style') ?? '').toContain('scroll-padding-inline: 40px 0px');
+  });
+
+  it('anúncio: uma vez por rajada, depois de 1 s, só com foco dentro; nada com líquido zero; descrição do cabeçalho', async () => {
+    const grid = await createResponsive(1000);
+    grid.focusCell(grid.items[0], 'invoice');
+    await settle(grid);
+
+    await resize(grid, 700);
+    await resize(grid, 500);
+    expect(announcement(grid)).toBe('');
+    await wait(1100);
+    expect(announcement(grid)).toBe('Columns in row details: Employee, Order date, Amount');
+    const header = root(grid).querySelector('th.detail-toggle-cell')!;
+    expect(root(grid).getElementById(header.getAttribute('aria-describedby')!)?.textContent).toBe('Columns in row details: Employee, Order date, Amount');
+
+    // Líquido zero: estreita e volta na mesma rajada.
+    await resize(grid, 400);
+    await resize(grid, 500);
+    await wait(1100);
+    expect(announcement(grid)).toBe('Columns in row details: Employee, Order date, Amount');
+
+    await resize(grid, 1000);
+    await wait(1100);
+    expect(announcement(grid)).toBe('All columns in the table');
+
+    // Foco fora do grid: nada.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await resize(grid, 500);
+    await wait(1100);
+    expect(announcement(grid)).toBe('All columns in the table');
+  });
+
+  it('valor focado cuja coluna volta: a célula dela na mestre; outra coluna que sai antes não troca o valor focado', async () => {
+    const cols = columns();
+    cols[1].hidingPriority = 1;
+    cols[5].hidingPriority = 0;
+    const grid = await createResponsive(700, undefined, sales(5), cols);
+    expect(grid.getAdaptiveColumns().map(column => column.label)).toEqual(['Amount']);
+
+    grid.focusCell(grid.items[0], 'amount');
+    await settle(grid);
+    expect(focused(grid)?.textContent).toContain('$100.00');
+
+    // City sai ANTES de Amount na lista: o valor focado continua sendo Amount.
+    await resize(grid, 600);
+    expect(grid.getAdaptiveColumns().map(column => column.label)).toEqual(['City', 'Amount']);
+    expect(focused(grid)?.textContent).toContain('$100.00');
+
+    await resize(grid, 1100);
+    expect(grid.getAdaptiveColumns()).toEqual([]);
+    expect(focused(grid)?.tagName).toBe('TD');
+    expect(focused(grid)?.textContent).toContain('$100.00');
+  });
+
+  it('Shift+F10 num valor abre o menu da célula; Esc volta ao valor; Ctrl+C copia aquela coluna', async () => {
+    const grid = await createResponsive(500, g => {
+      g.rowMenu = true;
+    });
+    grid.focusCell(grid.items[0], 'amount');
+    await settle(grid);
+    const value = focused(grid) as HTMLElement;
+
+    await key(grid, 'F10', { shiftKey: true });
+    expect(root(grid).querySelector('[role=menu]')).not.toBeNull();
+    await key(grid, 'Escape');
+    expect(root(grid).querySelector('[role=menu]')).toBeNull();
+    expect(focused(grid)).toBe(value);
+
+    const clipboardData = new DataTransfer();
+    value.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+    expect(clipboardData.getData('text/plain')).toBe('$100.00');
+  });
+
+  it('marcas na célula de expansão: alterada e inválida com a linha fechada; anel de foco visível (forced-colors também)', async () => {
+    const cols = columns();
+    cols[5].validationRules = [{ type: 'range', max: 50 }];
+    const grid = await createResponsive(500, g => {
+      g.allowEditing = true;
+      g.editMode = 'batch';
+    }, sales(3), cols);
+
+    grid.editCell(grid.items[0], 'amount');
+    await settle(grid);
+    await type(grid, '70');
+    await key(grid, 'Enter');
+    grid.collapseRow(grid.items[0]);
+    await settle(grid);
+
+    const toggle = masterRows(grid)[0].querySelector<HTMLElement>('td.detail-toggle-cell')!;
+    expect(toggle.getAttribute('aria-invalid')).toBe('true');
+    expect(root(grid).getElementById(toggle.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Amount: /);
+
+    toggle.focus();
+    toggle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true, composed: true }));
+    expect(getComputedStyle(toggle).outlineStyle).not.toBe('none');
+    expect(getComputedStyle(toggle).outlineColor).not.toBe(getComputedStyle(toggle).getPropertyValue('--u-color-error'));
+
+    await commands.emulateMedia({ forcedColors: 'active' });
+    expect(getComputedStyle(toggle).outlineStyle).toBe('solid');
+    expect(await violations(grid)).toEqual([]);
+  });
+
+  it('modo linha: Esc fecha a linha adaptativa e o foco volta à célula da mestre onde a edição começou', async () => {
+    const grid = await createResponsive(700, g => {
+      g.allowEditing = true;
+      g.editMode = 'row';
+    });
+    grid.focusCell(grid.items[0], 'city');
+    await settle(grid);
+    await key(grid, 'Enter');
+    expect(detailRows(grid)).toHaveLength(1);
+
+    await key(grid, 'Escape');
+    expect(detailRows(grid)).toHaveLength(0);
+    expect(focused(grid)?.textContent?.trim()).toBe('City 0');
+  });
+
+  it('seletor: o checkbox descreve a ação e a dica', async () => {
+    const grid = await createResponsive(500, g => {
+      g.columnChooser = true;
+    });
+    grid.openColumnChooser();
+    await settle(grid);
+    const input = root(grid).querySelector<HTMLInputElement>('.column-chooser-adaptive input')!;
+    const texts = input.getAttribute('aria-describedby')!.split(' ').map(id => root(grid).getElementById(id)?.textContent);
+    expect(texts).toEqual(['Hide column', 'In row details']);
   });
 });

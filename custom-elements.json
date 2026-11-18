@@ -467,7 +467,7 @@
               "name": "header-filter"
             },
             {
-              "description": "Cells and header of the master-detail toggle column.",
+              "description": "Cells and header of the row details toggle column (master-detail and `autoHideColumns`).",
               "name": "detail-toggle-cell"
             },
             {
@@ -481,6 +481,22 @@
             {
               "description": "The full-width cell of a detail row.",
               "name": "detail-cell"
+            },
+            {
+              "description": "The list (`<dl>`) of the values of the columns hidden by `autoHideColumns`, in the detail cell.",
+              "name": "adaptive-fields"
+            },
+            {
+              "description": "A label + value pair of `adaptive-fields`.",
+              "name": "adaptive-field"
+            },
+            {
+              "description": "The label (`<dt>`) of a hidden column: band path, column label, sort and filter marks.",
+              "name": "adaptive-label"
+            },
+            {
+              "description": "The value (`<dd>`) of a hidden column (with `modified`/`invalid` like the cell).",
+              "name": "adaptive-value"
             },
             {
               "description": "Fixed rows (`fixedTopItems`/`fixedBottomItems`; with `row`, `odd`/`even`, never `selected`).",
@@ -551,11 +567,11 @@
               "name": "search-highlight"
             },
             {
-              "description": "Edited, unsaved data cells (with `cell`).",
+              "description": "Edited, unsaved data cells (with `cell` or `adaptive-value`).",
               "name": "modified"
             },
             {
-              "description": "Data cells with a validation error (with `cell`).",
+              "description": "Data cells with a validation error (with `cell` or `adaptive-value`).",
               "name": "invalid"
             },
             {
@@ -571,7 +587,7 @@
               "name": "cell-editor"
             },
             {
-              "description": "The validation error shown below an invalid cell.",
+              "description": "The validation error shown below an invalid cell or row details value.",
               "name": "validation-message"
             },
             {
@@ -644,7 +660,7 @@
                 "text": "GridDetailRenderer | null"
               },
               "default": "null",
-              "description": "Builds the detail of a row (master-detail; property only). With it, a\ntoggle column appears at the start and each expanded row is followed by\na full-width detail row (variable height). Returning `null` renders an\nempty detail row."
+              "description": "Builds the detail of a row (master-detail; property only). With it, a\ntoggle column appears at the start and each expanded row is followed by\na full-width detail row (variable height). Returning `null` renders an\nempty detail row. With `autoHideColumns`, the values of the hidden\ncolumns come first in the detail row."
             },
             {
               "kind": "field",
@@ -653,8 +669,18 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
+              "description": "Detail rows start expanded (also the row details of `autoHideColumns`).\nINITIAL default: afterwards expansion is grid state (`expandRow`,\n`collapseRow`); changing it resets that state (no event).",
               "attribute": "auto-expand-rows"
+            },
+            {
+              "kind": "field",
+              "name": "autoHideColumns",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Hides columns automatically when the grid itself is too narrow for them\n(its own width, not the window's), by `hidingPriority` (or from the last\ncolumn); fixed columns never hide and at least one column stays. The\nvalues of the hidden (\"adaptive\") columns move to the row details: the\ntoggle column appears and `expandRow`/`collapseRow` work even without\n`detailRenderer`. Layout only: hidden columns stay visible in the column\nchooser, `getState()`, exports, row copies, the search and the filters.\nSee `getAdaptiveColumns()` and `u-grid-adaptive-columns-change`.",
+              "attribute": "auto-hide-columns"
             },
             {
               "kind": "field",
@@ -662,7 +688,7 @@
               "type": {
                 "text": "readonly any[]"
               },
-              "description": "Rows fixed (\"pinned\") right below the column headers (property only):\nthe host's own items, rendered with the grid columns (formatting, cell\n`renderer`, `rowRenderer`). They stay out of sorting, filtering, the\nsearch, grouping, paging (shown on every page), `getTotalCount()` and\nthe summaries; they are not selectable, editable nor expandable. The\nsame object may also be in `items` (it shows in both places).",
+              "description": "Rows fixed (\"pinned\") right below the column headers (property only):\nthe host's own items, rendered with the grid columns (formatting, cell\n`renderer`, `rowRenderer`). They stay out of sorting, filtering, the\nsearch, grouping, paging (shown on every page), `getTotalCount()` and\nthe summaries; they are not selectable nor editable. They expand like\nbody rows (`detailRenderer`, columns hidden by `autoHideColumns`), by\nrow key: a key also in the body expands in both places. The\nsame object may also be in `items` (it shows in both places).",
               "default": "[]"
             },
             {
@@ -1520,7 +1546,7 @@
                   }
                 }
               ],
-              "description": "Expands the detail of the row `rowKey` (master-detail; without\n`detailRenderer` it does nothing). A key not in the rows (filtered out,\nin a collapsed group, not in `items`) keeps the state — and the key —\nuntil collapsed; parent groups are not expanded."
+              "description": "Expands the detail of the row `rowKey` (master-detail, and the values of\nthe columns hidden by `autoHideColumns`; with neither `detailRenderer`\nnor `autoHideColumns` it does nothing; with `autoHideColumns` the state is\nkept even while no column is hidden). A key not in the rows (filtered out,\nin a collapsed group, not in `items`) keeps the state — and the key —\nuntil collapsed; parent groups are not expanded."
             },
             {
               "kind": "method",
@@ -1556,7 +1582,7 @@
                   }
                 }
               ],
-              "description": "Whether the detail of the row `rowKey` is (or would be) expanded; `false` without `detailRenderer`."
+              "description": "Whether the detail of the row `rowKey` is (or would be) expanded; `false`\nwith neither `detailRenderer` nor `autoHideColumns`."
             },
             {
               "kind": "method",
@@ -1862,7 +1888,7 @@
                   }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a shown (user-visible), ungrouped\ncolumn (a band returns `false`). A column hidden by `autoHideColumns`\nopens the row details (`u-grid-row-expansion-change`, `source: 'api'`)\nand focuses its value. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
             },
             {
               "kind": "method",
@@ -1886,7 +1912,7 @@
                   }
                 }
               ],
-              "description": "Opens the editor of a cell (focus goes to it). In `row` mode it opens the\nwhole row with the focus on that cell. Returns `false` when the row is\nnot in the grid, the cell is not editable, a save is running or\n`u-grid-edit-starting` was canceled."
+              "description": "Opens the editor of a cell (focus goes to it). In `row` mode it opens the\nwhole row with the focus on that cell. A column hidden by\n`autoHideColumns` opens the row details (`u-grid-row-expansion-change`,\n`source: 'api'`) and edits its value there. Returns `false` when the row is\nnot in the grid, the cell is not editable, a save is running or\n`u-grid-edit-starting` was canceled."
             },
             {
               "kind": "method",
@@ -2179,6 +2205,16 @@
             },
             {
               "kind": "method",
+              "name": "getAdaptiveColumns",
+              "return": {
+                "type": {
+                  "text": "GridColumnDef[]"
+                }
+              },
+              "description": "Columns hidden now because the grid is too narrow (`autoHideColumns`),\nin column order: their values are in the row details. A copy; `[]` when\n`autoHideColumns` is off, before the first layout and on the server."
+            },
+            {
+              "kind": "method",
               "name": "copySelection",
               "return": {
                 "type": {
@@ -2243,7 +2279,7 @@
               "type": {
                 "text": "CustomEvent<GridRowExpansionChangeEventDetail>"
               },
-              "description": "A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`)."
+              "description": "A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`, a row edit or `focusCell`/`editCell` that opened the details of a column hidden by `autoHideColumns`; not `autoExpandRows`)."
             },
             {
               "name": "u-grid-group-expansion-change",
@@ -2323,6 +2359,13 @@
               "description": "Before Ctrl/Cmd+V or the cell menu \"Paste\" pastes into editable cells (`clipboard-mode=\"copy-paste\"`; user only). Cancelable: nothing changes (on Ctrl/Cmd+V the native paste goes on)."
             },
             {
+              "name": "u-grid-adaptive-columns-change",
+              "type": {
+                "text": "CustomEvent<GridAdaptiveColumnsChangeEventDetail>"
+              },
+              "description": "The columns hidden for lack of space changed (`autoHideColumns`: the grid width, the columns, their widths or the property itself), after the render. Layout only: no `source`, not cancelable."
+            },
+            {
               "name": "u-grid-column-reorder",
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
@@ -2390,7 +2433,7 @@
               "type": {
                 "text": "CustomEvent<GridFocusChangeEventDetail>"
               },
-              "description": "The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter nor a relocation)."
+              "description": "The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter; a relocation fires only when the active column hides or comes back with `autoHideColumns`, `source: 'api'`)."
             },
             {
               "name": "u-grid-exporting",
@@ -2465,8 +2508,17 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
+              "description": "Detail rows start expanded (also the row details of `autoHideColumns`).\nINITIAL default: afterwards expansion is grid state (`expandRow`,\n`collapseRow`); changing it resets that state (no event).",
               "fieldName": "autoExpandRows"
+            },
+            {
+              "name": "auto-hide-columns",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Hides columns automatically when the grid itself is too narrow for them\n(its own width, not the window's), by `hidingPriority` (or from the last\ncolumn); fixed columns never hide and at least one column stays. The\nvalues of the hidden (\"adaptive\") columns move to the row details: the\ntoggle column appears and `expandRow`/`collapseRow` work even without\n`detailRenderer`. Layout only: hidden columns stay visible in the column\nchooser, `getState()`, exports, row copies, the search and the filters.\nSee `getAdaptiveColumns()` and `u-grid-adaptive-columns-change`.",
+              "fieldName": "autoHideColumns"
             },
             {
               "name": "key-expr",
@@ -3595,6 +3647,16 @@
             },
             {
               "kind": "field",
+              "name": "hidingPriority",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "description": "Order in which the column leaves the table when the grid is too narrow\n(`auto-hide-columns`; its values move to the row details): the lowest\ngoes first, ties from the end. When any column has a `hiding-priority`\n(grouped or hidden ones included), only those columns hide; otherwise\ncolumns hide from the last one. Fixed columns never hide. Empty or not a\nnumber = none. Ignored on bands.",
+              "attribute": "hiding-priority"
+            },
+            {
+              "kind": "field",
               "name": "resizable",
               "type": {
                 "text": "boolean | null"
@@ -3884,6 +3946,15 @@
               "default": "null",
               "description": "Maximum width in px when resizing and auto-sizing.",
               "fieldName": "maxWidth"
+            },
+            {
+              "name": "hiding-priority",
+              "type": {
+                "text": "number | null"
+              },
+              "default": "null",
+              "description": "Order in which the column leaves the table when the grid is too narrow\n(`auto-hide-columns`; its values move to the row details): the lowest\ngoes first, ties from the end. When any column has a `hiding-priority`\n(grouped or hidden ones included), only those columns hide; otherwise\ncolumns hide from the last one. Fixed columns never hide. Empty or not a\nnumber = none. Ignored on bands.",
+              "fieldName": "hidingPriority"
             },
             {
               "name": "resizable",

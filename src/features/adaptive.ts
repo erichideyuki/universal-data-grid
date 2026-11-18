@@ -45,7 +45,7 @@ export const adaptiveHiddenIndexes = (
   });
 
   if (anyPriority) {
-    order.sort((a, b) => (columns[a].priority as number) - (columns[b].priority as number) || b - a);
+    order.sort((a, b) => (columns[a].priority!) - (columns[b].priority!) || b - a);
   } else {
     order.reverse();
   }

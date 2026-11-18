@@ -344,6 +344,34 @@ resumos, foco, anúncio), `grid-column-def.ts`, `grid-column.ts`,
 - Desempenho (`responsive-1m`, perfil fraco): estreitar ~13 ms, alargar
   ~9 ms, rolar com linhas adaptativas abertas no mesmo patamar do detalhe.
 
+## Revisão da entrega (2026-11-18)
+- API (`webcomponent-api-reviewer`): sem ALTA; acatados — `focusCell` com
+  coluna oculta também nas linhas fixas, JSDoc/README de `focusCell`,
+  `editCell`, `u-grid-focus-change` (realocação com `source: 'api'`),
+  `adaptive` nos contextos, parts `modified`/`invalid`/`validation-message`
+  com `adaptive-value`, "qualquer coluna conta (agrupadas/ocultas também)"
+  no `hidingPriority`, textos do README (empate na ordem das colunas,
+  `150 × font-size/16` dentro do `maxWidth`), linha única do
+  `<u-grid-column>` no README.
+- A11y (`a11y-reviewer`): acatados — anel de foco visível na célula de
+  expansão com erro (também em `forced-colors`); lista de campos com chave
+  por coluna (o valor focado não troca de coluna quando outra sai antes);
+  `scroll-padding-inline` e banda só contam fixas que de fato grudam; erro
+  da célula de expansão só na descrição (`hidden`); seletor descreve a ação
+  e a dica; prioridade da ordenação múltipla no rótulo; ordenação/filtro
+  das ocultas na descrição do cabeçalho da expansão; valor focado cuja
+  coluna volta → célula dela mesmo quando a linha adaptativa some; testes
+  de axe (editando, RTL, 320 px), reflow, anúncio, menu/cópia no valor,
+  marcas, modo linha e seletor.
+- Pendentes (mudam API ou comportamento visível — para o aval do usuário):
+  (1) anúncio com mais de 3 colunas sai "Columns in row details: 5" — uma
+  chave com contagem própria (`adaptiveColumnsCountAnnouncement`) leria
+  melhor; (2) quando todas as colunas voltam com o foco na célula de
+  expansão, o foco vai à 1ª célula de dados, não à coluna em que o usuário
+  estava antes de ela sair. Justificado: resumo de coluna oculta no rodapé
+  de GRUPO pode ficar cortado (linha virtual de altura fixa); o nome
+  acessível tem o texto inteiro.
+
 ## Critério de pronto
 `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run lint`
 verdes; README (seção "Responsive columns" + API reference) e

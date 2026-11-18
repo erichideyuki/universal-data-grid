@@ -30,8 +30,8 @@ export const optionalNumberAttribute: ComplexAttributeConverter<number | null> =
       return null;
     }
 
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   },
   toAttribute: (value: number | null): string | null => value === null || value === undefined ? null : String(value),
 };
