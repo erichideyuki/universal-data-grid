@@ -9,6 +9,38 @@ import { RowList, type RowKeyOf } from './flatten.js';
  * `n` é a raiz.
  */
 
+/** Chave → índice do nó (1ª ocorrência). */
+export interface KeyLookup {
+  get(key: unknown): number | undefined;
+  has(key: unknown): boolean;
+}
+
+/**
+ * Chaves inteiras não negativas e densas (o caso comum: ids numéricos): uma
+ * tabela `Int32Array` em vez de um `Map` de 1 milhão de entradas (spec 16:
+ * memória e tempo de montagem).
+ */
+class DenseKeys implements KeyLookup {
+  readonly #table: Int32Array;
+
+  constructor(table: Int32Array) {
+    this.#table = table;
+  }
+
+  get(key: unknown): number | undefined {
+    if (typeof key !== 'number' || !Number.isInteger(key) || key < 0 || key >= this.#table.length) {
+      return undefined;
+    }
+
+    const index = this.#table[key];
+    return index < 0 ? undefined : index;
+  }
+
+  has(key: unknown): boolean {
+    return this.get(key) !== undefined;
+  }
+}
+
 /** Índice estrutural: muda só com `items` ou com as expressões. */
 export interface TreeIndex {
   /** Todos os nós. Plana: o próprio `items`; aninhada: pré-ordem. */
@@ -20,7 +52,7 @@ export interface TreeIndex {
   /** Ordem em que todo pai vem antes dos filhos (`null` = a própria ordem de `nodes`). */
   readonly topo: Int32Array | null;
   /** Chave → índice (1ª ocorrência). */
-  readonly keyIndex: Map<unknown, number>;
+  readonly keyIndex: KeyLookup;
   /** Nós com pai inexistente (viraram raiz). */
   readonly orphans: number;
   /** Nós que fechavam um ciclo (viraram raiz) ou repetidos na entrada aninhada (ignorados). */
@@ -36,6 +68,55 @@ const isRootValue = (value: unknown, rootValue: unknown): boolean =>
   value === null || value === undefined || value === rootValue
   || (rootValue !== null && rootValue !== undefined && String(value) === String(rootValue));
 
+/** Tabela densa das chaves (todas inteiras ≥ 0 e até 4× o número de nós) ou um `Map`. */
+const keyLookup = (keys: readonly unknown[]): { lookup: KeyLookup; duplicates: number } => {
+  const n = keys.length;
+  let max = -1;
+  let dense = true;
+
+  for (let i = 0; i < n && dense; i++) {
+    const key = keys[i];
+
+    if (typeof key === 'number' && Number.isInteger(key) && key >= 0 && key < 4 * n + 1024) {
+      max = Math.max(max, key);
+    } else {
+      dense = false;
+    }
+  }
+
+  let duplicates = 0;
+
+  if (dense) {
+    const table = new Int32Array(max + 1).fill(-1);
+
+    for (let i = 0; i < n; i++) {
+      const key = keys[i] as number;
+
+      if (table[key] >= 0) {
+        duplicates++;
+      } else {
+        table[key] = i;
+      }
+    }
+
+    return { lookup: new DenseKeys(table), duplicates };
+  }
+
+  const map = new Map<unknown, number>();
+
+  for (let i = 0; i < n; i++) {
+    const key = keys[i];
+
+    if (map.has(key)) {
+      duplicates++;
+    } else {
+      map.set(key, i);
+    }
+  }
+
+  return { lookup: map, duplicates };
+};
+
 /**
  * Entrada plana: cada item diz a chave do pai. `rootValue`, `null`,
  * `undefined` ou pai inexistente = raiz. Um ciclo é cortado no nó em que a
@@ -48,21 +129,17 @@ export const buildFlatIndex = (
   rootValue: unknown,
 ): TreeIndex => {
   const n = items.length;
-  const keyIndex = new Map<unknown, number>();
-  let duplicates = 0;
+  const keys = new Array<unknown>(n);
 
   for (let i = 0; i < n; i++) {
-    const key = keyOf(items[i]);
-
-    if (keyIndex.has(key)) {
-      duplicates++;
-    } else {
-      keyIndex.set(key, i);
-    }
+    keys[i] = keyOf(items[i]);
   }
 
+  const { lookup: keyIndex, duplicates } = keyLookup(keys);
   const parent = new Int32Array(n);
   let orphans = 0;
+  // Pais sempre antes dos filhos (o caso comum): níveis numa passada só.
+  let ordered = true;
 
   for (let i = 0; i < n; i++) {
     const value = parentOf(items[i]);
@@ -81,16 +158,26 @@ export const buildFlatIndex = (
     }
 
     parent[i] = p;
+    ordered &&= p < i;
+  }
+
+  const level = new Int32Array(n);
+
+  if (ordered) {
+    for (let i = 0; i < n; i++) {
+      const p = parent[i];
+      level[i] = p < 0 ? 0 : level[p] + 1;
+    }
+
+    return { nodes: items, parent, level, topo: null, keyIndex, orphans, cycles: 0, duplicates };
   }
 
   // Profundidade e ordem topológica; 0 = por visitar, 1 = na pilha, 2 = pronto.
-  const level = new Int32Array(n);
   const state = new Uint8Array(n);
   const topo = new Int32Array(n);
   const path: number[] = [];
   let next = 0;
   let cycles = 0;
-  let sorted = true;
 
   for (let i = 0; i < n; i++) {
     if (state[i] === 2) {
@@ -119,11 +206,10 @@ export const buildFlatIndex = (
       level[current] = p < 0 ? 0 : level[p] + 1;
       state[current] = 2;
       topo[next++] = current;
-      sorted &&= current === next - 1;
     }
   }
 
-  return { nodes: items, parent, level, topo: sorted ? null : topo, keyIndex, orphans, cycles, duplicates };
+  return { nodes: items, parent, level, topo, keyIndex, orphans, cycles, duplicates };
 };
 
 /**
@@ -500,6 +586,7 @@ export const recursiveSelectionChange = (
   const marked = new Set<number>();
   const { childStart, children } = structure;
   const state = (candidate: number): boolean => marked.has(candidate) ? select : isSelected(candidate);
+
   const mark = (candidate: number) => {
     if (state(candidate) !== select && !marked.has(candidate)) {
       changed.push(candidate);

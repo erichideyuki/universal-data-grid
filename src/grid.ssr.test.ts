@@ -383,3 +383,42 @@ describe('SSR das linhas fixas e da linha inteira (frente 20)', () => {
     expect(output.match(/class="full-width-cell"/g)).toHaveLength(1);
   });
 });
+
+describe('SSR da árvore (frente 25)', () => {
+  it('árvore plana expandida e filtrada, em pt e ar/RTL: treegrid, níveis, posição e botão', async () => {
+    const treeColumns: GridColumnDef[] = [{ path: 'name', label: 'Name' }, { path: 'size', label: 'Size' }];
+    const treeItems = [
+      { id: 1, parentId: null, name: 'Docs', size: 3 },
+      { id: 2, parentId: 1, name: 'Spec', size: 1 },
+      { id: 3, parentId: 1, name: 'Notes', size: 2 },
+      { id: 4, parentId: null, name: 'Src', size: 5 },
+    ];
+
+    for (const language of ['pt', 'ar']) {
+      const output = await renderToString(html`
+        <u-grid
+          language=${language}
+          dir=${language === 'ar' ? 'rtl' : 'ltr'}
+          tree-mode="flat"
+          key-expr="id"
+          parent-key-expr="parentId"
+          auto-expand-nodes
+          .columns=${treeColumns}
+          .items=${treeItems}></u-grid>`);
+
+      expect(output).toMatch(/<table[^>]*role="treegrid"/);
+      expect(output).toContain('aria-level="2"');
+      expect(output).toContain('aria-setsize="2"');
+      expect(output).toContain('part="tree-toggle-button"');
+      expect(output).toContain('Notes');
+    }
+
+    const filtered = await renderToString(html`
+      <u-grid tree-mode="flat" key-expr="id" parent-key-expr="parentId" search-text="Notes"
+        .columns=${treeColumns} .items=${treeItems}></u-grid>`);
+
+    expect(filtered).toContain('Docs');
+    expect(filtered).toContain('Notes');
+    expect(filtered).not.toContain('Spec');
+  });
+});

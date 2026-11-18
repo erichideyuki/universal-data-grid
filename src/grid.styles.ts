@@ -2453,4 +2453,106 @@ export const styles = css`
       border-block-start: 1px solid CanvasText;
     }
   }
+
+  /* ------------------------------------------------------- árvore (frente 25) */
+
+  /* Recuo por nível (lado inicial: espelha em RTL), botão e conteúdo cortado com reticências. */
+  /* O botão de 24 px (WCAG 2.5.8) cabe na altura da linha: sem o respiro vertical da célula. */
+  td.tree-cell {
+    padding-block: 0;
+  }
+
+  .tree-node {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    /* Recuo com teto: o botão e 3 caracteres do conteúdo sempre cabem (WCAG 1.4.10). */
+    padding-inline-start: min(calc(var(--_tree-level, 0) * var(--u-grid-tree-indent, 24px)), calc(100% - 24px - 3ch));
+  }
+
+  .tree-content {
+    flex: 1 1 auto;
+    /* Recuo profundo (WCAG 1.4.10): o texto não some de todo. */
+    min-width: 3ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wrap .tree-content {
+    white-space: normal;
+  }
+
+  .tree-toggle,
+  .tree-toggle-spacer {
+    flex: none;
+    /* Alvo de 24×24 (WCAG 2.5.8). */
+    inline-size: 24px;
+    block-size: 24px;
+    min-inline-size: 24px;
+    min-block-size: 24px;
+  }
+
+  .tree-toggle {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 24px;
+    block-size: 24px;
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: var(--u-grid-group-toggle-shape, 50%);
+    color: var(--u-grid-tree-toggle-color, var(--_toggle-color));
+  }
+
+  .tree-toggle:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  :host(:dir(rtl)) .tree-toggle:not(.expanded) .toggle-icon {
+    transform: scaleX(-1);
+  }
+
+  .tree-spinner {
+    box-sizing: border-box;
+    inline-size: 14px;
+    block-size: 14px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-block-start-color: currentColor;
+    animation: u-grid-spin 0.8s linear infinite;
+  }
+
+  .tree-summary {
+    flex: none;
+    margin-inline-start: 8px;
+    opacity: 0.8;
+  }
+
+  .node-summary {
+    font-weight: var(--u-grid-summary-cell-font-weight, 500);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tree-spinner {
+      animation: none;
+    }
+
+    .tree-toggle .toggle-icon {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .tree-toggle {
+      color: ButtonText;
+    }
+
+    .tree-spinner {
+      border-color: CanvasText;
+      border-block-start-color: transparent;
+    }
+  }
 `;

@@ -81,7 +81,7 @@ export interface GridExportColumn<TItem = any> {
 /** A data row. `values[i]` / `texts[i]` belong to `columns[i]`. */
 export interface GridExportDataRow<TItem = any> {
   rowType: 'data';
-  /** Indentation level: the number of grouping levels above the row (0 without groups). */
+  /** Indentation level: the number of grouping levels above the row (0 without groups), or the depth of a tree node (0 = root; kept with `includeGroups: false`). */
   level: number;
   item: TItem;
   /** Cell values (`valueGetter` or `path`). */

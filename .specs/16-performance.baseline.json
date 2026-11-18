@@ -230,6 +230,19 @@
     "domNodes": 619,
     "gridHeapMiB": 14.3
   },
+  "tree-1m": {
+    "firstRenderMs": 218.8,
+    "expandAllNodesMs": 91.2,
+    "scrollP95Ms": 5.8,
+    "scrollWorstMs": 8.9,
+    "jumpP95Ms": 18.8,
+    "jumpWorstMs": 20.1,
+    "treeFilterMs": 156.7,
+    "treeSortMs": 165.6,
+    "collapseAllNodesMs": 7.4,
+    "domNodes": 163,
+    "gridHeapMiB": 1.1
+  },
   "wide-1m": {
     "firstRenderMs": 55.8,
     "scrollP95Ms": 10.1,

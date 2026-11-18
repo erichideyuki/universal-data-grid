@@ -365,3 +365,26 @@ caixa) e uma `gridcell` com `aria-colspan`, Enter/F2/Esc como o detalhe.
 Corrigido junto: o conteúdo do detalhe (frente 10) não ficava na largura
 visível ao rolar na horizontal (a `--_viewport-inline-size` era apagada pelo
 `style` do template e o `overflow: hidden` da célula prendia o sticky).
+
+## Frente 25 — dados em árvore
+
+`role="treegrid"` com `treeMode`; cada nó com `aria-level` (profundidade + 1;
+no `match-only`, o nível para onde subiu), `aria-setsize`/`aria-posinset`
+explícitos entre os irmãos exibidos (o conjunto inteiro mesmo com
+paginação; esqueleto, rodapé de resumos, linha nova, fixas e totais sem
+eles) e `aria-expanded` só com filhos (ou `hasChildren` remoto) — também na
+`gridcell` da coluna da árvore, para o leitor ler a mudança com o foco na
+célula (🔎 conferir NVDA/JAWS no roteiro manual). Botão de expandir
+`aria-hidden`, `tabindex="-1"`, alvo 24×24 em CSS próprio; o clique foca a
+célula da árvore. Teclado da APG treegrid adaptado ao foco de célula (aval
+do usuário): na célula da árvore `→` expande o recolhido (senão anda), `←`
+recolhe o expandido, senão vai ao pai (raiz: anda); `*` expande os irmãos
+com anúncio "Expanded rows: {count}"; Enter alterna só sem edição e sem
+conteúdo interativo. Recolher com a célula ativa num descendente leva a
+célula ativa à do nó (o foco do DOM só acompanha se já estava no grid);
+descartar um filho novo devolve à célula da árvore do pai. Carga remota:
+"Loading child rows" só passando de 1 s, "Child rows loaded: {count}" ou o
+erro sempre. Seleção recursiva exige as caixas (o misto só aparece nelas:
+`aria-checked="mixed"`, linha `aria-selected="false"`). RTL: recuo por
+`padding-inline-start`, seta espelhada recolhida; `forced-colors`: botão
+`ButtonText`, indicador `CanvasText`; movimento reduzido: sem giro.

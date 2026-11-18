@@ -332,5 +332,70 @@ Chaves da seção API, nos 14 idiomas.
 `npm test`, `npm run test:perf`, `typecheck`, `lint` verdes; README e
 `custom-elements.json`; revisores na entrega.
 
+## Decisões na implementação
+- Row model: `buildFlatIndex`/`buildNestedIndex` → `treeVisibility` (modo
+  do filtro) → `buildTreeView` (CSR dos filhos visíveis na ordem de UMA
+  ordenação global estável: irmãos ordenados sem ordenar por nível) →
+  `flattenTree` (`RowList.pushTreeRun`, um segmento por trecho de irmãos).
+  O `DataRow` ganhou `tree: { node, level, posInSet, setSize }` (`node: -1`
+  no esqueleto e na linha nova). Chaves inteiras ≥ 0 e densas usam uma
+  tabela `Int32Array` em vez do `Map` (1,1 mi de nós: índice de ~200 ms →
+  ~25 ms, heap do grid de 29 → 1 MiB); níveis numa passada quando os pais
+  vêm antes dos filhos.
+- No grid, o modo árvore usa os nós como `#items` (filtro, ordenação,
+  postos, tipos e totais reaproveitados) e os resumos de nó ocupam o lugar
+  dos de grupo (`#groupSpecs`): rodapé, `inline` e `column` reaproveitam o
+  render dos grupos. Agrupamento guardado ao ligar a árvore e devolvido ao
+  desligar (sem evento); `groupColumn`/arrasto/Ctrl+G avisam e não agrupam.
+- Fonte remota: a raiz pela consulta normal (`GridLoadOptions.tree`); os
+  filhos por `#request` direto com o filtro/ordenação da última consulta
+  (`#treeQuery`), em lote por microtask. Um nó remoto por carregar só
+  aparece expandido com carga em voo ou expandido explicitamente (estado
+  restaurado com padrão recolhido: a carga é pedida no achatamento).
+- Linha nova filha: âncora = linha logo abaixo do pai (o pai e os
+  ancestrais expandem); salvar com `items` copia a fonte (plana: no fim da
+  lista; aninhada: só o caminho, com `childrenExpr` texto simples).
+- `getState().nodeExpansion` só no modo árvore (sem ela o estado de quem
+  não usa árvore não muda).
+- Itens do menu da linha `expandNode`/`collapseNode`/`addChildRow` entram
+  em `GridContextMenuItemName`.
+- Desempenho (perfil fraco, `tree-1m`): 1º render 219 ms, expandir tudo
+  91 ms, filtrar 157 ms, ordenar 166 ms, recolher tudo 7 ms, rolagem p95
+  6 ms, heap do grid 1,1 MiB.
+
+## Revisão na entrega
+- API (`webcomponent-api-reviewer`): parts próprios `node-footer-row` e
+  `node-summary` (antes reaproveitavam `group-footer-row`; **nomes novos,
+  pendentes de aval do usuário**); `expandAllNodes`/`collapseAllNodes` só
+  disparam com mudança; `addRow` com `parentKey` que não é nó não adiciona
+  (`null`, aviso) e a expansão dos ancestrais dispara o evento;
+  `GridLoadOptions.tree` opcional (ausente = lista); `GridNodeSummaryItem`
+  como interface com o texto do nó; `childrenExpr` aceita `null`;
+  `selectedOnly` exporta também os nós marcados de ramos recolhidos; JSDoc
+  e README completados (seleção recursiva, menu, `isNodeExpanded` = o
+  mostrado, cancelamento em `u-grid-loading`).
+- A11y (`a11y-reviewer`, sem ALTA): esqueleto da carga fora da navegação
+  (↑/↓ pulam); ← vai ao pai em outra página (troca a página); ← na linha
+  nova filha vai ao pai; `collapseAllNodes` com o esqueleto ativo leva à
+  raiz; célula da árvore sem respiro vertical (a linha fica na altura de
+  `row-height`, o botão de 24 px cabe) e recuo com teto (botão + 3
+  caracteres sempre visíveis); `aria-level="1"` no rodapé de totais da
+  árvore; roteiros de foco e axe novos (esqueleto, rodapé de nó, filho
+  novo). Ficam: emulação de `forced-colors`/movimento reduzido nos testes
+  e o roteiro manual NVDA/JAWS (`aria-expanded` na linha e na célula: se
+  ler duas vezes, manter só na célula).
+
 ## Referência medida
-(preenchida na implementação)
+Pela documentação pública (2026-11-18), sem copiar código:
+- DevExtreme TreeList: `filterMode` padrão `withAncestors` (também
+  `fullBranch`, `matchOnly`); `expandNodesOnFiltering` padrão `true`;
+  `rootValue` padrão `0` na entrada plana (`null`/`undefined` também são
+  raiz); `hasItemsExpr` para a carga remota; `autoExpandAll` carrega tudo
+  e desliga as operações remotas (aqui: "tudo" só alcança os carregados,
+  sem cascata — decisão aprovada); `expandedRowKeys` exige os ancestrais
+  (aqui: idem, a expansão é por nó).
+- AG Grid Tree Data: o filtro mantém ancestrais e mostra os filhos de um
+  pai que passa (= `full-branch`); agregação substitui o valor do pai (=
+  `display: 'column'`); `groupDefaultExpanded` (= `autoExpandNodes`).
+- Teclado: segue a APG treegrid adaptada ao foco de célula (aprovado), não
+  o DevExtreme.

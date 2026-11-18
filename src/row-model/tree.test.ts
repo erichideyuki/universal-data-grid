@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { DataRow } from './types.js';
 import {
   ancestorsOfMatches,
   buildFlatIndex,
@@ -15,10 +14,11 @@ import {
   type TreeIndex,
   treeVisibility,
 } from './tree.js';
+import type { DataRow } from './types.js';
 
-interface Node { id: number; parentId?: number | null; name: string; children?: Node[] }
+interface TreeItem { id: number; parentId?: number | null; name: string; children?: TreeItem[] }
 
-const flat: Node[] = [
+const flat: TreeItem[] = [
   { id: 1, parentId: 0, name: 'a' },
   { id: 2, parentId: 1, name: 'a1' },
   { id: 3, parentId: 1, name: 'a2' },
@@ -27,15 +27,17 @@ const flat: Node[] = [
   { id: 6, parentId: 5, name: 'b1' },
 ];
 
-const keyOf = (item: unknown) => (item as Node).id;
-const parentOf = (item: unknown) => (item as Node).parentId;
-const names = (index: TreeIndex, rows: { length: number; at(i: number): unknown }) =>
+const keyOf = (item: unknown) => (item as TreeItem).id;
+const parentOf = (item: unknown) => (item as TreeItem).parentId;
+const names = (_index: TreeIndex, rows: { length: number; at(i: number): unknown }) =>
   Array.from({ length: rows.length }, (_, i) => {
     const row = rows.at(i) as DataRow;
-    return `${'  '.repeat(row.tree!.level)}${(row.item as Node).name}`;
+    return `${'  '.repeat(row.tree!.level)}${(row.item as TreeItem).name}`;
   });
 
-const flatten = (index: TreeIndex, expanded: (key: unknown) => boolean, match: Uint8Array | null = null, mode: 'with-ancestors' | 'full-branch' | 'match-only' = 'with-ancestors', order: Int32Array | null = null) => {
+type Mode = 'with-ancestors' | 'full-branch' | 'match-only';
+
+const flatten = (index: TreeIndex, expanded: (key: unknown) => boolean, match: Uint8Array | null = null, mode: Mode = 'with-ancestors', order: Int32Array | null = null) => {
   const view = buildTreeView(index, treeVisibility(index, match, mode), order, mode);
   return { view, rows: flattenTree(index, view, node => expanded(keyOf(index.nodes[node])), item => String(keyOf(item))) };
 };
@@ -52,7 +54,7 @@ describe('árvore: índice', () => {
   });
 
   it('plana: filho antes do pai gera ordem topológica; ciclo vira raiz', () => {
-    const items: Node[] = [
+    const items: TreeItem[] = [
       { id: 2, parentId: 1, name: 'filho' },
       { id: 1, parentId: 0, name: 'pai' },
       { id: 3, parentId: 4, name: 'c1' },
@@ -73,21 +75,21 @@ describe('árvore: índice', () => {
   });
 
   it('aninhada: pré-ordem, sem mutar, repetido ignorado', () => {
-    const shared: Node = { id: 9, name: 'x' };
-    const roots: Node[] = [
+    const shared: TreeItem = { id: 9, name: 'x' };
+    const roots: TreeItem[] = [
       { id: 1, name: 'a', children: [{ id: 2, name: 'a1' }, shared] },
       { id: 3, name: 'b', children: [shared] },
     ];
     const index = buildNestedIndex(roots, childrenReader('children'));
 
-    expect(index.nodes.map(node => (node as Node).name)).toEqual(['a', 'a1', 'x', 'b']);
+    expect(index.nodes.map(node => (node as TreeItem).name)).toEqual(['a', 'a1', 'x', 'b']);
     expect(Array.from(index.parent)).toEqual([-1, 0, 0, -1]);
     expect(index.cycles).toBe(1);
     expect(roots[1].children).toHaveLength(1);
   });
 
   it('aninhada com keyOf: chave repetida conta', () => {
-    const roots: Node[] = [{ id: 1, name: 'a', children: [{ id: 1, name: 'dup' }] }];
+    const roots: TreeItem[] = [{ id: 1, name: 'a', children: [{ id: 1, name: 'dup' }] }];
     const index = buildNestedIndex(roots, childrenReader('children'), keyOf);
     expect(index.duplicates).toBe(1);
     expect(index.keyIndex.get(1)).toBe(0);
@@ -191,6 +193,7 @@ describe('árvore: seleção recursiva', () => {
 
   it('marca a subárvore e sobe enquanto todos os irmãos estão marcados', () => {
     const selected = new Set<number>();
+
     const apply = (node: number, select: boolean) => {
       for (const changed of recursiveSelectionChange(index, structure, node, select, n => selected.has(n))) {
         if (select) {

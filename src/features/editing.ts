@@ -17,6 +17,8 @@ export interface GridEditChange<TItem = any> {
   data?: Partial<TItem>;
   /** The original item (`update` and `remove`). */
   item?: TItem;
+  /** Tree data (`add`): key of the parent node (`undefined` = a root node). */
+  parentKey?: unknown;
 }
 
 /** A broken validation rule (`u-grid-row-validating`). */
@@ -248,6 +250,8 @@ export interface PendingRow {
   readonly errorRules: Map<GridColumnDef, GridValidationRule>;
   /** Erro da linha (`setError` sem coluna). */
   rowError?: string;
+  /** Árvore (frente 25), linha nova: chave do nó pai (ausente = raiz). */
+  parentKey?: unknown;
 }
 
 /** Mudanças pendentes por chave, na ordem em que começaram. */
@@ -284,8 +288,13 @@ export class EditStore {
     return row;
   }
 
-  add(rowKey: unknown, data: Record<string, unknown>): PendingRow {
+  add(rowKey: unknown, data: Record<string, unknown>, parentKey?: unknown): PendingRow {
     const row: PendingRow = { type: 'add', rowKey, item: {}, data, modified: new Set(), unparsed: new Map(), errors: new Map(), errorRules: new Map() };
+
+    if (parentKey !== undefined) {
+      row.parentKey = parentKey;
+    }
+
     this.#rows.set(rowKey, row);
     this.touch();
     return row;
@@ -352,7 +361,13 @@ export const publicChange = (row: PendingRow): GridEditChange => {
   }
 
   if (row.type === 'add') {
-    return { type: 'add', rowKey: row.rowKey, data: copyData(row.data) };
+    const change: GridEditChange = { type: 'add', rowKey: row.rowKey, data: copyData(row.data) };
+
+    if (row.parentKey !== undefined) {
+      change.parentKey = row.parentKey;
+    }
+
+    return change;
   }
 
   return { type: 'update', rowKey: row.rowKey, data: copyData(row.data), item: row.item };

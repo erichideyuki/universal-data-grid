@@ -259,8 +259,27 @@ export interface GridGroupSummaryItem<TItem = any> extends GridSummaryItem<TItem
 export interface GridSummary<TItem = any> {
   /** Totals: a footer fixed at the bottom, under the columns. */
   total?: GridSummaryItem<TItem>[];
-  /** Summaries of each group. */
+  /** Summaries of each group (ignored with `treeMode`). */
   group?: GridGroupSummaryItem<TItem>[];
+  /**
+   * Tree data (`treeMode`): summaries of each node with children, over its
+   * visible descendants (not the node itself). Off with `dataSource`.
+   */
+  node?: GridNodeSummaryItem<TItem>[];
+}
+
+/**
+ * A summary of each tree node: `inline` (default) after the tree cell text,
+ * `column` instead of the node value in that column, `footer` in a row after
+ * the children of an expanded node.
+ */
+export interface GridNodeSummaryItem<TItem = any> extends GridSummaryItem<TItem> {
+  /**
+   * Where it is shown: `inline` (default) after the tree cell text, `column`
+   * instead of the node value in its column, `footer` in a row after the
+   * children of an expanded node.
+   */
+  display?: 'inline' | 'column' | 'footer';
 }
 
 /** A computed summary (`getSummaryValues()`). */

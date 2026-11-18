@@ -15,6 +15,7 @@ const options = (patch: Partial<GridLoadOptions> = {}): GridLoadOptions => ({
   requireGroupCount: false,
   totalSummary: [],
   groupSummary: [],
+  tree: null,
   ...patch,
 });
 

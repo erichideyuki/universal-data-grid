@@ -20,6 +20,7 @@ import {
   type GridLoadSummary,
   type GridRemoteOperations,
   type GridScrollMode,
+  deepFreeze,
   keyReader,
   keyText,
   NO_REMOTE,
@@ -146,6 +147,18 @@ import {
   type ResolvedToolbar,
   type ToolbarEntry,
 } from './features/toolbar.js';
+import {
+  exprReader,
+  type GridChildrenExpr,
+  type GridHasChildrenExpr,
+  type GridParentKeyExpr,
+  type GridTreeFilterMode,
+  type GridTreeMode,
+  normalizeTreeFilterMode,
+  normalizeTreeMode,
+  type TreeConfig,
+  TreeState,
+} from './features/tree.js';
 import { UnparsedValue, validateValue, type ValidationResult } from './features/validation.js';
 import {
   type GridColumnDataType,
@@ -255,6 +268,19 @@ import { buildGroups, groupKeyOf } from './row-model/group.js';
 import { LruCache } from './row-model/lru.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
+import {
+  buildTreeView,
+  childCount,
+  childrenReader,
+  flattenTree,
+  partialSelection,
+  recursiveSelectionChange,
+  structuralView,
+  type TreeIndex,
+  treeVisibility,
+  type TreeView,
+  visibleDescendants,
+} from './row-model/tree.js';
 import { type DataRow, type DetailRow, type GroupFooterRow, type GroupNode, type GroupRow, isLazyItems, type LazyItems, type Row } from './row-model/types.js';
 import { cellValueReader, getCellValue, getValueByPath } from './row-model/value.js';
 import {
@@ -303,6 +329,7 @@ export type {
   GridColumnRef,
   GridGroupPath,
   GridGroupSummaryItem,
+  GridNodeSummaryItem,
   GridFilterCondition,
   GridFilterExpression,
   GridFilterOperation,
@@ -343,7 +370,9 @@ export type {
   GridRemoteOperations,
   GridRowKey,
   GridScrollMode,
+  GridLoadTree,
 } from './data/data-source.js';
+export type { GridChildrenExpr, GridHasChildrenExpr, GridParentKeyExpr, GridTreeFilterMode, GridTreeMode } from './features/tree.js';
 export type { GridClipboardMode } from './features/clipboard.js';
 export type {
   GridCellRange,
@@ -396,6 +425,7 @@ export type {
   GridColumnState,
   GridGroupExpansionState,
   GridRowExpansionState,
+  GridNodeExpansionState,
   GridState,
   GridStateChangeEventDetail,
   GridStateChangeSource,
@@ -461,6 +491,22 @@ export interface GridAdaptiveColumnsChangeEventDetail {
   columns: readonly GridColumnDef[];
   /** The columns hidden before the change (frozen). */
   previous: readonly GridColumnDef[];
+}
+
+/** `detail` of `u-grid-node-expansion-change`. */
+export interface GridNodeExpansionChangeEventDetail {
+  /** Key of the tree node (without `keyExpr`, the item itself); `null` when every node changed (`expandAllNodes`/`collapseAllNodes`). */
+  rowKey: unknown;
+  /** New state. */
+  expanded: boolean;
+  /** `user` (expand button, keyboard) or `api` (`expandNode`, `collapseNode`…; also a failed child load). */
+  source: GridChangeSource;
+}
+
+/** Options of `addRow`. */
+export interface GridAddRowOptions {
+  /** Tree data: key of the parent node — the new row is its first child (the node expands). */
+  parentKey?: unknown;
 }
 
 /** `detail` of `u-grid-filter-change`. */
@@ -626,6 +672,8 @@ export interface GridEditStartingEventDetail<TItem = any> {
 export interface GridRowAddingEventDetail<TItem = any> {
   /** The new row (owned by the grid, already with the `addRow` argument): set its initial values here. Reassigning `detail.data` is ignored. */
   readonly data: Partial<TItem>;
+  /** Tree data: key of the parent node of the new row (`undefined` = a root node, or not a tree). */
+  readonly parentKey: unknown;
   /** `user` (Add row button) or `api` (`addRow`). */
   readonly source: GridChangeSource;
 }
@@ -763,6 +811,8 @@ interface EditSnapshot {
 /** Onde uma linha nova aparece: antes da linha que estava no topo da tela. */
 interface AddedAnchor {
   seq: number;
+  /** Árvore (frente 25): nível da linha nova (0 = raiz). */
+  level?: number;
   /** Chave da linha de dados do topo. */
   anchorKey: unknown;
   /** Chave da linha de grupo do topo. */
@@ -1103,6 +1153,14 @@ const FLUSH_DELAY = 30;
 
 /** Carga mais curta que isto não é anunciada (não fala a cada bloco rápido). */
 const LOADING_ANNOUNCE_DELAY = 300;
+/** "Carregando filhos" (árvore remota) só passando disto (spec 25). */
+const TREE_LOADING_ANNOUNCE_DELAY = 1000;
+
+/** Carga de filhos em voo (árvore remota): o pedido (em lote) e quem espera. */
+interface TreeLoad {
+  controller: AbortController;
+  resolvers: ((ok: boolean) => void)[];
+}
 
 /** Contexto da consulta remota: colunas de grupo e posição de cada resumo do grid na resposta (`-1` = não remoto). */
 interface RemoteContext {
@@ -1395,6 +1453,7 @@ const STATE_EVENTS = new Set([
   'u-grid-selection-change',
   'u-grid-page-change',
   'u-grid-row-expansion-change',
+  'u-grid-node-expansion-change',
 ]);
 
 /** Padrão de `stateChangeDelay` (ms). */
@@ -1495,6 +1554,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * or the grid cleared them because rows or columns changed (`source` of the cause: a gesture, or `api` for methods and setters such as `items`, `columns`, `cellSelectionMode`).
  * @fires {CustomEvent<GridPasteEventDetail>} u-grid-pasting - Before Ctrl/Cmd+V or the cell menu "Paste" pastes into editable cells (`clipboard-mode="copy-paste"`; user only).
  * Cancelable: nothing changes (on Ctrl/Cmd+V the native paste goes on).
+ * @fires {CustomEvent<GridNodeExpansionChangeEventDetail>} u-grid-node-expansion-change - A tree node was expanded or collapsed (button, keys, methods); fired when asked, before remote children load.
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`,
  * a row edit or `focusCell`/`editCell` that opened the details of a column hidden by `autoHideColumns`; not `autoExpandRows`).
  * @fires {CustomEvent<GridAdaptiveColumnsChangeEventDetail>} u-grid-adaptive-columns-change - The columns hidden for lack of space changed (`autoHideColumns`: the grid
@@ -1588,6 +1648,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-selected-cell-background-color - Background of cells in a cell range. Default: primary color at 14%.
  * @cssprop --u-grid-cell-range-border-color - Outline around each cell range (not shown by color alone). Default: primary color (`Highlight` in forced colors).
  * @cssprop --u-grid-cell-range-border-width - Thickness of that outline. Default `2px`.
+ * @cssprop --u-grid-tree-indent - Indent of each tree level (`treeMode`). Default `24px`.
+ * @cssprop --u-grid-tree-toggle-color - Color of the tree expand button. Default: `--u-grid-group-toggle-color`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer), fixed rows included.
  * @csspart group-row - Group header rows.
@@ -1643,7 +1705,11 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart fixed-bottom-row-group - The row group (`<tbody>`) of the rows fixed at the bottom.
  * @csspart full-width-row - Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`).
  * @csspart full-width-cell - The cell that holds the `rowRenderer` content.
- * @csspart expanded - Master rows whose detail is expanded (with `row`).
+ * @csspart expanded - Master rows whose detail is expanded, and expanded tree nodes (with `row`).
+ * @csspart tree-cell - The cell of the tree column (with `cell`): indent, expand button and content.
+ * @csspart tree-toggle-button - The expand/collapse button of a tree node.
+ * @csspart node-footer-row - Footer rows of `summary.node` items with `display: 'footer'` (with `row` and `summary-row`).
+ * @csspart node-summary - `summary.node` values shown in a node row (`inline` after the tree cell text, `column` in its column).
  * @csspart pager - The pager (`<nav>`) below the table (`paging`).
  * @csspart pager-button - Pager buttons (first, previous, page numbers, next, last).
  * @csspart page-size-select - The page size `<select>` of the pager.
@@ -1797,7 +1863,7 @@ export class DataGrid extends LitElement {
   #rowRenderOf(row: Row | undefined): RowRenderEntry | undefined {
     const renderer = this.rowRenderer;
 
-    if (!renderer || !row || row.isGroup || row.isFooter || row.isDetail || row.skeleton || row.key.startsWith('n:')) {
+    if (!renderer || !row || row.isGroup || row.isFooter || row.isDetail || row.skeleton || row.key.startsWith('n:') || this.#treeOn) {
       return undefined;
     }
 
@@ -1982,6 +2048,9 @@ export class DataGrid extends LitElement {
 
     this.#dataSource = next;
     this.#loader.dispose();
+    this.#resetTreeLoads();
+    this.#treeRemoteItems = [];
+    this.#treeLoadedParents.clear();
     this.#queryKey = undefined;
     this.#loadedGeneration = undefined;
     this.#remoteGeneration = undefined;
@@ -2030,7 +2099,1063 @@ export class DataGrid extends LitElement {
 
   /** Fonte remota com linhas sob demanda (paginação ou agrupamento no servidor). */
   get #lazy(): boolean {
-    return !!this.#dataSource && (this.#remote.paging || this.#remote.grouping);
+    // Árvore (frente 25): carga por nó, sem paginação nem grupos no servidor.
+    return !!this.#dataSource && (this.#remote.paging || this.#remote.grouping) && !this.#treeOn;
+  }
+
+  // ------------------------------------------------------- árvore (frente 25)
+
+  /**
+   * Tree data: `none` (default) shows `items` as a list; `nested` reads the
+   * children of each item by `childrenExpr` (`items` are the roots); `flat`
+   * builds the tree from `keyExpr` + `parentKeyExpr` (both needed). Grouping,
+   * master-detail and `rowRenderer` are ignored in a tree (console warning).
+   * With `dataSource`, only `flat` (children load on demand with
+   * `hasChildrenExpr`).
+   */
+  @property({ attribute: 'tree-mode' }) treeMode: GridTreeMode = 'none';
+
+  /** Children of an item with `treeMode="nested"`: a property `path` (attribute `children-expr`) or a function. */
+  @property({ attribute: 'children-expr' }) childrenExpr: GridChildrenExpr | null = 'children';
+
+  /**
+   * Key of the parent of an item with `treeMode="flat"`: a property `path`
+   * (attribute `parent-key-expr`) or a function. `rootParentKey`, `null`,
+   * `undefined` or a key with no item = a root node.
+   * @default null
+   */
+  @property({ attribute: 'parent-key-expr' }) parentKeyExpr: GridParentKeyExpr | null = null;
+
+  /**
+   * Parent key of the root nodes with `treeMode="flat"` (also asked to a
+   * `dataSource` as the first `parentKeys`). Compared by its text (the
+   * attribute is text): `"0"` matches `0`.
+   * @default null
+   */
+  @property({ attribute: 'root-parent-key' }) rootParentKey: GridRowKey | null = null;
+
+  /**
+   * With `dataSource`: whether a node has children not loaded yet (a
+   * property `path`, attribute `has-children-expr`, or a function); its
+   * children load when it expands.
+   * @default null
+   */
+  @property({ attribute: 'has-children-expr' }) hasChildrenExpr: GridHasChildrenExpr | null = null;
+
+  /**
+   * Column with the indent and the expand button (`name` or `path`, or the
+   * column object). Default: the first visible data column.
+   * @default null
+   */
+  @property({ attribute: 'tree-column' }) treeColumn: GridColumnRef | null = null;
+
+  /**
+   * What filtering and the search show in a tree: `with-ancestors` (default)
+   * the matching nodes and their ancestors; `full-branch` also all their
+   * descendants; `match-only` only the matching nodes (each under its
+   * nearest shown ancestor).
+   */
+  @property({ attribute: 'tree-filter-mode' }) treeFilterMode: GridTreeFilterMode = 'with-ancestors';
+
+  /**
+   * Tree nodes start expanded. INITIAL default: afterwards expansion is grid
+   * state (`expandNode`, `expandAllNodes`…); changing it resets that state.
+   * With `dataSource` it only reaches loaded nodes (no cascade of loads).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-nodes' }) autoExpandNodes = false;
+
+  /**
+   * Checking a node checks its descendants; a parent is checked when all its
+   * children are, and mixed when some are. Needs `selectionMode="multiple"`
+   * and `showCheckboxes` (else ignored, with a console warning). Setting
+   * `selectedKeys` or `setState` applies the keys as given.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'recursive-selection' }) recursiveSelection = false;
+
+  /** Índice, expansão por chave e visão da árvore. */
+  readonly #tree = new TreeState();
+  /** Visão (filtrada e ordenada) das linhas atuais da árvore. */
+  #treeView: TreeView | undefined;
+  /** Índice cujos nós estão em `#items`. */
+  #treeIndexInUse: TreeIndex | undefined;
+  #treeViewDirty = true;
+  /** Filtro cujos ancestrais já foram expandidos (expande uma vez por filtro novo). */
+  #treeFilterKey = '';
+  /** Resumos por nó da visão atual (só os pedidos pelo render). */
+  readonly #nodeSummaries = new Map<number, unknown[]>();
+  /** Estado misto da seleção recursiva (por versão da seleção e do índice). */
+  #partialCache: { version: number; index: TreeIndex | undefined; partial: Uint8Array } | undefined;
+  /** Estrutura sem filtro (seleção recursiva). */
+  #structureCache: { index: TreeIndex; view: TreeView } | undefined;
+  /** Agrupamento guardado ao ligar a árvore (volta ao desligar). */
+  #stashedGrouping: GridColumnDef[] | undefined;
+  readonly #treeWarnings = new Set<string>();
+  /** Fonte remota: nós já carregados (raiz + filhos que chegaram). */
+  #treeRemoteItems: readonly unknown[] = [];
+  /** Fonte remota: chaves cujos filhos já chegaram. */
+  readonly #treeLoadedParents = new Set<unknown>();
+  /** Fonte remota: cargas de filhos em voo, por chave do pai. */
+  readonly #treeLoads = new Map<unknown, TreeLoad>();
+  /** Fonte remota: chaves a pedir no fim do tick (num pedido só). */
+  #treeLoadQueue: { keys: unknown[]; resolvers: Map<unknown, ((ok: boolean) => void)[]> } | undefined;
+  /** Anúncio "carregando filhos" (só passando de 1 s). */
+  #treeLoadingTimer: ReturnType<typeof setTimeout> | undefined;
+
+  #warnTree(id: string, message: string): void {
+    if (!this.#treeWarnings.has(id)) {
+      this.#treeWarnings.add(id);
+      console.warn(`<u-grid>: ${message}`);
+    }
+  }
+
+  /** Modo árvore valendo (configuração completa). */
+  get #treeOn(): boolean {
+    const mode = normalizeTreeMode(this.treeMode);
+
+    if (mode === 'none') {
+      return false;
+    }
+
+    if (mode === 'flat' && (!this.#keyExpr || this.parentKeyExpr === null || this.parentKeyExpr === undefined || this.parentKeyExpr === '')) {
+      this.#warnTree('flat', 'tree-mode="flat" needs "keyExpr" and "parentKeyExpr"; the items are shown as a list.');
+      return false;
+    }
+
+    if (this.#dataSource && mode !== 'flat') {
+      this.#warnTree('nested-remote', 'a "dataSource" tree needs tree-mode="flat"; the items are shown as a list.');
+      return false;
+    }
+
+    return true;
+  }
+
+  get #treeRemote(): boolean {
+    return !!this.#dataSource && this.#treeOn;
+  }
+
+  #treeConfig(): TreeConfig {
+    return {
+      mode: normalizeTreeMode(this.treeMode),
+      childrenExpr: this.childrenExpr || 'children',
+      parentKeyExpr: this.parentKeyExpr ?? null,
+      rootParentKey: this.rootParentKey ?? null,
+      keyOf: this.#keyExpr ? this.#baseKeyOf : undefined,
+    };
+  }
+
+  /** Recursão da seleção valendo. */
+  get #recursiveOn(): boolean {
+    if (!this.recursiveSelection || !this.#treeOn) {
+      return false;
+    }
+
+    if (this.#selectionMode !== 'multiple' || !this.showCheckboxes) {
+      this.#warnTree('recursive', 'recursive-selection needs selection-mode="multiple" and show-checkboxes; ignored.');
+      return false;
+    }
+
+    return true;
+  }
+
+  /** Coluna da árvore (a referência ou a 1ª coluna de dados visível). */
+  get #treeColumnDef(): GridColumnDef | undefined {
+    if (!this.#treeOn) {
+      return undefined;
+    }
+
+    const visible = this._visibleColumns;
+    const reference = this.treeColumn;
+    const found = reference ? this.#resolveColumn(reference) : undefined;
+
+    if (reference && !found) {
+      this.#warnTree('tree-column', `tree-column "${typeof reference === 'string' ? reference : reference.label ?? reference.path ?? ''}" matches no column; the first visible column is used.`);
+    }
+
+    return found && visible.includes(found) ? found : visible[0];
+  }
+
+  /** Índice do nó do item (`-1` se não está na árvore). */
+  #nodeOfKey(key: unknown): number {
+    return this.#tree.index?.keyIndex.get(key) ?? -1;
+  }
+
+  /** Nó pelo texto da chave da linha (`#rowKeyText`); `-1` se não está. Só para as linhas renderizadas (raro). */
+  #nodeOfKeyText(text: string): number {
+    const index = this.#tree.index;
+
+    if (!index) {
+      return -1;
+    }
+
+    for (let node = 0; node < index.nodes.length; node++) {
+      if (this.#rowKeyText(index.nodes[node]) === text) {
+        return node;
+      }
+    }
+
+    return -1;
+  }
+
+  /** O nó tem filhos (visíveis, ou ainda por carregar na fonte remota)? */
+  #nodeHasChildren(node: number): boolean {
+    const view = this.#treeView;
+
+    if (!view || node < 0) {
+      return false;
+    }
+
+    if (childCount(view, node) > 0) {
+      return true;
+    }
+
+    return this.#remoteHasChildren(node);
+  }
+
+  /** Fonte remota: o nó diz ter filhos e eles ainda não chegaram. */
+  #remoteHasChildren(node: number): boolean {
+    const index = this.#tree.index;
+
+    if (!this.#treeRemote || !index || !this.hasChildrenExpr || this.#remote.filtering && this.#filtering.combined()) {
+      return false;
+    }
+
+    const item = index.nodes[node];
+
+    return !this.#treeLoadedParents.has(this.#keyOf(item)) && !!exprReader(this.hasChildrenExpr)(item);
+  }
+
+  /**
+   * O nó aparece expandido? Fonte remota com filhos por carregar: só se a
+   * carga está em voo, ou se foi expandido explicitamente (estado
+   * restaurado: a carga é pedida agora) — "tudo expandido" não dispara
+   * cargas em cascata.
+   */
+  readonly #treeExpanded = (node: number): boolean => {
+    const index = this.#tree.index;
+
+    if (!index) {
+      return false;
+    }
+
+    const key = this.#keyOf(index.nodes[node]);
+
+    if (this.#remoteHasChildren(node)) {
+      if (this.#treeLoads.has(key) || this.#treeLoadQueue?.keys.includes(key)) {
+        return true;
+      }
+
+      if (this.#tree.exceptions.has(key) && !this.#tree.defaultExpanded(this.autoExpandNodes)) {
+        this.#queueTreeLoad(key);
+        return true;
+      }
+
+      return false;
+    }
+
+    return this.#tree.isExpanded(key, this.autoExpandNodes);
+  };
+
+  /** Avisos do índice (uma vez por grid). */
+  #warnTreeIndex(index: TreeIndex): void {
+    if (index.orphans) {
+      this.#warnTree('orphans', `${index.orphans} tree node(s) have a parent key with no item; shown as root nodes.`);
+    }
+
+    if (index.cycles) {
+      this.#warnTree('cycles', `${index.cycles} tree node(s) close a cycle or repeat; the cycle is cut (shown as a root node) or the repeat ignored.`);
+    }
+
+    if (index.duplicates) {
+      this.#warnTree('duplicates', `${index.duplicates} tree node(s) repeat a key; only the first one is a parent.`);
+    }
+  }
+
+  #treeViewMode: GridTreeFilterMode | undefined;
+
+  /**
+   * Pipeline da árvore (frente 25): índice → filtro (máscara) → modo do
+   * filtro → ordenação (uma global; os filhos de cada pai saem nessa ordem)
+   * → linhas (trechos de irmãos na `RowList`, nada por nó).
+   */
+  #ensureTreeRows(language: string | undefined, languageChanged: boolean): void {
+    const source = this.#dataSource ? this.#treeRemoteItems : this.#hostItems;
+    const index = this.#tree.indexFor(source, this.#treeConfig());
+
+    if (index !== this.#treeIndexInUse) {
+      this.#treeIndexInUse = index;
+      this.#setItems(index.nodes);
+      this.#treeViewDirty = true;
+      this.#structureCache = undefined;
+      this.#partialCache = undefined;
+      this.#warnTreeIndex(index);
+    }
+
+    if (this.#sortDirty || (languageChanged && this.#sorting.length)) {
+      this.#sortOrder = undefined;
+      this.#sortDirty = false;
+      this.#viewDirty = true;
+    }
+
+    const searchColumnsKey = String(this._searchColumns().map(columnIdOf));
+
+    if (searchColumnsKey !== this.#searchColumnsKey) {
+      this.#searchColumnsKey = searchColumnsKey;
+      this.#filtering.searchColumnsChanged();
+    }
+
+    // Filtrado no servidor: os nós carregados já são os que passam (e os ancestrais).
+    const mask = this.#remote.filtering ? null : this.#filtering.maskFor(this.#items);
+    const mode = normalizeTreeFilterMode(this.treeFilterMode);
+
+    if (mask !== this.#appliedMask) {
+      this.#appliedMask = mask;
+      this.#viewDirty = true;
+    }
+
+    if (this.#viewDirty || this.#treeViewDirty || mode !== this.#treeViewMode) {
+      if (this.#sortOrder === undefined) {
+        this.#sortOrder = sortOrder(this.#items, this.#remote.sorting ? [] : this.#sorting, language, this.#rankCache);
+      }
+
+      const visible = treeVisibility(index, mask, mode);
+      this.#treeView = buildTreeView(index, visible, this.#sortOrder, mode);
+      this.#treeViewMode = mode;
+      this.#sortedItems = applyMask(this.#items, this.#sortOrder, visible);
+
+      // Filtro novo: os ancestrais dos nós que passam expandem (uma vez por filtro, como a referência).
+      const filterKey = mask ? JSON.stringify([this.#filtering.filterValue, this.#filtering.searchText]) : '';
+
+      if (mask && filterKey !== this.#treeFilterKey) {
+        this.#tree.expandAncestors(mask, node => this.#keyOf(index.nodes[node]), this.autoExpandNodes);
+      }
+
+      this.#treeFilterKey = filterKey;
+      this.#viewDirty = false;
+      this.#treeViewDirty = false;
+      this.#totalsDirty = true;
+      this.#rowsDirty = true;
+    }
+
+    if (this.#totalsDirty) {
+      // Sobre os nós que aparecem com o filtro (expandidos ou não).
+      this.#totals = summarize(this.#sortedItems, this.#totalSpecs.map(({ spec }) => spec));
+      this.#totalsDirty = false;
+    }
+
+    if (this.#groupsDirty || this.#groups.length) {
+      this.#groups = [];
+      this.#groupsDirty = false;
+    }
+
+    if (this.#rowsDirty) {
+      const footers = this.#hasGroupFooters;
+
+      this.#nodeSummaries.clear();
+      this.#allRows = flattenTree(
+        index,
+        this.#treeView!,
+        this.#treeExpanded,
+        this.#rowKeyText,
+        this.#treeRemote ? node => this.#remoteHasChildren(node) : undefined,
+        (node, rows) => this.#afterTreeNode(node, rows, footers),
+      );
+      this.#rowsDirty = false;
+      this.#virtualizer.measure();
+    }
+
+    this.#totalCount = this.#sortedItems.length;
+
+    if (this.#dataSource) {
+      this.#planQuery();
+    }
+
+    this.#announceFiltered();
+    this.#applyPage();
+  }
+
+  /** Depois dos filhos de um nó expandido: esqueleto da carga remota e rodapé de resumos. */
+  #afterTreeNode(node: number, rows: RowList, footers: boolean): void {
+    const view = this.#treeView!;
+    const index = this.#tree.index!;
+    const nodeKey = this.#rowKeyText(index.nodes[node]);
+    const level = view.level[node];
+
+    if (!childCount(view, node)) {
+      // Filhos remotos a caminho: uma linha-esqueleto filha (`aria-busy`).
+      rows.push({
+        isGroup: false,
+        key: `s:tree:${nodeKey}`,
+        item: undefined,
+        index: rows.length,
+        skeleton: true,
+        tree: { node: -1, level: level + 1, posInSet: 0, setSize: 0 },
+      } satisfies DataRow);
+      return;
+    }
+
+    if (footers) {
+      rows.push({
+        isGroup: false,
+        isFooter: true,
+        key: `f:n:${nodeKey}`,
+        groupKey: `n:${nodeKey}`,
+        level,
+        path: [],
+        summaries: this.#nodeSummaryValues(node),
+      } satisfies GroupFooterRow);
+    }
+  }
+
+  /** Resumos (`summary.node`) de um nó, sobre os descendentes visíveis; sob demanda. */
+  #nodeSummaryValues(node: number): unknown[] {
+    let values = this.#nodeSummaries.get(node);
+
+    if (!values) {
+      const index = this.#tree.index;
+      const view = this.#treeView;
+      values = index && view && this.#groupSpecs.length
+        ? summarize(visibleDescendants(index, view, node), this.#groupSpecs.map(({ spec }) => spec))
+        : [];
+      this.#nodeSummaries.set(node, values);
+    }
+
+    return values;
+  }
+
+  /** Nó exibido expandido, sem efeito colateral (sem pedir carga). */
+  #nodeShownExpanded(node: number): boolean {
+    const index = this.#tree.index;
+
+    if (!index || !this.#nodeHasChildren(node)) {
+      return false;
+    }
+
+    const key = this.#keyOf(index.nodes[node]);
+
+    if (this.#remoteHasChildren(node)) {
+      return this.#treeLoads.has(key) || !!this.#treeLoadQueue?.keys.includes(key);
+    }
+
+    return this.#tree.isExpanded(key, this.autoExpandNodes);
+  }
+
+  /** Coluna navegável da árvore (`-1` sem árvore). */
+  get #treeNavCol(): number {
+    const column = this.#treeColumnDef;
+    return column ? this.#leadingColumns + this._visibleColumns.indexOf(column) : -1;
+  }
+
+  /**
+   * Único ponto que muda a expansão de UM nó por gesto ou método. Expandir
+   * um nó remoto com filhos por carregar pede a carga (resolve `true` quando
+   * eles chegam). Recolher com a célula ativa num descendente a leva à
+   * célula da árvore do nó (o foco do DOM só acompanha se estava no grid).
+   */
+  #setNodeExpanded(key: unknown, expanded: boolean, source: GridChangeSource): Promise<boolean> {
+    this.#ensureRows();
+
+    const node = this.#nodeOfKey(key);
+
+    if (!this.#treeOn || node < 0 || !this.#nodeHasChildren(node)) {
+      return Promise.resolve(false);
+    }
+
+    const before = this.#nodeShownExpanded(node);
+    const remote = expanded && this.#remoteHasChildren(node);
+
+    if (!expanded) {
+      this.#moveActiveToNode(node, key, source);
+    }
+
+    this.#tree.set(key, expanded, this.autoExpandNodes);
+
+    if (!expanded) {
+      this.#cancelTreeLoad(key);
+    }
+
+    const load = remote ? this.#queueTreeLoad(key) : undefined;
+
+    this.#rowsDirty = true;
+    this.requestUpdate();
+
+    if (before !== expanded) {
+      this.#dispatchNodeExpansion(key, expanded, source);
+    }
+
+    return load ?? Promise.resolve(expanded);
+  }
+
+  #dispatchNodeExpansion(rowKey: unknown, expanded: boolean, source: GridChangeSource): void {
+    this.dispatchEvent(new CustomEvent('u-grid-node-expansion-change', this.#eventInit<GridNodeExpansionChangeEventDetail>({
+      rowKey,
+      expanded,
+      source,
+    })));
+  }
+
+  /** A célula ativa está num descendente do nó: vai à célula da árvore dele (antes de recolher). */
+  #moveActiveToNode(node: number, key: unknown, source: GridChangeSource): void {
+    const active = this.#rowAt(this.#activeRowIndex);
+    const view = this.#treeView;
+
+    if (!view || !active || !isDataRowLike(active) || !active.tree) {
+      return;
+    }
+
+    let up = active.tree.node;
+
+    if (up < 0) {
+      // Esqueleto da carga: é "filho" do nó que carrega.
+      const index = this.#tree.index;
+      up = index && active.key === `s:tree:${this.#rowKeyText(index.nodes[node])}` ? node : -1;
+    } else {
+      if (up === node) {
+        return;
+      }
+
+      while (up >= 0 && up !== node) {
+        up = view.parent[up];
+      }
+    }
+
+    if (up !== node) {
+      return;
+    }
+
+    const row = this.#rowIndexOfKey(key);
+
+    if (row >= 0) {
+      const hadFocus = !!this.shadowRoot?.activeElement;
+      this.#setActive({ row, col: this.#treeNavCol >= 0 ? this.#treeNavCol : this.#activeCol }, source === 'user' ? 'user' : null, { focus: hadFocus });
+    }
+  }
+
+  /** Todos os nós (`expandAllNodes`/`collapseAllNodes`). */
+  #setAllNodesExpanded(expanded: boolean, source: GridChangeSource): void {
+    if (!this.#treeOn) {
+      return;
+    }
+
+    this.#ensureRows();
+
+    if (expanded && this.#treeRemote) {
+      this.#warnTree('remote-all', 'expandAllNodes() and auto-expand-nodes with a "dataSource" only reach loaded nodes (no loads).');
+    }
+
+    if (!expanded) {
+      // A célula ativa vai ao ancestral raiz (o descendente some).
+      const active = this.#rowAt(this.#activeRowIndex);
+      const view = this.#treeView;
+      const index = this.#tree.index;
+
+      // Esqueleto: o nó que carrega é o da chave `s:tree:<nó>`.
+      const skeletonOwner = active && isDataRowLike(active) && active.key.startsWith('s:tree:')
+        ? this.#nodeOfKeyText(active.key.slice('s:tree:'.length))
+        : -1;
+      const from = skeletonOwner >= 0 ? skeletonOwner : isDataRow(active) && active.tree ? active.tree.node : -1;
+
+      if (view && index && from >= 0) {
+        let root = from;
+
+        while (view.parent[root] >= 0) {
+          root = view.parent[root];
+        }
+
+        // A raiz fica acima do que some: o índice dela não muda ao recolher.
+        const row = this.#rowIndexOfKey(this.#keyOf(index.nodes[root]));
+
+        if (row >= 0 && row !== this.#activeRowIndex) {
+          const col = this.#treeNavCol >= 0 ? this.#treeNavCol : this.#activeCol;
+          this.#setActive({ row, col }, source === 'user' ? 'user' : null, { focus: !!this.shadowRoot?.activeElement });
+        }
+      }
+
+      for (const key of [...this.#treeLoads.keys()]) {
+        this.#cancelTreeLoad(key);
+      }
+    }
+
+    const changed = this.#tree.all !== expanded || this.#tree.exceptions.size > 0;
+
+    this.#tree.setAll(expanded);
+    this.#rowsDirty = true;
+    this.requestUpdate();
+
+    if (changed) {
+      this.#dispatchNodeExpansion(null, expanded, source);
+    }
+  }
+
+  /** `*`: expande os irmãos do nó (anuncia quantos expandiram). */
+  #expandSiblings(node: number): void {
+    const view = this.#treeView;
+    const index = this.#tree.index;
+
+    if (!view || !index) {
+      return;
+    }
+
+    const parent = view.parent[node];
+    const owner = parent < 0 ? index.nodes.length : parent;
+    let count = 0;
+
+    for (let k = view.childStart[owner]; k < view.childStart[owner + 1]; k++) {
+      const sibling = view.children[k];
+
+      if (this.#nodeHasChildren(sibling) && !this.#nodeShownExpanded(sibling)) {
+        count++;
+        void this.#setNodeExpanded(this.#keyOf(index.nodes[sibling]), true, 'user');
+      }
+    }
+
+    this.#announce(formatMessage(this.#translation.nodesExpandedAnnouncement, { count: String(count) }));
+  }
+
+  // ------------------------------------------------ árvore: carga remota
+
+  /** Pede os filhos do nó no fim do tick (expansões do mesmo tick num pedido só). */
+  #queueTreeLoad(key: unknown): Promise<boolean> {
+    return new Promise<boolean>(resolve => {
+      const running = this.#treeLoads.get(key);
+
+      if (running) {
+        running.resolvers.push(resolve);
+        return;
+      }
+
+      let queue = this.#treeLoadQueue;
+
+      if (!queue) {
+        queue = this.#treeLoadQueue = { keys: [], resolvers: new Map() };
+        queueMicrotask(() => this.#flushTreeLoads());
+      }
+
+      if (!queue.keys.includes(key)) {
+        queue.keys.push(key);
+      }
+
+      let list = queue.resolvers.get(key);
+
+      if (!list) {
+        list = [];
+        queue.resolvers.set(key, list);
+      }
+
+      list.push(resolve);
+    });
+  }
+
+  #flushTreeLoads(): void {
+    const queue = this.#treeLoadQueue;
+    this.#treeLoadQueue = undefined;
+
+    if (!queue?.keys.length) {
+      return;
+    }
+
+    const settle = (ok: boolean) => {
+      for (const list of queue.resolvers.values()) {
+        for (const resolve of list) {
+          resolve(ok);
+        }
+      }
+    };
+
+    if (!this.isConnected || !this.#treeRemote) {
+      settle(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const keys = queue.keys;
+
+    for (const key of keys) {
+      this.#treeLoads.set(key, { controller, resolvers: queue.resolvers.get(key) ?? [] });
+    }
+
+    const base = this.#treeQuery;
+    const options: GridLoadOptions = deepFreeze({
+      sort: base?.sort ?? [],
+      filter: base?.filter ?? null,
+      filterValue: base?.filterValue ?? null,
+      searchText: base?.searchText ?? '',
+      group: [],
+      groupPath: null,
+      requireTotalCount: false,
+      requireGroupCount: false,
+      totalSummary: [],
+      groupSummary: [],
+      tree: { parentKeys: keys.map(key => key as GridRowKey) },
+    });
+
+    this.#startTreeLoadingTimer();
+
+    const finish = (ok: boolean, count: number) => {
+      const resolvers: ((ok: boolean) => void)[] = [];
+
+      for (const key of keys) {
+        const load = this.#treeLoads.get(key);
+
+        if (load?.controller === controller) {
+          this.#treeLoads.delete(key);
+          resolvers.push(...load.resolvers);
+        }
+      }
+
+      if (!this.#treeLoads.size) {
+        clearTimeout(this.#treeLoadingTimer);
+        this.#treeLoadingTimer = undefined;
+      }
+
+      this.#announce(ok
+        ? formatMessage(this.#translation.childRowsLoadedAnnouncement, { count: String(count) })
+        : this.#translation.childRowsLoadErrorAnnouncement);
+      this.#rowsDirty = true;
+      this.requestUpdate();
+
+      for (const resolve of resolvers) {
+        resolve(ok);
+      }
+    };
+
+    const request = this.#request(options, controller.signal);
+
+    if (!request) {
+      // Cancelada pelo hospedeiro (`u-grid-loading`): o nó volta a recolhido.
+      for (const key of keys) {
+        this.#treeLoads.delete(key);
+        this.#collapseAfterFailedLoad(key);
+      }
+
+      settle(false);
+      this.#rowsDirty = true;
+      this.requestUpdate();
+      return;
+    }
+
+    request.then(
+      result => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const data = Array.isArray(result?.data) ? result.data as readonly unknown[] : [];
+        this.#adoptTreeChildren(keys, data);
+        finish(true, data.length);
+      },
+      () => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        for (const key of keys) {
+          this.#collapseAfterFailedLoad(key);
+        }
+
+        finish(false, 0);
+      },
+    );
+  }
+
+  /** Erro (ou cancelamento) da carga: o nó volta a recolhido, com evento. */
+  #collapseAfterFailedLoad(key: unknown): void {
+    if (this.#tree.exceptions.has(key) && !this.#tree.defaultExpanded(this.autoExpandNodes)) {
+      this.#tree.set(key, false, this.autoExpandNodes);
+    }
+
+    this.#dispatchNodeExpansion(key, false, 'api');
+  }
+
+  /** Filhos que chegaram: acrescenta os nós novos (por chave) e marca os pais como carregados. */
+  #adoptTreeChildren(parentKeys: readonly unknown[], data: readonly unknown[]): void {
+    const keyOf = this.#baseKeyOf;
+    const known = this.#tree.index?.keyIndex;
+    const added = data.filter(item => !known?.has(keyOf(item)));
+
+    for (const key of parentKeys) {
+      this.#treeLoadedParents.add(key);
+      // O nó pedido fica expandido (o usuário pediu), mesmo com o padrão "tudo".
+      this.#tree.set(key, true, this.autoExpandNodes);
+    }
+
+    if (added.length) {
+      this.#treeRemoteItems = [...this.#treeRemoteItems, ...added];
+    }
+
+    // Seleção recursiva: filhos de um pai marcado entram marcados.
+    if (this.#recursiveOn && this.parentKeyExpr) {
+      const parentOf = exprReader(this.parentKeyExpr);
+      const selected = added
+        .filter(item => parentKeys.some(key => this.#selection.has(key) && String(parentOf(item)) === String(key)))
+        .map(item => keyOf(item));
+
+      if (selected.length) {
+        this.#applySelection(this.#selection.add(selected), 'api');
+      }
+    }
+  }
+
+  #cancelTreeLoad(key: unknown): void {
+    const load = this.#treeLoads.get(key);
+
+    if (!load) {
+      return;
+    }
+
+    this.#treeLoads.delete(key);
+
+    // O pedido em lote só aborta quando nenhum outro nó dele espera.
+    if (![...this.#treeLoads.values()].some(other => other.controller === load.controller)) {
+      load.controller.abort();
+    }
+
+    for (const resolve of load.resolvers) {
+      resolve(false);
+    }
+  }
+
+  /** Solta as cargas de filhos (fonte trocada, consulta nova, grid desconectado). */
+  #resetTreeLoads(): void {
+    for (const key of [...this.#treeLoads.keys()]) {
+      this.#cancelTreeLoad(key);
+    }
+
+    const queue = this.#treeLoadQueue;
+    this.#treeLoadQueue = undefined;
+
+    for (const list of queue?.resolvers.values() ?? []) {
+      for (const resolve of list) {
+        resolve(false);
+      }
+    }
+
+    clearTimeout(this.#treeLoadingTimer);
+    this.#treeLoadingTimer = undefined;
+  }
+
+  /** "Carregando filhos" só passando de 1 s. */
+  #startTreeLoadingTimer(): void {
+    if (this.#treeLoadingTimer) {
+      return;
+    }
+
+    this.#treeLoadingTimer = setTimeout(() => {
+      this.#treeLoadingTimer = undefined;
+
+      if (this.#treeLoads.size) {
+        this.#announce(this.#translation.childRowsLoadingAnnouncement);
+      }
+    }, TREE_LOADING_ANNOUNCE_DELAY);
+  }
+
+  /** Filtro/ordenação da última consulta da raiz (a carga de filhos repete). */
+  #treeQuery: LoaderQuery | undefined;
+
+  // ---------------------------------------------- árvore: seleção recursiva
+
+  #structureView(): TreeView | undefined {
+    const index = this.#tree.index;
+
+    if (!index) {
+      return undefined;
+    }
+
+    if (this.#structureCache?.index !== index) {
+      this.#structureCache = { index, view: structuralView(index) };
+    }
+
+    return this.#structureCache.view;
+  }
+
+  /**
+   * Seleção recursiva: marca/desmarca cada chave com a subárvore e acerta
+   * os ancestrais, sobre `current` (alterado e devolvido).
+   */
+  #recursiveApply(keys: Iterable<unknown>, select: boolean, current: Set<unknown>): Set<unknown> {
+    const index = this.#tree.index;
+    const structure = this.#structureView();
+
+    for (const key of keys) {
+      const node = this.#nodeOfKey(key);
+
+      if (!index || !structure || node < 0) {
+        if (select) {
+          current.add(key);
+        } else {
+          current.delete(key);
+        }
+
+        continue;
+      }
+
+      for (const changed of recursiveSelectionChange(index, structure, node, select, candidate => current.has(this.#keyOf(index.nodes[candidate])))) {
+        const changedKey = this.#keyOf(index.nodes[changed]);
+
+        if (select) {
+          current.add(changedKey);
+        } else {
+          current.delete(changedKey);
+        }
+      }
+    }
+
+    return current;
+  }
+
+  /** Algum descendente marcado (caixa mista) — por versão da seleção. */
+  #isNodePartial(node: number): boolean {
+    const index = this.#tree.index;
+
+    if (!index || node < 0) {
+      return false;
+    }
+
+    let cache = this.#partialCache;
+
+    if (cache?.version !== this.#selection.version || cache.index !== index) {
+      cache = this.#partialCache = {
+        version: this.#selection.version,
+        index,
+        partial: partialSelection(index, candidate => this.#selection.has(this.#keyOf(index.nodes[candidate]))),
+      };
+    }
+
+    return !!cache.partial[node];
+  }
+
+  // ------------------------------------------------- árvore: render
+
+  /** `aria-expanded` de um nó (`undefined` = folha ou sem árvore). */
+  #treeExpandedAttr(row: Row): 'true' | 'false' | undefined {
+    if (!isDataRowLike(row) || !row.tree || row.tree.node < 0 || !this.#nodeHasChildren(row.tree.node)) {
+      return undefined;
+    }
+
+    return this.#nodeShownExpanded(row.tree.node) ? 'true' : 'false';
+  }
+
+  /** É a célula da árvore desta linha? */
+  #isTreeCell(row: DataRow, column: GridColumnDef): boolean {
+    // Nó (índice >= 0) ou linha nova da edição (`n:`, com nível).
+    return !!row.tree && (row.tree.node >= 0 || row.key.startsWith('n:')) && column === this.#treeColumnDef;
+  }
+
+  /** Conteúdo da célula da árvore: recuo, botão (ou espaço) e o conteúdo. */
+  #renderTreeCell(row: DataRow, column: GridColumnDef, content: unknown): unknown {
+    if (!this.#isTreeCell(row, column)) {
+      return content;
+    }
+
+    const tree = row.tree!;
+    const node = tree.node;
+    const hasChildren = this.#nodeHasChildren(node);
+    const expanded = hasChildren && this.#nodeShownExpanded(node);
+    const key = this.#keyOf(row.item);
+    const loading = this.#treeLoads.has(key) || !!this.#treeLoadQueue?.keys.includes(key);
+    const inline = this.#groupSpecs.length && this.#treeView && childCount(this.#treeView, node)
+      ? this.#groupSpecs
+        .map((summary, position) => ({ summary, position }))
+        .filter(({ summary }) => (summary.item.display ?? 'inline') === 'inline')
+        .map(({ summary, position }) => this.#summaryText(summary, this.#nodeSummaryValues(node)[position]))
+      : [];
+
+    return html`<span class="tree-node" style="--_tree-level: ${tree.level}">${hasChildren
+      ? html`<button
+          class=${classMap({ 'tree-toggle': true, expanded, loading })}
+          part="tree-toggle-button"
+          type="button"
+          tabindex="-1"
+          aria-hidden="true"
+          @mousedown=${(event: MouseEvent) => event.preventDefault()}
+          @click=${(event: MouseEvent) => this.#onTreeToggleClick(event, key, !expanded)}>${loading
+            ? html`<span class="tree-spinner"></span>`
+            : html`<span class="toggle-icon"><svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="1em"
+              width="1em"
+              viewBox="0 -960 960 960"
+              fill="currentColor"
+              aria-hidden="true"><path d=${CHEVRON_PATH}/></svg></span>`}</button>`
+      : html`<span class="tree-toggle-spacer"></span>`}<span class="tree-content">${content}</span>${inline.length
+      ? html`<span class="tree-summary" part="node-summary">${this.#summaryTexts(inline)}</span>`
+      : nothing}</span>`;
+  }
+
+  /** Clique no botão: o foco vai à célula da árvore (que vira a ativa) e alterna. */
+  #onTreeToggleClick(event: MouseEvent, key: unknown, expand: boolean): void {
+    event.stopPropagation();
+    const tr = (event.currentTarget as HTMLElement).closest('tr');
+    const index = Number(tr?.getAttribute('data-index'));
+
+    if (Number.isInteger(index) && this.#treeNavCol >= 0) {
+      this.#setActive({ row: index, col: this.#treeNavCol }, 'user', { focus: true });
+    }
+
+    void this.#setNodeExpanded(key, expand, 'user');
+  }
+
+  /** Texto visível dos resumos (oculto do leitor) e o rótulo completo (`visually-hidden`). */
+  #summaryTexts(texts: readonly SummaryText[]) {
+    const separator = this.#listSeparatorText;
+
+    return html`<span aria-hidden="true">${texts.map(text => text.text).join(separator)}</span><span
+      class="visually-hidden">${texts.map(text => text.label).join(separator)}</span>`;
+  }
+
+  /** Resumo por nó `display: 'column'` nesta coluna (`undefined` = o valor do nó). */
+  #nodeColumnSummary(row: DataRow, column: GridColumnDef): SummaryText[] | undefined {
+    const tree = row.tree;
+
+    if (!tree || tree.node < 0 || !this.#groupSpecs.length || !this.#treeView || !childCount(this.#treeView, tree.node)) {
+      return undefined;
+    }
+
+    const values = this.#nodeSummaryValues(tree.node);
+    const texts = this.#groupSpecs
+      .map((summary, position) => ({ summary, position }))
+      .filter(({ summary }) => summary.item.display === 'column' && summary.spec.column === column)
+      .map(({ summary, position }) => this.#summaryText(summary, values[position]));
+
+    return texts.length ? texts : undefined;
+  }
+
+  /** Agrupamento x árvore: ao ligar a árvore, guarda e desfaz o agrupamento; ao desligar, devolve. */
+  #syncTreeGrouping(): void {
+    const on = this.#treeOn;
+
+    if (on && this._groupColumns.length) {
+      this.#warnTree('grouping', 'grouping is ignored with tree-mode; restored when tree-mode is "none".');
+      this.#stashedGrouping = [...this._groupColumns];
+
+      for (const column of this.#stashedGrouping) {
+        this.#moveColumnTo(false, column, this._regularColumns.length, null);
+      }
+    } else if (!on && this.#stashedGrouping) {
+      const stashed = this.#stashedGrouping;
+      this.#stashedGrouping = undefined;
+
+      stashed.forEach((column, position) => {
+        if (this._regularColumns.includes(column)) {
+          this.#moveColumnTo(true, column, position, null);
+        }
+      });
+    }
+
+    if (on && this.detailRenderer) {
+      this.#warnTree('detail', 'detailRenderer is ignored with tree-mode.');
+    }
+
+    if (on && this.rowRenderer) {
+      this.#warnTree('row-renderer', 'rowRenderer is ignored with tree-mode.');
+    }
+
+    if (on && this.#dataSource && (this.#remote.paging || this.#remote.grouping)) {
+      this.#warnTree('remote-paging', 'remote paging and grouping do not apply to a tree; children load per node.');
+    }
+
+    if (on && this.#dataSource && this.#summary?.node?.length) {
+      this.#warnTree('remote-node-summary', 'summary.node is off with a "dataSource" (children not loaded would make it partial).');
+    }
   }
 
   // ------------------------------------------------------------- paginação
@@ -2106,7 +3231,10 @@ export class DataGrid extends LitElement {
     }
 
     if (!this.#dataSource) {
-      this.#reconcileEdits(this.#hostItems);
+      // Árvore aninhada (frente 25): as mudanças pendentes valem para todos os nós, não só as raízes.
+      this.#reconcileEdits(this.#treeOn && normalizeTreeMode(this.treeMode) === 'nested'
+        ? this.#tree.indexFor(this.#hostItems, this.#treeConfig()).nodes
+        : this.#hostItems);
       this.#setItems(this.#hostItems);
     }
   }
@@ -2611,12 +3739,13 @@ export class DataGrid extends LitElement {
 
   /** Coluna de expansão do master-detail (antes da de caixas): com detalhe ou com coluna oculta por espaço (spec 21). */
   get #showDetailColumn(): boolean {
-    return !!this.detailRenderer || this.#adaptiveColumns.length > 0;
+    // Árvore (frente 25): master-detail e linha adaptativa ignorados.
+    return !this.#treeOn && (!!this.detailRenderer || this.#adaptiveColumns.length > 0);
   }
 
-  /** A expansão de linhas vale (estado guardado, métodos e evento): com `detailRenderer` ou `autoHideColumns`. */
+  /** A expansão de linhas vale (estado guardado, métodos e evento): com `detailRenderer` ou `autoHideColumns` (fora da árvore). */
   get #expandable(): boolean {
-    return !!this.detailRenderer || this.autoHideColumns;
+    return !this.#treeOn && (!!this.detailRenderer || this.autoHideColumns);
   }
 
   /** Colunas navegáveis do grid antes das colunas comuns (expansão, caixas). */
@@ -2944,6 +4073,18 @@ export class DataGrid extends LitElement {
 
       const keys = [...this.#rowExpansion].filter(isStateKey);
       state.rowExpansion = this.autoExpandRows ? { expanded: [], collapsed: keys } : { expanded: keys, collapsed: [] };
+
+      // Árvore (frente 25): exceções ao padrão (`all`/`autoExpandNodes`); só no modo árvore.
+      if (this.#treeOn) {
+        const tree = this.#tree;
+        const nodeKeys = [...tree.exceptions].filter(isStateKey);
+        const expandedByDefault = tree.defaultExpanded(this.autoExpandNodes);
+        state.nodeExpansion = {
+          all: tree.all,
+          expanded: expandedByDefault ? [] : nodeKeys,
+          collapsed: expandedByDefault ? nodeKeys : [],
+        };
+      }
     }
 
     state.pageIndex = this.#pageIndex;
@@ -3143,6 +4284,20 @@ export class DataGrid extends LitElement {
     if (state.selectedKeys || reset) {
       const keys = state.selectedKeys ?? initial.selectedKeys;
       this.#selection.replace(this.#selectionMode === 'single' ? keys.slice(-1) : keys);
+    }
+
+    if (state.nodeExpansion || reset) {
+      const tree = this.#tree;
+      tree.reset();
+      tree.all = state.nodeExpansion?.all ?? null;
+
+      const expandedByDefault = tree.defaultExpanded(this.autoExpandNodes);
+
+      for (const key of (expandedByDefault ? state.nodeExpansion?.collapsed : state.nodeExpansion?.expanded) ?? []) {
+        tree.exceptions.add(key);
+      }
+
+      this.#rowsDirty = true;
     }
 
     if (state.rowExpansion || reset) {
@@ -3478,6 +4633,9 @@ export class DataGrid extends LitElement {
       this.#expansionDefaultsVersion,
       this.#rowExpansion.version,
       this.autoExpandRows,
+      this.#tree.version,
+      this.autoExpandNodes,
+      this.treeMode,
       this.#pageIndex,
       this.#effectivePageSize,
       this.#selection.version,
@@ -3803,6 +4961,11 @@ export class DataGrid extends LitElement {
       fullWidthIndices: this.#fullWidthIndices.size,
       primitiveFullWidthSizes: this.#primitiveFullWidthSizes.size,
       observedFixedSections: this.#observedFixedSections.size,
+      // Árvore (frente 25): cargas de filhos em voo/na fila, o temporizador do anúncio, resumos por nó memorizados.
+      treeLoads: this.#treeLoads.size + (this.#treeLoadQueue?.keys.length ?? 0),
+      treeTimers: this.#treeLoadingTimer === undefined ? 0 : 1,
+      nodeSummaries: this.#nodeSummaries.size,
+      treeExpansion: this.#tree.exceptions.size,
     };
   }
 
@@ -3889,6 +5052,8 @@ export class DataGrid extends LitElement {
     this.#loader.dispose();
     this.#queryKey = undefined;
     this.#pendingQuery = undefined;
+    // Cargas de filhos da árvore (spec 25): abortadas; ao reconectar, a raiz recarrega.
+    this.#resetTreeLoads();
 
     // Rajada do estado pendente: avisa e grava agora (spec 14: nenhum timer fica).
     if (this.#stateTimer !== undefined) {
@@ -3965,6 +5130,45 @@ export class DataGrid extends LitElement {
         ? '<u-grid>: scroll-mode="infinite" needs a dataSource with remote paging; ignored.'
         : `<u-grid>: unknown scroll-mode "${String(this.scrollMode)}"; "virtual" is used.`);
     }
+
+    // Árvore (frente 25): modo, expressões e filtro refazem o índice/visão.
+    if (
+      changed.has('treeMode') || changed.has('childrenExpr') || changed.has('parentKeyExpr')
+      || changed.has('rootParentKey') || changed.has('hasChildrenExpr') || changed.has('treeFilterMode')
+    ) {
+      this.#treeViewDirty = true;
+      this.#rowsDirty = true;
+      this.#summaryDirty = true;
+      this.#groupsDirty = true;
+      this.#totalsDirty = true;
+      this.#layoutDirty = true;
+      this.#adaptiveDirty = true;
+
+      if (changed.has('treeMode') && !this.#treeOn) {
+        // Volta a lista: o pipeline comum usa `items` de novo.
+        this.#tree.release();
+        this.#treeIndexInUse = undefined;
+        this.#treeView = undefined;
+        this.#setItems(this.#dataSource ? [] : this.#hostItems);
+        this.#loadedGeneration = undefined;
+        this.#queryKey = undefined;
+      }
+
+      if (changed.has('treeMode') && this.#dataSource) {
+        this.#queryKey = undefined;
+        this.#loadedGeneration = undefined;
+      }
+    }
+
+    if (changed.has('autoExpandNodes')) {
+      if (changed.get('autoExpandNodes') !== undefined) {
+        this.#tree.reset();
+      }
+
+      this.#rowsDirty = true;
+    }
+
+    this.#syncTreeGrouping();
 
     if (changed.has('autoExpandGroups')) {
       // Opção do hospedeiro vence o estado do usuário (como nas colunas).
@@ -4281,6 +5485,56 @@ export class DataGrid extends LitElement {
    */
   isRowExpanded(rowKey: unknown): boolean {
     return this.#expandable && this.#isRowExpandedKey(rowKey);
+  }
+
+  /**
+   * Expands the tree node `rowKey` (`treeMode`). Never rejects: resolves
+   * `true` when the node is expanded with its children ready (a `dataSource`
+   * loads them first), `false` on a failed or aborted load, a leaf or a key
+   * not in the tree.
+   */
+  expandNode(rowKey: unknown): Promise<boolean> {
+    return this.#setNodeExpanded(rowKey, true, 'api');
+  }
+
+  /** Collapses the tree node `rowKey`; the active cell inside it moves to the node. */
+  collapseNode(rowKey: unknown): void {
+    void this.#setNodeExpanded(rowKey, false, 'api');
+  }
+
+  /**
+   * Whether the tree node `rowKey` is SHOWN expanded: `false` for a leaf (also
+   * a node whose children are all filtered out), a key not in the tree, and
+   * a remote node whose children are not loaded nor loading — even if the
+   * expansion state (`getState().nodeExpansion`) says expanded.
+   */
+  isNodeExpanded(rowKey: unknown): boolean {
+    this.#ensureRows();
+    const node = this.#nodeOfKey(rowKey);
+    return this.#treeOn && node >= 0 && this.#nodeShownExpanded(node);
+  }
+
+  /** Expands every tree node (with `dataSource`: only the loaded ones; no loads). */
+  expandAllNodes(): void {
+    this.#setAllNodesExpanded(true, 'api');
+  }
+
+  /** Collapses every tree node; the active cell moves to its root node. */
+  collapseAllNodes(): void {
+    this.#setAllNodesExpanded(false, 'api');
+  }
+
+  /** Values of `summary.node` for the tree node `rowKey` (over its visible descendants); empty for a leaf or a key not shown. */
+  getNodeSummaryValues(rowKey: unknown): GridSummaryValue[] {
+    this.#ensureRows();
+    const node = this.#nodeOfKey(rowKey);
+
+    if (!this.#treeOn || node < 0 || !this.#treeView || !childCount(this.#treeView, node) || (this.#treeView.visible && !this.#treeView.visible[node])) {
+      return [];
+    }
+
+    const values = this.#nodeSummaryValues(node);
+    return this.#groupSpecs.map((summary, position) => this.#summaryValue(summary, values[position]));
   }
 
   #isRowExpandedKey(key: unknown): boolean {
@@ -4798,6 +6052,14 @@ export class DataGrid extends LitElement {
 
     this.#ensureRows();
 
+    if (this.#treeOn) {
+      // Árvore remota (frente 25): na lista de nós carregados; o índice se refaz.
+      this.#treeRemoteItems = this.#flatTreeNext(this.#treeRemoteItems, add, new Map(update.map(item => [this.#baseKeyOf(item), item])), new Set(remove));
+      this.#rowsDirty = true;
+      this.requestUpdate();
+      return;
+    }
+
     if (!this.#lazy) {
       this.#applyLocalChanges(add, new Map(update.map(item => [this.#baseKeyOf(item), item])), new Set(remove));
       return;
@@ -4873,9 +6135,17 @@ export class DataGrid extends LitElement {
 
   /** Removes the rows of `keys` from the selection (nothing in `none` mode). */
   deselectRows(keys: readonly unknown[]): void {
-    if (this.#selectionMode !== 'none') {
-      this.#applySelection(this.#selection.remove(keys), 'api');
+    if (this.#selectionMode === 'none') {
+      return;
     }
+
+    if (this.#recursiveOn) {
+      this.#ensureRows();
+      this.#applySelection(this.#selection.replace(this.#recursiveApply(keys, false, new Set(this.#selection.keys))), 'api');
+      return;
+    }
+
+    this.#applySelection(this.#selection.remove(keys), 'api');
   }
 
   /** Selects every row that passes the filter, including rows of collapsed groups (`multiple` mode only). */
@@ -5028,10 +6298,13 @@ export class DataGrid extends LitElement {
    * `paging`) and opens its first editable cell. `data` gives initial values
    * (also editable in `u-grid-row-adding`). Returns the opaque provisional key
    * of the row (focus and selection move to the real key when it is saved),
-   * or `null` without `allowAdding`, during a save or when canceled.
+   * or `null` without `allowAdding`, during a save or when canceled. Tree
+   * data: with `options.parentKey` the row is the first child of that node,
+   * which expands with its ancestors (`u-grid-node-expansion-change`); a key
+   * that is not a node adds nothing (`null`, console warning).
    */
-  addRow<TItem = any>(data: Partial<TItem> = {}): unknown {
-    return this.#addRow(data, 'api', null);
+  addRow<TItem = any>(data: Partial<TItem> = {}, options?: GridAddRowOptions | null): unknown {
+    return this.#addRow(data, 'api', null, options?.parentKey);
   }
 
   /**
@@ -5126,7 +6399,8 @@ export class DataGrid extends LitElement {
   }
 
   #cellEditable(row: DataRow, column: GridColumnDef, pending = this.#pendingOf(row)): boolean {
-    return isColumnEditable(column) && this.#rowEditable(row, pending);
+    // Árvore (frente 25): a célula com o resumo por nó (`display: 'column'`) não edita.
+    return isColumnEditable(column) && this.#rowEditable(row, pending) && !(row.tree && this.#nodeColumnSummary(row, column));
   }
 
   /** Todas as colunas (comuns, ocultas e agrupadas). */
@@ -5541,6 +6815,22 @@ export class DataGrid extends LitElement {
 
     if (this.#added.delete(pending.rowKey)) {
       this.#syncKeyOf();
+      this.#withAdded = undefined;
+
+      // Árvore (frente 25): filho novo descartado com a célula ativa nele → célula da árvore do pai.
+      const activeKey = this.#activeRef && 'key' in this.#activeRef ? this.#activeRef.key : undefined;
+
+      if (pending.parentKey !== undefined && activeKey === pending.rowKey) {
+        this.#rowsDirty = true;
+        this.#ensureRows();
+
+        const row = this.#rowIndexOfKey(pending.parentKey);
+
+        if (row >= 0) {
+          const hadFocus = !!this.shadowRoot?.activeElement;
+          this.#setActive({ row, col: this.#treeNavCol >= 0 ? this.#treeNavCol : this.#activeCol }, null, { focus: hadFocus });
+        }
+      }
     }
   }
 
@@ -5634,8 +6924,17 @@ export class DataGrid extends LitElement {
 
   // ------------------------------------------------- inserir e excluir
 
-  #addRow(data: Record<string, unknown>, source: GridChangeSource, returnFocus: HTMLElement | null): unknown {
+  #addRow(data: Record<string, unknown>, source: GridChangeSource, returnFocus: HTMLElement | null, parentKey?: unknown): unknown {
     if (!this.#editingOn || !this.allowAdding || this.#saving) {
+      return null;
+    }
+
+    // Árvore (frente 25): o pai precisa estar na árvore; fora dela a chave é ignorada.
+    this.#ensureRows();
+    const parentNode = parentKey === undefined || !this.#treeOn ? -1 : this.#nodeOfKey(parentKey);
+
+    if (parentKey !== undefined && parentNode < 0) {
+      this.#warnTree('add-parent', 'addRow(): "parentKey" is not a node of the tree (or tree-mode is off); no row was added.');
       return null;
     }
 
@@ -5647,8 +6946,13 @@ export class DataGrid extends LitElement {
 
     const initial = copyData(data && typeof data === 'object' ? data : {});
 
+    // Entrada plana: o item novo já leva a chave do pai.
+    if (parentKey !== undefined && normalizeTreeMode(this.treeMode) === 'flat' && typeof this.parentKeyExpr === 'string') {
+      setValueByPath(initial, this.parentKeyExpr, parentKey);
+    }
+
     if (!this.dispatchEvent(new CustomEvent('u-grid-row-adding', {
-      ...this.#eventInit<GridRowAddingEventDetail>({ data: initial, source }),
+      ...this.#eventInit<GridRowAddingEventDetail>({ data: initial, parentKey, source }),
       cancelable: true,
     }))) {
       return null;
@@ -5657,18 +6961,45 @@ export class DataGrid extends LitElement {
     this.#ensureRows();
 
     const rowKey = createProvisionalKey();
-    // No topo das linhas visíveis (a página atual com `paging`).
-    const first = this.#firstVisibleRowIndex();
+    // No topo das linhas visíveis (a página atual com `paging`); filho: 1º filho do pai (que expande).
+    let first = this.#firstVisibleRowIndex();
+    let level: number | undefined = this.#treeOn ? 0 : undefined;
+
+    if (parentKey !== undefined) {
+      // O pai e os ancestrais expandem (a linha nova aparece).
+      const index = this.#tree.index!;
+
+      for (let node = parentNode; node >= 0; node = this.#treeView?.parent[node] ?? -1) {
+        const key = this.#keyOf(index.nodes[node]);
+        const shown = this.#nodeShownExpanded(node);
+
+        this.#tree.set(key, true, this.autoExpandNodes);
+
+        if (!shown && this.#nodeHasChildren(node)) {
+          this.#dispatchNodeExpansion(key, true, source);
+        }
+      }
+
+      this.#rowsDirty = true;
+      this.#ensureRows();
+
+      const parentRow = this.#rowIndexOfKey(parentKey);
+      first = parentRow >= 0 ? parentRow + 1 : first;
+      level = (this.#treeView?.level[parentNode] ?? 0) + 1;
+    }
+
     const anchorRow = this.#rowAt(Math.min(first, this.#rows.length - 1));
+    const atEnd = first >= this.#rows.length;
     const anchor: AddedAnchor = {
       seq: ++this.#addedSeq,
-      anchorKey: isDataRow(anchorRow) && !anchorRow.skeleton ? this.#keyOf(anchorRow.item) : undefined,
-      anchorRowKey: anchorRow && !isDataRow(anchorRow) ? anchorRow.key : undefined,
+      level,
+      anchorKey: !atEnd && isDataRow(anchorRow) && !anchorRow.skeleton ? this.#keyOf(anchorRow.item) : undefined,
+      anchorRowKey: !atEnd && anchorRow && !isDataRow(anchorRow) ? anchorRow.key : undefined,
       fallback: Math.min(first, this.#rows.length),
     };
 
     this.#added.set(rowKey, anchor);
-    const pending = this.#edits.add(rowKey, initial);
+    const pending = this.#edits.add(rowKey, initial, parentKey);
 
     for (const column of this.#allEditColumns()) {
       // Valores iniciais contam como digitados (a marca e a validação na hora de salvar).
@@ -6145,6 +7476,8 @@ export class DataGrid extends LitElement {
     const addedItems = new Map<unknown, unknown>();
     // Chave → item velho das alteradas (troca no lugar, sem varrer 1 milhão de chaves).
     const originals = new Map<unknown, unknown>();
+    // Árvore (frente 25): item novo → chave do pai.
+    const addParents = new Map<unknown, unknown>();
 
     if (replacement) {
       add.push(...replacement.add ?? []);
@@ -6168,6 +7501,10 @@ export class DataGrid extends LitElement {
           const item = copyData(pending.data);
           add.push(item);
           addedItems.set(pending.rowKey, item);
+
+          if (pending.parentKey !== undefined) {
+            addParents.set(item, pending.parentKey);
+          }
         } else {
           updates.set(pending.rowKey, this.#edits.mergedOf(pending));
           originals.set(pending.rowKey, pending.item);
@@ -6188,6 +7525,32 @@ export class DataGrid extends LitElement {
     this.#syncKeyOf();
     this.#withAdded = undefined;
 
+    if (this.#treeOn) {
+      // Árvore (frente 25): refaz a fonte (cópia) e o índice; nada do hospedeiro é mutado.
+      const removals = new Set(remove);
+
+      if (this.#dataSource) {
+        this.#treeRemoteItems = this.#flatTreeNext(this.#treeRemoteItems, add, updates, removals);
+      } else {
+        this.#hostItems = normalizeTreeMode(this.treeMode) === 'nested'
+          ? this.#nestedTreeNext(this.#hostItems, add, addParents, updates, removals)
+          : this.#flatTreeNext(this.#hostItems, add, updates, removals);
+      }
+
+      if (!keyed) {
+        this.#migrateObjectKeys(updates, removals);
+      }
+
+      this.#rowsDirty = true;
+      this.requestUpdate();
+
+      if (savedActive !== undefined) {
+        this.#activeRef = { key: this.#keyOf(savedActive) };
+      }
+
+      return this.#dataSource ? null : this.#hostItems as unknown[];
+    }
+
     if (this.#dataSource) {
       this.applyChanges({ add, update: [...updates.values()], remove });
     } else {
@@ -6205,6 +7568,81 @@ export class DataGrid extends LitElement {
     }
 
     return this.#dataSource ? null : this.#items as unknown[];
+  }
+
+  /** Árvore plana salva: tira as removidas, troca as alteradas (por chave) e acrescenta as novas no fim. */
+  #flatTreeNext(items: readonly unknown[], add: readonly unknown[], updates: ReadonlyMap<unknown, unknown>, removals: ReadonlySet<unknown>): unknown[] {
+    const keyOf = this.#baseKeyOf;
+    const next: unknown[] = [];
+
+    for (const item of items) {
+      const key = keyOf(item);
+
+      if (!removals.has(key)) {
+        next.push(updates.get(key) ?? item);
+      }
+    }
+
+    next.push(...add);
+    return next;
+  }
+
+  /**
+   * Árvore aninhada salva: cópia só do caminho que mudou (os objetos e
+   * arrays do hospedeiro ficam intactos). Filhos novos entram como 1º filho
+   * do pai (com `childrenExpr` texto simples; senão, na raiz, com aviso).
+   */
+  #nestedTreeNext(
+    roots: readonly unknown[],
+    add: readonly unknown[],
+    addParents: ReadonlyMap<unknown, unknown>,
+    updates: ReadonlyMap<unknown, unknown>,
+    removals: ReadonlySet<unknown>,
+  ): unknown[] {
+    const keyOf = this.#keyExpr ? this.#baseKeyOf : (item: unknown) => item;
+    const expr = this.childrenExpr || 'children';
+    const writable = typeof expr === 'string' && !expr.includes('.');
+    const childrenOf = childrenReader(expr);
+    const addedUnder = new Map<unknown, unknown[]>();
+
+    for (const item of add) {
+      const parent = writable ? addParents.get(item) : undefined;
+
+      if (addParents.has(item) && !writable) {
+        this.#warnTree('child-expr', 'a new child row needs a plain "childrenExpr" property name; it was added as a root node.');
+      }
+
+      const list = addedUnder.get(parent) ?? [];
+      list.push(item);
+      addedUnder.set(parent, list);
+    }
+
+    const rebuild = (list: readonly unknown[], parentKey: unknown): unknown[] => {
+      const next: unknown[] = [...addedUnder.get(parentKey) ?? []];
+
+      for (const item of list) {
+        const key = keyOf(item);
+
+        if (removals.has(key)) {
+          continue;
+        }
+
+        let replacement = updates.get(key) ?? item;
+        const children = childrenOf(item) ?? [];
+        const rebuilt = rebuild(children, key);
+        const changed = rebuilt.length !== children.length || rebuilt.some((child, index) => child !== children[index]);
+
+        if (changed && writable && replacement && typeof replacement === 'object') {
+          replacement = { ...replacement as Record<string, unknown>, [expr]: rebuilt };
+        }
+
+        next.push(replacement);
+      }
+
+      return next;
+    };
+
+    return rebuild(roots, undefined);
   }
 
   /** Sem `keyExpr` a chave é o objeto: seleção, expansão e foco passam do item velho para o novo. */
@@ -6343,7 +7781,10 @@ export class DataGrid extends LitElement {
       added.push({
         position: position >= 0 ? position : Math.min(anchor.fallback, base.length),
         rowKey,
-        row: { isGroup: false, key: `n:${anchor.seq}`, item, index: 0 },
+        row: anchor.level === undefined
+          ? { isGroup: false, key: `n:${anchor.seq}`, item, index: 0 }
+          // Árvore (frente 25): recuo e nível da linha nova (sem irmãos contados).
+          : { isGroup: false, key: `n:${anchor.seq}`, item, index: 0, tree: { node: -1, level: anchor.level, posInSet: 0, setSize: 0 } },
       });
     }
 
@@ -6533,7 +7974,12 @@ export class DataGrid extends LitElement {
     let groups = lazy ? [] : this.#groups;
     let totals = this.#totals;
 
-    if (options.selectedOnly) {
+    // Árvore (frente 25): as linhas da tela (nós expandidos), com o nível de cada uma.
+    const tree = this.#treeOn ? this.#treeExportRows(options.selectedOnly === true) : undefined;
+
+    if (tree) {
+      items = tree.items;
+    } else if (options.selectedOnly) {
       // Na ordem e no filtro atuais; grupos e resumos recalculados sobre as selecionadas.
       const keyOf = this.#keyOf;
       items = items.filter(item => this.#selection.has(keyOf(item)));
@@ -6556,10 +8002,12 @@ export class DataGrid extends LitElement {
       groups,
       includeGroups,
       includeSummaries,
-      groupSummaries: this.#groupSpecs.map(summary => this.#exportSummary(summary)),
+      groupSummaries: tree ? [] : this.#groupSpecs.map(summary => this.#exportSummary(summary)),
       totalSummaries: this.#totalSpecs.map(summary => this.#exportSummary(summary)),
       totals,
       listSeparator,
+      itemLevels: tree?.levels,
+      itemOverrides: tree && includeSummaries ? index => this.#treeExportOverrides(tree.rows[index], columns) : undefined,
       groupValueText: node => this.#groupValueText({ column: node.column, value: node.value, firstItem: node.items[0] }),
       groupLabel: (node, valueText, extra) => {
         const parts = this.showGroupCount ? [countFormat.format(node.items.length), ...extra] : [...extra];
@@ -6568,6 +8016,72 @@ export class DataGrid extends LitElement {
         return `${node.column.label ?? ''}${translation.groupLabelSeparator}${valueText}${info}`;
       },
     };
+  }
+
+  /** Árvore: linhas de nó na ordem da tela (sem esqueletos nem rodapés), e o nível de cada. */
+  #treeExportRows(selectedOnly: boolean): { items: unknown[]; levels: Int32Array; rows: DataRow[] } {
+    const all = this.#allRows;
+    const rows: DataRow[] = [];
+    const view = this.#treeView;
+    const treeIndex = this.#tree.index;
+
+    if (selectedOnly && view && treeIndex) {
+      // Só as marcadas, também as de ramos recolhidos (como os grupos recolhidos), em pré-ordem.
+      const stack: number[] = [];
+
+      const pushChildren = (owner: number) => {
+        for (let k = view.childStart[owner + 1] - 1; k >= view.childStart[owner]; k--) {
+          stack.push(view.children[k]);
+        }
+      };
+
+      pushChildren(treeIndex.nodes.length);
+
+      while (stack.length) {
+        const node = stack.pop()!;
+        const item = treeIndex.nodes[node];
+
+        if (this.#selection.has(this.#keyOf(item))) {
+          rows.push({ isGroup: false, key: '', item, index: 0, tree: { node, level: view.level[node], posInSet: 0, setSize: 0 } });
+        }
+
+        pushChildren(node);
+      }
+
+      return { items: rows.map(row => row.item as unknown), levels: Int32Array.from(rows, row => row.tree!.level), rows };
+    }
+
+    for (let index = 0; index < all.length; index++) {
+      const row = all.at(index);
+
+      if (isDataRow(row) && row.tree && row.tree.node >= 0 && (!selectedOnly || this.#selection.has(this.#keyOf(row.item)))) {
+        rows.push(row);
+      }
+    }
+
+    return { items: rows.map(row => row.item as unknown), levels: Int32Array.from(rows, row => row.tree!.level), rows };
+  }
+
+  /** Resumos por nó `display: 'column'` de uma linha exportada (no lugar do valor). */
+  #treeExportOverrides(row: DataRow, columns: readonly ExportColumnSource[]): Map<number, { value: unknown; text: string }> | undefined {
+    let cells: Map<number, { value: unknown; text: string }> | undefined;
+
+    columns.forEach(({ info }, index) => {
+      const texts = this.#nodeColumnSummary(row, info.column);
+
+      if (texts) {
+        const values = this.#nodeSummaryValues(row.tree!.node);
+        const raw = this.#groupSpecs
+          .map((summary, position) => ({ summary, position }))
+          .filter(({ summary }) => summary.item.display === 'column' && summary.spec.column === info.column)
+          .map(({ position }) => values[position]);
+
+        cells ??= new Map();
+        cells.set(index, { value: raw.length === 1 ? raw[0] : raw, text: texts.map(text => text.text).join(this.#listSeparatorText) });
+      }
+    });
+
+    return cells;
   }
 
   #exportColumn(column: GridColumnDef): ExportColumnSource {
@@ -6886,6 +8400,9 @@ export class DataGrid extends LitElement {
       this.#expansionDefaultsVersion,
       this.#rowExpansion.version,
       this.autoExpandRows,
+      this.#tree.version,
+      this.autoExpandNodes,
+      this.treeMode,
       this.#pageIndex,
       this.#effectivePageSize,
       this.#dataSource,
@@ -8162,6 +9679,11 @@ export class DataGrid extends LitElement {
 
   /** `source` nulo: mudança vinda da definição da coluna, sem evento. */
   #moveColumnTo(toGroup: boolean, column: GridColumnDef, targetIndex: number, source: GridChangeSource | null): void {
+    if (toGroup && this.#treeOn) {
+      this.#warnTree('group-api', 'grouping is ignored with tree-mode.');
+      return;
+    }
+
     const previous = this.getGrouping();
     let regular = [...this._regularColumns];
     const group = [...this._groupColumns];
@@ -8366,6 +9888,12 @@ export class DataGrid extends LitElement {
     const viewport = this.#viewportWidth;
     this.#adaptiveCap = undefined;
     const shown = this._shownColumns;
+
+    if (this.autoHideColumns && this.#treeOn) {
+      // Árvore (frente 25): sem linha adaptativa (detalhe), ocultar colunas esconderia dados.
+      this.#warnTree('auto-hide', 'autoHideColumns is ignored with tree-mode (a tree has no adaptive detail row).');
+      return [];
+    }
 
     if (!this.autoHideColumns || isServer || viewport <= 0 || shown.length < 2) {
       return [];
@@ -9623,7 +11151,8 @@ export class DataGrid extends LitElement {
     if (this.#summaryDirty || (languageChanged && (this.#totalSpecs.length || this.#groupSpecs.length))) {
       const hadFooters = this.#hasGroupFooters;
       const totalSpecs = this.#resolveSummaries(this.#summary?.total, language);
-      const groupSpecs = this.#resolveSummaries(this.#summary?.group, language);
+      // Árvore (frente 25): os resumos por nó ocupam o lugar dos de grupo (rodapé, texto, coluna).
+      const groupSpecs = this.#resolveSummaries(this.#treeOn ? (this.#dataSource ? [] : this.#summary?.node) : this.#summary?.group, language);
 
       // Agrupar/reordenar colunas suja a resolução, mas raramente muda os
       // resumos: só recalcula (1 mi de linhas) o que mudou de fato.
@@ -9646,6 +11175,11 @@ export class DataGrid extends LitElement {
       this.#planQuery();
       this.#announceFiltered();
       this.#applyPage();
+      return;
+    }
+
+    if (this.#treeOn) {
+      this.#ensureTreeRows(language, languageChanged);
       return;
     }
 
@@ -9778,6 +11312,23 @@ export class DataGrid extends LitElement {
 
     if (generation && generation !== this.#loadedGeneration) {
       this.#loadedGeneration = generation;
+
+      if (this.#treeOn) {
+        // Árvore remota: a raiz (ou, com filtro remoto, os nós que passam e os ancestrais); os filhos chegam por nó.
+        this.#resetTreeLoads();
+        this.#treeLoadedParents.clear();
+        this.#treeRemoteItems = generation.rootItems() ?? [];
+
+        if (this.#treeQuery?.tree?.parentKeys === null) {
+          // Com o filtro no servidor, a resposta já traz tudo o que aparece.
+          for (const item of this.#treeRemoteItems) {
+            this.#treeLoadedParents.add(this.#baseKeyOf(item));
+          }
+        }
+
+        return;
+      }
+
       this.#setItems(generation.rootItems() ?? []);
     }
   }
@@ -9897,7 +11448,9 @@ export class DataGrid extends LitElement {
       : [];
     const totalSummaryMap: number[] = [];
     const groupSummaryMap: number[] = [];
-    const paged = remote.paging;
+    const tree = this.#treeOn;
+    const paged = remote.paging && !tree;
+    const remoteFilter = remote.filtering ? this.#filtering.combined() : null;
     const query: LoaderQuery = {
       sort,
       filter: remote.filtering ? this.#filtering.combined() : null,
@@ -9908,6 +11461,8 @@ export class DataGrid extends LitElement {
       groupSummary: remote.summary && groupColumns.length ? this.#remoteSummaries(this.#groupSpecs, groupSummaryMap) : [],
       blockSize: paged ? this.#effectivePageSize : Infinity,
       infinite: paged && this.scrollMode === 'infinite' && !this.paging,
+      // Árvore: a raiz; com filtro remoto, tudo o que passa e os ancestrais (`parentKeys: null`).
+      tree: tree ? { parentKeys: remoteFilter ? null : [this.rootParentKey ?? null] } : null,
     };
     const key = JSON.stringify([query, this.#refreshCount]);
 
@@ -9929,6 +11484,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#queryKey = key;
+    this.#treeQuery = tree ? query : undefined;
     query.context = { groupColumns, totalSummaryMap, groupSummaryMap } satisfies RemoteContext;
     this.#pendingQuery = {
       query,
@@ -10785,7 +12341,12 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const list = [...keys];
+    this.#ensureRows();
+
+    // Árvore com seleção recursiva (frente 25): os métodos propagam (o setter, não).
+    const list = this.#recursiveOn && mode === 'multiple'
+      ? [...this.#recursiveApply(keys, true, new Set(append ? this.#selection.keys : []))]
+      : [...keys];
 
     this.#applySelection(
       mode === 'single'
@@ -10831,6 +12392,9 @@ export class DataGrid extends LitElement {
 
     if (this.#selectionMode === 'single') {
       this.#applySelection(selected ? this.#selection.remove([key]) : this.#selection.replace([key]), 'user');
+    } else if (this.#recursiveOn) {
+      // Árvore (frente 25): a subárvore junto; nó misto (não marcado) marca tudo.
+      this.#applySelection(this.#selection.replace(this.#recursiveApply([key], !selected, new Set(this.#selection.keys))), 'user');
     } else {
       this.#applySelection(selected ? this.#selection.remove([key]) : this.#selection.add([key]), 'user');
     }
@@ -11850,6 +13414,13 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    // Árvore (frente 25): `*` expande os irmãos do nó (APG treegrid).
+    if (event.key === '*' && !ctrl && !event.altKey && isDataRow(row) && row.tree && row.tree.node >= 0 && this.#treeOn) {
+      event.preventDefault();
+      this.#expandSiblings(row.tree.node);
+      return;
+    }
+
     if (row.isGroup) {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -11915,6 +13486,18 @@ export class DataGrid extends LitElement {
       }
     } else if ((event.key === 'Enter' || event.key === 'F2') && column !== SELECTION_COLUMN) {
       const fullWidthCell = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+
+      // Árvore: Enter na célula da árvore alterna o nó quando ela não edita nem tem conteúdo interativo.
+      if (
+        event.key === 'Enter' && !event.repeat && typeof column === 'object' && this.#isTreeCell(row, column)
+        && this.#nodeHasChildren(row.tree!.node)
+        && !(this.#editingOn && this.#cellEditable(row, column, this.#pendingOf(row)))
+        && !focusTargetsWithin(cell).length
+      ) {
+        event.preventDefault();
+        void this.#setNodeExpanded(this.#keyOf(row.item), !this.#nodeShownExpanded(row.tree!.node), 'user');
+        return;
+      }
 
       if (!fullWidthCell && typeof column === 'object' && this.#editingOn && this.#editFromCell(position, column)) {
         event.preventDefault();
@@ -12359,6 +13942,11 @@ export class DataGrid extends LitElement {
   #navigate(event: KeyboardEvent, position: CellPosition, key: NavigationKey, row: Row | undefined): void {
     event.preventDefault();
 
+    // Árvore (frente 25): na célula da árvore, → expande e ← recolhe ou vai ao pai (APG treegrid com foco de célula).
+    if ((key === 'left' || key === 'right') && !event.shiftKey && this.#onTreeArrow(position, key, row)) {
+      return;
+    }
+
     // Linha de grupo: → expande, ← recolhe ou vai ao grupo de cima.
     if (row?.isGroup && (key === 'left' || key === 'right') && !event.shiftKey) {
       if (key === 'right' ? !row.expanded : row.expanded) {
@@ -12440,6 +14028,23 @@ export class DataGrid extends LitElement {
       ? { row: this.#fromVisual(visual.row), col: visual.col }
       : { row: paged!, col: inFullWidth || row?.isGroup || row?.isDetail ? this.#activeCol : position.col };
 
+    // Árvore (frente 25): o esqueleto da carga de filhos fica fora da navegação (pula para a linha seguinte).
+    const skeleton = (index: number) => {
+      const candidate = this.#rowAt(index);
+      return !!candidate && isDataRowLike(candidate) && candidate.key.startsWith('s:tree:');
+    };
+
+    if (this.#treeOn && skeleton(next.row)) {
+      const step = next.row >= position.row ? 1 : -1;
+      let target = next.row;
+
+      while (skeleton(target)) {
+        target += step;
+      }
+
+      next.row = this.#rowAt(target) ? target : position.row;
+    }
+
     this.#setActive(next, 'user', { focus: true });
 
     const vertical = key === 'up' || key === 'down' || key === 'pageUp' || key === 'pageDown';
@@ -12501,6 +14106,74 @@ export class DataGrid extends LitElement {
 
     // Totais.
     return bottom ? this.#fixedIndex('bottom', bottom - 1) : body ? firstVisible : lastTop ?? from;
+  }
+
+  /**
+   * ←/→ na célula da árvore: → num nó recolhido expande (o foco fica); ←
+   * num expandido recolhe, num recolhido/folha vai à célula da árvore do pai.
+   * `false` = navegação comum (→ num expandido/folha, ← numa raiz).
+   */
+  #onTreeArrow(position: CellPosition, key: 'left' | 'right', row: Row | undefined): boolean {
+    if (!this.#treeOn || !isDataRow(row) || !row.tree || position.col !== this.#treeNavCol) {
+      return false;
+    }
+
+    // Linha nova filha (sem nó ainda): ← vai ao pai dela.
+    if (row.tree.node < 0) {
+      const parentKey = key === 'left' ? this.#pendingOf(row)?.parentKey : undefined;
+      return parentKey !== undefined && this.#focusNodeRow(parentKey, position.col);
+    }
+
+    const node = row.tree.node;
+    const hasChildren = this.#nodeHasChildren(node);
+    const expanded = hasChildren && this.#nodeShownExpanded(node);
+
+    if (key === 'right') {
+      if (!hasChildren || expanded) {
+        return false;
+      }
+
+      void this.#setNodeExpanded(this.#keyOf(row.item), true, 'user');
+      return true;
+    }
+
+    if (expanded) {
+      void this.#setNodeExpanded(this.#keyOf(row.item), false, 'user');
+      return true;
+    }
+
+    const parent = this.#treeView?.parent[node] ?? -1;
+    const index = this.#tree.index;
+
+    if (parent < 0 || !index) {
+      return false;
+    }
+
+    return this.#focusNodeRow(this.#keyOf(index.nodes[parent]), position.col);
+  }
+
+  /** Foca a célula da linha do nó (trocando de página com `paging`); `false` se ele não está nas linhas. */
+  #focusNodeRow(key: unknown, col: number): boolean {
+    let target = this.#rowIndexOfKey(key);
+
+    if (target < 0 && this.paging) {
+      const full = this.#allRows.indexOfDataKey(key, this.#keyExpr ? this.#keyOf : undefined);
+
+      if (full < 0) {
+        return false;
+      }
+
+      this.#setPage(Math.floor(full / this.#effectivePageSize), this.#effectivePageSize, 'user');
+      this.#ensureRows();
+      target = this.#rowIndexOfKey(key);
+    }
+
+    if (target < 0) {
+      return false;
+    }
+
+    this.#setActive({ row: target, col }, 'user', { focus: true });
+    return true;
   }
 
   #parentGroupIndex(index: number): number {
@@ -12691,7 +14364,7 @@ export class DataGrid extends LitElement {
           ${this.#renderToolbar()}
           <table
             class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}
-            role=${this._groupColumns.length ? 'treegrid' : 'grid'}
+            role=${this._groupColumns.length || this.#treeOn ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
             aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
             aria-colcount="${navColumns.length}"
@@ -13426,6 +15099,19 @@ export class DataGrid extends LitElement {
    * linhas de dados ficam um nível abaixo do grupo que as contém (spec 17).
    */
   #ariaLevelOf(row: Row): number | typeof nothing {
+    if (this.#treeOn) {
+      // Árvore (frente 25): nó = profundidade + 1; rodapé de resumos e esqueleto no nível dos filhos; fixas e totais no 1.
+      if (isFixedRow(row)) {
+        return 1;
+      }
+
+      if (row.isFooter) {
+        return row.level + 2;
+      }
+
+      return isDataRowLike(row) && row.tree ? row.tree.level + 1 : 1;
+    }
+
     if (!this._groupColumns.length) {
       return nothing;
     }
@@ -13460,6 +15146,9 @@ export class DataGrid extends LitElement {
     const expanded = expandable && this.#showDetailColumn && this.#isRowExpandedKey(this.#keyOf(row.item));
     const pending = isDataRow(row) ? this.#pendingOf(row) : undefined;
     const editing = isDataRow(row) && !!this.#editor && this.#editor.rowKey === this.#keyOf(row.item);
+    // Árvore (frente 25): posição entre os irmãos e expansão do nó.
+    const treeInfo = isDataRowLike(row) ? row.tree : undefined;
+    const treeExpanded = treeInfo ? this.#treeExpandedAttr(row) : undefined;
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
@@ -13481,7 +15170,9 @@ export class DataGrid extends LitElement {
       classes[parity] = true;
     }
 
-    const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? 'group-footer-row summary-row' : row.skeleton ? 'skeleton-row' : parity];
+    // Árvore (frente 25): o rodapé de resumos de um nó tem part próprio.
+    const footerPart = row.isFooter && this.#treeOn ? 'node-footer-row summary-row' : 'group-footer-row summary-row';
+    const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? footerPart : row.skeleton ? 'skeleton-row' : parity];
 
     if (fixed) {
       parts.push(`fixed-row fixed-${fixed}-row`);
@@ -13495,7 +15186,7 @@ export class DataGrid extends LitElement {
       parts.push('selected');
     }
 
-    if (expanded) {
+    if (expanded || treeExpanded === 'true') {
       parts.push('expanded');
     }
 
@@ -13512,7 +15203,9 @@ export class DataGrid extends LitElement {
         aria-rowindex="${this.#ariaRowIndexOf(index, headerRows)}"
         aria-busy=${ifDefined(isDataRowLike(row) && row.skeleton ? 'true' : undefined)}
         aria-level=${this.#ariaLevelOf(row)}
-        aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : undefined)}
+        aria-setsize=${ifDefined(treeInfo?.setSize ? treeInfo.setSize : undefined)}
+        aria-posinset=${ifDefined(treeInfo?.setSize ? treeInfo.posInSet : undefined)}
+        aria-expanded=${ifDefined(row.isGroup ? (row.expanded ? 'true' : 'false') : treeExpanded)}
         aria-selected=${ifDefined(selectable ? (selected ? 'true' : 'false') : undefined)}
         class="${classMap(classes)}"
         part=${parts.join(' ')}>
@@ -13862,6 +15555,7 @@ export class DataGrid extends LitElement {
       tabIndexOf: col => this.#isActive(rowIndex, col) ? 0 : -1,
       trailingGap: this.#trailingGap,
       keyOf: this.#cellKey,
+      level: this.#treeOn ? 1 : undefined,
     });
   }
 
@@ -13892,15 +15586,16 @@ export class DataGrid extends LitElement {
           ? this.#renderEditableCell(row, rowIndex, cell, cell.col, matcher, edit)
           : html`
           <td
-            part=${rangeEdges(cell.col) ? 'cell selected' : 'cell'}
-            class=${cell.cellClassName + this.#rangeClass(rangeEdges(cell.col))}
+            part=${this.#cellPart(row, cell.column, !!rangeEdges(cell.col))}
+            class=${cell.cellClassName + this.#rangeClass(rangeEdges(cell.col)) + (this.#isTreeCell(row, cell.column) ? ' tree-cell' : '')}
             style=${cell.style}
             role="gridcell"
             aria-colindex="${cell.col + 1}"
             aria-readonly=${ifDefined(fixed && this.#editingOn && this.#readonlyMarks ? 'true' : undefined)}
+            aria-expanded=${ifDefined(this.#isTreeCell(row, cell.column) ? this.#treeExpandedAttr(row) : undefined)}
             data-col=${cell.col}
             aria-selected=${ifDefined(rangeEdges(cell.col) ? 'true' : undefined)}
-            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
+            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderTreeCell(row, cell.column, this.#renderCellContent(row, cell, matcher))}</td>`}`)}
       ${this.#trailingSpacerCell()}
       ${this.#showCommandColumn
         ? fixed
@@ -13976,7 +15671,7 @@ export class DataGrid extends LitElement {
             tabindex=${this.#isActive(rowIndex, selectionCol) ? 0 : -1}
             style="inset-inline-start: ${this.#selectionInset}px">${row.skeleton
               ? nothing
-              : this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
+              : this.#renderCheckbox(selected ? 'true' : this.#recursiveOn && row.tree && this.#isNodePartial(row.tree.node) ? 'mixed' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
     `;
   }
@@ -14040,6 +15735,12 @@ export class DataGrid extends LitElement {
     const rangeEdges = this.#rangeEdgesAt(rowIndex, col);
     const classes = [cell.cellClassName + this.#rangeClass(rangeEdges)];
     const parts = rangeEdges ? ['cell', 'selected'] : ['cell'];
+    const treeCell = this.#isTreeCell(row, column);
+
+    if (treeCell) {
+      classes.push('tree-cell');
+      parts.push('tree-cell');
+    }
 
     if (modified) {
       classes.push('modified');
@@ -14098,6 +15799,8 @@ export class DataGrid extends LitElement {
       classes.push('show-message');
     }
 
+    const wrapped = (showMessage || showRowError) && !editing ? html`<span class="cell-text">${content}</span>` : content;
+
     return html`
       <td
         part=${parts.join(' ')}
@@ -14110,7 +15813,8 @@ export class DataGrid extends LitElement {
         aria-readonly=${ifDefined(readonly ? 'true' : undefined)}
         aria-invalid=${ifDefined((error || rowError) && !editing ? 'true' : undefined)}
         aria-describedby=${ifDefined(!editing && describedBy ? describedBy : undefined)}
-        tabindex=${active ? 0 : -1}>${(showMessage || showRowError) && !editing ? html`<span class="cell-text">${content}</span>` : content}${message}${rowMessage}</td>`;
+        aria-expanded=${ifDefined(treeCell ? this.#treeExpandedAttr(row) : undefined)}
+        tabindex=${active ? 0 : -1}>${this.#renderTreeCell(row, column, wrapped)}${message}${rowMessage}</td>`;
   }
 
   /** Erro da linha: o de `setError` sem coluna e os das colunas que não estão à vista ("Coluna: mensagem"). */
@@ -14422,7 +16126,20 @@ export class DataGrid extends LitElement {
   }
 
   /** Conteúdo da célula, com os trechos da busca destacados (só texto nativo). */
+  /** `part` de uma célula de dados (`tree-cell` na coluna da árvore, `selected` no intervalo). */
+  #cellPart(row: DataRow, column: GridColumnDef, selected: boolean): string {
+    const tree = this.#isTreeCell(row, column) ? ' tree-cell' : '';
+    return selected ? `cell${tree} selected` : `cell${tree}`;
+  }
+
   #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null, adaptive = false) {
+    // Árvore (frente 25): resumo por nó `display: 'column'` no lugar do valor do nó.
+    const summary = row.tree ? this.#nodeColumnSummary(row, cell.column) : undefined;
+
+    if (summary) {
+      return html`<span class="node-summary" part="node-summary">${this.#summaryTexts(summary)}</span>`;
+    }
+
     const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch(), adaptive);
 
     return matcher && typeof content === 'string' && isColumnFilterable(cell.column)
@@ -14436,7 +16153,8 @@ export class DataGrid extends LitElement {
   #toolbarFeatureOn(name: GridToolbarItemName): boolean {
     switch (name) {
       case 'groupPanel':
-        return this.showGroupPanel;
+        // Árvore (frente 25): sem agrupamento, sem painel.
+        return this.showGroupPanel && !this.#treeOn;
       case 'searchPanel':
         return this.showSearchPanel;
       case 'columnChooserButton':
@@ -15865,6 +17583,19 @@ export class DataGrid extends LitElement {
       items.push(expanded ? { name: 'collapseRow', text: translation.collapseRow } : { name: 'expandRow', text: translation.expandRow });
     }
 
+    // Árvore (frente 25): expandir/recolher o nó e inserir um filho.
+    if (this.#treeOn && row.tree && row.tree.node >= 0) {
+      if (this.#nodeHasChildren(row.tree.node)) {
+        items.push(this.#nodeShownExpanded(row.tree.node)
+          ? { name: 'collapseNode', text: translation.collapseNode }
+          : { name: 'expandNode', text: translation.expandNode });
+      }
+
+      if (this.#editingOn && this.allowAdding && !this.#saving) {
+        items.push({ name: 'addChildRow', text: translation.addChildRow });
+      }
+    }
+
     if (items.length > editFirst && editFirst > 0) {
       items[editFirst].separatorBefore = true;
     }
@@ -16068,6 +17799,16 @@ export class DataGrid extends LitElement {
       case 'collapseRow':
         menu.hide(true);
         this.#setRowExpanded(rowKey, name === 'expandRow', 'user');
+        break;
+      case 'expandNode':
+      case 'collapseNode':
+        menu.hide(true);
+        void this.#setNodeExpanded(rowKey, name === 'expandNode', 'user');
+        break;
+      case 'addChildRow':
+        // O foco vai ao editor da linha nova; ao descartá-la, volta à célula da árvore do pai.
+        menu.hide();
+        this.#addRow({}, 'user', this.#activeCellElement(), rowKey);
         break;
       default:
         break;
@@ -16689,6 +18430,7 @@ declare global {
     'u-grid-page-change': CustomEvent<GridPageChangeEventDetail>;
     'u-grid-row-expansion-change': CustomEvent<GridRowExpansionChangeEventDetail>;
     'u-grid-adaptive-columns-change': CustomEvent<GridAdaptiveColumnsChangeEventDetail>;
+    'u-grid-node-expansion-change': CustomEvent<GridNodeExpansionChangeEventDetail>;
     'u-grid-edit-starting': CustomEvent<GridEditStartingEventDetail>;
     'u-grid-row-adding': CustomEvent<GridRowAddingEventDetail>;
     'u-grid-row-removing': CustomEvent<GridRowRemovingEventDetail>;

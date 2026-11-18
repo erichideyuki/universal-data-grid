@@ -78,6 +78,19 @@ export interface GridLoadOptions {
   readonly totalSummary: readonly GridLoadSummary[];
   /** Summaries of each returned group, in `GridLoadGroupResult.summary` in this order. */
   readonly groupSummary: readonly GridLoadSummary[];
+  /** Tree data (`treeMode="flat"`): which nodes to return; absent or `null` = a plain list. */
+  readonly tree?: GridLoadTree | null;
+}
+
+/** `GridLoadOptions.tree`: what a tree asks the data source (items with their `parentKeyExpr`). */
+export interface GridLoadTree {
+  /**
+   * Return the children of these nodes (`[rootParentKey]` = the root nodes;
+   * keys as set — text when `root-parent-key` came from the attribute).
+   * `null` = a remote filter is active: return the matching nodes AND all
+   * their ancestors, at once.
+   */
+  readonly parentKeys: readonly (GridRowKey | null)[] | null;
 }
 
 /** A group returned when `GridLoadOptions.group` is not empty. */

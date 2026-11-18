@@ -12,6 +12,7 @@ import {
   type GridLoadResult,
   type GridLoadSort,
   type GridLoadSummary,
+  type GridLoadTree,
 } from './data-source.js';
 
 /**
@@ -48,6 +49,8 @@ export interface LoaderQuery {
   blockSize: number;
   /** Rolagem infinita: sem `totalCount`, a lista cresce até um bloco curto. */
   infinite: boolean;
+  /** Árvore (frente 25): os nós pedidos; `null` = lista comum. */
+  tree?: GridLoadTree | null;
   /** Dados do hospedeiro presos à consulta (fora da chave de consulta). */
   context?: unknown;
 }
@@ -356,6 +359,7 @@ class Generation {
       requireGroupCount: isList,
       totalSummary: head ? query.totalSummary : [],
       groupSummary: isList ? query.groupSummary : [],
+      tree: query.tree ?? null,
     };
 
     if (paged) {

@@ -307,6 +307,14 @@
             {
               "description": "Thickness of that outline. Default `2px`.",
               "name": "--u-grid-cell-range-border-width"
+            },
+            {
+              "description": "Indent of each tree level (`treeMode`). Default `24px`.",
+              "name": "--u-grid-tree-indent"
+            },
+            {
+              "description": "Color of the tree expand button. Default: `--u-grid-group-toggle-color`.",
+              "name": "--u-grid-tree-toggle-color"
             }
           ],
           "cssParts": [
@@ -527,8 +535,24 @@
               "name": "full-width-cell"
             },
             {
-              "description": "Master rows whose detail is expanded (with `row`).",
+              "description": "Master rows whose detail is expanded, and expanded tree nodes (with `row`).",
               "name": "expanded"
+            },
+            {
+              "description": "The cell of the tree column (with `cell`): indent, expand button and content.",
+              "name": "tree-cell"
+            },
+            {
+              "description": "The expand/collapse button of a tree node.",
+              "name": "tree-toggle-button"
+            },
+            {
+              "description": "Footer rows of `summary.node` items with `display: 'footer'` (with `row` and `summary-row`).",
+              "name": "node-footer-row"
+            },
+            {
+              "description": "`summary.node` values shown in a node row (`inline` after the tree cell text, `column` in its column).",
+              "name": "node-summary"
             },
             {
               "description": "The pager (`<nav>`) below the table (`paging`).",
@@ -737,6 +761,96 @@
               "default": "false",
               "description": "What the server does with `dataSource` (attribute `remote-operations`:\nall or nothing). `false` (default): one call loads every row and the\ngrid filters, sorts, groups, summarizes and pages. `true`: everything on\nthe server. An object picks operations; remote `paging` or `grouping`\nalso turn on remote `filtering`, `sorting` and `summary` (paging also\ngrouping), with a console warning. Remote operations use the column\n`path` (not `valueGetter`, `comparator` nor `groupValueGetter`).",
               "attribute": "remote-operations"
+            },
+            {
+              "kind": "field",
+              "name": "treeMode",
+              "type": {
+                "text": "GridTreeMode"
+              },
+              "default": "'none'",
+              "description": "Tree data: `none` (default) shows `items` as a list; `nested` reads the\nchildren of each item by `childrenExpr` (`items` are the roots); `flat`\nbuilds the tree from `keyExpr` + `parentKeyExpr` (both needed). Grouping,\nmaster-detail and `rowRenderer` are ignored in a tree (console warning).\nWith `dataSource`, only `flat` (children load on demand with\n`hasChildrenExpr`).",
+              "attribute": "tree-mode"
+            },
+            {
+              "kind": "field",
+              "name": "childrenExpr",
+              "type": {
+                "text": "GridChildrenExpr | null"
+              },
+              "default": "'children'",
+              "description": "Children of an item with `treeMode=\"nested\"`: a property `path` (attribute `children-expr`) or a function.",
+              "attribute": "children-expr"
+            },
+            {
+              "kind": "field",
+              "name": "parentKeyExpr",
+              "type": {
+                "text": "GridParentKeyExpr | null"
+              },
+              "default": "null",
+              "description": "Key of the parent of an item with `treeMode=\"flat\"`: a property `path`\n(attribute `parent-key-expr`) or a function. `rootParentKey`, `null`,\n`undefined` or a key with no item = a root node.",
+              "attribute": "parent-key-expr"
+            },
+            {
+              "kind": "field",
+              "name": "rootParentKey",
+              "type": {
+                "text": "GridRowKey | null"
+              },
+              "default": "null",
+              "description": "Parent key of the root nodes with `treeMode=\"flat\"` (also asked to a\n`dataSource` as the first `parentKeys`). Compared by its text (the\nattribute is text): `\"0\"` matches `0`.",
+              "attribute": "root-parent-key"
+            },
+            {
+              "kind": "field",
+              "name": "hasChildrenExpr",
+              "type": {
+                "text": "GridHasChildrenExpr | null"
+              },
+              "default": "null",
+              "description": "With `dataSource`: whether a node has children not loaded yet (a\nproperty `path`, attribute `has-children-expr`, or a function); its\nchildren load when it expands.",
+              "attribute": "has-children-expr"
+            },
+            {
+              "kind": "field",
+              "name": "treeColumn",
+              "type": {
+                "text": "GridColumnRef | null"
+              },
+              "default": "null",
+              "description": "Column with the indent and the expand button (`name` or `path`, or the\ncolumn object). Default: the first visible data column.",
+              "attribute": "tree-column"
+            },
+            {
+              "kind": "field",
+              "name": "treeFilterMode",
+              "type": {
+                "text": "GridTreeFilterMode"
+              },
+              "default": "'with-ancestors'",
+              "description": "What filtering and the search show in a tree: `with-ancestors` (default)\nthe matching nodes and their ancestors; `full-branch` also all their\ndescendants; `match-only` only the matching nodes (each under its\nnearest shown ancestor).",
+              "attribute": "tree-filter-mode"
+            },
+            {
+              "kind": "field",
+              "name": "autoExpandNodes",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Tree nodes start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandNode`, `expandAllNodes`…); changing it resets that state.\nWith `dataSource` it only reaches loaded nodes (no cascade of loads).",
+              "attribute": "auto-expand-nodes"
+            },
+            {
+              "kind": "field",
+              "name": "recursiveSelection",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Checking a node checks its descendants; a parent is checked when all its\nchildren are, and mixed when some are. Needs `selectionMode=\"multiple\"`\nand `showCheckboxes` (else ignored, with a console warning). Setting\n`selectedKeys` or `setState` applies the keys as given.",
+              "attribute": "recursive-selection"
             },
             {
               "kind": "field",
@@ -1586,6 +1700,98 @@
             },
             {
               "kind": "method",
+              "name": "expandNode",
+              "return": {
+                "type": {
+                  "text": "Promise<boolean>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Expands the tree node `rowKey` (`treeMode`). Never rejects: resolves\n`true` when the node is expanded with its children ready (a `dataSource`\nloads them first), `false` on a failed or aborted load, a leaf or a key\nnot in the tree."
+            },
+            {
+              "kind": "method",
+              "name": "collapseNode",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Collapses the tree node `rowKey`; the active cell inside it moves to the node."
+            },
+            {
+              "kind": "method",
+              "name": "isNodeExpanded",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Whether the tree node `rowKey` is SHOWN expanded: `false` for a leaf (also\na node whose children are all filtered out), a key not in the tree, and\na remote node whose children are not loaded nor loading — even if the\nexpansion state (`getState().nodeExpansion`) says expanded."
+            },
+            {
+              "kind": "method",
+              "name": "expandAllNodes",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Expands every tree node (with `dataSource`: only the loaded ones; no loads)."
+            },
+            {
+              "kind": "method",
+              "name": "collapseAllNodes",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Collapses every tree node; the active cell moves to its root node."
+            },
+            {
+              "kind": "method",
+              "name": "getNodeSummaryValues",
+              "return": {
+                "type": {
+                  "text": "GridSummaryValue[]"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Values of `summary.node` for the tree node `rowKey` (over its visible descendants); empty for a leaf or a key not shown."
+            },
+            {
+              "kind": "method",
               "name": "getSummaryValues",
               "return": {
                 "type": {
@@ -1947,9 +2153,16 @@
                   "type": {
                     "text": "Partial<TItem>"
                   }
+                },
+                {
+                  "name": "options",
+                  "optional": true,
+                  "type": {
+                    "text": "GridAddRowOptions | null"
+                  }
                 }
               ],
-              "description": "Adds a new row at the top of the visible rows (of the current page with\n`paging`) and opens its first editable cell. `data` gives initial values\n(also editable in `u-grid-row-adding`). Returns the opaque provisional key\nof the row (focus and selection move to the real key when it is saved),\nor `null` without `allowAdding`, during a save or when canceled."
+              "description": "Adds a new row at the top of the visible rows (of the current page with\n`paging`) and opens its first editable cell. `data` gives initial values\n(also editable in `u-grid-row-adding`). Returns the opaque provisional key\nof the row (focus and selection move to the real key when it is saved),\nor `null` without `allowAdding`, during a save or when canceled. Tree\ndata: with `options.parentKey` the row is the first child of that node,\nwhich expands with its ancestors (`u-grid-node-expansion-change`); a key\nthat is not a node adds nothing (`null`, console warning)."
             },
             {
               "kind": "method",
@@ -2261,6 +2474,13 @@
           ],
           "events": [
             {
+              "name": "u-grid-node-expansion-change",
+              "type": {
+                "text": "CustomEvent<GridNodeExpansionChangeEventDetail>"
+              },
+              "description": "A tree node was expanded or collapsed (button, keys, methods); fired when asked, before remote children load."
+            },
+            {
               "name": "u-grid-state-change",
               "type": {
                 "text": "CustomEvent<GridStateChangeEventDetail>"
@@ -2537,6 +2757,87 @@
               "default": "false",
               "description": "What the server does with `dataSource` (attribute `remote-operations`:\nall or nothing). `false` (default): one call loads every row and the\ngrid filters, sorts, groups, summarizes and pages. `true`: everything on\nthe server. An object picks operations; remote `paging` or `grouping`\nalso turn on remote `filtering`, `sorting` and `summary` (paging also\ngrouping), with a console warning. Remote operations use the column\n`path` (not `valueGetter`, `comparator` nor `groupValueGetter`).",
               "fieldName": "remoteOperations"
+            },
+            {
+              "name": "tree-mode",
+              "type": {
+                "text": "GridTreeMode"
+              },
+              "default": "'none'",
+              "description": "Tree data: `none` (default) shows `items` as a list; `nested` reads the\nchildren of each item by `childrenExpr` (`items` are the roots); `flat`\nbuilds the tree from `keyExpr` + `parentKeyExpr` (both needed). Grouping,\nmaster-detail and `rowRenderer` are ignored in a tree (console warning).\nWith `dataSource`, only `flat` (children load on demand with\n`hasChildrenExpr`).",
+              "fieldName": "treeMode"
+            },
+            {
+              "name": "children-expr",
+              "type": {
+                "text": "GridChildrenExpr | null"
+              },
+              "default": "'children'",
+              "description": "Children of an item with `treeMode=\"nested\"`: a property `path` (attribute `children-expr`) or a function.",
+              "fieldName": "childrenExpr"
+            },
+            {
+              "name": "parent-key-expr",
+              "type": {
+                "text": "GridParentKeyExpr | null"
+              },
+              "default": "null",
+              "description": "Key of the parent of an item with `treeMode=\"flat\"`: a property `path`\n(attribute `parent-key-expr`) or a function. `rootParentKey`, `null`,\n`undefined` or a key with no item = a root node.",
+              "fieldName": "parentKeyExpr"
+            },
+            {
+              "name": "root-parent-key",
+              "type": {
+                "text": "GridRowKey | null"
+              },
+              "default": "null",
+              "description": "Parent key of the root nodes with `treeMode=\"flat\"` (also asked to a\n`dataSource` as the first `parentKeys`). Compared by its text (the\nattribute is text): `\"0\"` matches `0`.",
+              "fieldName": "rootParentKey"
+            },
+            {
+              "name": "has-children-expr",
+              "type": {
+                "text": "GridHasChildrenExpr | null"
+              },
+              "default": "null",
+              "description": "With `dataSource`: whether a node has children not loaded yet (a\nproperty `path`, attribute `has-children-expr`, or a function); its\nchildren load when it expands.",
+              "fieldName": "hasChildrenExpr"
+            },
+            {
+              "name": "tree-column",
+              "type": {
+                "text": "GridColumnRef | null"
+              },
+              "default": "null",
+              "description": "Column with the indent and the expand button (`name` or `path`, or the\ncolumn object). Default: the first visible data column.",
+              "fieldName": "treeColumn"
+            },
+            {
+              "name": "tree-filter-mode",
+              "type": {
+                "text": "GridTreeFilterMode"
+              },
+              "default": "'with-ancestors'",
+              "description": "What filtering and the search show in a tree: `with-ancestors` (default)\nthe matching nodes and their ancestors; `full-branch` also all their\ndescendants; `match-only` only the matching nodes (each under its\nnearest shown ancestor).",
+              "fieldName": "treeFilterMode"
+            },
+            {
+              "name": "auto-expand-nodes",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Tree nodes start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandNode`, `expandAllNodes`…); changing it resets that state.\nWith `dataSource` it only reaches loaded nodes (no cascade of loads).",
+              "fieldName": "autoExpandNodes"
+            },
+            {
+              "name": "recursive-selection",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Checking a node checks its descendants; a parent is checked when all its\nchildren are, and mixed when some are. Needs `selectionMode=\"multiple\"`\nand `showCheckboxes` (else ignored, with a console warning). Setting\n`selectedKeys` or `setState` applies the keys as given.",
+              "fieldName": "recursiveSelection"
             },
             {
               "name": "paging",
@@ -2966,11 +3267,16 @@
         },
         {
           "kind": "variable",
-          "name": "sort"
+          "name": "level",
+          "default": "view.level[node]"
         },
         {
           "kind": "variable",
           "name": "column"
+        },
+        {
+          "kind": "variable",
+          "name": "sort"
         },
         {
           "kind": "variable",
@@ -3207,6 +3513,14 @@
           "name": "GridGroupSummaryItem",
           "declaration": {
             "name": "GridGroupSummaryItem",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridNodeSummaryItem",
+          "declaration": {
+            "name": "GridNodeSummaryItem",
             "module": "dist/grid-column-def.js"
           }
         },

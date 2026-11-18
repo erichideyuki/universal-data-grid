@@ -47,6 +47,9 @@ export type GridContextMenuItemName =
   | 'restoreRow'
   | 'expandRow'
   | 'collapseRow'
+  | 'expandNode'
+  | 'collapseNode'
+  | 'addChildRow'
   | 'expandGroup'
   | 'collapseGroup';
 
@@ -145,6 +148,9 @@ export const CONTEXT_MENU_ITEMS_BY_TARGET: Readonly<Record<GridContextMenuTarget
     'restoreRow',
     'expandRow',
     'collapseRow',
+    'expandNode',
+    'collapseNode',
+    'addChildRow',
   ]),
   'group-row': new Set<GridContextMenuItemName>(['expandGroup', 'collapseGroup', 'expandAllGroups', 'collapseAllGroups', 'ungroupColumn']),
 };

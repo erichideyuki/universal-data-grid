@@ -62,6 +62,10 @@ export interface ExportSource {
   groupLabel(node: GroupNode, valueText: string, extra: readonly string[]): string;
   /** Separador de lista do idioma (vários resumos na mesma coluna). */
   listSeparator: string;
+  /** Árvore (frente 25): nível de cada item de `items` (sem ele, 0). */
+  itemLevels?: ArrayLike<number>;
+  /** Árvore: resumo por nó `display: 'column'` no lugar do valor (índice da coluna exportada → valor e texto). */
+  itemOverrides?: (index: number) => ReadonlyMap<number, { value: unknown; text: string }> | undefined;
 }
 
 /** Célula de dados: valor e texto. */
@@ -175,8 +179,17 @@ export function* exportRows(source: ExportSource): Generator<GridExportRow, void
   }
 
   if (!groups.length) {
-    for (const item of source.items) {
-      yield dataRow(source, item, 0);
+    const { items, itemLevels, itemOverrides } = source;
+
+    for (let index = 0; index < items.length; index++) {
+      const row = dataRow(source, items[index], itemLevels?.[index] ?? 0);
+
+      for (const [column, cell] of itemOverrides?.(index) ?? []) {
+        row.values[column] = cell.value;
+        row.texts[column] = cell.text;
+      }
+
+      yield row;
     }
   } else {
     const levels = includeGroups ? levelsOf(groups) : 0;

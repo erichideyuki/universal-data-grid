@@ -1433,6 +1433,84 @@ const cellRangeScenario = (rows: number, label: string) => {
   });
 };
 
+/** Árvore de `levels` níveis com `branching` filhos por nó (entrada plana, pais antes dos filhos). */
+const makeTreeItems = (levels: number, branching: number): object[] => {
+  const items: object[] = [];
+  let previous: (number | null)[] = [null];
+  let id = 0;
+
+  for (let level = 0; level < levels; level++) {
+    const next: number[] = [];
+
+    for (const parentId of previous) {
+      for (let k = 0; k < branching; k++) {
+        const scrambled = (id * 7919) % 1_000_003;
+        items.push({ id, parentId, name: `Node ${scrambled}`, level, amount: (id * 37 % 100_000) / 100 });
+        next.push(id++);
+      }
+    }
+
+    previous = next;
+  }
+
+  return items;
+};
+
+const treeColumns = (): GridColumnDef[] => [
+  { path: 'name', label: 'Name' },
+  { path: 'level', label: 'Level', dataType: 'number' },
+  { path: 'amount', label: 'Amount', dataType: 'number' },
+];
+
+/** Frente 25: árvore plana de 1 milhão de nós em 6 níveis: montar, expandir tudo, rolar, filtrar, ordenar, recolher. */
+const treeScenario = (label: string) => {
+  it(`${label} nós em 6 níveis: montar, expandir tudo, rolar, filtrar, ordenar, recolher tudo`, async () => {
+    let items: object[] | undefined = makeTreeItems(6, 10);
+    const heapBefore = await heapMiB();
+
+    const configure = (grid: DataGrid) => {
+      grid.treeMode = 'flat';
+      grid.keyExpr = 'id';
+      grid.parentKeyExpr = 'parentId';
+    };
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, treeColumns(), configure);
+
+    const expand = await interaction('expandAllNodes', grid, () => grid.expandAllNodes(), () => grid.collapseAllNodes());
+    const scroll = await scrollMetrics(grid);
+    const nodes = domNodes(grid);
+    const filter = await interaction('treeFilter', grid, () => grid.filterValue = ['name', 'contains', 'Node 12'], () => grid.filterValue = null);
+    const sort = await interaction('treeSort', grid, () => grid.sortColumn(byLabel(grid, 'Amount'), 'desc'), () => grid.clearSorting());
+    const collapse = await interaction('collapseAllNodes', grid, () => grid.collapseAllNodes(), () => grid.expandAllNodes());
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+
+    grid.filterValue = null;
+    await painted(grid);
+    expect(grid.getTotalCount()).toBe(items.length);
+    expect(grid.shadowRoot!.querySelector('table')!.getAttribute('role')).toBe('treegrid');
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...expand,
+      ...scroll,
+      ...filter,
+      ...sort,
+      ...collapse,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(1_000_000, metrics, perf.report(`tree-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -1453,4 +1531,5 @@ describe('perfil de máquina fraca', () => {
   wideScenario(1_000_000, '1m', 10);
   cellRangeScenario(1_000_000, '1m');
   responsiveScenario(1_000_000, '1m');
+  treeScenario('1m');
 });

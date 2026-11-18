@@ -53,6 +53,16 @@ export interface GridGroupExpansionState {
   collapsed: GridStateGroupPath[];
 }
 
+/** Tree node expansion: the default and the nodes that differ from it. */
+export interface GridNodeExpansionState {
+  /** Set by `expandAllNodes()`/`collapseAllNodes()`; `null` = `autoExpandNodes`. */
+  all: boolean | null;
+  /** Keys of nodes expanded although the default is collapsed. */
+  expanded: GridRowKey[];
+  /** Keys of nodes collapsed although the default is expanded. */
+  collapsed: GridRowKey[];
+}
+
 /** Detail rows (master-detail) whose expansion differs from `autoExpandRows`. */
 export interface GridRowExpansionState {
   /** Keys of rows expanded although `autoExpandRows` is off. */
@@ -87,6 +97,8 @@ export interface GridState {
   selectedKeys?: GridRowKey[];
   /** Only with `keyExpr` and string/number keys. */
   rowExpansion?: GridRowExpansionState;
+  /** Tree nodes (`treeMode`); only with `keyExpr` and string/number keys. */
+  nodeExpansion?: GridNodeExpansionState;
   /** Current page (0-based). */
   pageIndex?: number;
   /** Rows per page (restored only when offered by `pageSizeOptions` or equal to the initial `pageSize`). */
@@ -360,6 +372,24 @@ const parseRowExpansion = (value: unknown): GridRowExpansionState => {
   };
 };
 
+const parseNodeExpansion = (value: unknown): GridNodeExpansionState => {
+  if (!isObject(value)) {
+    return fail('"nodeExpansion" must be an object');
+  }
+
+  const all = optionalBoolean(own(value, 'all') ?? null);
+
+  if (all === undefined) {
+    fail('"nodeExpansion.all" must be a boolean or null');
+  }
+
+  return {
+    all: all ?? null,
+    expanded: keyList(own(value, 'expanded') ?? [], 'nodeExpansion.expanded'),
+    collapsed: keyList(own(value, 'collapsed') ?? [], 'nodeExpansion.collapsed'),
+  };
+};
+
 /**
  * Migrações por versão de origem: cada uma leva o estado à versão seguinte.
  * A v1 é a primeira; estados de versão sem migração são descartados.
@@ -431,6 +461,10 @@ export const parseGridState = (input: unknown): ParsedState => {
 
     if (has(source, 'rowExpansion')) {
       state.rowExpansion = parseRowExpansion(own(source, 'rowExpansion'));
+    }
+
+    if (has(source, 'nodeExpansion')) {
+      state.nodeExpansion = parseNodeExpansion(own(source, 'nodeExpansion'));
     }
 
     if (has(source, 'pageIndex')) {

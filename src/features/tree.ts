@@ -1,5 +1,4 @@
 import { type GridRowKey } from '../data/data-source.js';
-import { getValueByPath } from '../row-model/value.js';
 import {
   ancestorsOfMatches,
   buildFlatIndex,
@@ -8,6 +7,7 @@ import {
   type TreeIndex,
   type TreeKeyOf,
 } from '../row-model/tree.js';
+import { getValueByPath } from '../row-model/value.js';
 
 /** How `<u-grid>` reads `items` (attribute `tree-mode`): a plain list, or a tree from nested children or from parent keys. */
 export type GridTreeMode = 'none' | 'nested' | 'flat';
@@ -31,13 +31,13 @@ export const normalizeTreeFilterMode = (value: unknown): GridTreeFilterMode =>
   value === 'full-branch' || value === 'match-only' ? value : 'with-ancestors';
 
 /** Lê uma expressão (`path` ou função). */
-export const exprReader = <T>(expr: string | ((item: any) => T)): ((item: unknown) => T) =>
+export const exprReader = <T>(expr: string | ((item: any) => T)): (item: unknown) => T =>
   typeof expr === 'function' ? expr : (item: unknown) => getValueByPath(item, expr) as T;
 
 /** Configuração que define o índice: trocar qualquer uma refaz a árvore. */
 export interface TreeConfig {
   mode: GridTreeMode;
-  childrenExpr: GridChildrenExpr;
+  childrenExpr: GridChildrenExpr | null;
   parentKeyExpr: GridParentKeyExpr | null;
   rootParentKey: GridRowKey | null;
   /** Chave do item (`keyExpr`), `undefined` = o próprio item. */
@@ -65,8 +65,8 @@ export class TreeState {
     const previous = this.#config;
 
     if (
-      this.#index && this.#items === items && previous
-      && previous.mode === config.mode && previous.childrenExpr === config.childrenExpr
+      this.#index && this.#items === items
+      && previous?.mode === config.mode && previous.childrenExpr === config.childrenExpr
       && previous.parentKeyExpr === config.parentKeyExpr && previous.rootParentKey === config.rootParentKey
       && previous.keyOf === config.keyOf
     ) {
@@ -77,7 +77,7 @@ export class TreeState {
     this.#config = { ...config };
     this.#index = config.mode === 'flat' && config.parentKeyExpr !== null && config.keyOf
       ? buildFlatIndex(items, config.keyOf, exprReader(config.parentKeyExpr), config.rootParentKey)
-      : buildNestedIndex(items, childrenReader(config.childrenExpr), config.keyOf);
+      : buildNestedIndex(items, childrenReader(config.childrenExpr ?? 'children'), config.keyOf);
 
     return this.#index;
   }

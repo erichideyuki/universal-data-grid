@@ -23,6 +23,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Filtering](#filtering) (filter row, search panel, header filter)
 - [Grouping](#grouping)
 - [Summaries](#summaries) (totals and group summaries)
+- [Tree data](#tree-data) (nested or parent-key data, load-on-demand children, recursive selection)
 - [Selection & keyboard](#selection--keyboard) (row selection, cell ranges, keyboard navigation, accessibility)
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization, responsive columns)
@@ -59,6 +60,10 @@ React, Vue, Svelte — or with no framework at all.
 - **Summaries** — totals in a footer fixed at the bottom and per-group summaries (`sum`, `min`,
   `max`, `avg`, `count` or your own function), in the group row, under the columns or in a group
   footer. Computed in the same pass as the grouping (a million rows in a few hundred ms).
+- **Tree data** — hierarchical rows from nested children or parent keys, with indent and expand
+  buttons, filter modes that keep the ancestors, sorting per level, node summaries, recursive
+  selection, add-child editing, children loaded on demand from a data source, and the WAI-ARIA
+  treegrid keyboard — a million nodes in six levels expand and filter without freezing.
 - **Data types & formatting** — number, date, date-time and boolean columns formatted with `Intl`
   in the grid's language, with per-column `format`, `alignment`, computed values and empty text.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
@@ -744,6 +749,96 @@ grid.summary = {
 - Accessibility: the totals footer is a `rowgroup` of its own (`<tfoot>`) with a `row`, counted
   in `aria-rowcount`; every summary cell is a `gridcell` with the full label.
 
+## Tree data
+
+Show hierarchical data (folders, org charts, charts of accounts, bills of materials) in the same
+`<u-grid>`: set `tree-mode` and each row becomes a node with an indent and an expand button in the
+*tree column*. Filtering, the search, sorting, summaries, selection, editing, export, state and
+virtualization keep working; a million nodes expand, filter and scroll without freezing.
+
+```html
+<!-- Flat list: each item has its key and its parent's key -->
+<u-grid tree-mode="flat" key-expr="id" parent-key-expr="parentId"></u-grid>
+
+<!-- Nested: items are the roots, children in `children` (or `children-expr`) -->
+<u-grid tree-mode="nested" key-expr="id" auto-expand-nodes></u-grid>
+```
+
+| Property | Attribute | Type | Default | Description |
+| -------- | --------- | ---- | ------- | ----------- |
+| `treeMode` | `tree-mode` | `'none' \| 'nested' \| 'flat'` | `'none'` | `nested`: children by `childrenExpr`; `flat`: by `keyExpr` + `parentKeyExpr` (both needed; otherwise a list, with a warning). |
+| `childrenExpr` | `children-expr` | `string \| (item) => item[] \| null` | `'children'` | Children of an item (`nested`). |
+| `parentKeyExpr` | `parent-key-expr` | `string \| (item) => GridRowKey \| null` | `null` | Key of the parent (`flat`). |
+| `rootParentKey` | `root-parent-key` | `GridRowKey \| null` | `null` | Parent key of the root nodes, compared by text (`"0"` matches `0`). `null`, `undefined` and a key with no item are roots too. |
+| `hasChildrenExpr` | `has-children-expr` | `string \| (item) => boolean \| null` | `null` | With `dataSource`: the node has children to load. |
+| `treeColumn` | `tree-column` | `GridColumnRef \| null` | `null` | Column with the indent and the button (`name` or `path`); default the first visible data column. |
+| `treeFilterMode` | `tree-filter-mode` | `'with-ancestors' \| 'full-branch' \| 'match-only'` | `'with-ancestors'` | What filtering shows: the matching nodes and their ancestors; also all their descendants; or only the matching nodes (each under its nearest shown ancestor). |
+| `autoExpandNodes` | `auto-expand-nodes` | `boolean` | `false` | Nodes start expanded (initial default, like `auto-expand-groups`). |
+| `recursiveSelection` | `recursive-selection` | `boolean` | `false` | Checking a node checks its descendants; a parent is checked when all its children are and mixed when some are. Needs `selection-mode="multiple"` and `show-checkboxes`. |
+
+- **Expanding**: the button, the keyboard (below), the row menu ("Expand"/"Collapse") and
+  `expandNode(rowKey)` (a `Promise<boolean>` that never rejects: `true` once the children are
+  ready), `collapseNode`, `isNodeExpanded`, `expandAllNodes`, `collapseAllNodes`. The state is kept
+  by key when `items` change and saved in `GridState.nodeExpansion`. `isNodeExpanded` tells what is
+  shown (`false` for a leaf, a node whose children are filtered out or a remote node not loaded).
+  `u-grid-node-expansion-change` (`{ rowKey, expanded, source }`, `rowKey: null` for the "all"
+  methods, only when something changed) fires when asked — before remote children arrive — and
+  with `expanded: false, source: 'api'` when their load fails or is canceled in `u-grid-loading`
+  (also for a node expanded by a restored state, with no event before).
+- **Filtering and search** test every node; when the filter changes, the ancestors of the matching
+  nodes expand (clearing the filter does not collapse them). Totals and "select all" use the nodes
+  shown by the filter.
+- **Sorting** sorts the children of each node (a parent always stays above its children).
+- **Summaries**: `summary.total` as usual; `summary.node` (`GridNodeSummaryItem`, the shape of group items) summarizes
+  the visible descendants of each node with children — `inline` after the tree cell text,
+  `column` instead of the node value in that column (not editable; exported), `footer` in a row
+  after the children. `getNodeSummaryValues(rowKey)` returns them. `summary.group` is ignored in a
+  tree; `summary.node` is off with a `dataSource`. Parts: `node-summary`, `node-footer-row`.
+- **Recursive selection**: gestures (checkbox, `Space`, click) and `selectRows`/`deselectRows`
+  propagate; setting `selectedKeys` or `setState` applies the keys as given. `Space` on a mixed node
+  checks its whole branch. `selectedKeys` lists every checked node (a mixed parent is not in it).
+  Children that arrive from a `dataSource` under a checked parent are checked, firing
+  `u-grid-selection-change` with `source: 'api'`.
+- **Editing**: `addRow(data, { parentKey })` and the row menu "Add child row" add a child as the
+  first row under the node (which expands, with its ancestors); with `tree-mode="flat"` and a
+  `parentKeyExpr` path the new item gets the parent key. `u-grid-row-adding` and the `add` change
+  carry `parentKey`. Saving with `items` rebuilds a copy (nested: only the path that changed).
+  Deleting a node marks only it — cascading is up to you.
+- **Export** writes the expanded nodes in screen order, with `level` = depth (also with
+  `includeGroups: false`; the Excel adapter indents by it; CSV has no indent). `selectedOnly`
+  writes every selected node, also inside collapsed branches. A `column` node summary replaces the
+  value (an array when a column has several).
+- **Not combined** with grouping (ignored, restored when `tree-mode` is back to `none`),
+  master-detail (`detailRenderer`) or `rowRenderer`. Local paging pages the visible rows.
+
+**Data source.** With `tree-mode="flat"` and `dataSource`, the first load asks the roots
+(`options.tree = { parentKeys: [rootParentKey] }`) and expanding a node whose `hasChildrenExpr` is
+true asks its children (`{ parentKeys: [key] }`; expansions of the same tick go in one call). Return
+the items with their parent key. While loading, the node shows a spinner and a skeleton child row
+(`aria-busy`); "Loading child rows" is announced after a second, then "Child rows loaded: {count}"
+or the error. With `remoteOperations.filtering`, a filter asks `{ parentKeys: null }`: return the
+matching nodes and all their ancestors at once. `expandAllNodes()`/`auto-expand-nodes` only reach
+loaded nodes (no cascade of loads). Remote paging and grouping do not apply to a tree.
+
+**Keyboard and screen readers.** The table is a `treegrid`: every node row has `aria-level`,
+`aria-setsize`/`aria-posinset` (among the shown siblings) and, with children, `aria-expanded` —
+also on the tree cell, so the change is read with the focus there. In the tree cell (`←`/`→`
+swap in right-to-left):
+
+| Key | Action |
+| --- | ------ |
+| `→` | Collapsed node: expand (the focus stays). Expanded node or leaf: next cell. |
+| `←` | Expanded node: collapse. Collapsed node or leaf: the parent's tree cell. Root: previous cell. |
+| `*` | In any cell of a node row: expand the sibling nodes ("Expanded rows: {count}"). On a desktop-layout screen reader the numpad `*` is a right click: use `Shift+8`. |
+| `Enter` | Toggle the node when the tree cell is not editable and has no interactive content (otherwise `Enter`/`F2` as usual). |
+
+Cells to the left of a non-first tree column are reached with `Home` or `↑`/`↓`. The button is
+hidden from assistive technology (the state is on the row and cell); with voice control, click the
+cell and say "right arrow". Keep `row-height` ≥ 24 for the 24 × 24 px button target (WCAG 2.5.8).
+
+Styling: `--u-grid-tree-indent` (per level, default `24px`), `--u-grid-tree-toggle-color`,
+`::part(tree-cell)`, `::part(tree-toggle-button)` and `::part(expanded)` on expanded nodes.
+
 ---
 
 ## Selection & keyboard
@@ -940,13 +1035,14 @@ reach it. "Select all" selects the rows that pass the filter and the search.
   <u-grid aria-labelledby="orders-title"></u-grid>
   ```
 
-- `role="grid"` (`role="treegrid"` while grouped), with `aria-rowcount`/`aria-colcount` for the whole
+- `role="grid"` (`role="treegrid"` while grouped or with `tree-mode`), with `aria-rowcount`/`aria-colcount` for the whole
   data set (not just the rendered rows), the real `aria-rowindex`/`aria-colindex` of every cell,
   `aria-multiselectable` in `multiple` mode or with cell ranges, `aria-selected` on data rows (row
   selection) and `aria-selected="true"` on the rendered data cells of a cell range, `aria-expanded` on group
   rows and, while grouped, `aria-level` on every row (data rows and group footers one level below
   their group). `aria-busy` is set while a large data set is filtered in slices.
-- Checkboxes are `role="checkbox"` with `aria-checked` (`mixed` in "select all").
+- Checkboxes are `role="checkbox"` with `aria-checked` (`mixed` in "select all" and on a partly
+  checked tree node with `recursive-selection`).
 - A visible focus ring (`:focus-visible`, `--u-grid-focus-ring-color`/`-width`) on the keyboard
   focus only.
 - Sorting, filtering, grouping, column moves and selections are announced through an `aria-live`
@@ -1569,7 +1665,7 @@ group row. Built-in items:
 | `header` | Sort ascending / descending / Clear sorting, Group by this column, Pin to start / end / Unpin (with `column-chooser`), Move left / right, Auto-size, Increase / Decrease width | `column-header-menu="false"` |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
 | `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | shown with `cell-selection-mode` (Paste: also needs `clipboard-mode="copy-paste"`), even without `row-menu`; without cell ranges, Paste only with `row-menu`. To keep the browser menu, remove them in `u-grid-context-menu-opening` |
-| `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details | **off by default**: `row-menu` turns them on |
+| `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details; tree data: Expand / Collapse (`expandNode`/`collapseNode`), Add child row (`addChildRow`, with `allow-adding`) | **off by default**: `row-menu` turns them on |
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
 
 On a [full-width row](#full-width-rows-rowrenderer) the `row` menu has `cellType: 'full-width'` and
@@ -2329,6 +2425,8 @@ interface GridI18n {
   // copySelectedCells, paste, pasteFailedAnnouncement (cell ranges),
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
+  // Tree data: expandNode, collapseNode, addChildRow, childRowsLoadingAnnouncement,
+  // childRowsLoadedAnnouncement ({count}), childRowsLoadErrorAnnouncement, nodesExpandedAnnouncement ({count})
 }
 ```
 
@@ -2401,6 +2499,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
 | `autoHideColumns`  | `auto-hide-columns`   | `boolean` | `false` | Hide columns by `hidingPriority` when the grid is too narrow; their values move to the row details. See [Responsive columns](#responsive-columns-auto-hide). |
+| `treeMode`         | `tree-mode`           | `'none' \| 'nested' \| 'flat'` | `'none'` | Tree data; with `childrenExpr`, `parentKeyExpr`, `rootParentKey`, `hasChildrenExpr`, `treeColumn`, `treeFilterMode`, `autoExpandNodes`, `recursiveSelection`. See [Tree data](#tree-data). |
 | `fixedTopItems`    | *(property only)*     | `readonly any[]` | `[]` | Rows fixed below the headers. See [Fixed rows](#fixed-pinned-rows). |
 | `fixedBottomItems` | *(property only)*     | `readonly any[]` | `[]` | Rows fixed above the totals footer. |
 | `rowRenderer`      | *(property only)*     | `GridRowRenderer \| null` | `null` | Full-width row content (`false` keeps the columns). See [Full-width rows](#full-width-rows-rowrenderer). |
@@ -2454,6 +2553,8 @@ tint derive from it.
 | `--u-grid-row-line-width` | line width | Row separator thickness. |
 | `--u-grid-column-line-width` | line width | Column separator thickness. |
 | `--u-grid-group-toggle-color` / `--u-grid-group-toggle-shape` | on-surface-variant token / `50%` | Group expand/collapse chevron (the color also applies to the chooser button). |
+| `--u-grid-tree-indent` | `24px` | Indent of each tree level. |
+| `--u-grid-tree-toggle-color` | `--u-grid-group-toggle-color` | Tree expand button. |
 | `--u-grid-group-row-emphasis` | `80%` | Emphasis of group row text. |
 | `--u-grid-group-chip-height` | `32px` | Group chip height. |
 | `--u-grid-group-chip-padding` | `16px` | Group chip inline padding. |
@@ -2527,6 +2628,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `summary-row` | Rows with summaries: the totals footer and group footers. |
 | `total-row` | The totals footer row. |
 | `group-footer-row` | Group footer rows (summaries with `display: 'footer'`). |
+| `node-footer-row` | Tree node footer rows (`summary.node` with `display: 'footer'`). |
+| `node-summary` | `summary.node` values in a node row (`inline` and `column`). |
 | `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
 | `group-count` | Count and inline summaries in a group row. |
 | `toolbar` | The bar above the table. |
@@ -2561,7 +2664,9 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `fixed-top-row-group` / `fixed-bottom-row-group` | The row group (`<tbody>`) of each side's fixed rows. |
 | `full-width-row` | Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`). |
 | `full-width-cell` | The cell that holds the `rowRenderer` content. |
-| `expanded` | Master rows whose detail is expanded (with `row`). |
+| `expanded` | Master rows whose detail is expanded, and expanded tree nodes (with `row`). |
+| `tree-cell` | The cell of the tree column (with `cell`). |
+| `tree-toggle-button` | The expand/collapse button of a tree node. |
 | `pager` | The pager (`<nav>`) below the table. |
 | `pager-button` | Pager buttons (first, previous, page numbers, next, last). |
 | `page-size-select` | The page size `<select>`. |
@@ -2678,6 +2783,10 @@ CSS property and part for IDEs and tooling.
 | `expandGroup(groupPath)` / `collapseGroup(groupPath)` | Expand / collapse one group (`['Brazil', 'SP']`). |
 | `isGroupExpanded(groupPath)` | Whether a group is (or would be) expanded. |
 | `getSummaryValues(groupPath?)` | Computed totals, or the summaries of a group: `{ item, value, text }[]`. |
+| `getNodeSummaryValues(rowKey)` | The `summary.node` values of a tree node (empty for a leaf or a node not shown). |
+| `expandNode(rowKey)` | `Promise<boolean>`: expand a tree node (loading its children from a `dataSource`); never rejects. See [Tree data](#tree-data). |
+| `collapseNode(rowKey)` / `isNodeExpanded(rowKey)` | Collapse a tree node / whether it is shown expanded. |
+| `expandAllNodes()` / `collapseAllNodes()` | Expand / collapse every tree node (remote: only the loaded ones). |
 | `moveColumn(column, targetIndex)` | Reorder a column or a band to `targetIndex` among its siblings (same band or top level; kept inside its band and its fixed/regular block); ungroups a grouped column. |
 | `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth` (a band does nothing). |
 | `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows); for a band, each of its visible columns. |
@@ -2711,7 +2820,7 @@ CSS property and part for IDEs and tooling.
 | `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
 | `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
 | `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row; `column`: definition, `name` or `path`; a column hidden by `autoHideColumns`: in the row details) / a row (`row` mode only). See [Editing](#editing). |
-| `addRow(data?)` | Add a row at the top of the visible rows; returns its provisional key (`null` when not added). |
+| `addRow(data?, { parentKey }?)` | Add a row at the top of the visible rows (tree: `parentKey` makes it the first child of that node); returns its provisional key (`null` when not added). |
 | `removeRow(rowKey)` / `restoreRow(rowKey)` | Delete a row (saved at once; `batch`: marked) / restore a marked row. |
 | `saveChanges()` / `discardChanges()` | Save every pending change (`Promise<boolean>`) / drop them. |
 | `hasChanges()` / `getChanges()` | Whether there are pending changes / the pending changes (copies). |
@@ -2731,8 +2840,9 @@ All bubble and are `composed`.
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column (or a band) in the chooser. |
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column (or a top-level band) in the chooser. |
 | `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop, `Alt+Shift+←/→` or the column header menu). |
-| `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
+| `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter; also remote tree children checked under a checked parent) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed (also by a row edit or `focusCell`/`editCell` on a hidden column). |
+| `u-grid-node-expansion-change` | `GridNodeExpansionChangeEventDetail` | yes (not `auto-expand-nodes` nor a new filter) | A tree node was expanded or collapsed (fired when asked; again with `expanded: false` when its children fail to load). |
 | `u-grid-adaptive-columns-change` | `GridAdaptiveColumnsChangeEventDetail` (`{ columns, previous }`) | layout (width, columns, `autoHideColumns`) | The columns hidden for lack of space changed (after the render). |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`, `selectCellRange`, the active column hidden or back with `autoHideColumns`; not the `focusedRowKey` setter) | The active cell changed. |
 | `u-grid-loading` | `GridLoadingEventDetail` (`{ options }`) | — (every load: scroll, sort, filter, `refresh()`…) | Before each `dataSource.load` call. Cancelable (the call is skipped). |
@@ -2823,6 +2933,15 @@ import {
   type GridNoDataRenderContext, // { filtered, grid, signal }
   type GridRowExpansionChangeEventDetail, // { rowKey, expanded, source }
   type GridAdaptiveColumnsChangeEventDetail, // { columns, previous }
+  type GridTreeMode,        // 'none' | 'nested' | 'flat'
+  type GridTreeFilterMode,  // 'with-ancestors' | 'full-branch' | 'match-only'
+  type GridChildrenExpr,    // string | ((item) => item[] | null | undefined)
+  type GridParentKeyExpr,   // string | ((item) => GridRowKey | null | undefined)
+  type GridHasChildrenExpr, // string | ((item) => boolean)
+  type GridNodeSummaryItem, // = GridGroupSummaryItem (summary.node)
+  type GridNodeExpansionChangeEventDetail, // { rowKey, expanded, source }
+  type GridAddRowOptions,   // { parentKey? }
+  type GridLoadTree,        // { parentKeys: (GridRowKey | null)[] | null } — GridLoadOptions.tree
   type GridRowKey,          // string | number
   type GridKeyExpr,         // string | ((item) => GridRowKey)
   type GridDataSource,      // { load(options, signal): Promise<GridLoadResult> }
@@ -2880,10 +2999,11 @@ import {
   type GridContextMenuContext, // { target, cellType, column, item, rowKey, groupPath, grid }
   type GridContextMenuItemActionContext, // + { menuItem }
   type GridContextMenuOpeningEventDetail, // + { menuItems }
-  type GridState,           // { version: 1, columns?, filterValue?, searchText?, groupExpansion?, selectedKeys?, rowExpansion?, pageIndex?, pageSize? }
+  type GridState,           // { version: 1, columns?, filterValue?, searchText?, groupExpansion?, selectedKeys?, rowExpansion?, nodeExpansion?, pageIndex?, pageSize? }
   type GridColumnState,     // { name, width?, visible?, fixed?, groupIndex?, sortOrder?, sortIndex? }
   type GridGroupExpansionState, // { all, levels, expanded: GridStateGroupPath[], collapsed: GridStateGroupPath[] }
   type GridRowExpansionState, // { expanded: GridRowKey[], collapsed: GridRowKey[] }
+  type GridNodeExpansionState, // { all: boolean | null, expanded: GridRowKey[], collapsed: GridRowKey[] }
   type GridStateGroupPath,  // readonly (string | number | boolean | null)[]
   type GridStateStorage,    // { load(): GridState | null | Promise<…>; save(state): void | Promise<void> }
   type GridStateChangeSource, // 'user' | 'api' | 'storage'

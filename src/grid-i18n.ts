@@ -377,6 +377,20 @@ export interface GridI18n {
   paste: string;
   /** Announced when the cell menu "Paste" cannot read the clipboard (permission denied, no Clipboard API) or it is empty. */
   pasteFailedAnnouncement: string;
+  /** Row context menu item (tree data): expands the node. */
+  expandNode: string;
+  /** Row context menu item (tree data): collapses the node. */
+  collapseNode: string;
+  /** Row context menu item (tree data, `allowAdding`): adds a child row under the node. */
+  addChildRow: string;
+  /** Announced when loading child rows from a `dataSource` takes more than a second. */
+  childRowsLoadingAnnouncement: string;
+  /** Announced when child rows arrive (`{count}`). */
+  childRowsLoadedAnnouncement: string;
+  /** Announced when loading child rows fails. */
+  childRowsLoadErrorAnnouncement: string;
+  /** Announced after `*` expands the sibling nodes (`{count}`). */
+  nodesExpandedAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -630,6 +644,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copy selected cells',
     paste: 'Paste',
     pasteFailedAnnouncement: 'Could not read the clipboard. Paste with the keyboard.',
+    expandNode: 'Expand',
+    collapseNode: 'Collapse',
+    addChildRow: 'Add child row',
+    childRowsLoadingAnnouncement: 'Loading child rows',
+    childRowsLoadedAnnouncement: 'Child rows loaded: {count}',
+    childRowsLoadErrorAnnouncement: 'Could not load child rows',
+    nodesExpandedAnnouncement: 'Expanded rows: {count}',
   },
   es: {
     noData: 'Sin datos',
@@ -818,6 +839,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copiar celdas seleccionadas',
     paste: 'Pegar',
     pasteFailedAnnouncement: 'No se pudo leer el portapapeles. Pegue con el teclado.',
+    expandNode: 'Expandir',
+    collapseNode: 'Contraer',
+    addChildRow: 'Agregar fila secundaria',
+    childRowsLoadingAnnouncement: 'Cargando filas secundarias',
+    childRowsLoadedAnnouncement: 'Filas secundarias cargadas: {count}',
+    childRowsLoadErrorAnnouncement: 'No se pudieron cargar las filas secundarias',
+    nodesExpandedAnnouncement: 'Filas expandidas: {count}',
   },
   pt: {
     noData: 'Sem dados',
@@ -1006,6 +1034,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copiar células selecionadas',
     paste: 'Colar',
     pasteFailedAnnouncement: 'Não foi possível ler a área de transferência. Cole pelo teclado.',
+    expandNode: 'Expandir',
+    collapseNode: 'Recolher',
+    addChildRow: 'Adicionar linha filha',
+    childRowsLoadingAnnouncement: 'Carregando linhas filhas',
+    childRowsLoadedAnnouncement: 'Linhas filhas carregadas: {count}',
+    childRowsLoadErrorAnnouncement: 'Não foi possível carregar as linhas filhas',
+    nodesExpandedAnnouncement: 'Linhas expandidas: {count}',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1194,6 +1229,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copier les cellules sélectionnées',
     paste: 'Coller',
     pasteFailedAnnouncement: 'Impossible de lire le presse-papiers. Collez avec le clavier.',
+    expandNode: 'Développer',
+    collapseNode: 'Réduire',
+    addChildRow: 'Ajouter une ligne enfant',
+    childRowsLoadingAnnouncement: 'Chargement des lignes enfants',
+    childRowsLoadedAnnouncement: 'Lignes enfants chargées : {count}',
+    childRowsLoadErrorAnnouncement: 'Impossible de charger les lignes enfants',
+    nodesExpandedAnnouncement: 'Lignes développées : {count}',
   },
   de: {
     noData: 'Keine Daten',
@@ -1382,6 +1424,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Ausgewählte Zellen kopieren',
     paste: 'Einfügen',
     pasteFailedAnnouncement: 'Die Zwischenablage konnte nicht gelesen werden. Fügen Sie über die Tastatur ein.',
+    expandNode: 'Erweitern',
+    collapseNode: 'Reduzieren',
+    addChildRow: 'Untergeordnete Zeile hinzufügen',
+    childRowsLoadingAnnouncement: 'Untergeordnete Zeilen werden geladen',
+    childRowsLoadedAnnouncement: 'Untergeordnete Zeilen geladen: {count}',
+    childRowsLoadErrorAnnouncement: 'Untergeordnete Zeilen konnten nicht geladen werden',
+    nodesExpandedAnnouncement: 'Erweiterte Zeilen: {count}',
   },
   it: {
     noData: 'Nessun dato',
@@ -1570,6 +1619,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Copia le celle selezionate',
     paste: 'Incolla',
     pasteFailedAnnouncement: 'Impossibile leggere gli appunti. Incolla con la tastiera.',
+    expandNode: 'Espandi',
+    collapseNode: 'Comprimi',
+    addChildRow: 'Aggiungi riga figlia',
+    childRowsLoadingAnnouncement: 'Caricamento delle righe figlie',
+    childRowsLoadedAnnouncement: 'Righe figlie caricate: {count}',
+    childRowsLoadErrorAnnouncement: 'Impossibile caricare le righe figlie',
+    nodesExpandedAnnouncement: 'Righe espanse: {count}',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1758,6 +1814,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Geselecteerde cellen kopiëren',
     paste: 'Plakken',
     pasteFailedAnnouncement: 'Het klembord kon niet worden gelezen. Plak met het toetsenbord.',
+    expandNode: 'Uitvouwen',
+    collapseNode: 'Samenvouwen',
+    addChildRow: 'Onderliggende rij toevoegen',
+    childRowsLoadingAnnouncement: 'Onderliggende rijen laden',
+    childRowsLoadedAnnouncement: 'Onderliggende rijen geladen: {count}',
+    childRowsLoadErrorAnnouncement: 'Onderliggende rijen konden niet worden geladen',
+    nodesExpandedAnnouncement: 'Uitgevouwen rijen: {count}',
   },
   ru: {
     noData: 'Нет данных',
@@ -1946,6 +2009,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Копировать выделенные ячейки',
     paste: 'Вставить',
     pasteFailedAnnouncement: 'Не удалось прочитать буфер обмена. Вставьте с клавиатуры.',
+    expandNode: 'Развернуть',
+    collapseNode: 'Свернуть',
+    addChildRow: 'Добавить дочернюю строку',
+    childRowsLoadingAnnouncement: 'Загрузка дочерних строк',
+    childRowsLoadedAnnouncement: 'Загружено дочерних строк: {count}',
+    childRowsLoadErrorAnnouncement: 'Не удалось загрузить дочерние строки',
+    nodesExpandedAnnouncement: 'Развёрнуто строк: {count}',
   },
   pl: {
     noData: 'Brak danych',
@@ -2134,6 +2204,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Kopiuj zaznaczone komórki',
     paste: 'Wklej',
     pasteFailedAnnouncement: 'Nie udało się odczytać schowka. Wklej za pomocą klawiatury.',
+    expandNode: 'Rozwiń',
+    collapseNode: 'Zwiń',
+    addChildRow: 'Dodaj wiersz podrzędny',
+    childRowsLoadingAnnouncement: 'Ładowanie wierszy podrzędnych',
+    childRowsLoadedAnnouncement: 'Załadowane wiersze podrzędne: {count}',
+    childRowsLoadErrorAnnouncement: 'Nie udało się załadować wierszy podrzędnych',
+    nodesExpandedAnnouncement: 'Rozwinięte wiersze: {count}',
   },
   tr: {
     noData: 'Veri yok',
@@ -2322,6 +2399,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'Seçili hücreleri kopyala',
     paste: 'Yapıştır',
     pasteFailedAnnouncement: 'Pano okunamadı. Klavyeyle yapıştırın.',
+    expandNode: 'Genişlet',
+    collapseNode: 'Daralt',
+    addChildRow: 'Alt satır ekle',
+    childRowsLoadingAnnouncement: 'Alt satırlar yükleniyor',
+    childRowsLoadedAnnouncement: 'Yüklenen alt satırlar: {count}',
+    childRowsLoadErrorAnnouncement: 'Alt satırlar yüklenemedi',
+    nodesExpandedAnnouncement: 'Genişletilen satırlar: {count}',
   },
   ja: {
     noData: 'データがありません',
@@ -2510,6 +2594,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '選択したセルをコピー',
     paste: '貼り付け',
     pasteFailedAnnouncement: 'クリップボードを読み取れませんでした。キーボードで貼り付けてください。',
+    expandNode: '展開',
+    collapseNode: '折りたたむ',
+    addChildRow: '子行を追加',
+    childRowsLoadingAnnouncement: '子行を読み込んでいます',
+    childRowsLoadedAnnouncement: '読み込んだ子行: {count}',
+    childRowsLoadErrorAnnouncement: '子行を読み込めませんでした',
+    nodesExpandedAnnouncement: '展開した行: {count}',
   },
   ko: {
     noData: '데이터 없음',
@@ -2698,6 +2789,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '선택한 셀 복사',
     paste: '붙여넣기',
     pasteFailedAnnouncement: '클립보드를 읽을 수 없습니다. 키보드로 붙여넣으세요.',
+    expandNode: '펼치기',
+    collapseNode: '접기',
+    addChildRow: '하위 행 추가',
+    childRowsLoadingAnnouncement: '하위 행을 불러오는 중',
+    childRowsLoadedAnnouncement: '불러온 하위 행: {count}',
+    childRowsLoadErrorAnnouncement: '하위 행을 불러올 수 없습니다',
+    nodesExpandedAnnouncement: '펼친 행: {count}',
   },
   zh: {
     noData: '无数据',
@@ -2886,6 +2984,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: '复制所选单元格',
     paste: '粘贴',
     pasteFailedAnnouncement: '无法读取剪贴板。请使用键盘粘贴。',
+    expandNode: '展开',
+    collapseNode: '折叠',
+    addChildRow: '添加子行',
+    childRowsLoadingAnnouncement: '正在加载子行',
+    childRowsLoadedAnnouncement: '已加载子行：{count}',
+    childRowsLoadErrorAnnouncement: '无法加载子行',
+    nodesExpandedAnnouncement: '已展开的行：{count}',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -3074,6 +3179,13 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     copySelectedCells: 'نسخ الخلايا المحددة',
     paste: 'لصق',
     pasteFailedAnnouncement: 'تعذّرت قراءة الحافظة. الصق باستخدام لوحة المفاتيح.',
+    expandNode: 'توسيع',
+    collapseNode: 'طي',
+    addChildRow: 'إضافة صف فرعي',
+    childRowsLoadingAnnouncement: 'جارٍ تحميل الصفوف الفرعية',
+    childRowsLoadedAnnouncement: 'الصفوف الفرعية المحمّلة: {count}',
+    childRowsLoadErrorAnnouncement: 'تعذّر تحميل الصفوف الفرعية',
+    nodesExpandedAnnouncement: 'الصفوف الموسّعة: {count}',
   },
 });
 
