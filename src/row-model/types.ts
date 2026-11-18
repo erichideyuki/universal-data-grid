@@ -62,6 +62,16 @@ export interface DataRow {
   level?: number;
   /** Linha fixa (frente 20): item do hospedeiro fora do row model, no topo ou no fundo. */
   fixed?: 'top' | 'bottom';
+  /** Nó de árvore (frente 25): índice no `TreeIndex`, nível (0 = raiz) e posição entre os irmãos visíveis (1-based). */
+  tree?: TreeRowInfo;
+}
+
+/** Posição de uma linha de nó na árvore (frente 25). */
+export interface TreeRowInfo {
+  readonly node: number;
+  readonly level: number;
+  readonly posInSet: number;
+  readonly setSize: number;
 }
 
 /** Item de bloco remoto ainda não carregado (linha-esqueleto). */

@@ -19,19 +19,55 @@ export interface BlockDetails {
  * `all: false` (detalhe só de linha carregada).
  */
 interface ItemBlock {
-  items: readonly unknown[] | LazyItems;
+  items: readonly unknown[] | LazyItems | TreeRun;
   details: BlockDetails | undefined;
 }
 
-const isLazy = (items: readonly unknown[] | LazyItems): items is LazyItems => (items as LazyItems).lazy === true;
+/**
+ * Trecho de irmãos de uma árvore (frente 25): `children[from..from+length)`
+ * são índices em `nodes`; nada copiado por linha.
+ */
+interface TreeRun {
+  readonly tree: true;
+  readonly nodes: readonly unknown[];
+  readonly children: Int32Array;
+  readonly from: number;
+  readonly length: number;
+  /** Posição (0-based) do 1º do trecho entre os irmãos. */
+  readonly base: number;
+  /** Quantos irmãos (visíveis). */
+  readonly setSize: number;
+  /** Nível (0 = raiz). */
+  readonly level: number;
+}
+
+const isLazy = (items: readonly unknown[] | LazyItems | TreeRun): items is LazyItems => (items as LazyItems).lazy === true;
+const isTreeRun = (items: readonly unknown[] | LazyItems | TreeRun): items is TreeRun => (items as TreeRun).tree === true;
 
 /** Item da posição (`MISSING` se o bloco remoto ainda não carregou; marca o pedaço como desejado). */
 const itemAt = ({ items }: ItemBlock, position: number): unknown =>
-  isLazy(items) ? items.get(position) : items[position];
+  isLazy(items) ? items.get(position) : isTreeRun(items) ? items.nodes[items.children[items.from + position]] : items[position];
 
 /** Posição do 1º item do bloco que satisfaz `match` (remoto: só os carregados); `-1` se nenhum. */
-const findPosition = ({ items }: ItemBlock, match: (item: unknown) => boolean): number =>
-  isLazy(items) ? items.find(match) : items.findIndex(match);
+const findPosition = (block: ItemBlock, match: (item: unknown) => boolean): number => {
+  const { items } = block;
+
+  if (isLazy(items)) {
+    return items.find(match);
+  }
+
+  if (isTreeRun(items)) {
+    for (let position = 0; position < items.length; position++) {
+      if (match(itemAt(block, position))) {
+        return position;
+      }
+    }
+
+    return -1;
+  }
+
+  return items.findIndex(match);
+};
 
 /** Quantos valores de `sorted` (crescente) são menores que `value`. */
 const countBelow = (sorted: Int32Array, value: number): number => {
@@ -240,6 +276,24 @@ export class RowList implements Rows {
     this.#length++;
   }
 
+  /**
+   * Acrescenta um trecho de irmãos de uma árvore (frente 25):
+   * `children[from..to)`, irmãos `children[siblingsStart..+setSize)`, no
+   * nível `level`. A listra segue o índice da linha na lista.
+   */
+  pushTreeRun(nodes: readonly unknown[], children: Int32Array, from: number, to: number, siblingsStart: number, setSize: number, level: number): void {
+    if (to <= from) {
+      return;
+    }
+
+    this.#dataBefore = undefined;
+    const run: TreeRun = { tree: true, nodes, children, from, length: to - from, base: from - siblingsStart, setSize, level };
+
+    this.#starts.push(this.#length);
+    this.#segments.push({ items: run, details: undefined });
+    this.#length += run.length;
+  }
+
   /** Acrescenta um bloco de itens (array ou remoto); a listra (`index`) recomeça em cada bloco. */
   pushItems(items: readonly unknown[] | LazyItems, details?: BlockDetails): void {
     if (!items.length) {
@@ -331,6 +385,17 @@ export class RowList implements Rows {
 
     const key = `d:${this.#keyOf(item)}`;
 
+    if (isTreeRun(segment.items)) {
+      const run = segment.items;
+      return {
+        isGroup: false,
+        key,
+        item,
+        index,
+        tree: { node: run.children[run.from + position], level: run.level, posInSet: run.base + position + 1, setSize: run.setSize },
+      } satisfies DataRow;
+    }
+
     return detail
       ? { isGroup: false, isDetail: true, key: `x:${this.#keyOf(item)}`, item, masterKey: key } satisfies DetailRow
       : { isGroup: false, key, item, index: position } satisfies DataRow;
@@ -344,7 +409,7 @@ export class RowList implements Rows {
       const segment = this.#segments[i];
 
       if (isBlock(segment)) {
-        const position = !keyOf && !isLazy(segment.items) ? segment.items.indexOf(key) : findPosition(segment, match);
+        const position = !keyOf && Array.isArray(segment.items) ? segment.items.indexOf(key) : findPosition(segment, match);
 
         if (position >= 0 && position < segment.items.length) {
           return { segment: i, position };
