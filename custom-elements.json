@@ -306,8 +306,12 @@
               "name": "no-data"
             },
             {
-              "description": "Column header cells (`<th>`).",
+              "description": "Column header cells (`<th>`), bands included.",
               "name": "header-cell"
+            },
+            {
+              "description": "Band header cells (multi-level headers); they also match `header-cell`.",
+              "name": "band-header-cell"
             },
             {
               "description": "The sort arrow (and priority number) in headers and group chips.",
@@ -832,6 +836,16 @@
             },
             {
               "kind": "field",
+              "name": "columnRenderingMode",
+              "type": {
+                "text": "GridColumnRenderingMode"
+              },
+              "default": "'auto'",
+              "description": "How columns are rendered: `virtual` keeps only the columns in view (plus\nthe fixed columns and the focused one) in the DOM, for very wide grids;\n`standard` renders all; `auto` (default) is `virtual` with more than 50\nleaf columns defined (visible, hidden or grouped). Under `virtual` a\ncolumn without `width` takes its auto-size width or `max(minWidth, 150)` px.",
+              "attribute": "column-rendering-mode"
+            },
+            {
+              "kind": "field",
               "name": "selectionMode",
               "type": {
                 "text": "GridSelectionMode"
@@ -1087,7 +1101,7 @@
                   }
                 }
               ],
-              "description": "Sorts by `column` in `order` (`null` removes the column from the\nsorting). Without `append` the column replaces the current sorting; with\nit, the column is added (or keeps its priority if already sorted). For a\ngrouped column it sets the direction of its groups."
+              "description": "Sorts by `column` in `order` (`null` removes the column from the\nsorting). Without `append` the column replaces the current sorting; with\nit, the column is added (or keeps its priority if already sorted). For a\ngrouped column it sets the direction of its groups. A band does nothing."
             },
             {
               "kind": "method",
@@ -1163,7 +1177,7 @@
                   }
                 }
               ],
-              "description": "Groups by `column` at grouping level `targetIndex` (default: the\ninnermost level). An already grouped column moves to that level."
+              "description": "Groups by `column` at grouping level `targetIndex` (default: the\ninnermost level). An already grouped column moves to that level. Only\nleaf columns group (a band does nothing); a grouped column leaves its\nband in the header and returns to the end of it when ungrouped."
             },
             {
               "kind": "method",
@@ -1181,7 +1195,7 @@
                   }
                 }
               ],
-              "description": "Removes `column` from the grouping; it goes back to the end of the regular columns."
+              "description": "Removes `column` from the grouping; it goes back to the end of its band (or of the regular columns at the top level)."
             },
             {
               "kind": "method",
@@ -1380,7 +1394,7 @@
                   }
                 }
               ],
-              "description": "Moves a column to `targetIndex` among the regular (non-grouped) columns.\nThe column stays in its block: fixed at the start, free, or fixed at the\nend. A grouped column is ungrouped."
+              "description": "Moves a column (or a band, with all its columns) to `targetIndex` among\nits siblings — the columns of the same band, or the top level — that are\nnot grouped (hidden ones count). Without bands that is the index among\nthe regular columns. The column stays in its band and in its block: fixed\nat the start, free, or fixed at the end. A grouped column is ungrouped."
             },
             {
               "kind": "method",
@@ -1404,7 +1418,7 @@
                   }
                 }
               ],
-              "description": "Sets the width (px) of a column, within its `minWidth`/`maxWidth`."
+              "description": "Sets the width (px) of a column, within its `minWidth`/`maxWidth`. A band does nothing."
             },
             {
               "kind": "method",
@@ -1422,7 +1436,7 @@
                   }
                 }
               ],
-              "description": "Fits the width of a column to its header and rendered cells."
+              "description": "Fits the width of a column to its header and rendered cells; for a band, each of its visible columns."
             },
             {
               "kind": "method",
@@ -1636,7 +1650,7 @@
                   }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event."
             },
             {
               "kind": "method",
@@ -1942,21 +1956,21 @@
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
               },
-              "description": "The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu)."
+              "description": "The user moved a column or a band (drag and drop, Alt+Shift+←/→ on the header or the column header menu)."
             },
             {
               "name": "u-grid-column-visibility-change",
               "type": {
                 "text": "CustomEvent<GridColumnVisibilityChangeEventDetail>"
               },
-              "description": "The user showed or hid a column in the column chooser."
+              "description": "The user showed or hid a column (or a band) in the column chooser (one event per own change)."
             },
             {
               "name": "u-grid-column-fixed-change",
               "type": {
                 "text": "CustomEvent<GridColumnFixedChangeEventDetail>"
               },
-              "description": "The user fixed or unfixed a column in the column chooser."
+              "description": "The user fixed or unfixed a column (or a top-level band) in the column chooser."
             },
             {
               "name": "u-grid-column-resize",
@@ -2286,6 +2300,15 @@
               "default": "false",
               "description": "Columns without `width` take the width of their content (header and rendered rows).",
               "fieldName": "columnAutoWidth"
+            },
+            {
+              "name": "column-rendering-mode",
+              "type": {
+                "text": "GridColumnRenderingMode"
+              },
+              "default": "'auto'",
+              "description": "How columns are rendered: `virtual` keeps only the columns in view (plus\nthe fixed columns and the focused one) in the DOM, for very wide grids;\n`standard` renders all; `auto` (default) is `virtual` with more than 50\nleaf columns defined (visible, hidden or grouped). Under `virtual` a\ncolumn without `width` takes its auto-size width or `max(minWidth, 150)` px.",
+              "fieldName": "columnRenderingMode"
             },
             {
               "name": "selection-mode",
@@ -2619,6 +2642,14 @@
         },
         {
           "kind": "js",
+          "name": "GridColumnRenderingMode",
+          "declaration": {
+            "name": "GridColumnRenderingMode",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
           "name": "GridColumnFormat",
           "declaration": {
             "name": "GridColumnFormat",
@@ -2913,11 +2944,11 @@
       "declarations": [
         {
           "kind": "class",
-          "description": "Declarative column of a `<u-grid>`: one direct child `<u-grid-column>` per\ncolumn. The text content is the header label. Every option mirrors a\n`GridColumnDef` field with the same property name.",
+          "description": "Declarative column of a `<u-grid>`: one direct child `<u-grid-column>` per\ncolumn. The text content is the header label. Every option mirrors a\n`GridColumnDef` field with the same property name. A `<u-grid-column>`\nwith nested `<u-grid-column>` elements is a band (multi-level header).",
           "name": "DataGridColumn",
           "slots": [
             {
-              "description": "Header label (text content).",
+              "description": "Header label text and, in a band, the nested `<u-grid-column>` elements.",
               "name": ""
             }
           ],
@@ -2928,7 +2959,7 @@
               "type": {
                 "text": "number | null"
               },
-              "description": "Width in px. Changing it after the column is rendered overrides the width chosen by the user.",
+              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`)\na column without `width` takes its auto-size width or `max(minWidth, 150)` px.",
               "attribute": "width"
             },
             {
@@ -3013,7 +3044,7 @@
                 "text": "GridColumnAlignment | null"
               },
               "default": "null",
-              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type.",
+              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`).",
               "attribute": "alignment"
             },
             {
@@ -3101,7 +3132,7 @@
                 "text": "GridColumnFixed"
               },
               "default": "null",
-              "description": "Fixes the column at the `start` or `end` of the scrollable area (logical: mirrors in RTL).",
+              "description": "Fixes the column at the `start` or `end` of the scrollable area (logical:\nmirrors in RTL). A fixed band fixes its columns; ignored on nested columns.",
               "attribute": "fixed"
             },
             {
@@ -3261,11 +3292,20 @@
             },
             {
               "kind": "field",
+              "name": "columns",
+              "type": {
+                "text": "readonly DataGridColumn[] | null"
+              },
+              "description": "Nested `<u-grid-column>` elements (read-only): when there is at least\none, this column is a band. `null` without nested columns. The array is\nfrozen and stays the same while the nested columns don't change.",
+              "readonly": true
+            },
+            {
+              "kind": "field",
               "name": "label",
               "type": {
                 "text": "string"
               },
-              "description": "Header label: the trimmed text content of the element.",
+              "description": "Header label: the trimmed text content of the element, without the text of nested columns.",
               "readonly": true
             }
           ],
@@ -3275,7 +3315,7 @@
               "type": {
                 "text": "number | null"
               },
-              "description": "Width in px. Changing it after the column is rendered overrides the width chosen by the user.",
+              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`)\na column without `width` takes its auto-size width or `max(minWidth, 150)` px.",
               "fieldName": "width"
             },
             {
@@ -3319,7 +3359,7 @@
                 "text": "GridColumnAlignment | null"
               },
               "default": "null",
-              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type.",
+              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`).",
               "fieldName": "alignment"
             },
             {
@@ -3382,7 +3422,7 @@
                 "text": "GridColumnFixed"
               },
               "default": "null",
-              "description": "Fixes the column at the `start` or `end` of the scrollable area (logical: mirrors in RTL).",
+              "description": "Fixes the column at the `start` or `end` of the scrollable area (logical:\nmirrors in RTL). A fixed band fixes its columns; ignored on nested columns.",
               "fieldName": "fixed"
             },
             {
