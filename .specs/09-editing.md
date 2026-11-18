@@ -106,6 +106,13 @@ a coluna de comandos já cobre o teclado).
   `src/row-model/added-rows.ts`): nada por linha; o `keyOf` reconhece o item
   exibido delas por um `WeakMap` enquanto houver alguma.
 - Chave provisória: `Object.freeze({})`.
+- Estado (frente 11): mudanças pendentes NÃO entram no `GridState` (só
+  layout/estado do usuário); chave provisória de linha nova nunca aparece em
+  `selectedKeys` do estado (só chaves texto/número). `setState`/`resetState`
+  com editor aberto: o digitado fica pendente (validado, sem salvar, como o
+  foco saindo do editor), o editor fecha e o foco fica na célula; as
+  pendências continuam, como na ordenação e no filtro. Teste em
+  `editing.browser.test.ts` ("edição e estado").
 - Sem `keyExpr` (com `items`) a chave é o objeto: depois de salvar,
   seleção, expansão e foco passam do item velho para o novo.
 - Achados da revisão da implementação deixados para aval do usuário (API

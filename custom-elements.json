@@ -2457,6 +2457,10 @@
         },
         {
           "kind": "variable",
+          "name": "sort"
+        },
+        {
+          "kind": "variable",
           "name": "column"
         },
         {
@@ -2466,10 +2470,6 @@
         {
           "kind": "variable",
           "name": "value"
-        },
-        {
-          "kind": "variable",
-          "name": "sort"
         }
       ],
       "exports": [

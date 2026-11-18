@@ -1501,7 +1501,9 @@ pending). `edit-trigger="dblclick"` opens editors with a double-click instead of
 With `dataSource`, editing needs `keyExpr` (a console error turns it off otherwise). Pending
 changes are kept by key: they survive scrolling (an open editor stays in the DOM while scrolled
 away), sorting, filtering and new `items` with the same keys; changes of keys no longer present are
-dropped with `u-grid-edit-cancel` (`source: 'api'`).
+dropped with `u-grid-edit-cancel` (`source: 'api'`). Pending changes are data, not layout: they are never part of
+`getState()`; `setState()`/`resetState()` with an editor open close it and keep what was typed as a
+pending change.
 
 ### Editors
 

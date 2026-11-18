@@ -2179,6 +2179,23 @@ export class DataGrid extends LitElement {
     this.#requestState({ version: GRID_STATE_VERSION }, false, false);
   }
 
+  /**
+   * Estado aplicado com um editor aberto (frente 09): o layout pode esconder
+   * a coluna ou a linha dele. O que foi digitado fica pendente (validado,
+   * sem salvar — como o foco saindo do editor) e o editor fecha; o foco fica
+   * na célula. As mudanças pendentes não são estado: sobrevivem como à
+   * ordenação e ao filtro.
+   */
+  #settleEditorForState(): void {
+    if (!this.#editor) {
+      return;
+    }
+
+    void this.#commitEditor();
+    this.#closeEditor();
+    this.#focusPending ||= this.#hadFocusInGrid();
+  }
+
   /** `setState`/`resetState`: vence uma leitura em curso (e, antes de conectar, a leitura). */
   #explicitStateChange(): void {
     this.#captureInitial();
@@ -2284,6 +2301,7 @@ export class DataGrid extends LitElement {
 
   /** Aplica um estado JÁ VALIDADO. Sem eventos por recurso, sem foco, sem anúncio. */
   #applyState(state: GridState, partial: boolean, fromStorage: boolean): void {
+    this.#settleEditorForState();
     this.#captureInitial();
     const initial = this.#initial!;
     const reset = !partial;

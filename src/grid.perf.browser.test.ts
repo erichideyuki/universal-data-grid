@@ -924,6 +924,9 @@ const stateScenario = (rows: number, label: string) => {
     };
 
     checkBudgets(rows, metrics, perf.report(`state-${label}`, metrics));
+  });
+};
+
 /**
  * Frente 09: edição em `rows` linhas locais ordenadas e filtradas — abrir o
  * editor, confirmar uma célula (lote), salvar 100 linhas pendentes de uma vez

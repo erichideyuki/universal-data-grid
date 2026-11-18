@@ -1001,3 +1001,41 @@ describe('edição: roteiro de teclado', () => {
     expect(document.getElementById(ids[1])?.textContent).toBe('This field is required.');
   });
 });
+
+describe('edição e estado (frente 11)', () => {
+  it('getState não leva mudanças pendentes nem chaves provisórias; setState fecha o editor e mantém o digitado pendente', async () => {
+    const grid = await editableGrid(g => {
+      g.editMode = 'batch';
+      g.allowAdding = true;
+      g.selectionMode = 'multiple';
+      g.columns = columns().map(column => ({ ...column, name: column.path }));
+    });
+
+    await openCell(grid, 1, 'name');
+    await type(grid, 'Pending value');
+    await press(grid, 'Enter');
+    const added = grid.addRow({ name: 'Brand new' });
+    await settle(grid);
+    grid.selectRows([1, added]);
+
+    const json = JSON.stringify(grid.getState());
+    expect(json).not.toContain('Pending value');
+    expect(json).not.toContain('Brand new');
+    expect(grid.getState().selectedKeys).toEqual([1]);
+
+    // Editor aberto + setState que esconde a coluna dele.
+    await openCell(grid, 2, 'name');
+    await type(grid, 'Typed');
+    grid.setState({ version: 1, columns: [{ name: 'name', visible: false }] }, { partial: true });
+    await settle(grid);
+
+    expect(editorOf(grid)).toBeNull();
+    expect(grid.getChanges().map(change => change.data)).toEqual([{ name: 'Pending value' }, { name: 'Brand new' }, { name: 'Typed' }]);
+    expect(focused(grid)?.tagName).toBe('TD');
+
+    grid.resetState();
+    await settle(grid);
+    expect(grid.hasChanges()).toBe(true);
+    expect(await grid.saveChanges()).toBe(true);
+  });
+});
