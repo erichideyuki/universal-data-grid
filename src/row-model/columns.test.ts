@@ -56,16 +56,16 @@ describe('buildColumnTree', () => {
     expect(tree.bands).toEqual([]);
   });
 
-  it('coluna repetida ou ciclo vale só na 1ª vez; banda vazia não tem folha', () => {
+  it('coluna repetida ou ciclo vale só na 1ª vez; `columns: []` é folha', () => {
     const a = leaf('a');
     const cyclic: Col = { label: 'cyclic', columns: [] };
     cyclic.columns!.push(cyclic, a);
     const empty = band('empty');
     const tree = buildColumnTree([a, cyclic, empty]);
 
-    expect(labels(tree.leaves)).toEqual(['a']);
+    expect(labels(tree.leaves)).toEqual(['a', 'empty']);
     expect(labels(tree.childrenOf.get(cyclic)!)).toEqual([]);
-    expect(tree.childrenOf.get(empty)).toEqual([]);
+    expect(tree.childrenOf.has(empty)).toBe(false);
   });
 });
 
