@@ -1,6 +1,6 @@
 import { ContextConsumer } from '@lit/context';
 
-import { html, type HTMLTemplateResult, LitElement, nothing, type PropertyValues } from 'lit';
+import { html, type HTMLTemplateResult, isServer, LitElement, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -28,7 +28,7 @@ import { flattenRemote, type LoaderQuery, remoteGroupNodes, RemoteLoader } from 
 import { downloadBlob } from './export/download.js';
 import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
 import type { GridCsvDownloadOptions, GridCsvOptions, GridExportData, GridExportDataRow, GridExportOptions } from './export/types.js';
-import { clipboardContent, collectRows, writeCsv } from './export/write.js';
+import { type ClipboardHtmlOptions, clipboardContent, collectRows, writeCsv } from './export/write.js';
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
 import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
@@ -52,6 +52,7 @@ import {
   renderMenuItems,
 } from './features/group-panel-menu.js';
 import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
+import { HOST_LABEL_ATTRIBUTES, HostLabel } from './features/host-label.js';
 import {
   type CellPosition,
   HEADER_ROW,
@@ -310,7 +311,12 @@ export interface GridCopyEventDetail<TItem = any> {
   readonly columns: readonly GridColumnDef<TItem>[];
   /** Tab separated text the grid writes as `text/plain` (read only: cancel to write your own). */
   readonly text: string;
-  /** Escaped `<table>` the grid writes as `text/html` (empty above 10,000 rows). */
+  /**
+   * Escaped `<table>` the grid writes as `text/html` (empty above 10,000
+   * rows). It carries `lang` (the grid's effective `language`) and, in a
+   * right-to-left grid, `dir="rtl"`. Cells protected against formulas keep
+   * the `'` prefix and get `style='mso-number-format:"\@"'`.
+   */
   readonly html: string;
   /**
    * The clipboard of the native `copy` event. After `preventDefault()` the
@@ -653,6 +659,11 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * row, header filter, search panel), column resizing, fixing, hiding and
  * reordering, i18n and SSR.
  *
+ * Name the grid with `aria-label` or `aria-labelledby` on `<u-grid>`: they
+ * name the inner `role="grid"`/`"treegrid"` table. `aria-labelledby` ids are
+ * resolved in the grid's root (document or enclosing shadow root); their
+ * text is copied and kept in sync.
+ *
  * @summary Data grid web component.
  *
  * @slot - `<u-grid-column>` elements (declarative columns).
@@ -785,7 +796,7 @@ export class DataGrid extends LitElement {
   static override styles = [styles];
 
   static override get observedAttributes(): string[] {
-    return [...super.observedAttributes, ...Object.keys(LEGACY_ATTRIBUTES)];
+    return [...super.observedAttributes, ...Object.keys(LEGACY_ATTRIBUTES), ...HOST_LABEL_ATTRIBUTES];
   }
 
   // ---------------------------------------------------------------- dados
@@ -1473,6 +1484,12 @@ export class DataGrid extends LitElement {
     this.showGroupPanel = value;
   }
 
+  /**
+   * `aria-label`/`aria-labelledby` do hospedeiro nomeiam a tabela (o texto
+   * dos alvos é copiado e observado: IDREF não atravessa o shadow root).
+   */
+  readonly #hostLabel = new HostLabel(this, () => this.requestUpdate());
+
   readonly #warnedDeprecations = new Set<string>();
 
   #deprecated(name: string, replacement: string): void {
@@ -1485,6 +1502,10 @@ export class DataGrid extends LitElement {
   }
 
   override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
+    if ((HOST_LABEL_ATTRIBUTES as readonly string[]).includes(name)) {
+      this.#hostLabel.update();
+    }
+
     const renamed = LEGACY_ATTRIBUTES[name];
 
     if (renamed) {
@@ -1643,6 +1664,7 @@ export class DataGrid extends LitElement {
       rowExpansion: this.#rowExpansion.size,
       primitiveDetailSizes: this.#primitiveDetailSizes.size,
       observedDetails: this.#observedDetails.size,
+      hostLabelObservers: this.#hostLabel.observers,
     };
   }
 
@@ -1667,6 +1689,7 @@ export class DataGrid extends LitElement {
     super.connectedCallback();
     this.#readDeclarativeColumns();
     this.#unobserveDocumentLanguage = observeDocumentLanguage(() => this.requestUpdate());
+    this.#hostLabel.update();
     this.#dragAndDropDirty = true;
     this.#layoutDirty = true;
     this.#observeScrollContainer();
@@ -1675,6 +1698,9 @@ export class DataGrid extends LitElement {
   override disconnectedCallback() {
     // Antes do super: ele solta os refs (o contêiner) dos diretivos.
     this.#resize.cancel();
+    // A tabela não segura os rótulos da página enquanto o grid está fora dela (antes do super: precisa do ref).
+    this.#hostLabel.disconnect();
+    this.#syncTableLabel();
     super.disconnectedCallback();
     this.#unobserveDocumentLanguage?.();
     this.#unobserveDocumentLanguage = undefined;
@@ -1702,6 +1728,11 @@ export class DataGrid extends LitElement {
   }
 
   override willUpdate(changed: PropertyValues<this>) {
+    // No servidor o Lit não chama o `attributeChangedCallback` do elemento: lê o `aria-label` aqui.
+    if (isServer) {
+      this.#hostLabel.update();
+    }
+
     // \`:focus-within\` cobre também o conteúdo do renderer (light DOM projetado por slot).
     // (No SSR não há \`matches\` nem foco.)
     this.#hadFocusBeforeRender = !!this.shadowRoot?.activeElement || (typeof this.matches === 'function' && this.matches(':focus-within'));
@@ -1792,6 +1823,7 @@ export class DataGrid extends LitElement {
   override updated(changed: PropertyValues<this>) {
     const virtualizer = this.#virtualizer;
     this.#observeToolbar();
+    this.#syncTableLabel();
 
     // Com `wrap` a linha pode crescer: mede as renderizadas a cada render
     // (alturas por índice; trocar as linhas ou o `rowHeight` as esquece).
@@ -2723,10 +2755,50 @@ export class DataGrid extends LitElement {
       detail: {
         items: rows.map(row => row.item),
         columns: source.columns.map(column => column.info.column),
-        ...clipboardContent(rows, source.columns),
+        ...clipboardContent(rows, source.columns, this.#clipboardHtmlOptions()),
       },
       announcement: formatMessage(this.#translation.rowsCopiedAnnouncement, { count: String(rows.length) }),
     };
+  }
+
+  /**
+   * Nome da tabela (spec 10): os alvos do `aria-labelledby` do hospedeiro
+   * em `ariaLabelledByElements` (o navegador calcula o nome e acompanha o
+   * texto) e o texto copiado no `aria-label` (reserva). O `aria-label` é
+   * garantido aqui também porque, na hidratação, o Lit não grava o valor do
+   * cliente sobre o do servidor (`noCommit`), e o servidor não resolve o
+   * `aria-labelledby`.
+   */
+  #syncTableLabel(): void {
+    const table = this.#tableRef.value;
+
+    if (!table) {
+      return;
+    }
+
+    const name = this.#hostLabel.name || null;
+
+    if (table.getAttribute('aria-label') !== name) {
+      if (name) {
+        table.setAttribute('aria-label', name);
+      } else {
+        table.removeAttribute('aria-label');
+      }
+    }
+
+    if ('ariaLabelledByElements' in table) {
+      const elements = this.#hostLabel.elements;
+      const current = table.ariaLabelledByElements ?? [];
+
+      if (current.length !== elements.length || elements.some((element, index) => current[index] !== element)) {
+        table.ariaLabelledByElements = elements.length ? [...elements] : null;
+      }
+    }
+  }
+
+  /** Direção e idioma efetivo do grid na `<table>` copiada (spec 12). */
+  #clipboardHtmlOptions(): ClipboardHtmlOptions {
+    return { rtl: this._isRtl(), lang: this.language };
   }
 
   /** A célula de onde veio o Ctrl+C (só célula de dados de coluna exportável). */
@@ -2743,7 +2815,7 @@ export class DataGrid extends LitElement {
     const cell: GridExportDataRow = { rowType: 'data', level: 0, item: row.item, values: [value], texts: [source.text(value, row.item)] };
 
     return {
-      detail: { items: [row.item], columns: [column], ...clipboardContent([cell], [source]) },
+      detail: { items: [row.item], columns: [column], ...clipboardContent([cell], [source], this.#clipboardHtmlOptions()) },
       announcement: this.#translation.cellCopiedAnnouncement,
     };
   }
@@ -5568,6 +5640,7 @@ export class DataGrid extends LitElement {
           <table
             class=${fit ? 'grid-table fit' : 'grid-table'}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
+            aria-label=${ifDefined(this.#hostLabel.name || undefined)}
             aria-rowcount="${this.#unknownRowCount ? -1 : this.#allRows.length + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}

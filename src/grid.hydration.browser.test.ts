@@ -53,6 +53,10 @@ const hydrate = async (name: HydrationScenarioName): Promise<{ grid: DataGrid; s
   host.className = 'ssr-host';
   host.setHTMLUnsafe(html);
 
+  if (scenario.ariaLabelledBy) {
+    host.insertAdjacentHTML('afterbegin', `<h2 id="${scenario.ariaLabelledBy}">Countries by year</h2>`);
+  }
+
   const grid = host.querySelector('u-grid')!;
   // O shadow root declarativo já está aqui, antes de qualquer render do cliente.
   const ssrIndexes = rowIndexes(grid);
@@ -110,6 +114,19 @@ describe('hidratação do SSR', () => {
     // Nenhum conteúdo duplicado: um `.code` por linha de dados.
     const dataCount = dataRows(grid).filter(tr => !tr.matches('.group-row, .detail-row')).length;
     expect(root.querySelectorAll('td .code')).toHaveLength(dataCount);
+  });
+
+  it.each(['labelled', 'labelledOnly'] as const)('%s: aria-labelledby nomeia a tabela depois de hidratar', async name => {
+    const { grid } = await hydrate(name);
+    const table = grid.shadowRoot!.querySelector('table')!;
+
+    expect(errors).toEqual([]);
+    expect(table.getAttribute('aria-label')).toBe('Countries by year');
+
+    grid.ownerDocument.getElementById('ssr-title')!.textContent = 'Renamed';
+    await Promise.resolve();
+    await settle(grid);
+    expect(table.getAttribute('aria-label')).toBe('Renamed');
   });
 
   it('ar: a direção e os textos traduzidos sobrevivem à hidratação', async () => {

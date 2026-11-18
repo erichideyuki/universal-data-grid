@@ -32,6 +32,15 @@ describe('SSR', () => {
     expect(output).not.toContain('Sem dados');
   });
 
+  it('aria-label do hospedeiro nomeia a tabela no servidor; aria-labelledby não quebra', async () => {
+    const output = await renderToString(html`
+      <u-grid aria-label="Sales" .columns=${columns} .items=${items}></u-grid>
+      <u-grid aria-labelledby="t" .columns=${columns} .items=${items}></u-grid>`);
+
+    expect(output).toMatch(/<table[^>]*role="treegrid"[^>]*aria-label="Sales"/);
+    expect(output.match(/aria-label="Sales"/g)).toHaveLength(2);
+  });
+
   it('sem itens mostra o texto de vazio traduzido', async () => {
     const output = await renderToString(html`
       <u-grid language="pt" .columns=${columns} .items=${[]}></u-grid>`);

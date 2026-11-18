@@ -17,6 +17,9 @@ export interface HydrationScenario {
   filter?: { filterValue: GridFilterExpression; searchText: string };
   /** Master-detail com tudo expandido (`auto-expand-rows`). */
   detailRenderer?: GridDetailRenderer;
+  /** `aria-label`/`aria-labelledby` no hospedeiro (o alvo do `labelledby` fica na página, ao lado). */
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -68,6 +71,8 @@ export const hydrationScenarios = {
   pt: { language: 'pt', columns, items },
   ar: { language: 'ar', dir: 'rtl', columns: fixedColumns, items },
   empty: { language: 'pt', columns, items: [] },
+  labelled: { language: 'en', columns, items, ariaLabel: 'Fallback', ariaLabelledBy: 'ssr-title' },
+  labelledOnly: { language: 'en', columns, items, ariaLabelledBy: 'ssr-title' },
   filtered: { language: 'en', columns, items, filter: { filterValue: ['year', '>=', 1990], searchText: 'bra' } },
   templates: {
     language: 'en',

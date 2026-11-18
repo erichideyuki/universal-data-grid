@@ -15,13 +15,15 @@ import '../grid.js';
  */
 export const renderScenario = (name: HydrationScenarioName): Promise<string> => {
   const scenario: HydrationScenario = hydrationScenarios[name];
-  const { language, dir, columns, items, filter, detailRenderer } = scenario;
+  const { language, dir, columns, items, filter, detailRenderer, ariaLabel, ariaLabelledBy } = scenario;
 
   // Como o demo (`dev/dev-root.ts`): agrupado, ordenação múltipla, redimensionar, seletor.
   return collectResult(render(html`
     <u-grid
       language=${language}
       dir=${ifDefined(dir)}
+      aria-label=${ifDefined(ariaLabel)}
+      aria-labelledby=${ifDefined(ariaLabelledBy)}
       style="display: block; height: 400px"
       auto-expand-groups
       sorting="multiple"
