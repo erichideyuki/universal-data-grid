@@ -8934,9 +8934,67 @@ export class DataGrid extends LitElement {
     const active = this.shadowRoot?.activeElement ?? document.activeElement;
     const current = targets.findIndex(target => target === active || target.contains(active));
     const next = targets[(current + (back ? -1 : 1) + targets.length) % targets.length];
+    const logical = this.#virtualColumns ? this.#nextRowEditorCol(cell, next, back) : undefined;
+
     // Confirma o que foi digitado (validação na hora); a linha continua aberta.
     void this.#commitEditor();
-    next.focus();
+
+    if (logical === undefined) {
+      next.focus();
+      return;
+    }
+
+    // Virtualização de colunas (frente 13): a próxima célula editável está fora do
+    // DOM. Vira a ativa (entra no render e rola até ela) e o foco vai ao editor dela.
+    const position = this.#positionOf(cell);
+
+    if (!position) {
+      return;
+    }
+
+    this.#setActive({ row: position.row, col: logical }, 'user', { reveal: true });
+    void this.updateComplete.then(() => {
+      const td = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${position.row}"] > td[data-col="${logical}"]`);
+      const target = td ? focusTargetsWithin(td)[0] : undefined;
+      (target ?? td)?.focus();
+    });
+  }
+
+  /**
+   * Edição de linha com colunas virtualizadas: a próxima célula editável pela
+   * ordem LÓGICA (também fora do DOM, também em outra banda). `undefined` = o
+   * alvo do DOM serve (está na mesma célula ou é a vizinha lógica).
+   */
+  #nextRowEditorCol(cell: HTMLElement, next: HTMLElement | SVGElement, back: boolean): number | undefined {
+    const position = this.#positionOf(cell);
+    const row = position && this.#rowAt(position.row);
+
+    if (!position || !row || !isDataRow(row)) {
+      return undefined;
+    }
+
+    const pending = this.#pendingOf(row);
+    const navColumns = this.#currentNavColumns();
+    const editable = navColumns
+      .map((column, col) => ({ column, col }))
+      .filter(({ column }) => column === COMMAND_COLUMN || (typeof column === 'object' && this.#cellEditable(row, column, pending)))
+      .map(({ col }) => col);
+
+    if (!editable.length) {
+      return undefined;
+    }
+
+    const nextCell = next.closest<HTMLElement>('td');
+    const nextCol = Number(nextCell?.getAttribute('data-col') ?? NaN);
+
+    if (nextCell === cell) {
+      return undefined;
+    }
+
+    const index = editable.indexOf(position.col);
+    const logical = editable[((index < 0 ? (back ? 0 : -1) : index) + (back ? -1 : 1) + editable.length) % editable.length];
+
+    return logical === nextCol ? undefined : logical;
   }
 
   /** Perda de foco do editor (clique fora): válido confirma; inválido fica pendente marcado. */

@@ -192,6 +192,13 @@ Achados recusados (uma linha cada):
   muda com a rolagem); o `colspan` do rótulo conta as colunas do DOM.
 - A coluna da célula ativa (foco, editor da frente 09) é mantida no DOM
   como as fixas; com ela longe da janela há até 2 espaçadoras de cada lado.
+- Edição (frente 09): o editor da célula ativa segue no DOM com a
+  virtualização (coluna ativa mantida, células com chave), com valor, foco e
+  erro de validação. Tab da célula/lote anda pelas colunas LÓGICAS (cruza
+  bandas e colunas fora do DOM). No modo linha o Tab segue os editores do
+  DOM e, quando a próxima editável lógica está fora dele (volta dos botões
+  ao início), ela vira a ativa, entra no render e recebe o foco no editor.
+  O rótulo do editor aponta o id do cabeçalho com nível (`header-text-{nível}-{col}`).
 - Rótulo da banda `sticky` entre as áreas fixas (`--_fixed-start/-end` no
   contêiner de rolagem; a `<th>` da banda com `overflow: clip`, que não vira
   contêiner de rolagem): banda larga com colunas fora da tela continua com o
