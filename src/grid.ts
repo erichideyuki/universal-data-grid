@@ -8984,10 +8984,10 @@ export class DataGrid extends LitElement {
       return undefined;
     }
 
-    const nextCell = next.closest<HTMLElement>('td');
-    const nextCol = Number(nextCell?.getAttribute('data-col') ?? NaN);
+    const targetCell = next.closest<HTMLElement>('td');
+    const nextCol = Number(targetCell?.getAttribute('data-col') ?? NaN);
 
-    if (nextCell === cell) {
+    if (targetCell === cell) {
       return undefined;
     }
 

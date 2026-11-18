@@ -35,7 +35,7 @@ const leaf = (grid: DataGrid, path: string) => grid.columns.flatMap(column => co
 const colOf = (element: Element | null) => element?.closest('td')?.getAttribute('aria-colindex');
 
 const press = async (grid: DataGrid, key: string, init: KeyboardEventInit = {}) => {
-  const target = (focused(grid) ?? root(grid).querySelector('[tabindex="0"]')) as HTMLElement;
+  const target = (focused(grid) ?? root(grid).querySelector('[tabindex="0"]'))!;
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init }));
   await settle(grid);
 };
@@ -47,7 +47,7 @@ const type = async (grid: DataGrid, text: string) => {
   await settle(grid);
 };
 
-const scrollTo = async (grid: DataGrid, left: number) => {
+const scrollToX = async (grid: DataGrid, left: number) => {
   scroller(grid).scrollLeft = left;
   scroller(grid).dispatchEvent(new Event('scroll'));
   await settle(grid);
@@ -76,7 +76,7 @@ describe('edição com bandas e virtualização de colunas', () => {
     const input = await openCell(grid, 1, 'c2');
 
     await type(grid, 'kept');
-    await scrollTo(grid, 9000);
+    await scrollToX(grid, 9000);
 
     // A coluna ativa fica no DOM (como as fixas); o mesmo editor, com o texto.
     expect(root(grid).querySelectorAll('th.header-column').length).toBeLessThan(40);
@@ -85,7 +85,7 @@ describe('edição com bandas e virtualização de colunas', () => {
     expect(colOf(input)).toBe('4');
 
     await press(grid, 'Enter');
-    await scrollTo(grid, 0);
+    await scrollToX(grid, 0);
     expect(grid.hasChanges()).toBe(true);
   });
 
@@ -135,11 +135,11 @@ describe('edição com bandas e virtualização de colunas', () => {
     const grid = await editingGrid('row');
 
     await openCell(grid, 1, 'c0');
-    await scrollTo(grid, 9000);
+    await scrollToX(grid, 9000);
     // Shift+Tab na 1ª editável: os botões da linha (fim).
     await press(grid, 'Tab', { shiftKey: true });
     expect(focused(grid)!.closest('td')!.classList.contains('command-cell')).toBe(true);
-    await scrollTo(grid, 9000);
+    await scrollToX(grid, 9000);
     expect(root(grid).querySelector('tbody tr[data-index="0"] td[aria-colindex="2"]')).toBeNull();
 
     // Tab no último botão: a 1ª editável (c0), que entra no DOM com o editor.
@@ -161,8 +161,8 @@ describe('edição com bandas e virtualização de colunas', () => {
     await press(grid, 'ArrowUp');
 
     expect(input.isConnected || true).toBe(true);
-    await scrollTo(grid, 9000);
-    await scrollTo(grid, 0);
+    await scrollToX(grid, 9000);
+    await scrollToX(grid, 0);
     await settle(grid);
 
     const invalid = root(grid).querySelector('tbody tr[data-index="0"] td[aria-colindex="17"]');
