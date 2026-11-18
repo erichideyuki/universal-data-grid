@@ -101,13 +101,13 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Dados | Chave de linha (`keyExpr`/`getRowId`) e atualização incremental | ✅ | ✅ | ✅ |
 | Dados | Paginação / rolagem infinita | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de linhas | ✅ | ✅ | ✅ |
-| Rolagem | Virtualização de colunas | — | ✅ | ✅ |
+| Rolagem | Virtualização de colunas | ✅ | ✅ | ✅ |
 | Colunas | Definição por propriedade e por `<u-grid-column>` | ✅ | ✅ | ✅ |
 | Colunas | Reordenar por arrasto | ✅ | ✅ | ✅ |
 | Colunas | Redimensionar | ✅ | ✅ | ✅ |
 | Colunas | Fixar à esquerda/direita | ✅ | ✅ | ✅ |
 | Colunas | Ocultar / seletor de colunas | ✅ | ✅ | ✅ |
-| Colunas | Cabeçalho em bandas (multinível) | — | ✅ | ✅ |
+| Colunas | Cabeçalho em bandas (multinível) | ✅ | ✅ | ✅ |
 | Colunas | Tipo de dado e formatação (número, data, moeda, booleano) | ✅ | ✅ | ✅ |
 | Colunas | Alinhamento, quebra de texto, largura mín./auto | ✅ | ✅ | ✅ |
 | Ordenação | Clique no cabeçalho, múltipla, comparador próprio | ✅ | ✅ | ✅ |
@@ -122,15 +122,15 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | ✅ | ✅ | ✅ |
 | Seleção | Foco de célula/linha, intervalo de células | ◐ (foco feito; intervalo — fase D) | ◐ | ✅ (intervalo: Enterprise) |
 | Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | ✅ | ✅ | ✅ |
-| Edição | Célula, linha, lote, formulário/popup | — | ✅ | ✅ |
-| Edição | Validação, inserir/excluir linha, desfazer | — | ✅ | ✅ |
+| Edição | Célula, linha, lote, formulário/popup | ◐ (célula, linha e lote; formulário/popup — fase D) | ✅ | ✅ |
+| Edição | Validação, inserir/excluir linha, desfazer | ◐ (validação e inserir/excluir; desfazer — fase D) | ✅ | ✅ |
 | Templates | Célula | ✅ | ✅ | ✅ |
 | Templates | Cabeçalho, linha de grupo, linha inteira, vazio | ◐ (cabeçalho, grupo e vazio; linha inteira — fase D) | ✅ | ✅ |
 | Detalhe | Master-detail (linha expansível) | ✅ | ✅ | ✅ (Enterprise) |
 | Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
-| Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | — | ✅ | ✅ |
+| Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | ✅ | ✅ | ✅ |
 | Exportação | CSV / Excel / PDF / área de transferência | ◐ (CSV, Excel por adaptador, Ctrl+C; PDF pelo hospedeiro) | ✅ | ✅ (Excel: Enterprise) |
-| UI | Barra de ferramentas, menu de contexto, painel de carregamento | — | ✅ | ✅ |
+| UI | Barra de ferramentas, menu de contexto, painel de carregamento | ◐ (menu da coluna e painel de carregamento; barra — fase D) | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
 | A11y | Padrão grid ARIA completo, leitor de tela | ✅ | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
@@ -170,16 +170,16 @@ Estado: `—` a fazer · `em curso` · `feito`.
 |---|---|---|---|
 | Resumos e grupos | `07-summaries-groups.md` | totais, resumos por grupo, contagem, expandir/recolher tudo, estado mantido | feito |
 | Fonte de dados | `08-data-source-paging.md` | `keyExpr`, `DataSource` remota, paginação, rolagem infinita, painel de carregamento | feito |
-| Edição | `09-editing.md` | célula/linha/lote, editores por tipo, validação, inserir/excluir, eventos | — |
+| Edição | `09-editing.md` | célula/linha/lote, editores por tipo, validação, inserir/excluir, eventos | feito |
 | Templates e detalhe | `10-templates-master-detail.md` | templates de cabeçalho, grupo, vazio; master-detail; refazer o renderer de célula | feito |
 
 ### Fase C — produtividade
 
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
-| Estado | `11-state-persistence.md` | `getState`/`setState`, salvamento automático, evento de mudança | — |
+| Estado | `11-state-persistence.md` | `getState`/`setState`, salvamento automático, evento de mudança | feito |
 | Exportação | `12-export-clipboard.md` | CSV, área de transferência; Excel por adaptador opcional | feito |
-| Bandas e virtualização de colunas | `13-bands-column-virtualization.md` | cabeçalho multinível, virtualizar colunas | — |
+| Bandas e virtualização de colunas | `13-bands-column-virtualization.md` | cabeçalho multinível, virtualizar colunas | feito |
 
 ### Fase D — avançado (escopo decidido quando chegar a vez)
 
@@ -201,6 +201,4 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Fundação | Sem `keyExpr`, trocar `items` por objetos novos recria as linhas (a chave é a identidade do objeto) — frente 08 |
 | Fundação | Expansão de grupos ainda não tem API (`expandAll` etc.) — frente 07 |
 | Memória | Chromium retém ~0,6 KiB por grid criado (`<thead>` em shadow root, item 20 da spec 14); reportar ao Chromium e decidir se troca o `<thead>` |
-| Acessibilidade | Renomeações e 4 adições sugeridas pelo `a11y-reviewer` — aval do usuário |
-| Exportação | Ctrl+C: `dir`/`lang` na tabela copiada e `mso-number-format` no lugar do `'` visível — aval do usuário |
-| Templates | Repassar o `aria-label` do `<u-grid>` para a tabela (grids aninhados) — aval do usuário |
+| Exportação | Google Sheets não verificado ao colar o HTML do Ctrl+C (o `'` visível segue no HTML por causa do LibreOffice) |
