@@ -458,7 +458,11 @@ export interface GridFocusChangeEventDetail {
    * summary rows.
    */
   rowKey: unknown;
-  /** Column of the active cell (in a band header, the band, with `cellType: 'header'`); `null` in the selection, detail toggle and row buttons (`cellType: 'command'`) columns, in detail rows and in group rows. */
+  /**
+   * Column of the active cell (in a band header, the band, with `cellType: 'header'`);
+   * `null` in the selection, detail toggle and row buttons (`cellType: 'command'`)
+   * columns, in detail rows and in group rows.
+   */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
   cellType: GridCellType;
@@ -10073,7 +10077,7 @@ export class DataGrid extends LitElement {
   #totalColumns(layout: ColumnLayout[]): number {
     return this._groupColumns.length + this.#leadingColumns + layout.length
       + layout.reduce((count, cell) => count + (cell.gapBefore ? 1 : 0), 0)
-      + (this.#trailingGap ? 1 : 0);
+      + (this.#trailingGap ? 1 : 0)
       + (this.#showCommandColumn ? 1 : 0);
   }
 
@@ -10632,7 +10636,8 @@ export class DataGrid extends LitElement {
       text,
       checked: current === null || current === undefined ? null : !!current,
       label,
-      labelledBy: this.showColumnHeaders && headerIndex > 0 ? `header-text-${headerIndex}` : undefined,
+      // Id do rótulo do cabeçalho: nível de cima da folha + coluna (frente 13).
+      labelledBy: this.showColumnHeaders && headerIndex > 0 ? `header-text-${this._bandChainOf(column).length}-${headerIndex}` : undefined,
       invalid: !!error,
       describedBy,
       onInput: (event: Event) => {
