@@ -1,9 +1,9 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
-import { repeat } from 'lit/directives/repeat.js';
 
 import type { GridColumnDef } from '../grid-column-def.js';
+import { keyedRows } from './keyed-rows.js';
 
 /** Um resumo pronto para exibir: texto visível e rótulo completo do leitor de tela. */
 export interface SummaryText {
@@ -76,7 +76,7 @@ export const renderSummaryCells = (
   const cells = layout.slice(from);
 
   // Virtualização de colunas: cada célula segue a sua coluna (o foco não troca de coluna ao rolar).
-  return html`${keyOf ? repeat(cells, keyOf, render) : map(cells, render)}${renderSpacerCell(trailingGap)}`;
+  return html`${keyOf ? keyedRows(cells, keyOf, cell => render(cell, 0)) : map(cells, render)}${renderSpacerCell(trailingGap)}`;
 };
 
 /** Recuos das colunas de grupo (rodapés e linhas de dados). */

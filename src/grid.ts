@@ -6,7 +6,6 @@ import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
-import { repeat } from 'lit/directives/repeat.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { booleanAttribute, type LegacyAttributes, numberListAttribute } from './attribute-converters.js';
@@ -9313,7 +9312,8 @@ export class DataGrid extends LitElement {
   }
 
   #mapCells(layout: ColumnLayout[], render: (cell: ColumnLayout) => unknown) {
-    return this.#virtualColumns ? repeat(layout, cell => cell.id, render) : map(layout, render);
+    // `keyedRows`, não o `repeat` do Lit (deixa um comentário por item removido; spec 14).
+    return this.#virtualColumns ? keyedRows(layout, cell => cell.id, render) : map(layout, render);
   }
 
   /** Célula espaçadora (colunas fora do DOM): sem papel, sem índice, sem `part`. */
@@ -9455,7 +9455,7 @@ export class DataGrid extends LitElement {
                 style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)
             : nothing}
           ${this.#virtualColumns
-            ? repeat(row, header => headerKeyOf(header), header => this.#renderHeaderSlot(header, cells, active, sorting))
+            ? keyedRows(row, header => headerKeyOf(header), header => this.#renderHeaderSlot(header, cells, active, sorting))
             : map(row, header => this.#renderHeaderSlot(header, cells, active, sorting))}
         </tr>`);
   }

@@ -52,7 +52,7 @@ const root = (grid: DataGrid): ShadowRoot => grid.shadowRoot!;
 const focused = (grid: DataGrid): HTMLElement | null => root(grid).activeElement as HTMLElement | null;
 const liveRegion = (grid: DataGrid): HTMLElement => root(grid).querySelector<HTMLElement>('[role=status]')!;
 const headerCell = (grid: DataGrid, label: string): HTMLElement =>
-  [...root(grid).querySelectorAll<HTMLElement>('th.header-column')].find(th => th.querySelector('.header-text')!.textContent === label)!;
+  [...root(grid).querySelectorAll<HTMLElement>('th.header-column, th.band-header')].find(th => th.querySelector('.header-text')!.textContent === label)!;
 const cellOf = (grid: DataGrid, text: string): HTMLElement =>
   [...root(grid).querySelectorAll<HTMLElement>('td[role=gridcell]')].find(td => td.textContent.trim() === text)!;
 
@@ -1109,5 +1109,73 @@ describe('revisão de a11y da implementação', () => {
     item.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe('bandas e virtualização de colunas (frente 13)', () => {
+  const bandColumns = (): GridColumnDef[] => [
+    { path: 'name', label: 'Name', width: 140 },
+    { label: 'Place', columns: [{ path: 'city', label: 'City', width: 120 }, { label: 'Details', columns: [{ path: 'age', label: 'Age', width: 90 }] }] },
+  ];
+
+  it('axe sem violações: 3 níveis + caixas + agrupado + linha de filtro + RTL', async () => {
+    const grid = await createGrid({
+      columns: bandColumns(),
+      items: people(),
+      configure: g => {
+        g.selectionMode = 'multiple';
+        g.showCheckboxes = true;
+        g.showFilterRow = true;
+        g.columnChooser = true;
+        g.dir = 'rtl';
+      },
+    });
+
+    grid.groupColumn(grid.columns[0]);
+    await settle(grid);
+
+    const header = [...root(grid).querySelectorAll('thead tr')].map(tr => tr.getAttribute('aria-rowindex'));
+    expect(header).toEqual(['1', '2', '3', '4']);
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
+
+    grid.openColumnChooser();
+    await settle(grid);
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
+  });
+
+  it('axe sem violações com a virtualização rolada ao meio', async () => {
+    const wide: GridColumnDef[] = Array.from({ length: 12 }, (_, band) => ({
+      label: `Band ${band}`,
+      columns: Array.from({ length: 10 }, (__, i) => ({ path: `c${band * 10 + i}`, label: `C${band * 10 + i}`, width: 100 })),
+    }));
+    const items = Array.from({ length: 20 }, (_, r) => Object.fromEntries(Array.from({ length: 120 }, (__, c) => [`c${c}`, `${r}.${c}`])));
+    const grid = await createGrid({ columns: wide, items, configure: g => g.showFilterRow = true });
+    const scroller = root(grid).querySelector<HTMLElement>('.scroll-container')!;
+
+    scroller.scrollLeft = 6000;
+    scroller.dispatchEvent(new Event('scroll'));
+    await settle(grid);
+
+    expect(root(grid).querySelectorAll('.column-spacer').length).toBeGreaterThan(0);
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
+  });
+
+  it('roteiro de teclado: menu da banda, mover e o foco segue a banda', async () => {
+    const grid = await createGrid({ columns: [{ path: 'age', label: 'Age' }, ...bandColumns()], items: people() });
+
+    headerCell(grid, 'Place').focus();
+    await settle(grid);
+    await press(grid, 'F10', { shiftKey: true });
+
+    const menu = root(grid).querySelector<HTMLElement>('.column-header-menu')!;
+    const moveLeft = [...menu.querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent!.trim() === 'Move left')!;
+    expect(focused(grid)).toBe(menu.querySelector('[role=menuitem]'));
+    moveLeft.click();
+    await settle(grid);
+
+    expect(focused(grid)!.querySelector('.header-text')!.textContent).toBe('Place');
+    expect(liveRegion(grid).textContent).toContain('Place');
+    await press(grid, 'ArrowDown');
+    expect(focused(grid)!.querySelector('.header-text')!.textContent).toBe('City');
   });
 });

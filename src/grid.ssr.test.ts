@@ -299,3 +299,26 @@ describe('SSR — edição (frente 09)', () => {
     expect(ar).toContain('تعديل');
   });
 });
+
+describe('SSR com bandas e virtualização de colunas (frente 13)', () => {
+  it('cabeçalho multinível com colspan/rowspan e as primeiras colunas da janela', async () => {
+    const banded: GridColumnDef[] = [
+      { path: 'country', label: 'Country' },
+      { label: 'When', columns: [{ path: 'year', label: 'Year' }] },
+    ];
+    const output = await renderToString(html`<u-grid .columns=${banded} .items=${items}></u-grid>`);
+
+    expect(output).toMatch(/<th[^>]*class="band-header[^"]*"[^>]*colspan="1"/);
+    expect(output).toMatch(/<th[^>]*rowspan="2"/);
+    expect(output).toContain('When');
+
+    const wide: GridColumnDef[] = Array.from({ length: 200 }, (_, i) => ({ path: `c${i}`, label: `Col${i}` }));
+    const wideOutput = await renderToString(html`<u-grid .columns=${wide} .items=${[{ c0: 'x' }]}></u-grid>`);
+
+    expect(wideOutput).toContain('aria-colcount="200"');
+    expect(wideOutput).toContain('Col0');
+    // 1920 px ÷ 150 px + folga: só as primeiras colunas.
+    expect(wideOutput).not.toContain('Col100');
+    expect(wideOutput).toContain('column-spacer');
+  });
+});
