@@ -75,14 +75,15 @@ export interface GridContextMenuContext<TItem = any> {
   readonly target: GridContextMenuTarget;
   /**
    * Kind of the cell the menu was opened on (`row`: data, selection,
-   * command, detail toggle; `header`: header; `group-row`: group); `null` in
-   * the group panel.
+   * command, detail toggle, full-width; `header`: header; `group-row`:
+   * group); `null` in the group panel. Fixed rows have no context menu.
    */
   readonly cellType: GridCellType | null;
   /**
    * `header`: the column or band; `group-panel`: the chip's column (`null`
    * in the empty area); `row`: the column of the cell (`null` in the
-   * selection, detail toggle and buttons columns); `group-row`: the grouped column.
+   * selection, detail toggle and buttons columns and in a full-width cell);
+   * `group-row`: the grouped column.
    */
   readonly column: GridColumnDef<TItem> | null;
   /** `row`: the item; `null` elsewhere. */

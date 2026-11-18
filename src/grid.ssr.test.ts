@@ -369,7 +369,7 @@ describe('SSR das linhas fixas e da linha inteira (frente 20)', () => {
       <u-grid language="pt" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'Meta', year: 1 }]}
         .fixedBottomItems=${[{ country: 'Média', year: 2 }]} .rowRenderer=${rowRenderer}></u-grid>
       <u-grid language="ar" dir="rtl" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'X', year: 3 }]}></u-grid>
-      <u-grid .columns=${flat} .items=${items} .rowRenderer=${(() => document.createElement('div')) as GridRowRenderer}></u-grid>`);
+      <u-grid .columns=${flat} .items=${items} .rowRenderer=${() => document.createElement('div')}></u-grid>`);
 
     expect(output).toMatch(/<tbody[^>]*class="fixed-rows fixed-top-rows"[^>]*aria-label="Linhas fixadas no topo"/);
     expect(output).toMatch(/aria-label="Linhas fixadas no rodapé"/);

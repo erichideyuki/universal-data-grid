@@ -8,7 +8,7 @@ import { html, nothing } from 'lit';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { DataGrid, GridColumnDef, GridFocusChangeEventDetail, GridRowRenderer } from './grid.js';
+import type { DataGrid, GridColumnDef, GridContextMenuOpeningEventDetail, GridFocusChangeEventDetail, GridRowRenderer } from './grid.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
 
 afterEach(cleanup);
@@ -440,5 +440,58 @@ describe('linha inteira: roteiros extras', () => {
     await grid.removeRow(1);
     await settle(grid);
     expect(cell().getAttribute('aria-describedby')).toContain('edit-desc-removed');
+  });
+});
+
+describe('linha inteira: menu de contexto (frente 18)', () => {
+  const contextMenu = async (grid: DataGrid, target: HTMLElement): Promise<MouseEvent> => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 40, clientY: 40 });
+    target.dispatchEvent(event);
+    await settle(grid);
+    return event;
+  };
+
+  const menuTexts = (grid: DataGrid): string[] =>
+    [...root(grid).querySelectorAll('[role=menu] [role=menuitem] .menu-item-text')].map(item => item.textContent.trim());
+
+  it('cellType full-width sem coluna: sem Copiar célula nem Editar; Excluir/Restaurar e detalhe ficam', async () => {
+    const grid = await create(6, g => {
+      g.rowMenu = true;
+      g.editMode = 'batch';
+      g.allowEditing = true;
+      g.allowRemoving = true;
+      g.detailRenderer = () => 'Detail';
+    });
+    let detail: GridContextMenuOpeningEventDetail | undefined;
+    grid.addEventListener('u-grid-context-menu-opening', event => {
+      detail = event.detail;
+    });
+    const cell = (): HTMLElement => rowOf(grid, 1).querySelector<HTMLElement>('td.full-width-cell')!;
+
+    await contextMenu(grid, cell());
+    expect(detail).toMatchObject({ target: 'row', cellType: 'full-width', column: null, rowKey: 1 });
+    expect(menuTexts(grid)).toEqual(['Delete', 'Show details']);
+
+    [...root(grid).querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent.includes('Delete'))!.click();
+    await settle(grid);
+    expect(cell().getAttribute('aria-describedby')).toContain('edit-desc-removed');
+
+    await contextMenu(grid, cell());
+    expect(menuTexts(grid)).toContain('Restore');
+    [...root(grid).querySelectorAll<HTMLElement>('[role=menuitem]')].find(item => item.textContent.includes('Restore'))!.click();
+    await settle(grid);
+    expect(grid.hasChanges()).toBe(false);
+  });
+
+  it('modo linha: sem Editar na linha inteira', async () => {
+    const grid = await create(6, g => {
+      g.rowMenu = true;
+      g.editMode = 'row';
+      g.allowEditing = true;
+    });
+    await contextMenu(grid, rowOf(grid, 1).querySelector<HTMLElement>('td.full-width-cell')!);
+    expect(menuTexts(grid)).not.toContain('Edit');
+    await contextMenu(grid, rowOf(grid, 0).querySelector<HTMLElement>('td[part~=cell]')!);
+    expect(menuTexts(grid)).toContain('Edit');
   });
 });

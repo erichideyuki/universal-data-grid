@@ -1496,6 +1496,11 @@ group row. Built-in items:
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details | **off by default**: `row-menu` turns them on |
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
 
+On a [full-width row](#full-width-rows-rowrenderer) the `row` menu has `cellType: 'full-width'` and
+`column: null` (no Copy cell nor Edit; Delete / Restore and Show / Hide details stay — with `row-menu`, the way to
+restore a full-width row removed in `batch` mode). [Fixed rows](#fixed-pinned-rows) have no context
+menu (the browser's stays).
+
 Before any context menu opens, the cancelable `u-grid-context-menu-opening` fires — also with no
 built-in item, so you can add menus anywhere. Change `detail.menuItems` in place (synchronously):
 

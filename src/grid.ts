@@ -14398,14 +14398,20 @@ export class DataGrid extends LitElement {
       return { target: 'group-row', cellType: 'group', column: row.column, item: null, rowKey: null, groupPath: Object.freeze([...row.path]), groupRow: row };
     }
 
+    // Linhas fixas (frente 20) não têm menu: nada do menu da linha se aplica a elas
+    // (seleção, edição, detalhe) e o contexto não diria que a linha é fixa.
     if (!isDataRow(row)) {
       return null;
     }
 
     const navColumn = this.#currentNavColumns()[position.col];
-    const cellType: GridCellType = navColumn === SELECTION_COLUMN
-      ? 'selection'
-      : navColumn === DETAIL_TOGGLE_COLUMN ? 'detail-toggle' : navColumn === COMMAND_COLUMN ? 'command' : 'data';
+    // Célula de largura total (frente 20): sem coluna.
+    const fullWidth = position.col >= this.#leadingColumns && this.#isFullWidthIndex(position.row);
+    const cellType: GridCellType = fullWidth
+      ? 'full-width'
+      : navColumn === SELECTION_COLUMN
+        ? 'selection'
+        : navColumn === DETAIL_TOGGLE_COLUMN ? 'detail-toggle' : navColumn === COMMAND_COLUMN ? 'command' : 'data';
 
     return {
       target: 'row',
@@ -14805,9 +14811,12 @@ export class DataGrid extends LitElement {
     const pending = this.#pendingOf(row);
     const editFirst = items.length;
 
+    // Linha inteira (frente 20) não edita; remover/restaurar sim (o botão dela fica sob a célula única).
+    const fullWidth = !!this.#rowRenderOf(row);
+
     if (this.#editingOn && !this.#saving) {
       if (this.#editMode === 'row') {
-        if (this.#rowEditable(row, pending) && this.#editor?.rowKey !== request.rowKey) {
+        if (!fullWidth && this.#rowEditable(row, pending) && this.#editor?.rowKey !== request.rowKey) {
           items.push({ name: 'editRow', text: translation.editRow });
         }
       } else if (column && this.#cellEditable(row, column, pending)) {

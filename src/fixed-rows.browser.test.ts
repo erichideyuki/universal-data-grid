@@ -435,3 +435,51 @@ describe('linhas fixas: roteiros extras', () => {
     expect(fixedRows(grid, 'top')[0].querySelector('td[part~=cell]')!.getAttribute('aria-readonly')).toBe('true');
   });
 });
+
+describe('linhas fixas: barra e menu de contexto (frente 18)', () => {
+  it('sem menu de contexto nas fixas (fica o do navegador); no corpo continua', async () => {
+    const grid = await create(5, g => g.rowMenu = true, '700px');
+    let opened = 0;
+    grid.addEventListener('u-grid-context-menu-opening', () => opened++);
+
+    const fire = (target: HTMLElement): MouseEvent => {
+      const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 40, clientY: 40 });
+      target.dispatchEvent(event);
+      return event;
+    };
+
+    const fixedEvent = fire(fixedRows(grid, 'top')[0].querySelector<HTMLElement>('td[part~=cell]')!);
+    await settle(grid);
+    expect(opened).toBe(0);
+    expect(fixedEvent.defaultPrevented).toBe(false);
+
+    fire(root(grid).querySelector<HTMLElement>('tbody.body-rows td[part~=cell]')!);
+    await settle(grid);
+    expect(opened).toBe(1);
+    await key(grid, 'Escape');
+
+    expect(grid.focusCell(-1, undefined, { rowFixed: 'top' })).toBe(true);
+    await settle(grid);
+    await key(grid, 'F10', { shiftKey: true });
+    expect(opened).toBe(1);
+    expect(root(grid).querySelector('[role=menu]')).toBeNull();
+  });
+
+  it('com a barra (busca e exportação): as fixas do topo prendem logo abaixo do cabeçalho', async () => {
+    const grid = await create(500, g => {
+      g.showSearchPanel = true;
+      g.exportFormats = ['csv'];
+    }, '800px');
+    const thead = root(grid).querySelector('thead')!;
+    const topGroup = root(grid).querySelector<HTMLElement>('tbody.fixed-top-rows')!;
+
+    grid._scrollContainerRef.value!.scrollTop = 4000;
+    await settle(grid);
+    expect(Math.abs(topGroup.getBoundingClientRect().top - thead.getBoundingClientRect().bottom)).toBeLessThan(1);
+
+    // A busca da barra não filtra as fixas.
+    grid.searchText = 'Name 3';
+    await settle(grid);
+    expect(fixedNames(grid, 'top')).toEqual(['Target', 'Last year']);
+  });
+});
