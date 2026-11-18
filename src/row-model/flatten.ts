@@ -279,19 +279,32 @@ export class RowList implements Rows {
   /**
    * Acrescenta um trecho de irmãos de uma árvore (frente 25):
    * `children[from..to)`, irmãos `children[siblingsStart..+setSize)`, no
-   * nível `level`. A listra segue o índice da linha na lista.
+   * nível `level`. A listra segue o índice da linha na lista. `details`:
+   * linhas de detalhe (linha adaptativa da frente 21) por posição no trecho.
    */
-  pushTreeRun(nodes: readonly unknown[], children: Int32Array, from: number, to: number, siblingsStart: number, setSize: number, level: number): void {
+  pushTreeRun(
+    nodes: readonly unknown[],
+    children: Int32Array,
+    from: number,
+    to: number,
+    siblingsStart: number,
+    setSize: number,
+    level: number,
+    details?: BlockDetails,
+  ): void {
     if (to <= from) {
       return;
     }
 
     this.#dataBefore = undefined;
     const run: TreeRun = { tree: true, nodes, children, from, length: to - from, base: from - siblingsStart, setSize, level };
+    const block: ItemBlock = { items: run, details: details && (details.all || details.positions.length) ? details : undefined };
+    const length = blockLength(block);
 
     this.#starts.push(this.#length);
-    this.#segments.push({ items: run, details: undefined });
-    this.#length += run.length;
+    this.#segments.push(block);
+    this.#length += length;
+    this.#details += length - run.length;
   }
 
   /** Acrescenta um bloco de itens (array ou remoto); a listra (`index`) recomeça em cada bloco. */
@@ -387,13 +400,11 @@ export class RowList implements Rows {
 
     if (isTreeRun(segment.items)) {
       const run = segment.items;
-      return {
-        isGroup: false,
-        key,
-        item,
-        index,
-        tree: { node: run.children[run.from + position], level: run.level, posInSet: run.base + position + 1, setSize: run.setSize },
-      } satisfies DataRow;
+      const tree = { node: run.children[run.from + position], level: run.level, posInSet: run.base + position + 1, setSize: run.setSize };
+
+      return detail
+        ? { isGroup: false, isDetail: true, key: `x:${this.#keyOf(item)}`, item, masterKey: key, tree } satisfies DetailRow
+        : { isGroup: false, key, item, index, tree } satisfies DataRow;
     }
 
     return detail

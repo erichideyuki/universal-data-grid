@@ -206,7 +206,7 @@ describe('linha de grupo', () => {
 
     const footers = footerRows(grid);
     expect(footers).toHaveLength(2);
-    expect(footers[0].getAttribute('part')).toBe('row group-footer-row summary-row');
+    expect(footers[0].getAttribute('part')).toBe('row summary-row footer-row group-footer-row');
     expect(summaryTexts(footers[0])).toEqual(['', 'Sum: 40', '']);
     expect(dataRows(grid)).toHaveLength(4);
     // Rodapé vem depois das 3 linhas do Brasil.

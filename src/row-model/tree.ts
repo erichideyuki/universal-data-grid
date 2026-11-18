@@ -1,4 +1,4 @@
-import { RowList, type RowKeyOf } from './flatten.js';
+import { type BlockDetails, RowList, type RowKeyOf } from './flatten.js';
 
 /**
  * Dados em árvore (frente 25): funções puras, sem DOM. Nada por nó além de
@@ -508,6 +508,7 @@ export const flattenTree = (
   keyOf: RowKeyOf,
   hasChildren?: (node: number) => boolean,
   after?: (node: number, rows: RowList) => void,
+  detailsOf?: (children: Int32Array, from: number, to: number) => BlockDetails | undefined,
 ): RowList => {
   const rows = new RowList(keyOf);
   const n = index.nodes.length;
@@ -532,7 +533,7 @@ export const flattenTree = (
       const node = children[cursor++];
 
       if (opens(node)) {
-        rows.pushTreeRun(index.nodes, children, runs[top], cursor, start, end - start, view.level[node]);
+        rows.pushTreeRun(index.nodes, children, runs[top], cursor, start, end - start, view.level[node], detailsOf?.(children, runs[top], cursor));
         cursors[top] = cursor;
         runs[top] = cursor;
         owners.push(node);
@@ -549,7 +550,7 @@ export const flattenTree = (
 
     if (runs[top] < end) {
       const level = owner === n ? 0 : view.level[owner] + 1;
-      rows.pushTreeRun(index.nodes, children, runs[top], end, start, end - start, level);
+      rows.pushTreeRun(index.nodes, children, runs[top], end, start, end - start, level, detailsOf?.(children, runs[top], end));
     }
 
     owners.pop();

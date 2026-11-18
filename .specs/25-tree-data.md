@@ -250,10 +250,12 @@ BAIXA) — fica para depois, sem quebra.
 - Paginação local: por linhas visíveis (como o DevExtreme); `aria-setsize`
   é o do conjunto inteiro de irmãos mesmo que a página o corte.
 - `scrollMode: 'infinite'`: ignorado na árvore (aviso).
-- **Responsivo** (frente 21, `autoHideColumns`): ignorado na árvore (aviso)
-  — a linha adaptativa é uma linha de detalhe, que a árvore não tem;
-  ocultar colunas sem ela esconderia dados (decidido no rebase; **pendente
-  de aval do usuário**).
+- **Responsivo** (frente 21, `autoHideColumns`): vale na árvore, como no
+  DevExtreme TreeList (`columnHidingEnabled`): a linha adaptativa do nó
+  fica logo abaixo dele e acima dos filhos, no `aria-level` do nó (aval do
+  usuário, 2026-11-18). O achatamento passa linhas de detalhe por trecho
+  de irmãos (`pushTreeRun(..., details)`); `detailRenderer` segue
+  ignorado na árvore.
 - Linhas fixas, intervalo de células, colunas fixas/bandas, virtualização
   de colunas: valem sem mudança (fixas e rodapé de totais com nível 1).
 
@@ -368,9 +370,10 @@ Chaves da seção API, nos 14 idiomas.
   6 ms, heap do grid 1,1 MiB.
 
 ## Revisão na entrega
-- API (`webcomponent-api-reviewer`): parts próprios `node-footer-row` e
-  `node-summary` (antes reaproveitavam `group-footer-row`; **nomes novos,
-  pendentes de aval do usuário**); `expandAllNodes`/`collapseAllNodes` só
+- API (`webcomponent-api-reviewer`): parts compostos (aval do usuário):
+  rodapés `summary-row footer-row group-footer-row|node-footer-row`, resumo
+  `column` do nó com `summary-cell`, `inline` com `node-summary`; itens
+  `expandNode`/`collapseNode`/`addChildRow` aprovados; `expandAllNodes`/`collapseAllNodes` só
   disparam com mudança; `addRow` com `parentKey` que não é nó não adiciona
   (`null`, aviso) e a expansão dos ancestrais dispara o evento;
   `GridLoadOptions.tree` opcional (ausente = lista); `GridNodeSummaryItem`

@@ -793,7 +793,9 @@ virtualization keep working; a million nodes expand, filter and scroll without f
   the visible descendants of each node with children — `inline` after the tree cell text,
   `column` instead of the node value in that column (not editable; exported), `footer` in a row
   after the children. `getNodeSummaryValues(rowKey)` returns them. `summary.group` is ignored in a
-  tree; `summary.node` is off with a `dataSource`. Parts: `node-summary`, `node-footer-row`.
+  tree; `summary.node` is off with a `dataSource`. Parts compose: `::part(summary-row)` (totals and
+  every footer), `::part(footer-row)` (group and node footers), `::part(node-footer-row)`;
+  `::part(summary-cell)` (group and node `column` summaries), `::part(node-summary)` (inline).
 - **Recursive selection**: gestures (checkbox, `Space`, click) and `selectRows`/`deselectRows`
   propagate; setting `selectedKeys` or `setState` applies the keys as given. `Space` on a mixed node
   checks its whole branch. `selectedKeys` lists every checked node (a mixed parent is not in it).
@@ -810,6 +812,8 @@ virtualization keep working; a million nodes expand, filter and scroll without f
   value (an array when a column has several).
 - **Not combined** with grouping (ignored, restored when `tree-mode` is back to `none`),
   master-detail (`detailRenderer`) or `rowRenderer`. Local paging pages the visible rows.
+- **Responsive columns** (`auto-hide-columns`) work in a tree: the adaptive row of a node comes
+  right below it and above its children, at the node's `aria-level`.
 
 **Data source.** With `tree-mode="flat"` and `dataSource`, the first load asks the roots
 (`options.tree = { parentKeys: [rootParentKey] }`) and expanding a node whose `hasChildrenExpr` is
@@ -2627,9 +2631,10 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `column-chooser` | The column chooser popover. |
 | `summary-row` | Rows with summaries: the totals footer and group footers. |
 | `total-row` | The totals footer row. |
-| `group-footer-row` | Group footer rows (summaries with `display: 'footer'`). |
-| `node-footer-row` | Tree node footer rows (`summary.node` with `display: 'footer'`). |
-| `node-summary` | `summary.node` values in a node row (`inline` and `column`). |
+| `group-footer-row` | Group footer rows (summaries with `display: 'footer'`; with `summary-row` and `footer-row`). |
+| `node-footer-row` | Tree node footer rows (`summary.node` with `display: 'footer'`; with `summary-row` and `footer-row`). |
+| `footer-row` | Group and tree node footer rows together (the totals footer is `total-row`; `summary-row` covers all three). |
+| `node-summary` | `summary.node` values with `display: 'inline'` after the tree cell text. A `column` value makes its cell a `summary-cell` too (like group rows). |
 | `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
 | `group-count` | Count and inline summaries in a group row. |
 | `toolbar` | The bar above the table. |

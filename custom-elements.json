@@ -383,7 +383,7 @@
               "name": "total-row"
             },
             {
-              "description": "Group footer rows (summaries with `display: 'footer'`).",
+              "description": "Group footer rows (summaries with `display: 'footer'`; with `row`, `summary-row` and `footer-row`).",
               "name": "group-footer-row"
             },
             {
@@ -547,11 +547,15 @@
               "name": "tree-toggle-button"
             },
             {
-              "description": "Footer rows of `summary.node` items with `display: 'footer'` (with `row` and `summary-row`).",
+              "description": "Footer rows of `summary.node` items with `display: 'footer'` (with `row`, `summary-row` and `footer-row`).",
               "name": "node-footer-row"
             },
             {
-              "description": "`summary.node` values shown in a node row (`inline` after the tree cell text, `column` in its column).",
+              "description": "Group and tree node footer rows (with `group-footer-row` / `node-footer-row`; the totals footer is `total-row`).",
+              "name": "footer-row"
+            },
+            {
+              "description": "`summary.node` values with `display: 'inline'`, after the tree cell text (a `column` value makes its cell a `summary-cell`).",
               "name": "node-summary"
             },
             {

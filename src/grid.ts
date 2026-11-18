@@ -1667,7 +1667,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart column-chooser - The column chooser popover.
  * @csspart summary-row - Rows with summaries: the totals footer and group footers.
  * @csspart total-row - The totals footer row.
- * @csspart group-footer-row - Group footer rows (summaries with `display: 'footer'`).
+ * @csspart group-footer-row - Group footer rows (summaries with `display: 'footer'`; with `row`, `summary-row` and `footer-row`).
  * @csspart summary-cell - Cells with summaries (footers and `display: 'column'` in group rows).
  * @csspart group-count - Count and inline summaries in a group row (`"(3, Sum of Population: 1,234)"`).
  * @csspart toolbar - The bar above the table (group panel, buttons, search).
@@ -1708,8 +1708,9 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart expanded - Master rows whose detail is expanded, and expanded tree nodes (with `row`).
  * @csspart tree-cell - The cell of the tree column (with `cell`): indent, expand button and content.
  * @csspart tree-toggle-button - The expand/collapse button of a tree node.
- * @csspart node-footer-row - Footer rows of `summary.node` items with `display: 'footer'` (with `row` and `summary-row`).
- * @csspart node-summary - `summary.node` values shown in a node row (`inline` after the tree cell text, `column` in its column).
+ * @csspart node-footer-row - Footer rows of `summary.node` items with `display: 'footer'` (with `row`, `summary-row` and `footer-row`).
+ * @csspart footer-row - Group and tree node footer rows (with `group-footer-row` / `node-footer-row`; the totals footer is `total-row`).
+ * @csspart node-summary - `summary.node` values with `display: 'inline'`, after the tree cell text (a `column` value makes its cell a `summary-cell`).
  * @csspart pager - The pager (`<nav>`) below the table (`paging`).
  * @csspart pager-button - Pager buttons (first, previous, page numbers, next, last).
  * @csspart page-size-select - The page size `<select>` of the pager.
@@ -2458,6 +2459,7 @@ export class DataGrid extends LitElement {
         this.#rowKeyText,
         this.#treeRemote ? node => this.#remoteHasChildren(node) : undefined,
         (node, rows) => this.#afterTreeNode(node, rows, footers),
+        this.#treeDetailsOf(),
       );
       this.#rowsDirty = false;
       this.#virtualizer.measure();
@@ -2471,6 +2473,46 @@ export class DataGrid extends LitElement {
 
     this.#announceFiltered();
     this.#applyPage();
+  }
+
+  /**
+   * Linhas de detalhe por trecho de irmãos (linha adaptativa da frente 21,
+   * logo abaixo do nó e acima dos filhos): `autoExpandRows` e as exceções
+   * por chave, como na lista. `undefined` = sem coluna de expansão.
+   */
+  #treeDetailsOf(): ((children: Int32Array, from: number, to: number) => BlockDetails | undefined) | undefined {
+    const index = this.#tree.index;
+
+    if (!this.#showDetailColumn || !index) {
+      return undefined;
+    }
+
+    const all = this.autoExpandRows;
+    const exceptions = new Set<number>();
+
+    for (const key of this.#rowExpansion) {
+      const node = index.keyIndex.get(key);
+
+      if (node !== undefined) {
+        exceptions.add(node);
+      }
+    }
+
+    if (!exceptions.size) {
+      return all ? () => ({ all, positions: NO_POSITIONS }) : undefined;
+    }
+
+    return (children, from, to) => {
+      const positions: number[] = [];
+
+      for (let k = from; k < to; k++) {
+        if (exceptions.has(children[k])) {
+          positions.push(k - from);
+        }
+      }
+
+      return all || positions.length ? { all, positions: Int32Array.from(positions) } : undefined;
+    };
   }
 
   /** Depois dos filhos de um nó expandido: esqueleto da carga remota e rodapé de resumos. */
@@ -3739,13 +3781,13 @@ export class DataGrid extends LitElement {
 
   /** Coluna de expansão do master-detail (antes da de caixas): com detalhe ou com coluna oculta por espaço (spec 21). */
   get #showDetailColumn(): boolean {
-    // Árvore (frente 25): master-detail e linha adaptativa ignorados.
-    return !this.#treeOn && (!!this.detailRenderer || this.#adaptiveColumns.length > 0);
+    // Árvore (frente 25): master-detail ignorado; a linha adaptativa vale.
+    return (!!this.detailRenderer && !this.#treeOn) || this.#adaptiveColumns.length > 0;
   }
 
-  /** A expansão de linhas vale (estado guardado, métodos e evento): com `detailRenderer` ou `autoHideColumns` (fora da árvore). */
+  /** A expansão de linhas vale (estado guardado, métodos e evento): com `detailRenderer` (fora da árvore) ou `autoHideColumns`. */
   get #expandable(): boolean {
-    return !this.#treeOn && (!!this.detailRenderer || this.autoHideColumns);
+    return (!!this.detailRenderer && !this.#treeOn) || this.autoHideColumns;
   }
 
   /** Colunas navegáveis do grid antes das colunas comuns (expansão, caixas). */
@@ -9889,12 +9931,6 @@ export class DataGrid extends LitElement {
     this.#adaptiveCap = undefined;
     const shown = this._shownColumns;
 
-    if (this.autoHideColumns && this.#treeOn) {
-      // Árvore (frente 25): sem linha adaptativa (detalhe), ocultar colunas esconderia dados.
-      this.#warnTree('auto-hide', 'autoHideColumns is ignored with tree-mode (a tree has no adaptive detail row).');
-      return [];
-    }
-
     if (!this.autoHideColumns || isServer || viewport <= 0 || shown.length < 2) {
       return [];
     }
@@ -15109,6 +15145,11 @@ export class DataGrid extends LitElement {
         return row.level + 2;
       }
 
+      // Linha adaptativa (detalhe) no nível do nó mestre.
+      if (row.isDetail) {
+        return row.tree ? row.tree.level + 1 : 1;
+      }
+
       return isDataRowLike(row) && row.tree ? row.tree.level + 1 : 1;
     }
 
@@ -15171,7 +15212,8 @@ export class DataGrid extends LitElement {
     }
 
     // Árvore (frente 25): o rodapé de resumos de um nó tem part próprio.
-    const footerPart = row.isFooter && this.#treeOn ? 'node-footer-row summary-row' : 'group-footer-row summary-row';
+    // Parts compostos: `summary-row` (totais e rodapés), `footer-row` (rodapés de grupo e de nó), e o específico.
+    const footerPart = row.isFooter && this.#treeOn ? 'summary-row footer-row node-footer-row' : 'summary-row footer-row group-footer-row';
     const parts = ['row', row.isGroup ? 'group-row' : row.isFooter ? footerPart : row.skeleton ? 'skeleton-row' : parity];
 
     if (fixed) {
@@ -15742,6 +15784,10 @@ export class DataGrid extends LitElement {
       parts.push('tree-cell');
     }
 
+    if (row.tree && this.#nodeColumnSummary(row, column)) {
+      parts.push('summary-cell');
+    }
+
     if (modified) {
       classes.push('modified');
       parts.push('modified');
@@ -16129,7 +16175,9 @@ export class DataGrid extends LitElement {
   /** `part` de uma célula de dados (`tree-cell` na coluna da árvore, `selected` no intervalo). */
   #cellPart(row: DataRow, column: GridColumnDef, selected: boolean): string {
     const tree = this.#isTreeCell(row, column) ? ' tree-cell' : '';
-    return selected ? `cell${tree} selected` : `cell${tree}`;
+    // Resumo por nó `display: 'column'`: a célula é também uma célula de resumo (como na linha de grupo).
+    const summary = row.tree && this.#nodeColumnSummary(row, column) ? ' summary-cell' : '';
+    return selected ? `cell${tree}${summary} selected` : `cell${tree}${summary}`;
   }
 
   #renderCellContent(row: DataRow, cell: ColumnLayout, matcher: RegExp | null, adaptive = false) {
@@ -16137,7 +16185,7 @@ export class DataGrid extends LitElement {
     const summary = row.tree ? this.#nodeColumnSummary(row, cell.column) : undefined;
 
     if (summary) {
-      return html`<span class="node-summary" part="node-summary">${this.#summaryTexts(summary)}</span>`;
+      return html`<span class="node-summary">${this.#summaryTexts(summary)}</span>`;
     }
 
     const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch(), adaptive);

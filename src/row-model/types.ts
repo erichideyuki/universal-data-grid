@@ -111,6 +111,8 @@ export interface DetailRow {
   masterKey: string;
   /** Detalhe de uma linha fixa (frente 21: a fixa também expande). */
   fixed?: 'top' | 'bottom';
+  /** Árvore (frente 25): a posição do nó mestre (linha adaptativa). */
+  tree?: TreeRowInfo;
 }
 
 export type Row = GroupRow | GroupFooterRow | DataRow | DetailRow;

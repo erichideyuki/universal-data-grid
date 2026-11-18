@@ -586,6 +586,52 @@ describe('árvore: roteiro de foco', () => {
   });
 });
 
+describe('árvore: colunas ocultas por espaço (frente 21)', () => {
+  it('linha adaptativa logo abaixo do nó e acima dos filhos, no nível do nó; axe limpo', async () => {
+    const wide: GridColumnDef[] = [
+      { path: 'name', label: 'Name', width: 160 },
+      { path: 'size', label: 'Size', width: 160, dataType: 'number' },
+      { path: 'id', label: 'Id', width: 160 },
+      { path: 'parentId', label: 'Parent', width: 160 },
+    ];
+    const grid = await flatGrid(g => {
+      g.style.width = '420px';
+      g.autoHideColumns = true;
+      g.autoExpandNodes = true;
+      g.autoExpandRows = true;
+    }, wide);
+    await settle(grid);
+    await settle(grid);
+
+    expect(grid.getAdaptiveColumns().length).toBeGreaterThan(0);
+    const all = [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody.body-rows > tr[role=row]')];
+    const kinds = all.slice(0, 4).map(tr => tr.classList.contains('detail-row') ? `detail:${tr.getAttribute('aria-level')}` : `node:${tr.getAttribute('aria-level')}`);
+    // a, detalhe de a, a1, detalhe de a1.
+    expect(kinds).toEqual(['node:1', 'detail:1', 'node:2', 'detail:2']);
+    expect(tree(grid).filter(name => name.trim())
+      .slice(0, 4)).toEqual(['a', '  a1', '  a2', '    a2x']);
+
+    const result = await axe.run(grid);
+    expect(result.violations.map(violation => `${violation.id}: ${violation.nodes.map(node => node.html).join(' | ')}`)).toEqual([]);
+
+    // Recolher o detalhe de um nó (pelo método da frente 08/21) não mexe nos filhos.
+    grid.collapseRow(1);
+    await settle(grid);
+    const after = [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody.body-rows > tr[role=row]')].slice(0, 2);
+    expect(after.map(tr => tr.classList.contains('detail-row'))).toEqual([false, false]);
+  });
+
+  it('parts compostos: rodapé de nó com summary-row e footer-row; resumo column é summary-cell', async () => {
+    const grid = await flatGrid(g => {
+      g.autoExpandNodes = true;
+      g.summary = { node: [{ column: 'size', type: 'sum', display: 'footer' }, { column: 'size', type: 'count', display: 'column' }] };
+    });
+
+    expect(root(grid).querySelector('tr[part~=node-footer-row]')!.getAttribute('part')).toBe('row summary-row footer-row node-footer-row');
+    expect(rows(grid)[0].querySelectorAll('td')[1].getAttribute('part')).toBe('cell summary-cell');
+  });
+});
+
 describe('árvore: acessibilidade', () => {
   it('a linha da árvore tem a altura de row-height (o botão de 24 px cabe)', async () => {
     for (const height of [48, 32]) {
