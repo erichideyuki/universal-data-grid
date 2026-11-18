@@ -87,7 +87,7 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Rolagem | Virtualização de linhas | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de colunas | — | ✅ | ✅ |
 | Colunas | Definição por propriedade e por `<u-grid-column>` | ✅ | ✅ | ✅ |
-| Colunas | Reordenar por arrasto | ◐ (sem teclado — frente 05) | ✅ | ✅ |
+| Colunas | Reordenar por arrasto | ✅ | ✅ | ✅ |
 | Colunas | Redimensionar | ✅ | ✅ | ✅ |
 | Colunas | Fixar à esquerda/direita | ✅ | ✅ | ✅ |
 | Colunas | Ocultar / seletor de colunas | ✅ | ✅ | ✅ |
@@ -95,17 +95,17 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Colunas | Tipo de dado e formatação (número, data, moeda, booleano) | ✅ | ✅ | ✅ |
 | Colunas | Alinhamento, quebra de texto, largura mín./auto | ✅ | ✅ | ✅ |
 | Ordenação | Clique no cabeçalho, múltipla, comparador próprio | ✅ | ✅ | ✅ |
-| Filtro | Linha de filtro | — | ✅ | ✅ (floating filter) |
-| Filtro | Filtro no cabeçalho (lista de valores) | — | ✅ | ✅ (set filter, Enterprise) |
-| Filtro | Painel de busca (texto em todas as colunas) | — | ✅ | ✅ (quick filter) |
+| Filtro | Linha de filtro | ✅ | ✅ | ✅ (floating filter) |
+| Filtro | Filtro no cabeçalho (lista de valores) | ✅ | ✅ | ✅ (set filter, Enterprise) |
+| Filtro | Painel de busca (texto em todas as colunas) | ✅ | ✅ | ✅ (quick filter) |
 | Filtro | Construtor de filtro / painel de filtro | — | ✅ | ◐ |
 | Agrupamento | Painel de arrasto, multinível, auto-expandir | ✅ | ✅ | ✅ (Enterprise) |
-| Agrupamento | Expandir/recolher tudo, estado mantido ao trocar dados | ◐ (estado mantido; sem API — frente 07) | ✅ | ✅ |
-| Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | ◐ (ordenação feita; contagem e resumos — frente 07) | ✅ | ✅ |
-| Resumos | Totais (rodapé) e por grupo; agregações próprias | — | ✅ | ✅ |
-| Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | — | ✅ | ✅ |
-| Seleção | Foco de célula/linha, intervalo de células | — | ◐ | ✅ (intervalo: Enterprise) |
-| Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | — | ✅ | ✅ |
+| Agrupamento | Expandir/recolher tudo, estado mantido ao trocar dados | ✅ | ✅ | ✅ |
+| Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | ✅ | ✅ | ✅ |
+| Resumos | Totais (rodapé) e por grupo; agregações próprias | ✅ | ✅ | ✅ |
+| Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | ✅ | ✅ | ✅ |
+| Seleção | Foco de célula/linha, intervalo de células | ◐ (foco feito; intervalo — fase D) | ◐ | ✅ (intervalo: Enterprise) |
+| Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | ✅ | ✅ | ✅ |
 | Edição | Célula, linha, lote, formulário/popup | — | ✅ | ✅ |
 | Edição | Validação, inserir/excluir linha, desfazer | — | ✅ | ✅ |
 | Templates | Célula | ✅ (`HTMLElement`; `TemplateResult` na frente 10) | ✅ | ✅ |
@@ -116,7 +116,7 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Exportação | CSV / Excel / PDF / área de transferência | — | ✅ | ✅ (Excel: Enterprise) |
 | UI | Barra de ferramentas, menu de contexto, painel de carregamento | — | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
-| A11y | Padrão grid ARIA completo, leitor de tela | ◐ (ARIA básico e `aria-sort`; foco e navegação — frente 05) | ✅ | ✅ |
+| A11y | Padrão grid ARIA completo, leitor de tela | ✅ (revisão de acessibilidade em curso) | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
 | i18n | RTL | ✅ | ✅ | ✅ |
 | SSR | Lit SSR + hidratação | ✅ | — | — |
@@ -135,7 +135,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 |---|---|---|---|
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
 | Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | feito |
-| Desempenho em máquina fraca | `16-performance.md` | perfil fraco calibrado (`npm run test:perf`); orçamentos e linha de base de 100 mil a 5 milhões de linhas; virtualizador próprio com escala; row model sem objeto por linha; postos rápidos | em curso |
+| Desempenho em máquina fraca | `16-performance.md` | perfil fraco calibrado (`npm run test:perf`); orçamentos e linha de base de 100 mil a 5 milhões de linhas; virtualizador próprio com escala; row model sem objeto por linha; postos rápidos | feito |
 
 ### Fase A — o dia a dia de qualquer grid
 
@@ -143,15 +143,15 @@ Estado: `—` a fazer · `em curso` · `feito`.
 |---|---|---|---|
 | Tipos e formatação | `02-column-types-format.md` | `dataType`, `format` (Intl), alinhamento, `calculateCellValue`, quebra de texto | feito |
 | Ordenação | `03-sorting.md` | clique no cabeçalho, múltipla com Shift, comparador, ordenação de grupos, API e evento | feito |
-| Filtro | `04-filtering.md` | linha de filtro, painel de busca, filtro no cabeçalho, API de expressão de filtro | — |
-| Seleção e teclado | `05-selection-keyboard-a11y.md` | foco de célula, navegação por teclado, seleção única/múltipla, caixa de seleção, ARIA completo, teclado para agrupar/reordenar | — |
+| Filtro | `04-filtering.md` | linha de filtro, painel de busca, filtro no cabeçalho, API de expressão de filtro | feito |
+| Seleção e teclado | `05-selection-keyboard-a11y.md` | foco de célula, navegação por teclado, seleção única/múltipla, caixa de seleção, ARIA completo, teclado para agrupar/reordenar | feito |
 | Colunas | `06-column-features.md` | redimensionar, fixar, ocultar + seletor, largura mín./auto, RTL do arrasto | feito |
 
 ### Fase B — dados de verdade
 
 | Frente | Spec | Inclui | Estado |
 |---|---|---|---|
-| Resumos e grupos | `07-summaries-groups.md` | totais, resumos por grupo, contagem, expandir/recolher tudo, estado mantido | — |
+| Resumos e grupos | `07-summaries-groups.md` | totais, resumos por grupo, contagem, expandir/recolher tudo, estado mantido | feito |
 | Fonte de dados | `08-data-source-paging.md` | `keyExpr`, `DataSource` remota, paginação, rolagem infinita, painel de carregamento | — |
 | Edição | `09-editing.md` | célula/linha/lote, editores por tipo, validação, inserir/excluir, eventos | — |
 | Templates e detalhe | `10-templates-master-detail.md` | templates de cabeçalho, grupo, vazio; master-detail; refazer o renderer de célula | — |
