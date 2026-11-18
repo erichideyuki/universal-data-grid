@@ -1,4 +1,5 @@
-import { html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from 'lit';
+import { html, nothing, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { live } from 'lit/directives/live.js';
 import { map } from 'lit/directives/map.js';
 
@@ -12,6 +13,7 @@ import type { DistinctDateNode, DistinctValue, DistinctValues } from '../row-mod
 import { type ColumnFilterKind, findColumnCondition, hasColumnCondition } from '../row-model/filter.js';
 import { createTextMatcher } from '../row-model/fold.js';
 import { columnKeyOf } from './filter-row.js';
+import { Debouncer } from './search.js';
 import { formatMessage } from './sorting.js';
 
 /** Itens desenhados na lista plana; acima disso, a busca do popover estreita. */
@@ -53,10 +55,74 @@ export class HeaderFilterController implements ReactiveController {
   #state: OpenState | undefined;
   #shown = false;
   #restoreFocusTo: GridColumnDef | undefined;
+  /** Item da árvore com \`tabindex="0"\` (roving; spec 17, A10). */
+  #activeItem: string | undefined;
+  /** Itens do último render (o teclado acha nível, pai e estado por eles). */
+  #items: HeaderFilterTreeItem[] = [];
+  /** Contagem anunciada depois da busca (região \`status\` do popover). */
+  #searchAnnouncement = '';
+  readonly #announcer: Debouncer<'search'>;
 
   constructor(host: HeaderFilterHost) {
     this.#host = host;
     host.addController(this);
+    this.#announcer = new Debouncer(host);
+  }
+
+  get activeItem(): string | undefined {
+    return this.#activeItem;
+  }
+
+  get searchAnnouncement(): string {
+    return this.#searchAnnouncement;
+  }
+
+  /** Timers do popover (diagnóstico de memória). */
+  get timers(): number {
+    return this.#announcer.size;
+  }
+
+  setActiveItem(key: string): void {
+    if (this.#activeItem !== key) {
+      this.#activeItem = key;
+      this.#host.requestUpdate();
+    }
+  }
+
+  /** Linhas da árvore: "(Vazios)", depois as datas expandidas ou os valores (até o limite). */
+  treeItems(translation: GridI18n): HeaderFilterTreeItem[] {
+    const state = this.#state;
+
+    if (!state) {
+      return this.#items = [];
+    }
+
+    const searching = !!state.search.trim();
+    const blank = state.distinct.blanks > 0 && !searching;
+    const offset = blank ? 1 : 0;
+    const items: HeaderFilterTreeItem[] = [];
+    const flat = state.distinct.tree && !searching ? undefined : this.visibleValues().slice(0, HEADER_FILTER_RENDER_LIMIT);
+    const setSize = (flat?.length ?? state.distinct.tree!.length) + offset;
+
+    if (blank) {
+      items.push({ key: keyOf(null), text: translation.filterBlanks, count: state.distinct.blanks, values: [null], level: 1, setSize, posInSet: 1 });
+    }
+
+    if (flat) {
+      flat.forEach((value, index) => items.push({
+        key: keyOf(value.value),
+        text: value.text,
+        count: value.count,
+        values: [value.value],
+        level: 1,
+        setSize,
+        posInSet: index + 1 + offset,
+      }));
+    } else {
+      flattenDates(state.distinct.tree!, state.expanded, 1, undefined, offset, items);
+    }
+
+    return this.#items = items;
   }
 
   get open(): boolean {
@@ -107,6 +173,10 @@ export class HeaderFilterController implements ReactiveController {
     this.#restoreFocusTo = restoreFocus ? this.#state.column : undefined;
     this.#popover?.hidePopover?.();
     this.#state = undefined;
+    this.#activeItem = undefined;
+    this.#items = [];
+    this.#searchAnnouncement = '';
+    this.#announcer.cancel('search');
     document.removeEventListener('pointerdown', this.#outsidePointerDown, true);
     this.#host.requestUpdate();
   }
@@ -154,12 +224,123 @@ export class HeaderFilterController implements ReactiveController {
     return checked === 0 ? false : checked === values.length ? true : 'mixed';
   }
 
-  setSearch(text: string): void {
-    if (this.#state) {
-      this.#state.search = text;
-      this.#host.requestUpdate();
+  setSearch(text: string, translation?: GridI18n): void {
+    if (!this.#state) {
+      return;
+    }
+
+    this.#state.search = text;
+    // A lista mudou: o roving volta ao 1º item visível (no render).
+    this.#activeItem = undefined;
+    this.#host.requestUpdate();
+
+    if (translation) {
+      // Quantos valores restaram, depois de parar de digitar (spec 17, A10).
+      this.#announcer.run('search', () => {
+        const state = this.#state;
+
+        if (state) {
+          const count = this.visibleValues().length + (state.distinct.blanks > 0 && !state.search.trim() ? 1 : 0);
+          this.#searchAnnouncement = formatMessage(translation.headerFilterSearchAnnouncement, { count: String(count) });
+          this.#host.requestUpdate();
+        }
+      }, 500);
     }
   }
+
+  /** Busca do popover: ↓ vai à árvore; Enter = OK. */
+  readonly onSearchKeyDown = (event: KeyboardEvent): void => {
+    // Enter que confirma a composição (ja/zh/ko) não aplica.
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      const item = (event.currentTarget as HTMLElement).closest('.header-filter')?.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]');
+
+      if (item) {
+        event.preventDefault();
+        item.focus();
+      }
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      this.apply();
+    }
+  };
+
+  /**
+   * Árvore (APG Tree View, um ponto de Tab): ↑/↓/Home/End movem; →/←
+   * (invertidas em RTL) expandem/recolhem ou vão ao filho/pai; Espaço marca;
+   * Enter = OK; uma letra vai para a busca.
+   */
+  readonly onTreeKeyDown = (event: KeyboardEvent): void => {
+    const tree = event.currentTarget as HTMLElement;
+    const nodes = [...tree.querySelectorAll<HTMLElement>('[role=treeitem]')];
+    const current = event.target as HTMLElement;
+    const index = nodes.indexOf(current);
+    const item = this.#items.find(entry => entry.key === current.getAttribute('data-key'));
+
+    if (index < 0 || !item) {
+      return;
+    }
+
+    let key = event.key;
+
+    if (this.#host._isRtl() && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+      key = key === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
+    }
+
+    let next: HTMLElement | undefined;
+
+    switch (key) {
+      case 'ArrowDown':
+        next = nodes[index + 1];
+        break;
+      case 'ArrowUp':
+        next = nodes[index - 1];
+        break;
+      case 'Home':
+        next = nodes[0];
+        break;
+      case 'End':
+        next = nodes[nodes.length - 1];
+        break;
+      case 'ArrowRight':
+        if (item.expanded === false) {
+          this.toggleExpanded(item.key.slice(2));
+        } else if (item.expanded) {
+          next = nodes[index + 1];
+        }
+
+        break;
+      case 'ArrowLeft':
+        if (item.expanded) {
+          this.toggleExpanded(item.key.slice(2));
+        } else if (item.parent) {
+          next = nodes.find(node => node.getAttribute('data-key') === item.parent);
+        }
+
+        break;
+      case ' ':
+        this.setSelected(item.values, this.stateOf(item.values) !== true);
+        break;
+      case 'Enter':
+        event.preventDefault();
+        this.apply();
+        return;
+      default:
+        // Digitar: o foco vai para a busca e a letra vai junto (não some).
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          tree.closest('.header-filter')?.querySelector<HTMLElement>('.header-filter-search')
+            ?.focus();
+        }
+
+        return;
+    }
+
+    event.preventDefault();
+    next?.focus();
+  };
 
   toggleExpanded(key: string): void {
     const expanded = this.#state?.expanded;
@@ -261,6 +442,8 @@ export class HeaderFilterController implements ReactiveController {
     this.#state = undefined;
     this.#shown = false;
     this.#restoreFocusTo = undefined;
+    this.#items = [];
+    this.#searchAnnouncement = '';
   }
 
   #position(popover: HTMLElement, anchor: HTMLElement | null): void {
@@ -291,6 +474,10 @@ export class HeaderFilterController implements ReactiveController {
 
   /** Esc cancela; Tab circula dentro do popover (foco preso). */
   readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
+
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -320,9 +507,11 @@ export class HeaderFilterController implements ReactiveController {
   };
 }
 
-const funnelIcon = html`
+/** Funil; com filtro ganha um ponto no canto (o estado não fica só na cor; spec 17, A5). */
+const funnelIcon = (active: boolean) => html`
   <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
-    <path d="M400-240v-80h160v80H400ZM240-440v-80h480v80H240ZM120-640v-80h720v80H120Z"/>
+    <path d="M400-240v-80h160v80H400ZM240-440v-80h480v80H240ZM120-640v-80h${active ? 520 : 720}v80H120Z"/>
+    ${active ? svg`<circle class="header-filter-badge" cx="800" cy="-760" r="110"/>` : nothing}
   </svg>`;
 
 /** Botão de funil no cabeçalho; ativo quando a coluna tem alguma condição. */
@@ -331,6 +520,8 @@ export const renderHeaderFilterButton = (
   column: GridColumnDef,
   filterValue: GridFilterExpression | null,
   translation: GridI18n,
+  /** Descrição do cabeçalho (traz "Filtrada"); spec 17, A5. */
+  describedBy?: string,
 ): TemplateResult => {
   const active = hasColumnCondition(filterValue, column);
   const label = formatMessage(translation.headerFilterLabel, { column: column.label || column.path || '' });
@@ -345,6 +536,7 @@ export const renderHeaderFilterButton = (
       title=${label}
       aria-haspopup="dialog"
       aria-expanded=${controller.column === column ? 'true' : 'false'}
+      aria-describedby=${ifDefined(active ? describedBy : undefined)}
       data-column=${columnKeyOf(column)}
       @pointerdown=${(event: PointerEvent) => event.stopPropagation()}
       @click=${(event: MouseEvent) => {
@@ -357,7 +549,7 @@ export const renderHeaderFilterButton = (
         if (event.key === 'Enter' || event.key === ' ') {
           event.stopPropagation();
         }
-      }}>${funnelIcon}</button>`;
+      }}>${funnelIcon(active)}</button>`;
 };
 
 const checkbox = (
@@ -379,32 +571,96 @@ const checkbox = (
 const leavesOf = (node: DistinctDateNode | DistinctValue): unknown[] =>
   'children' in node ? node.children.flatMap(leavesOf) : [node.value];
 
-const renderDateNode = (controller: HeaderFilterController, node: DistinctDateNode | DistinctValue, level: number, translation: GridI18n): TemplateResult => {
-  if (!('children' in node)) {
-    return html`
-      <li class="header-filter-item" style="--_level: ${level}">
-        ${checkbox(controller.isSelected(node.value), node.text, node.count, checked => controller.setSelected([node.value], checked))}
-      </li>`;
-  }
+/** Item da árvore do popover (uma linha desenhada). */
+export interface HeaderFilterTreeItem {
+  key: string;
+  text: string;
+  count: number;
+  /** Valores (folhas) que o item marca/desmarca. */
+  values: unknown[];
+  level: number;
+  setSize: number;
+  posInSet: number;
+  /** Só nós de data (ano, mês); `undefined` nas folhas. */
+  expanded?: boolean;
+  /** Chave do pai (← volta a ele). */
+  parent?: string;
+}
 
-  const expanded = !!controller.state?.expanded.has(node.key);
-  const leaves = leavesOf(node);
+/** Achata a árvore de datas expandida em itens com nível e posição (spec 17, A10). */
+const flattenDates = (
+  nodes: readonly (DistinctDateNode | DistinctValue)[],
+  expanded: ReadonlySet<string>,
+  level: number,
+  parent: string | undefined,
+  offset: number,
+  out: HeaderFilterTreeItem[],
+): void => {
+  nodes.forEach((node, index) => {
+    const isGroup = 'children' in node;
+    const key = isGroup ? `d:${node.key}` : keyOf(node.value);
+    const open = isGroup && expanded.has(node.key);
+
+    out.push({
+      key,
+      text: node.text,
+      count: node.count,
+      values: leavesOf(node),
+      level,
+      setSize: nodes.length + offset,
+      posInSet: index + 1 + offset,
+      expanded: isGroup ? open : undefined,
+      parent,
+    });
+
+    if (isGroup && open) {
+      flattenDates(node.children, expanded, level + 1, key, 0, out);
+    }
+  });
+};
+
+const boxIcon = (state: boolean | 'mixed') => html`
+  <span class="header-filter-box" aria-hidden="true">${state
+    ? html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" width="18" height="18" fill="currentColor">
+        <path d=${state === 'mixed' ? 'M200-440v-80h560v80H200Z' : 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'}/>
+      </svg>`
+    : nothing}</span>`;
+
+const renderTreeItem = (controller: HeaderFilterController, item: HeaderFilterTreeItem, active: boolean): TemplateResult => {
+  const state = controller.stateOf(item.values);
 
   return html`
-    <li class="header-filter-item" style="--_level: ${level}">
-      <button
-        class="header-filter-expand ${expanded ? 'expanded' : ''}"
-        type="button"
-        aria-expanded=${expanded ? 'true' : 'false'}
-        aria-label=${node.text}
-        @click=${() => controller.toggleExpanded(node.key)}>
-        <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
-          <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>
-        </svg>
-      </button>
-      ${checkbox(controller.stateOf(leaves), node.text, node.count, checked => controller.setSelected(leaves, checked))}
-    </li>
-    ${expanded ? map(node.children, child => renderDateNode(controller, child, level + 1, translation)) : nothing}`;
+    <li
+      class="header-filter-item"
+      role="treeitem"
+      style="--_level: ${item.level - 1}"
+      tabindex=${active ? 0 : -1}
+      data-key=${item.key}
+      aria-level=${item.level}
+      aria-setsize=${item.setSize}
+      aria-posinset=${item.posInSet}
+      aria-checked=${state === 'mixed' ? 'mixed' : state ? 'true' : 'false'}
+      aria-expanded=${ifDefined(item.expanded === undefined ? undefined : item.expanded ? 'true' : 'false')}
+      @focus=${() => controller.setActiveItem(item.key)}
+      @click=${() => controller.setSelected(item.values, state !== true)}>
+      ${item.expanded === undefined
+        ? nothing
+        : html`<span
+          class="header-filter-expand ${item.expanded ? 'expanded' : ''}"
+          aria-hidden="true"
+          @click=${(event: Event) => {
+            // Só ponteiro: pelo teclado, →/← no item (o estado está no aria-expanded do item).
+            event.stopPropagation();
+            controller.toggleExpanded(item.key.slice(2));
+          }}>
+          <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 -960 960 960" fill="currentColor">
+            <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>
+          </svg>
+        </span>`}
+      ${boxIcon(state)}
+      <span class="header-filter-text">${item.text}</span>
+      <span class="header-filter-count">${item.count}</span>
+    </li>`;
 };
 
 /** O popover (quando aberto). */
@@ -423,6 +679,9 @@ export const renderHeaderFilter = (controller: HeaderFilterController, translati
   const blankVisible = distinct.blanks > 0 && !searching;
   const scope = [...blankVisible ? [null] : [], ...visible.map(value => value.value)];
   const title = formatMessage(translation.headerFilterLabel, { column: column.label || column.path || '' });
+  const items = controller.treeItems(translation);
+  const activeKey = items.some(item => item.key === controller.activeItem) ? controller.activeItem : items[0]?.key;
+  const truncated = !useTree && visible.length > shown.length;
 
   return html`
     <div
@@ -438,23 +697,34 @@ export const renderHeaderFilter = (controller: HeaderFilterController, translati
         type="search"
         autocomplete="off"
         placeholder=${translation.searchPlaceholder}
-        aria-label=${translation.searchPlaceholder}
+        aria-label=${translation.headerFilterSearchLabel}
         .value=${live(state.search)}
-        @input=${(event: Event) => controller.setSearch((event.target as HTMLInputElement).value)}>
+        @keydown=${controller.onSearchKeyDown}
+        @input=${(event: Event) => controller.setSearch((event.target as HTMLInputElement).value, translation)}>
       <div class="header-filter-select-all">
-        ${checkbox(controller.stateOf(scope), translation.selectAll, undefined, checked => controller.setSelected(scope, checked))}
+        ${checkbox(
+          controller.stateOf(scope),
+          searching ? formatMessage(translation.selectAllResults, { count: String(scope.length) }) : translation.selectAll,
+          undefined,
+          checked => controller.setSelected(scope, checked),
+        )}
       </div>
-      <ul class="header-filter-list">
-        ${blankVisible
-          ? html`<li class="header-filter-item">${checkbox(controller.isSelected(null), translation.filterBlanks, distinct.blanks, checked => controller.setSelected([null], checked))}</li>`
-          : nothing}
-        ${useTree
-          ? map(distinct.tree, node => renderDateNode(controller, node, 0, translation))
-          : map(shown, value => html`
-            <li class="header-filter-item">
-              ${checkbox(controller.isSelected(value.value), value.text, value.count, checked => controller.setSelected([value.value], checked))}
-            </li>`)}
+      <ul
+        class="header-filter-list"
+        role="tree"
+        aria-multiselectable="true"
+        aria-label=${title}
+        aria-describedby=${truncated ? 'header-filter-note' : nothing}
+        @keydown=${controller.onTreeKeyDown}>
+        ${map(items, item => renderTreeItem(controller, item, item.key === activeKey))}
       </ul>
+      ${truncated
+        ? html`<p class="header-filter-note" id="header-filter-note">${formatMessage(translation.headerFilterTruncated, {
+          shown: String(shown.length),
+          count: String(visible.length),
+        })}</p>`
+        : nothing}
+      <div class="visually-hidden" role="status" aria-live="polite">${controller.searchAnnouncement}</div>
       <div class="header-filter-actions">
         <button class="header-filter-clear" type="button" @click=${() => controller.clearColumn()}>${translation.filterClear}</button>
         <span class="header-filter-spacer"></span>

@@ -181,7 +181,7 @@ describe('foco não se perde (WCAG 2.4.3)', () => {
     const active = focused(grid);
     expect(active?.classList.contains('pin-start')).toBe(true);
     expect(active?.getAttribute('aria-pressed')).toBe('true');
-    expect(active?.getAttribute('aria-describedby')).toBe(pin.getAttribute('aria-describedby'));
+    expect(active?.getAttribute('aria-label')).toBe('Pin Age to start');
   });
 
   it('seletor de colunas: Tab para fora do painel fecha (não fica aberto atrás do foco)', async () => {
@@ -249,7 +249,7 @@ describe('teclado', () => {
     expect(root(grid).querySelector('.group')).toBeNull();
   });
 
-  it('F2 percorre funil → alça → célula no cabeçalho (spec 05)', async () => {
+  it('F2 percorre funil → menu → alça → célula no cabeçalho (spec 05)', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
       g.headerFilter = true;
       g.columnResizing = true;
@@ -259,6 +259,8 @@ describe('teclado', () => {
 
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('header-filter-button')).toBe(true);
+    await press(grid, 'F2');
+    expect(focused(grid)?.classList.contains('column-header-menu-button')).toBe(true);
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('resize-handle')).toBe(true);
     await press(grid, 'F2');
@@ -459,5 +461,653 @@ describe('forced-colors e prefers-reduced-motion', () => {
     const handle = root(grid).querySelector<HTMLElement>('.resize-handle')!;
 
     expect(getComputedStyle(handle, '::after').transitionDuration).toBe('0s');
+  });
+});
+
+// ------------------------------------------- aprovados pelo usuário (A1–A14)
+
+describe('A8 — Ctrl+G na linha de grupo desagrupa', () => {
+  it('sem painel de grupos, o agrupamento do Ctrl+G do cabeçalho tem volta', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
+      g.language = 'en';
+      g.showGroupPanel = false;
+    } });
+    headerCell(grid, 'City').focus();
+    await press(grid, 'g', { ctrlKey: true });
+    expect(grid.getGrouping().map(c => c.path)).toEqual(['city']);
+
+    root(grid).querySelector<HTMLElement>('.grouping-cell')!.focus();
+    await press(grid, 'g', { ctrlKey: true });
+
+    expect(grid.getGrouping()).toEqual([]);
+    expect(liveRegion(grid).textContent).toContain('City');
+    expect(focused(grid)).toBe(headerCell(grid, 'City'));
+  });
+});
+
+describe('A11 — ↓/↑ no botão de operação', () => {
+  it('abrem o menu no 1º/último item', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.showFilterRow = true });
+    const button = root(grid).querySelector<HTMLElement>('.filter-operation-button')!;
+    button.focus();
+
+    await press(grid, 'ArrowDown');
+    let items = [...root(grid).querySelectorAll<HTMLElement>('.filter-menu [role^=menuitem]')];
+    expect(focused(grid)).toBe(items[0]);
+
+    await press(grid, 'Escape');
+    expect(focused(grid)).toBe(button);
+
+    await press(grid, 'ArrowUp');
+    items = [...root(grid).querySelectorAll<HTMLElement>('.filter-menu [role^=menuitem]')];
+    expect(focused(grid)).toBe(items[items.length - 1]);
+  });
+});
+
+describe('A12 — conteúdo interativo das células', () => {
+  it('sai da ordem de Tab; Enter entra nele e Esc volta à célula', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Name' },
+        {
+          label: 'Action',
+          renderer: (item: Person) => {
+            const button = document.createElement('button');
+            button.textContent = `Open ${item.name}`;
+            return button;
+          },
+        },
+      ],
+      items: people(),
+    });
+    await settle(grid);
+    const buttons = [...grid.querySelectorAll('button')];
+
+    expect(buttons.length).toBeGreaterThan(0);
+    expect(buttons.every(button => button.getAttribute('tabindex') === '-1')).toBe(true);
+
+    const cell = root(grid).querySelector<HTMLElement>('tbody td[data-col="1"]')!;
+    cell.focus();
+    await press(grid, 'Enter');
+    expect(document.activeElement?.textContent).toBe('Open Ana');
+
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+    expect(focused(grid)).toBe(cell);
+  });
+});
+
+describe('A9 — a barra reflui a 320 px', () => {
+  it('quebra linha sem sobrepor e o cabeçalho prende abaixo dela', async () => {
+    const host = document.createElement('div');
+    host.style.width = '320px';
+    document.body.append(host);
+    const grid = await createGrid({
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, { path: 'name', label: 'Name', groupIndex: 1 }, { path: 'age', label: 'Age' }],
+      items: people(),
+      configure: g => {
+        g.showSearchPanel = true;
+        g.columnChooser = true;
+      },
+    });
+    host.append(grid);
+    await settle(grid);
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await settle(grid);
+
+    const toolbar = root(grid).querySelector<HTMLElement>('.header')!;
+    const parts = [...root(grid).querySelectorAll<HTMLElement>('.group, .search-panel, .column-chooser-button')].map(e => e.getBoundingClientRect());
+    const overlaps = parts.some((a, i) => parts.some((b, j) => i < j && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
+    const thead = root(grid).querySelector('thead')!.getBoundingClientRect();
+    host.remove();
+
+    expect(overlaps).toBe(false);
+    expect(toolbar.scrollWidth).toBeLessThanOrEqual(toolbar.clientWidth + 1);
+    expect(thead.top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom - 1);
+  });
+});
+
+describe('A3 — alvo da alça de redimensionar', () => {
+  it('tem 24 px e não cobre o rótulo do cabeçalho', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.columnResizing = true });
+    const th = headerCell(grid, 'Name');
+    const handle = th.querySelector<HTMLElement>('.resize-handle')!.getBoundingClientRect();
+    const content = th.querySelector<HTMLElement>('.header-content')!.getBoundingClientRect();
+
+    expect(handle.width).toBeGreaterThanOrEqual(24);
+    expect(content.right).toBeLessThanOrEqual(handle.left + 0.5);
+  });
+});
+
+describe('A2/A4 — seleção não só por cor; cor do texto própria', () => {
+  it('linha selecionada tem barra no início (≥ 3:1 contra o fundo)', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.selectionMode = 'multiple' });
+    grid.selectRows([grid.items[0]]);
+    await settle(grid);
+
+    const selected = dataRows(grid).find(tr => tr.getAttribute('aria-selected') === 'true')!;
+    const shadow = getComputedStyle(selected.cells[0]).boxShadow;
+    const color = shadow.match(/rgba?\([^)]*\)/)![0];
+    expect(shadow).toMatch(/inset 3px 0px 0px 0px|rgb\([^)]*\) 3px 0px 0px 0px inset/);
+    expect(contrast(over(parseColor(color), WHITE), WHITE)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('não herda a cor do texto da página', async () => {
+    document.body.style.color = 'rgb(240, 240, 240)';
+    const grid = await createGrid({ columns: columns(), items: people() });
+    const cell = cellOf(grid, 'Ana');
+    const text = parseColor(getComputedStyle(cell).color);
+    document.body.style.color = '';
+
+    expect(contrast(text, WHITE)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () => {
+  const menuItems = (grid: DataGrid) => [...root(grid).querySelectorAll<HTMLElement>('.column-header-menu [role=menuitem]')];
+  const headerOrder = (grid: DataGrid) => [...root(grid).querySelectorAll('th.header-column .header-text')].map(e => e.textContent);
+
+  const openByKey = async (grid: DataGrid, label: string) => {
+    headerCell(grid, label).focus();
+    await press(grid, 'F10', { shiftKey: true });
+  };
+
+  it('Shift+F10 abre; "Mover" respeita o limite; mover leva o foco junto e anuncia', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.language = 'en' });
+    await openByKey(grid, 'Name');
+
+    const labels = menuItems(grid).map(item => [item.textContent.trim(), item.getAttribute('aria-disabled')]);
+    expect(labels).toEqual([['Group by this column', 'false'], ['Move left', 'true'], ['Move right', 'false']]);
+    expect(focused(grid)).toBe(menuItems(grid)[0]);
+    expect(root(grid).querySelector('.column-header-menu')!.getAttribute('aria-label')).toBe('Options for Name');
+
+    await press(grid, 'ArrowDown');
+    await press(grid, 'ArrowDown');
+    expect(focused(grid)!.textContent.trim()).toBe('Move right');
+    focused(grid)!.click();
+    await settle(grid);
+
+    expect(headerOrder(grid)).toEqual(['City', 'Name', 'Age']);
+    expect(focused(grid)).toBe(headerCell(grid, 'Name'));
+    expect(liveRegion(grid).textContent).toContain('Name moved to position 2 of 3');
+  });
+
+  it('RTL: "Mover para a esquerda" vai para o fim', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
+      g.language = 'en';
+      g.setAttribute('dir', 'rtl');
+    } });
+    await openByKey(grid, 'Name');
+    const left = menuItems(grid).find(item => item.textContent.trim() === 'Move left')!;
+
+    expect(left.getAttribute('aria-disabled')).toBe('false');
+    left.click();
+    await settle(grid);
+    expect(headerOrder(grid)).toEqual(['City', 'Name', 'Age']);
+  });
+
+  it('clique direito abre no ponto; Esc devolve o foco ao cabeçalho; "Agrupar" agrupa', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.language = 'en' });
+    const th = headerCell(grid, 'City');
+    const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 50, clientY: 50 });
+    th.dispatchEvent(event);
+    await settle(grid);
+
+    expect(event.defaultPrevented).toBe(true);
+    await press(grid, 'Escape');
+    expect(focused(grid)).toBe(th);
+
+    th.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 50, clientY: 50 }));
+    await settle(grid);
+    menuItems(grid)[0].click();
+    await settle(grid);
+
+    expect(grid.getGrouping().map(c => c.path)).toEqual(['city']);
+    expect(focused(grid)).not.toBeNull();
+  });
+
+  it('sem ações para a coluna: menu do navegador, sem botão e sem Shift+F10', async () => {
+    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name', groupable: false }], items: people() });
+    const th = headerCell(grid, 'Name');
+    const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
+    th.dispatchEvent(event);
+    await settle(grid);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(th.querySelector('.column-header-menu-button')).toBeNull();
+    expect(th.getAttribute('aria-keyshortcuts')).not.toContain('Shift+F10');
+  });
+
+  it('botão abre o menu; com column-resizing, largura por clique sem arrasto', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
+      g.language = 'en';
+      g.columnResizing = true;
+    } });
+    const button = headerCell(grid, 'Age').querySelector<HTMLElement>('.column-header-menu-button')!;
+    const before = headerCell(grid, 'Age').getBoundingClientRect().width;
+
+    expect(button.getAttribute('aria-label')).toBe('Options for Age');
+    button.click();
+    await settle(grid);
+    const wider = menuItems(grid).find(item => item.textContent.trim() === 'Increase width')!;
+    wider.focus();
+    wider.click();
+    await settle(grid);
+
+    expect(headerCell(grid, 'Age').getBoundingClientRect().width).toBeGreaterThan(before);
+    expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
+    expect(liveRegion(grid).textContent).toMatch(/^Age width: \d+ px/);
+
+    const result = await axe.run(grid, { resultTypes: ['violations'] });
+    expect(result.violations.map(v => v.id)).toEqual([]);
+  });
+
+  it('menu do chip: "Mover" muda o nível e anuncia', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, { path: 'name', label: 'Name', groupIndex: 1 }, { path: 'age', label: 'Age' }],
+      items: people(),
+      configure: g => g.language = 'en',
+    });
+    const chip = root(grid).querySelectorAll<HTMLElement>('.group')[0];
+    chip.focus();
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+
+    const right = [...root(grid).querySelectorAll<HTMLElement>('.group-panel-menu [role=menuitem]')].find(i => i.textContent.trim() === 'Move right')!;
+    right.click();
+    await settle(grid);
+
+    expect(grid.getGrouping().map(c => c.path)).toEqual(['name', 'city']);
+    expect(liveRegion(grid).textContent).toContain('City moved to grouping level 2 of 2');
+  });
+});
+
+describe('A5/A13/A14 — descrição e atalhos do cabeçalho', () => {
+  it('prioridade da ordenação, fixada e filtrada; aria-sort só na 1ª', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name', fixed: 'start' }, { path: 'city', label: 'City' }, { path: 'age', label: 'Age' }],
+      items: people(),
+      configure: g => {
+        g.language = 'en';
+        g.headerFilter = true;
+      },
+    });
+    grid.sortColumn(grid.columns[2], 'asc');
+    grid.sortColumn(grid.columns[1], 'desc', { append: true });
+    grid.filterValue = ['city', '=', 'Rio'];
+    await settle(grid);
+
+    const description = (label: string) => {
+      const id = headerCell(grid, label).getAttribute('aria-describedby');
+      return id ? root(grid).getElementById(id)!.textContent : '';
+    };
+
+    expect(headerCell(grid, 'Age').getAttribute('aria-sort')).toBe('ascending');
+    expect(headerCell(grid, 'City').getAttribute('aria-sort')).toBe('none');
+    expect(description('City')).toBe('Sorted descending, priority 2, Filtered');
+    expect(description('Name')).toBe('Pinned to start');
+    expect(description('Age')).toBe('');
+
+    const funnel = headerCell(grid, 'City').querySelector<HTMLElement>('.header-filter-button')!;
+    expect(funnel.getAttribute('aria-describedby')).toBe(headerCell(grid, 'City').getAttribute('aria-describedby'));
+    expect(funnel.querySelector('circle')).not.toBeNull();
+    expect(headerCell(grid, 'Age').querySelector('.header-filter-button circle')).toBeNull();
+  });
+
+  it('aria-keyshortcuts com nomes do UI Events conforme os recursos', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
+      g.headerFilter = true;
+      g.columnResizing = true;
+    } });
+
+    expect(headerCell(grid, 'Name').getAttribute('aria-keyshortcuts')).toBe(
+      'Shift+F10 Control+G Meta+G Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Alt+ArrowLeft Alt+ArrowRight Alt+ArrowDown F2',
+    );
+  });
+});
+
+describe('A6 — anúncios', () => {
+  it('ordenar com 2+ colunas anuncia a prioridade; menu do painel anuncia', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, ...columns().filter(c => c.path !== 'city')],
+      items: people(),
+      configure: g => {
+        g.language = 'en';
+        g.sortMode = 'multiple';
+      },
+    });
+    grid.sortColumn(grid.columns[1], 'asc');
+    await settle(grid);
+    headerCell(grid, 'Age').focus();
+    await press(grid, 'Enter', { shiftKey: true });
+    expect(liveRegion(grid).textContent).toBe('Sorted by Age, ascending, priority 2');
+
+    root(grid).querySelector('.group')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 10, clientY: 10 }));
+    await settle(grid);
+    [...root(grid).querySelectorAll<HTMLElement>('.group-panel-menu [role=menuitem]')].find(i => i.textContent.trim() === 'Expand all groups')!.click();
+    await settle(grid);
+    expect(liveRegion(grid).textContent).toBe('All groups expanded');
+  });
+
+  it('Alt+→ no cabeçalho anuncia a largura depois da espera; timer solto ao remover', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
+      g.language = 'en';
+      g.columnResizing = true;
+    } });
+    headerCell(grid, 'Name').focus();
+    await press(grid, 'ArrowRight', { altKey: true });
+    expect(grid._memoryStats.announceTimers).toBe(1);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+    await settle(grid);
+    expect(liveRegion(grid).textContent).toMatch(/^Name width: \d+ px/);
+
+    await press(grid, 'ArrowRight', { altKey: true });
+    grid.remove();
+    expect(grid._memoryStats.announceTimers).toBe(0);
+  });
+});
+
+describe('A10 — lista do funil em árvore', () => {
+  const cities = (): Person[] => [
+    ...people(),
+    { name: 'Eva', city: 'Recife', age: 50 },
+    { name: 'Fábio', city: '', age: 33 },
+  ];
+
+  const open = async (grid: DataGrid, label: string) => {
+    headerCell(grid, label).querySelector<HTMLElement>('.header-filter-button')!.click();
+    await settle(grid);
+    return root(grid).querySelector<HTMLElement>('.header-filter')!;
+  };
+
+  const treeItems = (popover: HTMLElement) => [...popover.querySelectorAll<HTMLElement>('[role=treeitem]')];
+
+  const key = async (grid: DataGrid, target: HTMLElement, name: string, init: KeyboardEventInit = {}) => {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, composed: true, cancelable: true, ...init }));
+    await settle(grid);
+  };
+
+  it('um ponto de Tab; setas movem; Espaço marca; Enter aplica; nome = texto + contagem', async () => {
+    const grid = await createGrid({ columns: columns(), items: cities(), configure: g => {
+      g.language = 'en';
+      g.headerFilter = true;
+    } });
+    const popover = await open(grid, 'City');
+    const tree = popover.querySelector<HTMLElement>('[role=tree]')!;
+
+    expect(tree.getAttribute('aria-multiselectable')).toBe('true');
+    expect(treeItems(popover).filter(item => item.tabIndex === 0)).toHaveLength(1);
+    expect(treeItems(popover).map(item => item.getAttribute('aria-posinset'))).toEqual(['1', '2', '3', '4', '5']);
+    expect(treeItems(popover)[0].getAttribute('aria-setsize')).toBe('5');
+
+    // ↓ na busca vai à árvore.
+    const search = popover.querySelector<HTMLElement>('.header-filter-search')!;
+    await key(grid, search, 'ArrowDown');
+    expect(focused(grid)).toBe(treeItems(popover)[0]);
+
+    await key(grid, focused(grid)!, 'ArrowDown');
+    expect(focused(grid)).toBe(treeItems(popover)[1]);
+    expect(treeItems(popover)[1].tabIndex).toBe(0);
+    expect(treeItems(popover)[0].tabIndex).toBe(-1);
+
+    await key(grid, focused(grid)!, ' ');
+    expect(treeItems(popover)[1].getAttribute('aria-checked')).toBe('false');
+
+    await key(grid, focused(grid)!, 'Enter');
+    expect(root(grid).querySelector('.header-filter')).toBeNull();
+    expect(grid.filterValue).not.toBeNull();
+  });
+
+  it('busca: "Select all results (n)", contagem anunciada e Enter = OK', async () => {
+    const grid = await createGrid({ columns: columns(), items: cities(), configure: g => {
+      g.language = 'en';
+      g.headerFilter = true;
+    } });
+    const popover = await open(grid, 'City');
+    const search = popover.querySelector<HTMLInputElement>('.header-filter-search')!;
+    await userEvent.fill(search, 'r');
+    await new Promise(resolve => setTimeout(resolve, 600));
+    await settle(grid);
+
+    expect(popover.querySelector('.header-filter-select-all')!.textContent).toContain('Select all results (2)');
+    expect(popover.querySelector('[role=status]')!.textContent).toBe('Values: 2');
+
+    const result = await axe.run(grid, { resultTypes: ['violations'] });
+    expect(result.violations.map(v => v.id)).toEqual([]);
+
+    await key(grid, search, 'Enter');
+    expect(root(grid).querySelector('.header-filter')).toBeNull();
+  });
+
+  it('datas: → expande e vai ao filho, ← volta ao pai; RTL inverte', async () => {
+    const dated = [{ name: 'A', city: 'x', age: 1, born: '1994-03-05' }, { name: 'B', city: 'y', age: 2, born: '1994-07-01' }];
+
+    for (const dir of ['ltr', 'rtl']) {
+      const grid = await createGrid({
+        columns: [{ path: 'name', label: 'Name' }, { path: 'born', label: 'Born', dataType: 'date' }],
+        items: dated,
+        configure: g => {
+          g.language = 'en';
+          g.headerFilter = true;
+          g.setAttribute('dir', dir);
+        },
+      });
+      const [expand, collapse] = dir === 'rtl' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowRight', 'ArrowLeft'];
+      const popover = await open(grid, 'Born');
+      const year = treeItems(popover)[0];
+      year.focus();
+
+      expect(year.getAttribute('aria-expanded')).toBe('false');
+      await key(grid, year, expand);
+      expect(treeItems(popover)[0].getAttribute('aria-expanded')).toBe('true');
+      await key(grid, focused(grid)!, expand);
+      expect(focused(grid)!.getAttribute('aria-level')).toBe('2');
+      await key(grid, focused(grid)!, collapse);
+      expect(focused(grid)).toBe(treeItems(popover)[0]);
+      cleanup();
+    }
+  });
+
+  it('corte em 500 valores avisa "Showing 500 of N"', async () => {
+    const many = Array.from({ length: 520 }, (_, i) => ({ name: `N${i}`, city: `C${i}`, age: i }));
+    const grid = await createGrid({ columns: columns(), items: many, configure: g => {
+      g.language = 'en';
+      g.headerFilter = true;
+    } });
+    const popover = await open(grid, 'City');
+    const tree = popover.querySelector<HTMLElement>('[role=tree]')!;
+
+    expect(root(grid).getElementById(tree.getAttribute('aria-describedby')!)!.textContent).toBe('Showing 500 of 520');
+  });
+});
+
+describe('A12 — mais de um focável na célula; custom elements', () => {
+  class ShadowButton extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open', delegatesFocus: true }).innerHTML = '<button>inner</button>';
+    }
+  }
+
+  if (!customElements.get('a11y-shadow-button')) {
+    customElements.define('a11y-shadow-button', ShadowButton);
+  }
+
+  it('Tab circula entre os focáveis da célula; hospedeiro com shadow root sai da ordem de Tab', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Name' },
+        {
+          label: 'Actions',
+          renderer: (item: Person) => {
+            const box = document.createElement('div');
+            const open = document.createElement('button');
+            open.textContent = `Open ${item.name}`;
+            const fancy = document.createElement('a11y-shadow-button');
+            box.append(open, fancy);
+            return box;
+          },
+        },
+      ],
+      items: people(),
+    });
+    await settle(grid);
+
+    expect([...grid.querySelectorAll('a11y-shadow-button')].every(host => host.getAttribute('tabindex') === '-1')).toBe(true);
+
+    const cell = root(grid).querySelector<HTMLElement>('tbody td[data-col="1"]')!;
+    cell.focus();
+    await press(grid, 'Enter');
+    const first = document.activeElement!;
+    expect(first.textContent).toBe('Open Ana');
+
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+    expect(document.activeElement!.localName).toBe('a11y-shadow-button');
+
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+    expect(document.activeElement).toBe(first);
+  });
+});
+
+describe('revisão da implementação (A1–A14)', () => {
+  it('sem funil nem alça, F2 (que leva ao "⋮") entra no aria-keyshortcuts', async () => {
+    const grid = await createGrid({ columns: columns(), items: people() });
+
+    expect(headerCell(grid, 'Name').getAttribute('aria-keyshortcuts')).toBe(
+      'Shift+F10 Control+G Meta+G Alt+Shift+ArrowLeft Alt+Shift+ArrowRight F2',
+    );
+  });
+
+  it('hospedeiro que cancela o contextmenu do painel de grupos fica com o dele', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, ...columns().filter(c => c.path !== 'city')],
+      items: people(),
+    });
+    const cancel = (event: Event) => event.preventDefault();
+    grid.addEventListener('contextmenu', cancel, { capture: true });
+    root(grid).querySelector('.group')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+    grid.removeEventListener('contextmenu', cancel, { capture: true });
+
+    expect(root(grid).querySelector('.group-panel-menu')).toBeNull();
+  });
+});
+
+describe('revisão de a11y da implementação', () => {
+  it('botão do renderer que remove a própria linha: o foco volta à célula ativa', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Name' },
+        {
+          label: 'Delete',
+          renderer: (item: Person) => {
+            const button = document.createElement('button');
+            button.textContent = `Delete ${item.name}`;
+            button.addEventListener('click', () => {
+              grid.items = grid.items.filter(other => other !== item);
+            });
+            return button;
+          },
+        },
+      ],
+      items: people(),
+    });
+    await settle(grid);
+
+    root(grid).querySelector<HTMLElement>('tbody td[data-col="1"]')!.focus();
+    await press(grid, 'Enter');
+    (document.activeElement as HTMLElement).click();
+    await settle(grid);
+    await settle(grid);
+
+    expect(document.activeElement).toBe(grid);
+    expect(focused(grid)?.matches('td[tabindex="0"]')).toBe(true);
+  });
+
+  it('custom element decorativo na célula não vira alvo de foco; as setas seguem', async () => {
+    class Badge extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML = '<span>new</span>';
+      }
+    }
+
+    if (!customElements.get('a11y-badge')) {
+      customElements.define('a11y-badge', Badge);
+    }
+
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name' }, { label: 'Tag', renderer: () => document.createElement('a11y-badge') }],
+      items: people(),
+    });
+    await settle(grid);
+    const badge = grid.querySelector('a11y-badge')!;
+
+    expect(badge.hasAttribute('tabindex')).toBe(false);
+    await userEvent.click(badge);
+    await press(grid, 'ArrowDown');
+    expect(focused(grid)?.matches('td[data-col]')).toBe(true);
+  });
+
+  it('o "⋮" não cobre o funil nem a seta (coluna à direita, com alça)', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name' }, { path: 'age', label: 'Age', alignment: 'end' }],
+      items: people(),
+      configure: g => {
+        g.headerFilter = true;
+        g.columnResizing = true;
+      },
+    });
+    grid.sortColumn(grid.columns[1], 'asc');
+    await settle(grid);
+    const th = headerCell(grid, 'Age');
+    th.focus();
+    await settle(grid);
+
+    const rect = (selector: string) => th.querySelector(selector)!.getBoundingClientRect();
+    const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const button = rect('.column-header-menu-button');
+
+    expect(overlap(button, rect('.header-filter-button'))).toBe(false);
+    expect(overlap(button, rect('.sort-indicator'))).toBe(false);
+    expect(overlap(button, rect('.resize-handle'))).toBe(false);
+  });
+
+  it('clicar no "⋮" com o menu aberto fecha', async () => {
+    const grid = await createGrid({ columns: columns(), items: people() });
+    const button = headerCell(grid, 'Name').querySelector<HTMLElement>('.column-header-menu-button')!;
+    await userEvent.click(button);
+    await settle(grid);
+    expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
+
+    await userEvent.click(headerCell(grid, 'Name').querySelector<HTMLElement>('.column-header-menu-button')!);
+    await settle(grid);
+    expect(root(grid).querySelector('.column-header-menu')).toBeNull();
+    expect(headerCell(grid, 'Name').querySelector('.column-header-menu-button')!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Enter que confirma a composição (IME) não aplica o filtro do funil', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.headerFilter = true });
+    headerCell(grid, 'City').querySelector<HTMLElement>('.header-filter-button')!.click();
+    await settle(grid);
+    const search = root(grid).querySelector<HTMLElement>('.header-filter-search')!;
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, composed: true, cancelable: true }));
+    await settle(grid);
+
+    expect(root(grid).querySelector('.header-filter')).not.toBeNull();
+  });
+
+  it('o menu nativo não abre por cima dos menus do grid', async () => {
+    const grid = await createGrid({ columns: columns(), items: people() });
+    headerCell(grid, 'Name').focus();
+    await press(grid, 'F10', { shiftKey: true });
+    const item = root(grid).querySelector<HTMLElement>('.column-header-menu [role=menuitem]')!;
+    const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
+    item.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
   });
 });

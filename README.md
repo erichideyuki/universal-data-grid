@@ -596,8 +596,8 @@ grid.columns = [
   ```
 
 - **Group panel menu** — right-click a group chip (or focus it and press `Shift+F10` / the context
-  menu key; `Enter` too when the chip does not sort) for *Ungroup*, *Ungroup all*, *Expand all
-  groups* and *Collapse all groups*. Arrow keys and `Home`/`End` move, `Esc` closes and returns
+  menu key; `Enter` too when the chip does not sort) for *Ungroup*, *Move left*/*Move right* (the
+  grouping level), *Ungroup all*, *Expand all groups* and *Collapse all groups*. Arrow keys and `Home`/`End` move, `Esc` closes and returns
   the focus. `group-panel-menu="false"` disables it.
 - **Who can group** — `groupable: false` (attribute `groupable="false"`) keeps the user from
   dropping a column on the group panel; `groupColumn()` still works. By default columns without a
@@ -640,7 +640,8 @@ is kept — and the event fires — for when it appears.
 these methods: `detail` is `{ groupPath, groupIndex, expanded, source }`; `groupPath` is `null`
 for `expandAllGroups`/`collapseAllGroups` (`groupIndex` `null` = every level).
 
-`u-grid-group-change` fires after the grouping changed, by drag and drop or by these methods:
+`u-grid-group-change` fires after the grouping changed — by drag and drop, `Ctrl+G`, the group panel
+menu, the column header menu or these methods:
 `detail` is `{ grouping: GridColumnDef[]; previous: GridColumnDef[]; source: 'user' | 'api' }`.
 Initial grouping (and changing `groupIndex` on a column) fires nothing.
 
@@ -742,7 +743,8 @@ column chooser button are separate stops in the bar above.
 | `Home` / `End` | First / last cell of the row. |
 | `Ctrl`+`Home` / `Ctrl`+`End` | First cell of the first row / last cell of the last row. |
 | `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). |
-| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to the resize handle. |
+| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons and resize handle. |
+| `Tab` / `Shift`+`Tab` inside a cell | Cycle through the interactive content of that cell. |
 | `Esc` | Back from the content to the cell. |
 | `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
 | `Shift`+`↑`/`↓`, `Shift`+`Space` | Extend the selection (`multiple`). |
@@ -752,11 +754,19 @@ column chooser button are separate stops in the bar above.
 | `Alt`+`←`/`→` on a header | Resize the column. |
 | `Alt`+`Shift`+`←`/`→` on a header | Move the column (same as dragging it; mirrored in RTL). |
 | `Ctrl`+`G` on a header | Group by the column (same as dragging it to the group panel). |
+| `Ctrl`+`G` on a group row | Ungroup that row's column (works without the group panel). |
+| `Shift`+`F10` / menu key on a header | Open the column header menu (group, move left/right, auto-size, widen/narrow). |
 | `←`/`→`, `Home`/`End` in the group panel | Move between the group chips. |
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
-| `Shift`+`F10` / menu key on a group chip | Open the group panel menu. |
-| `F2` / `Alt`+`↓` on a header | Focus the header filter button (`F2` again: the resize handle, then back to the header) / open the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `Shift`+`F10` / menu key on a group chip | Open the group panel menu (also moves the chip left/right). |
+| `F2` / `Alt`+`↓` on a header | `F2` cycles through the header filter button, the "⋮" menu button and the resize handle, then back to the header / `Alt`+`↓` opens the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `↓` on a filter row operation button | Open the operation menu on its first item (`↑`: last item). |
+| In the header filter list | One `Tab` stop: `↑`/`↓`/`Home`/`End` move, `→`/`←` expand/collapse dates or go to the child/parent (mirrored in RTL), `Space` checks, `Enter` applies (also in its search field), a letter goes to the search field. |
+
+Interactive content returned by `renderer` (links, buttons, inputs, custom elements with a shadow
+root) gets `tabindex="-1"` so the grid stays a single `Tab` stop; `Enter`/`F2` reach it. Content added
+to a cell later (asynchronously) is not adjusted.
 
 The grid calls `preventDefault()` on the keys it handles, so `Ctrl`+`A`/`Ctrl`+`G` do not reach the
 browser while the focus is in a cell. The active cell survives virtualization (its row stays in the
@@ -805,8 +815,28 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 - Windows high contrast (`forced-colors: active`): selection, search highlights, grid lines,
   pinned-column edges and active states use system colors. Transitions are off with
   `prefers-reduced-motion: reduce`.
-- Every drag gesture has a keyboard alternative (WCAG 2.1.1). The browser tests run `axe-core`
-  with zero violations.
+- Every drag gesture has a keyboard alternative (WCAG 2.1.1) and a single-pointer one (WCAG 2.5.7):
+  the column header menu (right-click or the "⋮" button, shown on hover and always on touch
+  screens) groups, moves and resizes columns; the group panel menu moves chips. With
+  `column-header-menu="false"` the host must provide its own alternative.
+- Headers expose `aria-keyshortcuts` and a description with what is not visible to a screen
+  reader: the sort priority (only the first sorted column has `aria-sort`, as ARIA asks), pinned and
+  filtered. A filtered column's funnel shows a dot, not only a color.
+- Selected rows show a bar at the start (`--u-grid-selected-row-indicator-*`), not only a tint.
+- The browser tests run `axe-core` with zero violations and automated keyboard scripts. The audit is
+  in `.specs/17-accessibility.md`.
+
+> Behavior changes in this version: right-click on a header opens the grid menu when it has
+> actions for the column (cancel the `contextmenu` event in the capture phase to keep your own — also on the group panel);
+> the grid sets its own text color (`--u-grid-color`) — on dark pages set it together with
+> `--u-grid-background-color`; the resize hit area is 24px and reserved at the end of resizable
+> headers; `dragToGroup`/`autoSize` texts mention the keyboard (update your overrides);
+> `--u-grid-toolbar-height` is now a minimum height (the bar wraps); headers with a menu show a
+> "⋮" button (on hover; always on touch screens, where the header reserves 28px for it);
+> `fixStart`/`fixEnd`, `searchPlaceholder` and `filterOperationLabel` no longer name controls — the
+> names come from `fixStartLabel`/`fixEndLabel`, `searchPanelLabel` and
+> `filterOperationButtonLabel`; languages added with `setGridTranslation` get the new keys in
+> English until translated.
 
 ---
 
@@ -882,10 +912,10 @@ outside closes it. The last visible column cannot be hidden.
 
 | Event | Detail | Fired when |
 | ----- | ------ | ---------- |
-| `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size). `nextColumn*` only in `next-column` mode. |
+| `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size, column header menu). `nextColumn*` only in `next-column` mode. |
 | `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column in the chooser. |
 | `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user fixes/unfixes a column in the chooser. |
-| `u-grid-column-reorder` | `{ column, index, previousIndex }` | The user moves a column by drag and drop (positions among regular columns, hidden ones included). `fromIndex`/`toIndex` are deprecated aliases. |
+| `u-grid-column-reorder` | `{ column, index, previousIndex }` | The user moves a column by drag and drop, `Alt+Shift+←/→` or the column header menu (positions among regular columns, hidden ones included). `fromIndex`/`toIndex` are deprecated aliases. |
 
 All events bubble and are `composed`. Unlike sorting and grouping, these column events fire **only
 for user gestures**: changes made through the API (`setColumnWidth`, `moveColumn`, a new `width` or
@@ -1015,10 +1045,10 @@ interface GridI18n {
   columnChooser: string;       // column chooser button and title
   hideColumn: string;          // checkbox hint / drop-to-hide hint in the chooser
   showColumn: string;          // checkbox hint for a hidden column
-  fixStart: string;            // "fix to the start" toggle in the chooser
-  fixEnd: string;              // "fix to the end" toggle in the chooser
+  fixStart: string;            // tooltip of the "fix to the start" toggle (its name is fixStartLabel)
+  fixEnd: string;              // tooltip of the "fix to the end" toggle (its name is fixEndLabel)
   unfix: string;               // hint of a pressed fix toggle
-  autoSize: string;            // resize handle hint (double-click to auto-size)
+  autoSize: string;            // resize handle hint: "Double-click or press Enter to auto-size"
   summarySum: string;          // "Sum"
   summaryMin: string;          // "Min"
   summaryMax: string;          // "Max"
@@ -1038,14 +1068,14 @@ interface GridI18n {
   // filterNoneOf, filterIsBlank, filterIsNotBlank
   filterReset: string;         // last item of the operation menu
   filterEditorLabel: string;   // filter row editor name: "Filter {column}"
-  filterOperationLabel: string; // operation button / menu name
+  filterOperationLabel: string; // operation menu name (the button uses filterOperationButtonLabel)
   headerFilterLabel: string;   // header filter button / popover name: "Filter options for {column}"
   filterBetweenStart: string;  // "From" (first `between` editor)
   filterBetweenEnd: string;    // "To"
   filterAll: string;           // "(All)" in the boolean filter row select
   filterBlanks: string;        // "(Blanks)" in the header filter
   filterClear: string;         // "Clear filter" in the header filter
-  searchPlaceholder: string;   // "Search…" (search panel and header filter search)
+  searchPlaceholder: string;   // "Search…" placeholder (names: searchPanelLabel, headerFilterSearchLabel)
   selectAll: string;           // "Select all"
   ok: string;
   cancel: string;
@@ -1056,10 +1086,38 @@ interface GridI18n {
   columnMovedAnnouncement: string;  // "{column} moved to position {position} of {count}"
   groupedAnnouncement: string;      // "Grouped by {column}"
   ungroupedAnnouncement: string;    // "Ungrouped {column}"
+  columnHeaderMenuLabel: string;    // column header menu and its button: "Options for {column}"
+  groupColumn: string;              // "Group by this column"
+  moveLeft: string;                 // "Move left" (physical side, also in RTL)
+  moveRight: string;                // "Move right"
+  autoSizeColumn: string;           // "Auto-size column"
+  increaseColumnWidth: string;      // "Increase width"
+  decreaseColumnWidth: string;      // "Decrease width"
+  columnFiltered: string;           // header description: "Filtered"
+  columnFixedStart: string;         // header description: "Pinned to start"
+  columnFixedEnd: string;           // header description: "Pinned to end"
+  columnSortPriority: string;       // header description: "Sorted {order}, priority {priority}"
+  sortedWithPriorityAnnouncement: string; // "Sorted by {column}, {order}, priority {priority}"
+  groupLevelChangedAnnouncement: string;  // "{column} moved to grouping level {level} of {count}"
+  groupingClearedAnnouncement: string;    // "All columns ungrouped"
+  groupsExpandedAnnouncement: string;     // "All groups expanded"
+  groupsCollapsedAnnouncement: string;    // "All groups collapsed"
+  columnResizedAnnouncement: string;      // "{column} width: {width} px"
+  resizeHandleLabel: string;        // resize handle name: "Resize {column}"
+  groupPanelLabel: string;          // group panel name: "Grouping"
+  filterOperationButtonLabel: string; // "Filter operation for {column}: {operation}"
+  searchPanelLabel: string;         // search panel name: "Search in the grid"
+  headerFilterSearchLabel: string;  // header filter search name: "Search values"
+  fixStartLabel: string;            // chooser toggle name: "Pin {column} to start"
+  fixEndLabel: string;              // chooser toggle name: "Pin {column} to end"
+  headerFilterTruncated: string;    // "Showing {shown} of {count}"
+  headerFilterSearchAnnouncement: string;   // after searching the header filter: "Values: {count}"
+  selectAllResults: string;         // header filter "select all" while searching: "Select all results ({count})"
 }
 ```
 
-`{column}`, `{order}`, `{count}` and `{position}` are placeholders filled by the grid (`{order}` with `sortAscending` /
+`{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}` and
+`{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
 `sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd` and `unpin` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
@@ -1081,7 +1139,8 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `summary`          | *(property only)*     | `GridSummary \| null` | `null` | Totals and group summaries. See [Summaries](#summaries). |
 | `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default (initial default; changing it resets the expansion state). |
 | `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
-| `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Context menu of the group panel (ungroup, expand/collapse all). |
+| `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Context menu of the group panel (ungroup, move, expand/collapse all). |
+| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Context menu of the column headers (right-click, "⋮", Shift+F10): group, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
 | `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
@@ -1121,15 +1180,20 @@ The grid is themed with CSS custom properties (set them on `u-grid` or an ancest
 `@universal-material` design tokens (`--u-color-*`, typography tokens, …) as fallbacks, so it
 blends into that design system automatically when present.
 
+On a dark page without those tokens, set `--u-grid-background-color` and `--u-grid-color` together:
+the grid has its own text color (it no longer inherits the page's), and its grid lines and hover
+tint derive from it.
+
 ### Common custom properties
 
 | Property | Default | Description |
 | -------- | ------- | ----------- |
 | `--u-grid-background-color` | surface token | Grid background. |
+| `--u-grid-color` | on-surface token | Text color of the grid (not inherited from the page). |
 | `--u-grid-striped-background-color` | surface token | Background of even rows when `striped`. |
 | `--u-grid-header-background-color` | grid background | Header / sticky background. |
 | `--u-grid-row-hover-opacity` | state-layer token / `8%` | Tint of the data row under the pointer (`0%` disables it). |
-| `--u-grid-toolbar-height` | `56px` | Height of the bar above the table (group panel, chooser button). |
+| `--u-grid-toolbar-height` | `56px` | Minimum height of the bar above the table (group panel, search, chooser button); it grows when its content wraps. |
 | `--u-grid-toolbar-padding` | `8px 16px` | Bar padding (or `--u-grid-toolbar-block-padding` / `--u-grid-toolbar-inline-padding`). |
 | `--u-grid-header-cell-height` | `46px` | Column header height. |
 | `--u-grid-header-cell-padding` | `13px 16px` | Header cell padding. |
@@ -1149,11 +1213,14 @@ blends into that design system automatically when present.
 | `--u-grid-group-chip-font-size`, `-font-weight`, `-line-height`, `-letter-spacing` | label-large tokens | Group chip text. |
 | `--u-grid-focus-ring-color` / `--u-grid-focus-ring-width` | primary token / `2px` | Keyboard focus ring. |
 | `--u-grid-selected-row-background-color` | primary token at 12% | Background of selected rows. |
+| `--u-grid-selected-row-indicator-color` | primary token | Bar at the start of selected rows (selection is not shown by color alone). |
+| `--u-grid-selected-row-indicator-width` | `3px` | Thickness of that bar; `0` hides it. |
 | `--u-grid-sorted-header-color` | text color | Text color of sorted column headers. |
 | `--u-grid-sort-indicator-size` | `1.125em` | Size of the sort arrow. |
 | `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
-| `--u-grid-resize-handle-width` | `8px` | Width of the column resize handle. |
+| `--u-grid-resize-handle-width` | `24px` | Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on (WCAG 2.5.8). |
+| `--u-grid-resize-handle-color` | `--u-grid-group-toggle-color` | Color of the resize bar shown on hover/focus. |
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
@@ -1199,6 +1266,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `summary-cell` | Cells with summaries (footers and `display: 'column'` in group rows). |
 | `group-count` | Count and inline summaries in a group row. |
 | `group-panel-menu` | The group panel context menu. |
+| `column-header-menu` | The column header context menu. |
+| `column-header-menu-button` | The "⋮" button that opens the column header menu. |
 | `filter-row` | The filter row (`<tr>`). |
 | `filter-cell` | Filter row cells. |
 | `filter-editor` | Filter row inputs and selects. |
@@ -1330,7 +1399,7 @@ All bubble and are `composed`.
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column in the chooser. |
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column in the chooser. |
-| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop or `Alt+Shift+←/→`). |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
 

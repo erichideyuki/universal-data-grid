@@ -48,7 +48,7 @@ describe('redimensionar', () => {
     expect(handle.getAttribute('role')).toBe('separator');
     expect(handle.getAttribute('aria-orientation')).toBe('vertical');
     expect(handle.getAttribute('aria-valuenow')).toBe('120');
-    expect(handle.getAttribute('aria-label')).toBe('C0');
+    expect(handle.getAttribute('aria-label')).toBe('Resize C0');
   });
 
   it('sem column-resizing não há alça; resizable: false tira só daquela coluna', async () => {
@@ -58,7 +58,7 @@ describe('redimensionar', () => {
     grid.columnResizing = true;
     grid.columns = [{ ...grid.columns[0], resizable: false }, grid.columns[1]];
     await settle(grid);
-    expect(handles(grid).map(h => h.getAttribute('aria-label'))).toEqual(['C1']);
+    expect(handles(grid).map(h => h.getAttribute('aria-label'))).toEqual(['Resize C1']);
   });
 
   it('arrastar respeita a largura mínima e avisa ao soltar', async () => {
@@ -459,7 +459,7 @@ describe('<u-grid-column> declarativo', () => {
     await settle(grid);
 
     expect(headerLabels(grid)).toEqual(['B', 'A', 'D']);
-    expect(handles(grid).map(h => [h.getAttribute('aria-label'), h.getAttribute('aria-valuemin')])).toEqual([['B', '80'], ['A', '40']]);
+    expect(handles(grid).map(h => [h.getAttribute('aria-label'), h.getAttribute('aria-valuemin')])).toEqual([['Resize B', '80'], ['Resize A', '40']]);
 
     const c = grid.querySelector<HTMLElement & GridColumnDef>('u-grid-column[path=c]')!;
     c.visible = true;

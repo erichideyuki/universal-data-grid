@@ -32,6 +32,14 @@ export interface HeaderCellContext {
   filterButton?: TemplateResult | typeof nothing;
   /** A coluna tem filtro (classe `filtered`). */
   filtered?: boolean;
+  /** Descrição do cabeçalho (prioridade da ordenação, fixada, filtrada; spec 17, A14). */
+  description?: string;
+  /** `aria-keyshortcuts` com as teclas que valem nesta coluna (spec 17, A13). */
+  keyShortcuts?: string;
+  /** Clique direito: menu do cabeçalho (spec 17, A1). */
+  onContextMenu?: (event: MouseEvent) => void;
+  /** Botão "⋮" do menu do cabeçalho (alternativa de toque ao clique direito). */
+  menuButton?: TemplateResult | typeof nothing;
 }
 
 const ariaSort = (order: GridSortOrder | undefined): 'ascending' | 'descending' | 'none' =>
@@ -60,6 +68,10 @@ export const renderSortIndicator = (order: GridSortOrder | undefined, sortIndex?
       </span>`
     : nothing;
 
+/** Descrição oculta do cabeçalho (lida por \`aria-describedby\`; spec 17, A14). */
+const renderDescription = (colIndex: number, description: string): TemplateResult | typeof nothing =>
+  description ? html`<span id="header-description-${colIndex}" hidden>${description}</span>` : nothing;
+
 export const renderHeaderCell = ({
   column,
   classes,
@@ -75,6 +87,10 @@ export const renderHeaderCell = ({
   trailing = nothing,
   filterButton = nothing,
   filtered = false,
+  description = '',
+  keyShortcuts,
+  onContextMenu,
+  menuButton = nothing,
 }: HeaderCellContext): TemplateResult => html`
   <th
     class="header-column ${classMap({ ...classes, sortable, sorted: !!order, filtered })}"
@@ -83,10 +99,13 @@ export const renderHeaderCell = ({
     role="columnheader"
     aria-colindex="${colIndex}"
     aria-labelledby="header-text-${colIndex}"
-    aria-sort=${ifDefined(sortable || order ? ariaSort(order) : undefined)}
+    aria-sort=${ifDefined(sortable || order ? ariaSort(sortIndex === undefined || sortIndex === 1 ? order : undefined) : undefined)}
+    aria-describedby=${ifDefined(description ? `header-description-${colIndex}` : undefined)}
+    aria-keyshortcuts=${ifDefined(keyShortcuts || undefined)}
     data-col=${colIndex - 1}
     tabindex=${tabIndex}
     @pointerdown=${sortable ? onPointerDown : nothing}
+    @contextmenu=${onContextMenu ?? nothing}
     @click=${sortable ? (event: MouseEvent) => onActivate(column, event) : nothing}
     @keydown=${sortable || onKeyDown
       ? (event: KeyboardEvent) => {
@@ -98,5 +117,6 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}
+    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${column.label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
+      renderDescription(colIndex, description)}
   </th>`;

@@ -9,6 +9,7 @@ import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
 import { booleanAttribute, type LegacyAttributes } from './attribute-converters.js';
+import { cycleWithin, focusFirstWithin } from './features/cell-content-focus.js';
 import {
   ColumnChooserController,
   columnChooserIcon,
@@ -25,7 +26,9 @@ import {
   type GroupPanelMenuAction,
   GroupPanelMenuController,
   isContextMenuKey,
+  type MenuItem,
   renderGroupPanelMenu,
+  renderMenuItems,
 } from './features/group-panel-menu.js';
 import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
 import {
@@ -45,7 +48,7 @@ import {
   measureContentWidth,
   type WidthBounds,
 } from './features/resize.js';
-import { renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
+import { Debouncer, renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
 import {
   countSelected,
   type GridSelectionMode,
@@ -448,37 +451,13 @@ const CHECK_PATH = 'M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z';
 const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 
 /** Linha de dados (não grupo nem rodapé de grupo). */
+/** Ações do menu do cabeçalho das colunas (spec 17, A1). */
+type ColumnHeaderMenuAction = 'groupColumn' | 'moveLeft' | 'moveRight' | 'autoSizeColumn' | 'increaseColumnWidth' | 'decreaseColumnWidth';
+
 const isDataRow = (row: Row | undefined): row is DataRow => !!row && !row.isGroup && !row.isFooter;
 
 /** Identidade estável da linha ativa: item (dados), chave (grupo, rodapé de grupo) ou o rodapé de totais. */
 type ActiveRef = { item: unknown } | { rowKey: string } | { totals: true };
-
-const FOCUSABLE = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled]):not([type="hidden"])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[contenteditable=""]',
-  '[contenteditable="true"]',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ');
-
-/** Enter/F2: foca o 1º elemento interativo da célula (inclusive o projetado por `renderer`). */
-const focusFirstWithin = (cell: HTMLElement): boolean => {
-  const slotted = [...cell.querySelectorAll('slot')].flatMap(slot => slot.assignedElements({ flatten: true }));
-
-  for (const root of [cell, ...slotted]) {
-    const target = root !== cell && root.matches(FOCUSABLE) ? root : root.querySelector(FOCUSABLE);
-
-    if (target instanceof HTMLElement || target instanceof SVGElement) {
-      target.focus();
-      return true;
-    }
-  }
-
-  return false;
-};
 
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
@@ -491,21 +470,22 @@ const focusFirstWithin = (cell: HTMLElement): boolean => {
  *
  * @fires {CustomEvent<GridSortEventDetail>} u-grid-sorting - Before the sorting changes (user or API). Cancelable.
  * @fires {CustomEvent<GridSortEventDetail>} u-grid-sort-change - After the sorting changed (user or API).
- * @fires {CustomEvent<GridGroupEventDetail>} u-grid-group-change - After the grouping changed (user or API).
+ * @fires {CustomEvent<GridGroupEventDetail>} u-grid-group-change - After the grouping changed (user — drag, Ctrl+G, group panel or column header menu — or API).
  * @fires {CustomEvent<GridGroupExpansionChangeEventDetail>} u-grid-group-expansion-change - After groups were expanded or collapsed (user or API).
  * @fires {CustomEvent<GridFilterEventDetail>} u-grid-filter-change - After the user filtered (filter row, header filter, search panel) or `clearFilter()` ran.
  * Setting `filterValue`/`searchText` does not fire it.
- * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard or double-click auto-size).
+ * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard, double-click auto-size or the column header menu).
  * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column in the column chooser.
  * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column in the column chooser.
- * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop or Alt+Shift+←/→ on the header).
+ * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
  *
  * @cssprop --u-grid-background-color - Grid background.
+ * @cssprop --u-grid-color - Text color of the grid. Default: on-surface token (`rgb(29, 27, 32)`).
  * @cssprop --u-grid-striped-background-color - Background of even rows when `striped`.
  * @cssprop --u-grid-header-background-color - Header and sticky cells background.
- * @cssprop --u-grid-toolbar-height - Height of the bar above the table (group panel, chooser button). Default `56px`.
+ * @cssprop --u-grid-toolbar-height - Minimum height of the bar above the table (group panel, search, chooser button); it grows when its content wraps. Default `56px`.
  * @cssprop --u-grid-toolbar-padding - Padding of the bar. Default `8px 16px`.
  * @cssprop --u-grid-toolbar-block-padding - Block padding of the bar. Default `8px`.
  * @cssprop --u-grid-toolbar-inline-padding - Inline padding of the bar. Default: the cell inline padding.
@@ -538,11 +518,14 @@ const focusFirstWithin = (cell: HTMLElement): boolean => {
  * @cssprop --u-grid-focus-ring-color - Keyboard focus ring color.
  * @cssprop --u-grid-focus-ring-width - Keyboard focus ring width. Default `2px`.
  * @cssprop --u-grid-selected-row-background-color - Background of selected rows. Default: primary color at 12%.
+ * @cssprop --u-grid-selected-row-indicator-color - Bar at the start of selected rows (selection is not shown by color alone). Default: primary color.
+ * @cssprop --u-grid-selected-row-indicator-width - Thickness of that bar; `0` hides it. Default `3px`.
  * @cssprop --u-grid-sorted-header-color - Text color of sorted column headers.
  * @cssprop --u-grid-sort-indicator-size - Size of the sort arrow. Default `1.125em`.
  * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
  * @cssprop --u-grid-drop-indicator-width - Drop indicator thickness. Default `3px`.
- * @cssprop --u-grid-resize-handle-width - Width of the column resize handle. Default `8px`.
+ * @cssprop --u-grid-resize-handle-width - Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on. Default `24px` (WCAG 2.5.8).
+ * @cssprop --u-grid-resize-handle-color - Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.
  * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
  * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
@@ -574,6 +557,8 @@ const focusFirstWithin = (cell: HTMLElement): boolean => {
  * @csspart summary-cell - Cells with summaries (footers and `display: 'column'` in group rows).
  * @csspart group-count - Count and inline summaries in a group row (`"(3, Sum of Population: 1,234)"`).
  * @csspart group-panel-menu - The group panel context menu.
+ * @csspart column-header-menu - The column header context menu.
+ * @csspart column-header-menu-button - The "⋮" button that opens the column header menu.
  * @csspart filter-row - The filter row (`<tr>`) below the column headers.
  * @csspart filter-cell - Cells of the filter row.
  * @csspart filter-editor - Editors (inputs and selects) of the filter row.
@@ -795,10 +780,21 @@ export class DataGrid extends LitElement {
 
   /**
    * Context menu of the group panel (right-click, Shift+F10 or the context
-   * menu key on a group chip): ungroup, ungroup all, expand/collapse all
-   * groups. Default `true`; `group-panel-menu="false"` disables it.
+   * menu key on a group chip): ungroup, move the chip left/right (grouping
+   * level), ungroup all, expand/collapse all groups. Default `true`;
+   * `group-panel-menu="false"` disables it.
    */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'group-panel-menu' }) groupPanelMenu = true;
+
+  /**
+   * Context menu of the column headers (right-click, the "⋮" button, Shift+F10
+   * or the context menu key on a header): group by the column, move it
+   * left/right, auto-size or widen/narrow it. It is the single-pointer
+   * alternative to dragging (WCAG 2.5.7): with `column-header-menu="false"`
+   * the host must provide one. Only actions that apply to the column are
+   * listed; without any, the browser menu is kept. Default `true`.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'column-header-menu' }) columnHeaderMenu = true;
   // ---------------------------------------------------------------- filtro
 
   /** Shows the filter row below the column headers (an editor and an operation menu per filterable column). */
@@ -934,6 +930,8 @@ export class DataGrid extends LitElement {
    * ocultada), o foco vai à célula ativa realocada em vez de cair no `<body>`.
    */
   #hadFocusBeforeRender = false;
+  /** Anúncio da largura depois de Alt+←/→ no cabeçalho (espera a sequência de teclas; solto no disconnect). */
+  readonly #resizeAnnouncer = new Debouncer<'resize'>(this);
   /** Colunas navegáveis do último render (caixa de seleção + visíveis). */
   #navColumns: NavColumn[] = [];
   readonly #tableRef: Ref<HTMLTableElement> = createRef();
@@ -1105,11 +1103,15 @@ export class DataGrid extends LitElement {
   readonly #resize = new ColumnResizeController(this);
   readonly #chooser = new ColumnChooserController(this);
   readonly #groupMenu = new GroupPanelMenuController(this);
+  readonly #columnMenu = new GroupPanelMenuController(this, 'column-header-menu');
   readonly #filtering = new FilteringController(this);
   readonly #filterRow = new FilterRowController(this);
   readonly #headerFilterPopover = new HeaderFilterController(this);
   readonly #search = new SearchController(this);
   #resizeObserver: ResizeObserver | undefined;
+  /** Barra (painel de grupos, busca, seletor) observada para a altura que prende o cabeçalho. */
+  #observedToolbar: HTMLElement | null = null;
+  readonly #toolbarRef: Ref<HTMLDivElement> = createRef();
 
   /**
    * Quantos elementos estão registrados no interactjs (diagnóstico/testes).
@@ -1147,7 +1149,8 @@ export class DataGrid extends LitElement {
         + this.#autoWidths.size + this.#renderedWidths.size + this.#hostOptions.size,
       chooserDropzones: this.#chooser.dropzones,
       filterRowState: this.#filterRow.size,
-      filterTimers: this.#filterRow.timers + this.#search.timers + (this.#filtering.pending ? 1 : 0),
+      filterTimers: this.#filterRow.timers + this.#search.timers + this.#headerFilterPopover.timers + (this.#filtering.pending ? 1 : 0),
+      announceTimers: this.#resizeAnnouncer.size,
       headerFilterOpen: this.#headerFilterPopover.open ? 1 : 0,
       selectedKeys: this.#selection.size,
     };
@@ -1193,10 +1196,13 @@ export class DataGrid extends LitElement {
     this.renderRoot?.querySelectorAll('.move-container').forEach(ghost => ghost.remove());
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
+    this.#observedToolbar = null;
   }
 
   override willUpdate(changed: PropertyValues<this>) {
-    this.#hadFocusBeforeRender = !!this.shadowRoot?.activeElement;
+    // \`:focus-within\` cobre também o conteúdo do renderer (light DOM projetado por slot).
+    // (No SSR não há \`matches\` nem foco.)
+    this.#hadFocusBeforeRender = !!this.shadowRoot?.activeElement || (typeof this.matches === 'function' && this.matches(':focus-within'));
 
     // `single` guarda uma chave só. Evento só na troca `multiple` → `single`
     // de um grid já renderizado; na inicialização (setters) corta calado.
@@ -1218,6 +1224,15 @@ export class DataGrid extends LitElement {
     }
 
     const menuColumn = this.#groupMenu.column;
+
+    const columnMenuColumn = this.#columnMenu.column;
+
+    if (this.#columnMenu.open && (
+      !this.columnHeaderMenu
+      || !columnMenuColumn
+      || !this._visibleColumns.includes(columnMenuColumn))) {
+      this.#columnMenu.hide();
+    }
 
     if (this.#groupMenu.open && (
       !this.groupPanelMenu
@@ -1253,6 +1268,7 @@ export class DataGrid extends LitElement {
 
   override updated(changed: PropertyValues<this>) {
     const virtualizer = this.#virtualizer;
+    this.#observeToolbar();
 
     // Com `wrap` a linha pode crescer: mede as renderizadas a cada render
     // (alturas por índice; trocar as linhas ou o `rowHeight` as esquece).
@@ -1295,7 +1311,19 @@ export class DataGrid extends LitElement {
       this.renderRoot.querySelector<HTMLElement>('.group[tabindex="0"]')?.focus();
     }
 
-    if (this.#hadFocusBeforeRender && !this.shadowRoot?.activeElement) {
+    if (this.#hadFocusBeforeRender) {
+      // O conteúdo de uma célula removida sai num microtask (grid-custom-cell):
+      // confere de novo depois dele.
+      void this.updateComplete.then(() => {
+        // Só pelo activeElement: o \`:focus-within\` fica velho até o "focus fixup" do navegador.
+        if (!this.shadowRoot?.activeElement && (!document.activeElement || document.activeElement === document.body)) {
+          this.#focusPending = true;
+          this.requestUpdate();
+        }
+      });
+    }
+
+    if (this.#hadFocusBeforeRender && !this.shadowRoot?.activeElement && !this.matches(':focus-within')) {
       this.#hadFocusBeforeRender = false;
       this.#focusPending = true;
       this.#afterActiveRender();
@@ -2216,12 +2244,49 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    this.#resizeObserver = new ResizeObserver(() => {
-      this.#layoutDirty = true;
-      this.requestUpdate();
+    this.#resizeObserver = new ResizeObserver(entries => {
+      if (entries.some(entry => entry.target === scroller)) {
+        this.#layoutDirty = true;
+        this.requestUpdate();
+      }
+
+      this.#syncToolbarOffset();
     });
 
     this.#resizeObserver.observe(scroller);
+    this.#observeToolbar();
+  }
+
+  /**
+   * A barra quebra linha (WCAG 1.4.10, spec 17 A9): o cabeçalho das colunas
+   * prende abaixo da altura medida dela, não da \`--u-grid-toolbar-height\`.
+   */
+  #observeToolbar(): void {
+    const toolbar = this.#toolbarRef.value ?? null;
+
+    if (!this.#resizeObserver || toolbar === this.#observedToolbar) {
+      return;
+    }
+
+    if (this.#observedToolbar) {
+      this.#resizeObserver.unobserve(this.#observedToolbar);
+    }
+
+    this.#observedToolbar = toolbar;
+
+    if (toolbar) {
+      this.#resizeObserver.observe(toolbar);
+    } else {
+      this._containerRef.value?.style.removeProperty('--_toolbar-offset');
+    }
+  }
+
+  #syncToolbarOffset(): void {
+    const toolbar = this.#observedToolbar;
+
+    if (toolbar?.isConnected) {
+      this._containerRef.value?.style.setProperty('--_toolbar-offset', `${toolbar.offsetHeight}px`);
+    }
   }
 
   /** Sombra das fixas: só aparece quando há conteúdo rolado por baixo delas. */
@@ -2679,11 +2744,15 @@ export class DataGrid extends LitElement {
     const order = this.#orderOf(column);
     const params = { column: column.label ?? '' };
 
+    const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
+    const priority = rowSorting.findIndex(spec => spec.column === column) + 1;
+    const orderText = order === 'asc' ? translation.sortAscending : translation.sortDescending;
+
+    // Com 2+ colunas, a prioridade entra no anúncio (spec 17, A6).
     this.#announcement = withRepeatMark(order
-      ? formatMessage(translation.sortedAnnouncement, {
-        ...params,
-        order: order === 'asc' ? translation.sortAscending : translation.sortDescending,
-      })
+      ? rowSorting.length > 1 && priority > 0
+        ? formatMessage(translation.sortedWithPriorityAnnouncement, { ...params, order: orderText, priority: String(priority) })
+        : formatMessage(translation.sortedAnnouncement, { ...params, order: orderText })
       : formatMessage(translation.sortClearedAnnouncement, params), this.#announcement);
   }
 
@@ -3387,9 +3456,14 @@ export class DataGrid extends LitElement {
       if (event.key === 'Escape') {
         event.preventDefault();
         cell.focus();
+      } else if (event.key === 'Tab' && position.row !== HEADER_ROW && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        // Conteúdo da célula: Tab circula entre os focáveis dela (spec 17, A12).
+        if (cycleWithin(cell, path[0] as Element, event.shiftKey)) {
+          event.preventDefault();
+        }
       } else if (event.key === 'F2' && position.row === HEADER_ROW) {
         // F2 percorre o conteúdo do cabeçalho (spec 05: funil, depois a alça) e volta à célula.
-        const controls = [...cell.querySelectorAll<HTMLElement>('.header-filter-button, .resize-handle')];
+        const controls = [...cell.querySelectorAll<HTMLElement>('.header-filter-button, .column-header-menu-button, .resize-handle')];
         const next = controls[controls.indexOf(path[0] as HTMLElement) + 1] ?? cell;
         event.preventDefault();
         next.focus();
@@ -3436,6 +3510,11 @@ export class DataGrid extends LitElement {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         this.#toggleGroup(row);
+      } else if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
+        // Ctrl+G na linha de grupo desagrupa a coluna dela (spec 17, A8): sem o
+        // painel de grupos é o único caminho de volta do Ctrl+G do cabeçalho.
+        event.preventDefault();
+        this.#userUngroup(row.column);
       }
 
       return;
@@ -3498,9 +3577,21 @@ export class DataGrid extends LitElement {
       return true;
     }
 
+    if (isContextMenuKey(event)) {
+      // Menu do cabeçalho pelo teclado (spec 17, A1); abre sob o cabeçalho.
+      if (this.columnHeaderMenu && this.#columnMenuItems(column).length) {
+        event.preventDefault();
+        this.#columnMenu.show({ column, returnFocus: cell });
+      }
+
+      return true;
+    }
+
     if (event.key === 'F2') {
-      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): funil, depois a alça.
-      const target = cell.querySelector<HTMLElement>('.header-filter-button') ?? cell.querySelector<HTMLElement>('.resize-handle');
+      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): funil, menu, alça.
+      const target = cell.querySelector<HTMLElement>('.header-filter-button')
+        ?? cell.querySelector<HTMLElement>('.column-header-menu-button')
+        ?? cell.querySelector<HTMLElement>('.resize-handle');
 
       if (target) {
         event.preventDefault();
@@ -3615,7 +3706,7 @@ export class DataGrid extends LitElement {
 
       if (target >= 0 && target < count) {
         this._userGroupColumn(column, forward ? target + 1 : target);
-        this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+        this.#announceGroupLevel(column);
         this.#focusChip(target);
       }
 
@@ -3624,17 +3715,8 @@ export class DataGrid extends LitElement {
 
     if ((ctrl && !event.altKey && event.key.toLowerCase() === 'g') || event.key === 'Delete') {
       event.preventDefault();
-      this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
-      this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
       this.#activeChip = Math.min(index, Math.max(count - 2, 0));
-      // O foco vai ao cabeçalho da coluna devolvida (fim das comuns).
-      void this.updateComplete.then(() => {
-        const col = this.#currentNavColumns().indexOf(column);
-
-        if (col >= 0 && this.showColumnHeaders) {
-          this.#setActive({ row: HEADER_ROW, col }, 'user', { focus: true });
-        }
-      });
+      this.#userUngroup(column);
       return;
     }
 
@@ -3651,6 +3733,44 @@ export class DataGrid extends LitElement {
       event.preventDefault();
       this.#onGroupChipActivate(column, event);
     }
+  }
+
+  /** Novo nível de uma coluna agrupada (Alt+Shift+←/→ no chip ou menu do painel). */
+  #announceGroupLevel(column: GridColumnDef): void {
+    this.#announce(formatMessage(this.#translation.groupLevelChangedAnnouncement, {
+      column: column.label ?? '',
+      level: String(this._groupColumns.indexOf(column) + 1),
+      count: String(this._groupColumns.length),
+    }));
+  }
+
+  /** Largura da coluna depois de redimensionar pelo cabeçalho (teclado: com espera; menu: na hora). */
+  #announceWidth(column: GridColumnDef, delay: number): void {
+    const announce = () => this.#announce(formatMessage(this.#translation.columnResizedAnnouncement, {
+      column: column.label ?? '',
+      width: String(Math.round(this.#widthOf(column) ?? this._boundsOf(column).width)),
+    }));
+
+    if (delay) {
+      this.#resizeAnnouncer.run('resize', announce, delay);
+    } else {
+      this.#resizeAnnouncer.cancel('resize');
+      announce();
+    }
+  }
+
+  /** Desagrupa pelo teclado (chip ou linha de grupo): anuncia e leva o foco ao cabeçalho da coluna devolvida. */
+  #userUngroup(column: GridColumnDef): void {
+    this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
+    this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
+    // O foco vai ao cabeçalho da coluna devolvida (fim das comuns); sem cabeçalho, a guarda de foco acha a célula ativa.
+    void this.updateComplete.then(() => {
+      const col = this.#currentNavColumns().indexOf(column);
+
+      if (col >= 0 && this.showColumnHeaders) {
+        this.#setActive({ row: HEADER_ROW, col }, 'user', { focus: true });
+      }
+    });
   }
 
   #focusChip(index: number): void {
@@ -3732,6 +3852,7 @@ export class DataGrid extends LitElement {
           : nothing)}
       </div>
       ${this.#inTextLanguage(this.#groupMenu.open ? this.#renderGroupPanelMenu() : nothing)}
+      ${this.#inTextLanguage(this.#columnMenu.open ? this.#renderColumnHeaderMenu() : nothing)}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" lang=${this.#textLanguage}>${this.#announcement}</div>
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
@@ -3868,19 +3989,83 @@ export class DataGrid extends LitElement {
               // Alt+Shift+←/→ move a coluna (no grid); só Alt+←/→ redimensiona.
               onKeyDown: cell.resizable
                 ? (event: KeyboardEvent) => {
-                  if (!event.shiftKey) {
-                    this.#resize.keyDown(event, column, true);
+                  // Na alça focada o leitor lê o aria-valuenow; no cabeçalho, anuncia a largura (spec 17, A6).
+                  if (!event.shiftKey && this.#resize.keyDown(event, column, true)) {
+                    this.#announceWidth(column, 500);
                   }
                 }
                 : undefined,
               trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
               filterButton: this.headerFilter && isColumnFilterable(column)
-                ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation)
+                ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${index + 1 + offset}`)
                 : nothing,
               filtered: hasColumnCondition(filterValue, column),
+              description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
+              onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
+              menuButton: this.#renderColumnMenuButton(column),
+              keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
             });
           })}
         </tr>`;
+  }
+
+  /**
+   * Descrição do cabeçalho (spec 17, A14): prioridade da ordenação (só a 1ª
+   * coluna leva \`aria-sort\`, a ARIA quer um cabeçalho por vez), fixada e
+   * filtrada, num texto só separado por vírgula.
+   */
+  #headerDescription(column: GridColumnDef, order: GridSortOrder | undefined, priority: number, multiple: boolean, filtered: boolean): string {
+    const translation = this.#translation;
+    const parts: string[] = [];
+
+    if (order && multiple && priority > 1) {
+      parts.push(formatMessage(translation.columnSortPriority, {
+        order: order === 'asc' ? translation.sortAscending : translation.sortDescending,
+        priority: String(priority),
+      }));
+    }
+
+    const fixed = this._fixedOf(column);
+
+    if (fixed) {
+      parts.push(fixed === 'start' ? translation.columnFixedStart : translation.columnFixedEnd);
+    }
+
+    if (filtered) {
+      parts.push(translation.columnFiltered);
+    }
+
+    return parts.join(', ');
+  }
+
+  /** \`aria-keyshortcuts\` do cabeçalho: só as teclas que valem para a coluna (nomes do UI Events). */
+  #headerKeyShortcuts(column: GridColumnDef, resizable: boolean): string {
+    const keys: string[] = [];
+    const funnel = this.headerFilter && isColumnFilterable(column);
+
+    if (this.#hasColumnMenu(column)) {
+      keys.push('Shift+F10');
+    }
+
+    if (isColumnGroupable(column)) {
+      keys.push('Control+G', 'Meta+G');
+    }
+
+    keys.push('Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight');
+
+    if (resizable) {
+      keys.push('Alt+ArrowLeft', 'Alt+ArrowRight');
+    }
+
+    if (funnel) {
+      keys.push('Alt+ArrowDown');
+    }
+
+    if (funnel || resizable || this.#hasColumnMenu(column)) {
+      keys.push('F2');
+    }
+
+    return keys.join(' ');
   }
 
   #renderResizeHandle({ column, bounds, width }: ColumnLayout) {
@@ -3889,7 +4074,7 @@ export class DataGrid extends LitElement {
       class="resize-handle"
       role="separator"
       aria-orientation="vertical"
-      aria-label=${column.label ?? ''}
+      aria-label=${formatMessage(this.#translation.resizeHandleLabel, { column: column.label ?? '' })}
       aria-valuenow=${ifDefined(width === undefined ? undefined : Math.round(width))}
       aria-valuemin=${bounds.min}
       aria-valuemax=${ifDefined(Number.isFinite(bounds.max) ? bounds.max : undefined)}
@@ -4182,7 +4367,7 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
 
     return html`
-      <div class="header" role="toolbar">
+      <div class="header" ${ref(this.#toolbarRef)}>
         ${this.showGroupPanel ? this.#renderGroupPanel() : html`<div class="toolbar-spacer"></div>`}
         ${this.#inTextLanguage(this.showSearchPanel ? renderSearchPanel(this.#search, translation) : nothing)}
         ${this.columnChooser
@@ -4202,7 +4387,12 @@ export class DataGrid extends LitElement {
 
   #renderGroupPanel() {
     return html`
-      <div class="group-container" ${ref(this._groupContainerRef)} @contextmenu=${this.#onGroupPanelContextMenu}>
+      <div
+        class="group-container"
+        role="toolbar"
+        aria-label=${this.#translation.groupPanelLabel}
+        ${ref(this._groupContainerRef)}
+        @contextmenu=${this.#onGroupPanelContextMenu}>
         ${this._groupColumns.length
           ? html`
             ${map(this._groupColumns, (column, index) => this.#renderGroupChip(column, index))}
@@ -4236,7 +4426,7 @@ export class DataGrid extends LitElement {
         tabindex=${index === activeChip ? 0 : -1}
         aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
         aria-expanded=${ifDefined(opensMenu ? this.#groupMenu.open && this.#groupMenu.column === column ? 'true' : 'false' : undefined)}
-        aria-keyshortcuts=${ifDefined(menu && sortable ? 'Shift+F10' : undefined)}
+        aria-keyshortcuts=${`${menu && sortable ? 'Shift+F10 ' : ''}Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G`}
         aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
         @focus=${() => {
           this.#activeChip = index;
@@ -4261,7 +4451,8 @@ export class DataGrid extends LitElement {
 
   /** Clique direito no painel (num chip: com "Desagrupar" desta coluna). */
   readonly #onGroupPanelContextMenu = (event: MouseEvent): void => {
-    if (!this.groupPanelMenu || !this._groupColumns.length) {
+    // O hospedeiro pode cancelar na captura e tratar o próprio menu (como no cabeçalho).
+    if (event.defaultPrevented || !this.groupPanelMenu || !this._groupColumns.length) {
       return;
     }
 
@@ -4275,10 +4466,203 @@ export class DataGrid extends LitElement {
     this.#groupMenu.show({ column, returnFocus, x: event.clientX, y: event.clientY });
   };
 
+  /**
+   * Itens do menu do cabeçalho que valem para a coluna (spec 17, A1). "Mover"
+   * fica visível e \`aria-disabled\` no limite do bloco; o resto some quando
+   * não se aplica. Lados físicos: em RTL "esquerda" vai para o fim.
+   */
+  #columnMenuItems(column: GridColumnDef): MenuItem<ColumnHeaderMenuAction>[] {
+    const translation = this.#translation;
+    const items: MenuItem<ColumnHeaderMenuAction>[] = [];
+
+    if (!this._groupColumns.includes(column) && isColumnGroupable(column)) {
+      items.push({ action: 'groupColumn', label: translation.groupColumn });
+    }
+
+    const visible = this._visibleColumns;
+    const index = visible.indexOf(column);
+
+    const canMove = (direction: 1 | -1) => {
+      const neighbor = visible[index + direction];
+      return !!neighbor && this._sameBlock(column, neighbor);
+    };
+
+    const rtl = this._isRtl() ? -1 : 1;
+
+    if (index >= 0 && (canMove(1) || canMove(-1))) {
+      items.push(
+        { action: 'moveLeft', label: translation.moveLeft, disabled: !canMove(-rtl as 1 | -1) },
+        { action: 'moveRight', label: translation.moveRight, disabled: !canMove(rtl) },
+      );
+    }
+
+    if (this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
+      items.push(
+        { action: 'autoSizeColumn', label: translation.autoSizeColumn },
+        { action: 'increaseColumnWidth', label: translation.increaseColumnWidth },
+        { action: 'decreaseColumnWidth', label: translation.decreaseColumnWidth },
+      );
+    }
+
+    return items;
+  }
+
+  /** Há o que pôr no menu (sem medir a direção: roda no render, inclusive no SSR). */
+  #hasColumnMenu(column: GridColumnDef): boolean {
+    if (!this.columnHeaderMenu) {
+      return false;
+    }
+
+    const visible = this._visibleColumns;
+    const index = visible.indexOf(column);
+    const movable = [visible[index - 1], visible[index + 1]].some(neighbor => neighbor && this._sameBlock(column, neighbor));
+
+    return (!this._groupColumns.includes(column) && isColumnGroupable(column))
+      || (index >= 0 && movable)
+      || (this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
+  }
+
+  /** Clique direito no cabeçalho: abre o menu se houver o que fazer (senão fica o do navegador). */
+  #onHeaderContextMenu(event: MouseEvent, column: GridColumnDef): void {
+    // O hospedeiro pode cancelar na captura e tratar o próprio menu.
+    if (event.defaultPrevented || !this.#columnMenuItems(column).length) {
+      return;
+    }
+
+    event.preventDefault();
+    const cell = event.currentTarget as HTMLElement;
+    const position = this.#positionOf(cell);
+
+    // O cabeçalho vira a célula ativa: Esc devolve o foco a ele (roving).
+    if (position) {
+      this.#setActive(position, 'user');
+    }
+
+    this.#columnMenu.show({ column, returnFocus: cell, x: event.clientX, y: event.clientY });
+  }
+
+  /**
+   * Botão "⋮": abre o menu no toque (iOS não tem menu de contexto) e mostra
+   * que ele existe. O ícone é máscara CSS (um nó por cabeçalho; spec 16).
+   */
+  #renderColumnMenuButton(column: GridColumnDef) {
+    if (!this.#hasColumnMenu(column)) {
+      return nothing;
+    }
+
+    const label = formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' });
+    const open = this.#columnMenu.open && this.#columnMenu.column === column;
+
+    return html`<button
+      class="column-header-menu-button"
+      part="column-header-menu-button"
+      type="button"
+      tabindex="-1"
+      aria-haspopup="menu"
+      aria-expanded=${open ? 'true' : 'false'}
+      aria-label=${label}
+      title=${label}
+      @click=${(event: MouseEvent) => {
+        event.stopPropagation();
+
+        // O botão também é alça do arrasto do cabeçalho: o clique que termina um arrasto não abre.
+        if (this.#consumeDrag(event)) {
+          return;
+        }
+
+        if (open) {
+          this.#columnMenu.hide(true);
+          return;
+        }
+
+        const button = event.currentTarget as HTMLElement;
+        const position = this.#positionOf(button.closest('th')!);
+
+        if (position) {
+          this.#setActive(position, 'user');
+        }
+
+        this.#columnMenu.show({ column, returnFocus: button });
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        // Enter/Espaço no botão não podem ordenar a coluna.
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.stopPropagation();
+        }
+      }}></button>`;
+  }
+
+  #renderColumnHeaderMenu() {
+    const column = this.#columnMenu.column!;
+
+    return html`
+      <div
+        class="column-header-menu"
+        part="column-header-menu"
+        .popover=${'manual'}
+        role="menu"
+        aria-label=${formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' })}
+        @contextmenu=${(event: Event) => event.preventDefault()}
+        @keydown=${this.#columnMenu.onKeyDown}>
+        ${renderMenuItems('group-panel-menu-item', this.#columnMenuItems(column), this.#onColumnMenuAction)}
+      </div>`;
+  }
+
+  readonly #onColumnMenuAction = (action: ColumnHeaderMenuAction): void => {
+    const column = this.#columnMenu.column;
+
+    if (!column) {
+      return;
+    }
+
+    if (action === 'moveLeft' || action === 'moveRight') {
+      // Como Alt+Shift+←/→: o foco segue a coluna.
+      this.#columnMenu.hide();
+      const physical = action === 'moveRight' ? 1 : -1;
+      this.#keyboardMoveColumn(column, (physical * (this._isRtl() ? -1 : 1)) as 1 | -1);
+      return;
+    }
+
+    switch (action) {
+      case 'groupColumn':
+        // O cabeçalho sai do DOM: a guarda de foco leva o foco à célula ativa.
+        this.#columnMenu.hide();
+        this._userGroupColumn(column, this._groupColumns.length);
+
+        if (this._groupColumns.includes(column)) {
+          this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+        }
+
+        this.#focusPending = true;
+        break;
+
+      case 'autoSizeColumn':
+        this.#columnMenu.hide(true);
+        this.#userAutoSize(column);
+        void this.updateComplete.then(() => this.#announceWidth(column, 0));
+        break;
+      case 'increaseColumnWidth':
+      case 'decreaseColumnWidth':
+        // O menu fica aberto para repetir o passo.
+        this.#resize.step(column, action === 'increaseColumnWidth' ? 1 : -1);
+        void this.updateComplete.then(() => this.#announceWidth(column, 0));
+        break;
+    }
+  };
+
   #renderGroupPanelMenu() {
+    const column = this.#groupMenu.column;
+    const index = column ? this._groupColumns.indexOf(column) : -1;
+    const count = this._groupColumns.length;
+    // Lados físicos: em RTL a esquerda é o fim da barra.
+    const towardLeft = this._isRtl() ? index + 1 < count : index > 0;
+    const towardRight = this._isRtl() ? index > 0 : index + 1 < count;
+
     return renderGroupPanelMenu({
       translation: this.#translation,
-      column: this.#groupMenu.column,
+      column,
+      canMoveLeft: index >= 0 && towardLeft,
+      canMoveRight: index >= 0 && towardRight,
       onAction: this.#onGroupMenuAction,
       onKeyDown: this.#groupMenu.onKeyDown,
     });
@@ -4288,6 +4672,22 @@ export class DataGrid extends LitElement {
     const column = this.#groupMenu.column;
     const ungroups = action === 'ungroupColumn' || action === 'ungroupAll';
     const chipIndex = column ? this._groupColumns.indexOf(column) : 0;
+
+    if ((action === 'moveLeft' || action === 'moveRight') && column) {
+      // Muda o nível do chip (como Alt+Shift+←/→): o foco segue o chip.
+      const forward = (action === 'moveRight') !== this._isRtl();
+      const target = chipIndex + (forward ? 1 : -1);
+      this.#groupMenu.hide();
+
+      if (target >= 0 && target < this._groupColumns.length) {
+        this._userGroupColumn(column, forward ? target + 1 : target);
+        this.#announceGroupLevel(column);
+        this.#focusChip(target);
+      }
+
+      return;
+    }
+
     // Desagrupar tira o chip que tinha o foco: o foco vai ao chip vizinho (ou ao 1º cabeçalho).
     this.#groupMenu.hide(!ungroups);
 
@@ -4299,17 +4699,21 @@ export class DataGrid extends LitElement {
       case 'ungroupColumn':
         if (column && this._groupColumns.includes(column)) {
           this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
+          this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
         }
 
         break;
       case 'ungroupAll':
         this.#ungroupAll('user');
+        this.#announce(this.#translation.groupingClearedAnnouncement);
         break;
       case 'expandAllGroups':
         this.#setAllExpanded(true, undefined, 'user');
+        this.#announce(this.#translation.groupsExpandedAnnouncement);
         break;
       case 'collapseAllGroups':
         this.#setAllExpanded(false, undefined, 'user');
+        this.#announce(this.#translation.groupsCollapsedAnnouncement);
         break;
     }
   };

@@ -71,9 +71,9 @@ corrigir · 📌 pendente sem mudança de API (fora deste lote).
 | Fantasma do arrasto | 4.1.2 | clone do `th` com `role`/`tabindex`/`aria-sort` fora da tabela | `aria-hidden` + sem `tabindex` (sem `inert`: ele recebe o clique final) | não | BAIXA | ✅ |
 | Anel de foco do menu de operação | 2.4.7 | `outline-offset` positivo cortado pelo `overflow` | `-2px` | não | BAIXA | ✅ |
 
-### Aguardam aval (mudam API ou comportamento visível ao hospedeiro)
+### Aprovados pelo usuário e implementados (A1–A14)
 
-| # | Item | WCAG | Problema | Correção proposta | API? | Sev. |
+| # | Item | WCAG | Problema | Correção (feita; nomes finais na seção da proposta) | API? | Sev. |
 |---|---|---|---|---|---|---|
 | A1 | Arrasto sem alternativa de ponteiro único (reordenar, agrupar, nível do chip, redimensionar) | 2.5.7 | teclado não atende 2.5.7 | menu da coluna (clique direito/Shift+F10/botão): "Agrupar", "Mover ←/→", "Ajustar largura"; menu do painel com "Mover ←/→" | sim | ALTA |
 | A2 | Seleção só por cor | 1.4.1, 1.4.11 | linha selecionada 1,19:1 da comum, quase igual ao hover | barra de 3 px no início da linha selecionada (primário, 6,4:1); token `--u-grid-selected-row-indicator-color` | sim | ALTA |
@@ -104,7 +104,7 @@ corrigir · 📌 pendente sem mudança de API (fora deste lote).
 | Mover coluna no limite | 4.1.3 | silêncio | anunciar a posição atual | não | BAIXA | 📌 |
 | Zoom só de texto | 1.4.4 | virtualizador assume `rowHeight` sem `wrap` | medir uma linha de amostra | não | BAIXA | 📌 |
 | Textos cortados nos popovers | 1.4.12 | reticências sem como ler tudo | `white-space: normal` nas listas | não | BAIXA | 📌 |
-| Busca dentro de `role=toolbar` | 1.3.1 | campo de texto numa barra sem nome | com A7 (`groupPanel`/nome da barra) | — | BAIXA | ⏳ |
+| Busca dentro de `role=toolbar` | 1.3.1 | campo de texto numa barra sem nome | o `role=toolbar` passou ao painel de grupos, com nome (`groupPanelLabel`); a busca fica fora | não | BAIXA | ✅ |
 
 ## Testes
 `src/accessibility.browser.test.ts` (21 casos): foco (linha filtrada,
@@ -120,3 +120,150 @@ percorrer cabeçalho → corpo → rodapé; ordenar (ouvir o anúncio); filtrar
 pela linha de filtro e pelo funil (Esc devolve ao funil); agrupar por
 Ctrl+G, expandir/recolher (ouvir o estado — item 🔎); selecionar com
 Espaço e Ctrl+A; abrir o seletor e fixar; `language="ar"` numa página `en`.
+
+## Proposta A1–A14 (aprovada pelo usuário em 2026-11-18: "Approve all")
+
+Nomes e desenho concretos, revisados pelo `webcomponent-api-reviewer` e
+pelo `a11y-reviewer` antes da implementação.
+
+- **A1 — menu do cabeçalho** (alternativa de ponteiro único ao arrasto).
+  Propriedade `columnHeaderMenu` ↔ `column-header-menu`
+  (`booleanAttribute(true)`; `"false"` desliga), irmã de `groupPanelMenu`.
+  Abre com clique direito no cabeçalho, Shift+F10 ou tecla de menu no
+  cabeçalho focado. `role="menu"` + `menuitem`, ↑/↓/Home/End, Esc e ação
+  devolvem o foco ao cabeçalho, Tab fecha. Itens (só os que valem para a
+  coluna): "Group by this column" (agrupável), "Move left"/"Move right"
+  (físicos; desabilitados no limite do bloco), "Auto-size column"
+  (`column-resizing`). Menu do painel ganha "Move left"/"Move right" (nível
+  do chip). `::part(column-header-menu)`. i18n: `columnHeaderMenu`
+  ("Column options"), `groupByColumn`, `moveLeft`, `moveRight`,
+  `autoSizeColumn`. Largura arbitrária segue só por teclado (Alt+←/→) e
+  arrasto; pelo ponteiro sem arrasto, "Auto-size column".
+- **A2** — `--u-grid-selected-row-indicator-color` (padrão
+  `--u-color-primary`): barra de 3 px no início da linha selecionada.
+- **A3** — padrão de `--u-grid-resize-handle-width` 8px → 24px; com
+  `column-resizing`, o `th` reserva a largura da alça no fim
+  (`padding-inline-end`); barra opaca (`--u-grid-group-toggle-color`) no
+  hover/foco.
+- **A4** — `--u-grid-color` (padrão `--u-color-on-surface`,
+  `rgb(29, 27, 32)`) no `:host`.
+- **A5** — funil preenchido quando a coluna tem filtro; i18n
+  `columnFiltered` ("Filtered") na descrição do cabeçalho e do funil.
+- **A6** — i18n `sortedPriorityAnnouncement` ("Sorted by {column},
+  {order}, priority {priority}", com 2+ colunas), `groupLevelAnnouncement`
+  ("{column} moved to grouping level {level} of {count}"),
+  `ungroupedAllAnnouncement`, `groupsExpandedAnnouncement`,
+  `groupsCollapsedAnnouncement`, `columnResizedAnnouncement` ("{column}
+  width: {width} pixels", com espera de 500 ms).
+- **A7** — i18n `resizeColumn` ("Resize {column}", nome da alça),
+  `groupPanel` ("Grouping", nome do painel de grupos, que passa a ser o
+  `role="toolbar"` no lugar da barra inteira), `filterOperationFor`
+  ("Filter operation for {column}: {operation}"), `searchLabel` ("Search in
+  the grid"), `headerFilterSearchLabel` ("Search values"),
+  `fixStartColumn`/`fixEndColumn` ("Pin {column} to start/end").
+- **A8** — Ctrl+G numa linha de grupo desagrupa a coluna dela (o cabeçalho
+  continua agrupando).
+- **A9** — a barra quebra linha (`flex-wrap`); `--u-grid-toolbar-height`
+  vira altura mínima; o cabeçalho das colunas prende abaixo da altura
+  medida.
+- **A10** — popover do funil: lista `role="tree"`
+  (`aria-multiselectable`) com `treeitem` + `aria-checked`/`aria-level`/
+  `aria-expanded`, um ponto de Tab (roving), ↑/↓/Home/End, →/← expandem/
+  recolhem ou vão ao pai/filho, Espaço marca, Enter = OK (também na
+  busca); linha "Showing {shown} of {count}" quando corta em 500;
+  contagem após a busca numa região `status` do popover. i18n
+  `headerFilterTruncated`, `headerFilterValueCount` ("{count} values").
+- **A11** — ↓/↑ no botão de operação abrem o menu no 1º/último item.
+- **A12** — focáveis dentro das células (renderer) ficam `tabindex="-1"`;
+  Enter/F2 entram neles, Esc volta (um ponto de Tab por grid).
+- **A13** — `aria-keyshortcuts` no cabeçalho (conforme os recursos
+  ligados) e nos chips; textos `dragToGroup` ("…or press Ctrl+G on it") e
+  `autoSize` ("Double-click or press Enter to auto-size") nos 14 idiomas.
+- **A14** — descrição do cabeçalho (`aria-describedby` para um texto
+  oculto): "Pinned to start/end" (`columnFixedStart`/`columnFixedEnd`),
+  "Sort priority {priority}" (`sortPriority`, com 2+ colunas) e "Filtered"
+  (A5).
+
+## Implementação de A1–A14 (revisões e decisões)
+
+O `webcomponent-api-reviewer` e o `a11y-reviewer` revisaram a proposta antes
+da implementação. Achados aceitos (nomes finais; os ajustes de nome e os
+acréscimos voltam ao usuário para confirmação junto com a entrega):
+
+- **Chaves renomeadas** em relação à proposta: `fixStartColumn`/`fixEndColumn`
+  → `fixStartLabel`/`fixEndLabel`; `filterOperationFor` →
+  `filterOperationButtonLabel`; `resizeColumn` → `resizeHandleLabel`;
+  `searchLabel` → `searchPanelLabel`; `groupPanel` → `groupPanelLabel`;
+  `sortedPriorityAnnouncement` → `sortedWithPriorityAnnouncement`;
+  `groupLevelAnnouncement` → `groupLevelChangedAnnouncement`;
+  `ungroupedAllAnnouncement` → `groupingClearedAnnouncement`; `sortPriority`
+  → `columnSortPriority` ("Sorted {order}, priority {priority}"); `groupByColumn`
+  → `groupColumn`; `columnHeaderMenu` (texto) → `columnHeaderMenuLabel`
+  ("Options for {column}"). Sem plural: `headerFilterSearchAnnouncement` (era `headerFilterValueCount`) = "Values:
+  {count}", `columnResizedAnnouncement` = "{column} width: {width} px".
+- **Acréscimos** (do `a11y-reviewer`, para fechar o 2.5.7 de verdade):
+  botão "⋮" no cabeçalho (`::part(column-header-menu-button)`; no hover/foco
+  e sempre em telas de toque — o iOS não tem menu de contexto no toque
+  longo); itens "Increase width"/"Decrease width" (`increaseColumnWidth`,
+  `decreaseColumnWidth`; o menu fica aberto para repetir) — largura por
+  ponteiro sem arrasto; "Select all results ({count})" (`selectAllResults`)
+  enquanto há busca no funil; `aria-sort` só na 1ª coluna da ordenação (as
+  outras levam `none` + a descrição com direção e prioridade);
+  `--u-grid-selected-row-indicator-width` (3px; `0` desliga) e
+  `--u-grid-resize-handle-color` (do `webcomponent-api-reviewer`).
+- **Menu do cabeçalho**: itens que não se aplicam somem; "Mover" fica visível
+  e `aria-disabled` no limite do bloco (focável pelas setas, sem efeito,
+  `GrayText` em `forced-colors`). Sem nenhum item: não abre, não chama
+  `preventDefault` e não há botão nem `Shift+F10`. O hospedeiro cancela no
+  `contextmenu` (captura) e fica com o próprio menu. Lados físicos: em RTL
+  "Move left" vai para o fim. Abrir pelo clique direito/botão torna o
+  cabeçalho a célula ativa (Esc volta a ele). "Agrupar" e "Mover" levam o
+  foco como o Ctrl+G/Alt+Shift (a guarda de foco cobre o cabeçalho que
+  sai). Eventos: os mesmos dos gestos (`u-grid-group-change`,
+  `u-grid-column-reorder`, `u-grid-column-resize`).
+- **Árvore do funil**: o `treeitem` carrega o estado (`aria-checked`
+  true/false/mixed); a caixa e a seta de expandir são só visuais
+  (`aria-hidden`; a seta só no ponteiro). `aria-level`/`aria-setsize`/
+  `aria-posinset` explícitos (a lista é desenhada plana). Ao buscar, o roving
+  volta ao 1º item; Tab no popover: busca → "Select all" → árvore → Limpar →
+  OK → Cancelar. A contagem é anunciada 500 ms depois de parar de digitar,
+  numa região `status` que existe desde a abertura.
+- **Largura por teclado**: no cabeçalho (Alt+←/→) anuncia com espera de 500 ms
+  (timer solto no disconnect: `_memoryStats.announceTimers`); na alça focada
+  o leitor lê o `aria-valuenow` (sem anúncio duplicado); pelo menu, na hora.
+- **Conteúdo das células (A12)**: Tab/Shift+Tab circulam entre os focáveis
+  da célula; custom elements com shadow root recebem `tabindex="-1"` no
+  hospedeiro. Conteúdo inserido depois (assíncrono) não é ajustado
+  (documentado).
+- **Descrição do cabeçalho**: um `<span hidden>` com id único por
+  `aria-colindex`, texto "prioridade, fixada, filtrada"; sem descrição,
+  sem `aria-describedby`. O funil filtrado aponta para a mesma descrição.
+- **Funil filtrado (A5)**: em vez de "funil preenchido", um ponto no canto
+  do ícone (a barra de cima encurta para caber); mesmo efeito, sem segundo
+  ícone.
+- **Barra da alça (A3)**: cor por `--u-grid-resize-handle-color` (fallback
+  `--u-grid-group-toggle-color`), não direto pelo token do grupo.
+- **Recusado na revisão da implementação**: renomear a chave existente
+  `groupPanelMenu` (nome do menu) para `groupPanelMenuLabel` — é API anterior
+  a esta frente; fica como pendência (alias + aviso) para quando houver
+  outra revisão de i18n.
+- **Barra (A9)**: a altura medida vai numa variável interna do contêiner
+  (`--_toolbar-offset`, `ResizeObserver` já existente, solto no
+  disconnect) e alimenta o `top` do `thead` e do indicador de soltura.
+
+### Revisão de a11y da implementação (corrigido, com teste)
+
+- Guarda de foco cobre o conteúdo do `renderer` (light DOM): botão que
+  remove a própria linha devolve o foco à célula ativa. Confere pelo
+  `activeElement` depois do microtask de remoção (o `:focus-within` do
+  Chromium fica velho até o "focus fixup").
+- A12 só rebaixa custom elements que recebem foco (`delegatesFocus` ou
+  focável na árvore sombra; reconfere depois do `updateComplete` do Lit);
+  decorativos ficam sem `tabindex` e o clique neles não trava as setas.
+  Alvos `aria-hidden` nunca recebem foco.
+- O "⋮" fica no fluxo do cabeçalho, depois do funil (não cobre funil, seta
+  nem alça); só a opacidade alterna.
+- Clicar no "⋮" com o menu aberto fecha (não fecha-e-reabre).
+- Enter/Esc durante composição de IME não aplicam nem fecham o funil.
+- Os menus do grid cancelam o `contextmenu` (a tecla Menu o solta no
+  `keyup`, já com o foco no menu).

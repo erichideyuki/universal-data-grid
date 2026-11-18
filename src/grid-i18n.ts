@@ -7,7 +7,7 @@ import { type Context, type ContextCallback, ContextEvent, ContextProvider, crea
 export interface GridI18n {
   /** Empty-state message. */
   noData: string;
-  /** Hint in the group panel while nothing is grouped. */
+  /** Hint in the group panel while nothing is grouped (mentions the Ctrl+G keyboard alternative). */
   dragToGroup: string;
   /** Between the column label and the value in group rows (`": "`). */
   groupLabelSeparator: string;
@@ -29,13 +29,13 @@ export interface GridI18n {
   hideColumn: string;
   /** Tooltip of an unchecked column in the chooser. */
   showColumn: string;
-  /** Chooser button that fixes a column at the start. */
+  /** Tooltip of the chooser button that fixes a column at the start (its name is `fixStartLabel`). */
   fixStart: string;
-  /** Chooser button that fixes a column at the end. */
+  /** Tooltip of the chooser button that fixes a column at the end (its name is `fixEndLabel`). */
   fixEnd: string;
   /** Tooltip of a pressed fix button (removes the fixing). */
   unfix: string;
-  /** Tooltip of the column resize handle (double-click auto-sizes). */
+  /** Tooltip of the column resize handle: double-click or Enter auto-sizes. */
   autoSize: string;
   /** Name of the `sum` summary. */
   summarySum: string;
@@ -97,7 +97,7 @@ export interface GridI18n {
   filterReset: string;
   /** Accessible name of the filter row editors. `{column}` = column label. */
   filterEditorLabel: string;
-  /** Operation button of the filter row (followed by the current operation) and menu name. */
+  /** Name of the filter row operation menu (the button uses `filterOperationButtonLabel`). */
   filterOperationLabel: string;
   /** Header filter button and popover name. `{column}` = column label. */
   headerFilterLabel: string;
@@ -111,7 +111,7 @@ export interface GridI18n {
   filterBlanks: string;
   /** Header filter button that removes every condition of the column. */
   filterClear: string;
-  /** Placeholder and accessible name of the search panel and of the header filter search. */
+  /** Placeholder of the search panel and of the header filter search (their names are `searchPanelLabel` and `headerFilterSearchLabel`). */
   searchPlaceholder: string;
   /** Header filter "select all" checkbox. */
   selectAll: string;
@@ -127,12 +127,66 @@ export interface GridI18n {
   selectAllRows: string;
   /** Screen reader announcement after a bulk selection change. `{count}` = number of selected rows. */
   rowsSelectedAnnouncement: string;
-  /** Screen reader announcement after moving a column with the keyboard. `{column}`, `{position}`, `{count}`. */
+  /** Screen reader announcement after moving a column (keyboard or column header menu). `{column}`, `{position}`, `{count}`. */
   columnMovedAnnouncement: string;
-  /** Screen reader announcement after grouping by a column (or changing its level) with the keyboard. `{column}`. */
+  /** Screen reader announcement after grouping by a new column (keyboard or column header menu). `{column}`. */
   groupedAnnouncement: string;
-  /** Screen reader announcement after ungrouping a column with the keyboard. `{column}`. */
+  /** Screen reader announcement after ungrouping a column (keyboard or group panel menu). `{column}`. */
   ungroupedAnnouncement: string;
+  /** Name of the column header menu and of its button. `{column}` = column label. */
+  columnHeaderMenuLabel: string;
+  /** Column header menu item that groups by the column. */
+  groupColumn: string;
+  /** Menu item (column header and group chip) that moves the column one position to the left (physical side, also in RTL). */
+  moveLeft: string;
+  /** Menu item (column header and group chip) that moves the column one position to the right (physical side, also in RTL). */
+  moveRight: string;
+  /** Column header menu item that fits the column width to its content. */
+  autoSizeColumn: string;
+  /** Column header menu item that widens the column by one keyboard step (keeps the menu open). */
+  increaseColumnWidth: string;
+  /** Column header menu item that narrows the column by one keyboard step (keeps the menu open). */
+  decreaseColumnWidth: string;
+  /** Description of a filtered column header and of its header filter button. */
+  columnFiltered: string;
+  /** Description of a column header pinned to the start. */
+  columnFixedStart: string;
+  /** Description of a column header pinned to the end. */
+  columnFixedEnd: string;
+  /** Description of a column header sorted after the first one. `{order}` = direction, `{priority}` = position in the sorting. */
+  columnSortPriority: string;
+  /** Screen reader announcement after sorting when more than one column is sorted. `{column}`, `{order}`, `{priority}`. */
+  sortedWithPriorityAnnouncement: string;
+  /** Screen reader announcement after moving a grouped column to another level. `{column}`, `{level}`, `{count}`. */
+  groupLevelChangedAnnouncement: string;
+  /** Screen reader announcement after ungrouping every column. */
+  groupingClearedAnnouncement: string;
+  /** Screen reader announcement after expanding all groups. */
+  groupsExpandedAnnouncement: string;
+  /** Screen reader announcement after collapsing all groups. */
+  groupsCollapsedAnnouncement: string;
+  /** Screen reader announcement after resizing a column from the header (keyboard or menu). `{column}`, `{width}` = pixels. */
+  columnResizedAnnouncement: string;
+  /** Name of the column resize handle. `{column}` = column label. */
+  resizeHandleLabel: string;
+  /** Name of the group panel (toolbar of group chips). */
+  groupPanelLabel: string;
+  /** Name of the filter row operation button. `{column}` = column label, `{operation}` = current operation. */
+  filterOperationButtonLabel: string;
+  /** Name of the search panel field (the placeholder is `searchPlaceholder`). */
+  searchPanelLabel: string;
+  /** Name of the search field in the header filter. */
+  headerFilterSearchLabel: string;
+  /** Name of the "pin to start" toggle in the column chooser. `{column}` = column label. */
+  fixStartLabel: string;
+  /** Name of the "pin to end" toggle in the column chooser. `{column}` = column label. */
+  fixEndLabel: string;
+  /** Header filter note when only part of the values is listed. `{shown}`, `{count}`. */
+  headerFilterTruncated: string;
+  /** Header filter announcement after searching. `{count}` = values found (no plural forms: keep it a label). */
+  headerFilterSearchAnnouncement: string;
+  /** "Select all" checkbox of the header filter while searching. `{count}` = values found. */
+  selectAllResults: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -198,7 +252,7 @@ export const DEFAULT_GRID_LANGUAGE = 'en';
 export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.create(null) as Record<string, GridI18n>, {
   en: {
     noData: 'No data',
-    dragToGroup: 'Drag a column header here to group by it',
+    dragToGroup: 'Drag a column header here, or press Ctrl+G on a header, to group by it',
     groupLabelSeparator: ': ',
     sortAscending: 'ascending',
     sortDescending: 'descending',
@@ -212,7 +266,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Pin to start',
     fixEnd: 'Pin to end',
     unfix: 'Unpin',
-    autoSize: 'Double-click to auto-size',
+    autoSize: 'Double-click or press Enter to auto-size',
     summarySum: 'Sum',
     summaryMin: 'Min',
     summaryMax: 'Max',
@@ -261,10 +315,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} moved to position {position} of {count}',
     groupedAnnouncement: 'Grouped by {column}',
     ungroupedAnnouncement: 'Ungrouped {column}',
+    columnHeaderMenuLabel: 'Options for {column}',
+    groupColumn: 'Group by this column',
+    moveLeft: 'Move left',
+    moveRight: 'Move right',
+    autoSizeColumn: 'Auto-size column',
+    increaseColumnWidth: 'Increase width',
+    decreaseColumnWidth: 'Decrease width',
+    columnFiltered: 'Filtered',
+    columnFixedStart: 'Pinned to start',
+    columnFixedEnd: 'Pinned to end',
+    columnSortPriority: 'Sorted {order}, priority {priority}',
+    sortedWithPriorityAnnouncement: 'Sorted by {column}, {order}, priority {priority}',
+    groupLevelChangedAnnouncement: '{column} moved to grouping level {level} of {count}',
+    groupingClearedAnnouncement: 'All columns ungrouped',
+    groupsExpandedAnnouncement: 'All groups expanded',
+    groupsCollapsedAnnouncement: 'All groups collapsed',
+    columnResizedAnnouncement: '{column} width: {width} px',
+    resizeHandleLabel: 'Resize {column}',
+    groupPanelLabel: 'Grouping',
+    filterOperationButtonLabel: 'Filter operation for {column}: {operation}',
+    searchPanelLabel: 'Search in the grid',
+    headerFilterSearchLabel: 'Search values',
+    fixStartLabel: 'Pin {column} to start',
+    fixEndLabel: 'Pin {column} to end',
+    headerFilterTruncated: 'Showing {shown} of {count}',
+    headerFilterSearchAnnouncement: 'Values: {count}',
+    selectAllResults: 'Select all results ({count})',
   },
   es: {
     noData: 'Sin datos',
-    dragToGroup: 'Arrastre el encabezado de una columna aquí para agrupar',
+    dragToGroup: 'Arrastre aquí el encabezado de una columna, o pulse Ctrl+G en un encabezado, para agrupar',
     groupLabelSeparator: ': ',
     sortAscending: 'ascendente',
     sortDescending: 'descendente',
@@ -278,7 +359,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Fijar al inicio',
     fixEnd: 'Fijar al final',
     unfix: 'Desfijar',
-    autoSize: 'Doble clic para ajustar al contenido',
+    autoSize: 'Doble clic o Intro para ajustar al contenido',
     summarySum: 'Suma',
     summaryMin: 'Mín.',
     summaryMax: 'Máx.',
@@ -327,10 +408,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} movida a la posición {position} de {count}',
     groupedAnnouncement: 'Agrupado por {column}',
     ungroupedAnnouncement: 'Se quitó la agrupación por {column}',
+    columnHeaderMenuLabel: 'Opciones de {column}',
+    groupColumn: 'Agrupar por esta columna',
+    moveLeft: 'Mover a la izquierda',
+    moveRight: 'Mover a la derecha',
+    autoSizeColumn: 'Ajustar ancho al contenido',
+    increaseColumnWidth: 'Aumentar ancho',
+    decreaseColumnWidth: 'Reducir ancho',
+    columnFiltered: 'Filtrada',
+    columnFixedStart: 'Fijada al inicio',
+    columnFixedEnd: 'Fijada al final',
+    columnSortPriority: 'Orden {order}, prioridad {priority}',
+    sortedWithPriorityAnnouncement: 'Ordenado por {column}, {order}, prioridad {priority}',
+    groupLevelChangedAnnouncement: '{column} movida al nivel de agrupación {level} de {count}',
+    groupingClearedAnnouncement: 'Todas las columnas desagrupadas',
+    groupsExpandedAnnouncement: 'Todos los grupos expandidos',
+    groupsCollapsedAnnouncement: 'Todos los grupos contraídos',
+    columnResizedAnnouncement: 'Ancho de {column}: {width} px',
+    resizeHandleLabel: 'Cambiar el ancho de {column}',
+    groupPanelLabel: 'Agrupación',
+    filterOperationButtonLabel: 'Operación de filtro de {column}: {operation}',
+    searchPanelLabel: 'Buscar en la cuadrícula',
+    headerFilterSearchLabel: 'Buscar valores',
+    fixStartLabel: 'Fijar {column} al inicio',
+    fixEndLabel: 'Fijar {column} al final',
+    headerFilterTruncated: 'Mostrando {shown} de {count}',
+    headerFilterSearchAnnouncement: 'Valores: {count}',
+    selectAllResults: 'Seleccionar todos los resultados ({count})',
   },
   pt: {
     noData: 'Sem dados',
-    dragToGroup: 'Arraste o cabeçalho de uma coluna aqui para agrupar',
+    dragToGroup: 'Arraste o cabeçalho de uma coluna aqui, ou pressione Ctrl+G num cabeçalho, para agrupar',
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
@@ -344,7 +452,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Fixar no início',
     fixEnd: 'Fixar no fim',
     unfix: 'Desafixar',
-    autoSize: 'Clique duplo para ajustar ao conteúdo',
+    autoSize: 'Clique duplo ou Enter para ajustar ao conteúdo',
     summarySum: 'Soma',
     summaryMin: 'Mín.',
     summaryMax: 'Máx.',
@@ -393,10 +501,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} movida para a posição {position} de {count}',
     groupedAnnouncement: 'Agrupado por {column}',
     ungroupedAnnouncement: 'Agrupamento por {column} removido',
+    columnHeaderMenuLabel: 'Opções de {column}',
+    groupColumn: 'Agrupar por esta coluna',
+    moveLeft: 'Mover para a esquerda',
+    moveRight: 'Mover para a direita',
+    autoSizeColumn: 'Ajustar largura ao conteúdo',
+    increaseColumnWidth: 'Aumentar largura',
+    decreaseColumnWidth: 'Diminuir largura',
+    columnFiltered: 'Filtrada',
+    columnFixedStart: 'Fixada no início',
+    columnFixedEnd: 'Fixada no fim',
+    columnSortPriority: 'Ordem {order}, prioridade {priority}',
+    sortedWithPriorityAnnouncement: 'Ordenado por {column}, {order}, prioridade {priority}',
+    groupLevelChangedAnnouncement: '{column} movida para o nível de agrupamento {level} de {count}',
+    groupingClearedAnnouncement: 'Todas as colunas desagrupadas',
+    groupsExpandedAnnouncement: 'Todos os grupos expandidos',
+    groupsCollapsedAnnouncement: 'Todos os grupos recolhidos',
+    columnResizedAnnouncement: 'Largura de {column}: {width} px',
+    resizeHandleLabel: 'Redimensionar {column}',
+    groupPanelLabel: 'Agrupamento',
+    filterOperationButtonLabel: 'Operação de filtro de {column}: {operation}',
+    searchPanelLabel: 'Pesquisar na grade',
+    headerFilterSearchLabel: 'Pesquisar valores',
+    fixStartLabel: 'Fixar {column} no início',
+    fixEndLabel: 'Fixar {column} no fim',
+    headerFilterTruncated: 'Mostrando {shown} de {count}',
+    headerFilterSearchAnnouncement: 'Valores: {count}',
+    selectAllResults: 'Selecionar todos os resultados ({count})',
   },
   fr: {
     noData: 'Aucune donnée',
-    dragToGroup: 'Faites glisser l’en-tête d’une colonne ici pour la regrouper',
+    dragToGroup: 'Faites glisser l’en-tête d’une colonne ici, ou appuyez sur Ctrl+G sur un en-tête, pour regrouper',
     groupLabelSeparator: ' : ',
     sortAscending: 'croissant',
     sortDescending: 'décroissant',
@@ -410,7 +545,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Épingler au début',
     fixEnd: 'Épingler à la fin',
     unfix: 'Désépingler',
-    autoSize: 'Double-cliquez pour ajuster au contenu',
+    autoSize: 'Double-cliquez ou appuyez sur Entrée pour ajuster au contenu',
     summarySum: 'Somme',
     summaryMin: 'Min',
     summaryMax: 'Max',
@@ -459,10 +594,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} déplacée en position {position} sur {count}',
     groupedAnnouncement: 'Groupé par {column}',
     ungroupedAnnouncement: 'Regroupement par {column} supprimé',
+    columnHeaderMenuLabel: 'Options de {column}',
+    groupColumn: 'Regrouper par cette colonne',
+    moveLeft: 'Déplacer vers la gauche',
+    moveRight: 'Déplacer vers la droite',
+    autoSizeColumn: 'Ajuster la largeur au contenu',
+    increaseColumnWidth: 'Élargir',
+    decreaseColumnWidth: 'Rétrécir',
+    columnFiltered: 'Filtrée',
+    columnFixedStart: 'Épinglée au début',
+    columnFixedEnd: 'Épinglée à la fin',
+    columnSortPriority: 'Tri {order}, priorité {priority}',
+    sortedWithPriorityAnnouncement: 'Trié par {column}, {order}, priorité {priority}',
+    groupLevelChangedAnnouncement: '{column} déplacée au niveau de regroupement {level} sur {count}',
+    groupingClearedAnnouncement: 'Toutes les colonnes dégroupées',
+    groupsExpandedAnnouncement: 'Tous les groupes développés',
+    groupsCollapsedAnnouncement: 'Tous les groupes réduits',
+    columnResizedAnnouncement: 'Largeur de {column} : {width} px',
+    resizeHandleLabel: 'Redimensionner {column}',
+    groupPanelLabel: 'Regroupement',
+    filterOperationButtonLabel: 'Opération de filtre pour {column} : {operation}',
+    searchPanelLabel: 'Rechercher dans la grille',
+    headerFilterSearchLabel: 'Rechercher des valeurs',
+    fixStartLabel: 'Épingler {column} au début',
+    fixEndLabel: 'Épingler {column} à la fin',
+    headerFilterTruncated: '{shown} affichées sur {count}',
+    headerFilterSearchAnnouncement: 'Valeurs : {count}',
+    selectAllResults: 'Sélectionner tous les résultats ({count})',
   },
   de: {
     noData: 'Keine Daten',
-    dragToGroup: 'Ziehen Sie eine Spaltenüberschrift hierher, um danach zu gruppieren',
+    dragToGroup: 'Ziehen Sie eine Spaltenüberschrift hierher oder drücken Sie Strg+G auf einer Überschrift, um zu gruppieren',
     groupLabelSeparator: ': ',
     sortAscending: 'aufsteigend',
     sortDescending: 'absteigend',
@@ -476,7 +638,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Am Anfang fixieren',
     fixEnd: 'Am Ende fixieren',
     unfix: 'Fixierung aufheben',
-    autoSize: 'Doppelklicken, um die Breite anzupassen',
+    autoSize: 'Doppelklicken oder Eingabetaste drücken, um die Breite anzupassen',
     summarySum: 'Summe',
     summaryMin: 'Min.',
     summaryMax: 'Max.',
@@ -525,10 +687,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} an Position {position} von {count} verschoben',
     groupedAnnouncement: 'Gruppiert nach {column}',
     ungroupedAnnouncement: 'Gruppierung nach {column} aufgehoben',
+    columnHeaderMenuLabel: 'Optionen für {column}',
+    groupColumn: 'Nach dieser Spalte gruppieren',
+    moveLeft: 'Nach links verschieben',
+    moveRight: 'Nach rechts verschieben',
+    autoSizeColumn: 'Breite an Inhalt anpassen',
+    increaseColumnWidth: 'Breiter',
+    decreaseColumnWidth: 'Schmaler',
+    columnFiltered: 'Gefiltert',
+    columnFixedStart: 'Am Anfang fixiert',
+    columnFixedEnd: 'Am Ende fixiert',
+    columnSortPriority: 'Sortierung {order}, Priorität {priority}',
+    sortedWithPriorityAnnouncement: 'Sortiert nach {column}, {order}, Priorität {priority}',
+    groupLevelChangedAnnouncement: '{column} auf Gruppierungsebene {level} von {count} verschoben',
+    groupingClearedAnnouncement: 'Gruppierung aller Spalten aufgehoben',
+    groupsExpandedAnnouncement: 'Alle Gruppen erweitert',
+    groupsCollapsedAnnouncement: 'Alle Gruppen reduziert',
+    columnResizedAnnouncement: 'Breite von {column}: {width} px',
+    resizeHandleLabel: 'Breite von {column} ändern',
+    groupPanelLabel: 'Gruppierung',
+    filterOperationButtonLabel: 'Filteroperation für {column}: {operation}',
+    searchPanelLabel: 'Im Raster suchen',
+    headerFilterSearchLabel: 'Werte suchen',
+    fixStartLabel: '{column} am Anfang fixieren',
+    fixEndLabel: '{column} am Ende fixieren',
+    headerFilterTruncated: '{shown} von {count} angezeigt',
+    headerFilterSearchAnnouncement: 'Werte: {count}',
+    selectAllResults: 'Alle Ergebnisse auswählen ({count})',
   },
   it: {
     noData: 'Nessun dato',
-    dragToGroup: 'Trascina qui l’intestazione di una colonna per raggrupparla',
+    dragToGroup: 'Trascina qui l’intestazione di una colonna, o premi Ctrl+G su un’intestazione, per raggruppare',
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
@@ -542,7 +731,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Blocca all’inizio',
     fixEnd: 'Blocca alla fine',
     unfix: 'Sblocca',
-    autoSize: 'Doppio clic per adattare al contenuto',
+    autoSize: 'Doppio clic o Invio per adattare al contenuto',
     summarySum: 'Somma',
     summaryMin: 'Min',
     summaryMax: 'Max',
@@ -591,10 +780,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} spostata in posizione {position} di {count}',
     groupedAnnouncement: 'Raggruppato per {column}',
     ungroupedAnnouncement: 'Raggruppamento per {column} rimosso',
+    columnHeaderMenuLabel: 'Opzioni di {column}',
+    groupColumn: 'Raggruppa per questa colonna',
+    moveLeft: 'Sposta a sinistra',
+    moveRight: 'Sposta a destra',
+    autoSizeColumn: 'Adatta larghezza al contenuto',
+    increaseColumnWidth: 'Aumenta larghezza',
+    decreaseColumnWidth: 'Riduci larghezza',
+    columnFiltered: 'Filtrata',
+    columnFixedStart: 'Bloccata all’inizio',
+    columnFixedEnd: 'Bloccata alla fine',
+    columnSortPriority: 'Ordine {order}, priorità {priority}',
+    sortedWithPriorityAnnouncement: 'Ordinato per {column}, {order}, priorità {priority}',
+    groupLevelChangedAnnouncement: '{column} spostata al livello di raggruppamento {level} di {count}',
+    groupingClearedAnnouncement: 'Raggruppamento rimosso da tutte le colonne',
+    groupsExpandedAnnouncement: 'Tutti i gruppi espansi',
+    groupsCollapsedAnnouncement: 'Tutti i gruppi compressi',
+    columnResizedAnnouncement: 'Larghezza di {column}: {width} px',
+    resizeHandleLabel: 'Ridimensiona {column}',
+    groupPanelLabel: 'Raggruppamento',
+    filterOperationButtonLabel: 'Operazione di filtro per {column}: {operation}',
+    searchPanelLabel: 'Cerca nella griglia',
+    headerFilterSearchLabel: 'Cerca valori',
+    fixStartLabel: 'Blocca {column} all’inizio',
+    fixEndLabel: 'Blocca {column} alla fine',
+    headerFilterTruncated: 'Visualizzati {shown} di {count}',
+    headerFilterSearchAnnouncement: 'Valori: {count}',
+    selectAllResults: 'Seleziona tutti i risultati ({count})',
   },
   nl: {
     noData: 'Geen gegevens',
-    dragToGroup: 'Sleep een kolomkop hierheen om erop te groeperen',
+    dragToGroup: 'Sleep een kolomkop hierheen, of druk op Ctrl+G op een kolomkop, om te groeperen',
     groupLabelSeparator: ': ',
     sortAscending: 'oplopend',
     sortDescending: 'aflopend',
@@ -608,7 +824,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Vastzetten aan het begin',
     fixEnd: 'Vastzetten aan het einde',
     unfix: 'Losmaken',
-    autoSize: 'Dubbelklik om aan de inhoud aan te passen',
+    autoSize: 'Dubbelklik of druk op Enter om aan de inhoud aan te passen',
     summarySum: 'Som',
     summaryMin: 'Min.',
     summaryMax: 'Max.',
@@ -657,10 +873,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} verplaatst naar positie {position} van {count}',
     groupedAnnouncement: 'Gegroepeerd op {column}',
     ungroupedAnnouncement: 'Groepering op {column} verwijderd',
+    columnHeaderMenuLabel: 'Opties voor {column}',
+    groupColumn: 'Groeperen op deze kolom',
+    moveLeft: 'Naar links verplaatsen',
+    moveRight: 'Naar rechts verplaatsen',
+    autoSizeColumn: 'Breedte aan inhoud aanpassen',
+    increaseColumnWidth: 'Breder',
+    decreaseColumnWidth: 'Smaller',
+    columnFiltered: 'Gefilterd',
+    columnFixedStart: 'Vastgezet aan het begin',
+    columnFixedEnd: 'Vastgezet aan het einde',
+    columnSortPriority: 'Sortering {order}, prioriteit {priority}',
+    sortedWithPriorityAnnouncement: 'Gesorteerd op {column}, {order}, prioriteit {priority}',
+    groupLevelChangedAnnouncement: '{column} verplaatst naar groeperingsniveau {level} van {count}',
+    groupingClearedAnnouncement: 'Groepering van alle kolommen opgeheven',
+    groupsExpandedAnnouncement: 'Alle groepen uitgevouwen',
+    groupsCollapsedAnnouncement: 'Alle groepen samengevouwen',
+    columnResizedAnnouncement: 'Breedte van {column}: {width} px',
+    resizeHandleLabel: 'Breedte van {column} wijzigen',
+    groupPanelLabel: 'Groepering',
+    filterOperationButtonLabel: 'Filterbewerking voor {column}: {operation}',
+    searchPanelLabel: 'Zoeken in het raster',
+    headerFilterSearchLabel: 'Waarden zoeken',
+    fixStartLabel: '{column} aan het begin vastzetten',
+    fixEndLabel: '{column} aan het einde vastzetten',
+    headerFilterTruncated: '{shown} van {count} weergegeven',
+    headerFilterSearchAnnouncement: 'Waarden: {count}',
+    selectAllResults: 'Alle resultaten selecteren ({count})',
   },
   ru: {
     noData: 'Нет данных',
-    dragToGroup: 'Перетащите сюда заголовок столбца для группировки',
+    dragToGroup: 'Перетащите сюда заголовок столбца или нажмите Ctrl+G на заголовке для группировки',
     groupLabelSeparator: ': ',
     sortAscending: 'по возрастанию',
     sortDescending: 'по убыванию',
@@ -674,7 +917,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Закрепить в начале',
     fixEnd: 'Закрепить в конце',
     unfix: 'Открепить',
-    autoSize: 'Дважды щёлкните, чтобы подогнать ширину',
+    autoSize: 'Дважды щёлкните или нажмите Enter, чтобы подогнать ширину',
     summarySum: 'Сумма',
     summaryMin: 'Мин.',
     summaryMax: 'Макс.',
@@ -723,10 +966,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: 'Столбец {column} перемещён на позицию {position} из {count}',
     groupedAnnouncement: 'Сгруппировано по {column}',
     ungroupedAnnouncement: 'Группировка по {column} снята',
+    columnHeaderMenuLabel: 'Параметры столбца {column}',
+    groupColumn: 'Группировать по этому столбцу',
+    moveLeft: 'Переместить влево',
+    moveRight: 'Переместить вправо',
+    autoSizeColumn: 'Подогнать ширину по содержимому',
+    increaseColumnWidth: 'Увеличить ширину',
+    decreaseColumnWidth: 'Уменьшить ширину',
+    columnFiltered: 'Отфильтрован',
+    columnFixedStart: 'Закреплён в начале',
+    columnFixedEnd: 'Закреплён в конце',
+    columnSortPriority: 'Сортировка {order}, приоритет {priority}',
+    sortedWithPriorityAnnouncement: 'Отсортировано по столбцу {column}, {order}, приоритет {priority}',
+    groupLevelChangedAnnouncement: 'Столбец {column} перемещён на уровень группировки {level} из {count}',
+    groupingClearedAnnouncement: 'Группировка всех столбцов отменена',
+    groupsExpandedAnnouncement: 'Все группы развёрнуты',
+    groupsCollapsedAnnouncement: 'Все группы свёрнуты',
+    columnResizedAnnouncement: 'Ширина столбца {column}: {width} px',
+    resizeHandleLabel: 'Изменить ширину столбца {column}',
+    groupPanelLabel: 'Группировка',
+    filterOperationButtonLabel: 'Операция фильтра для столбца {column}: {operation}',
+    searchPanelLabel: 'Поиск в таблице',
+    headerFilterSearchLabel: 'Поиск значений',
+    fixStartLabel: 'Закрепить {column} в начале',
+    fixEndLabel: 'Закрепить {column} в конце',
+    headerFilterTruncated: 'Показано {shown} из {count}',
+    headerFilterSearchAnnouncement: 'Значения: {count}',
+    selectAllResults: 'Выбрать все результаты ({count})',
   },
   pl: {
     noData: 'Brak danych',
-    dragToGroup: 'Przeciągnij tutaj nagłówek kolumny, aby pogrupować',
+    dragToGroup: 'Przeciągnij tutaj nagłówek kolumny lub naciśnij Ctrl+G na nagłówku, aby pogrupować',
     groupLabelSeparator: ': ',
     sortAscending: 'rosnąco',
     sortDescending: 'malejąco',
@@ -740,7 +1010,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Przypnij na początku',
     fixEnd: 'Przypnij na końcu',
     unfix: 'Odepnij',
-    autoSize: 'Kliknij dwukrotnie, aby dopasować szerokość',
+    autoSize: 'Kliknij dwukrotnie lub naciśnij Enter, aby dopasować szerokość',
     summarySum: 'Suma',
     summaryMin: 'Min.',
     summaryMax: 'Maks.',
@@ -789,10 +1059,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} przeniesiono na pozycję {position} z {count}',
     groupedAnnouncement: 'Pogrupowano według {column}',
     ungroupedAnnouncement: 'Usunięto grupowanie według {column}',
+    columnHeaderMenuLabel: 'Opcje kolumny {column}',
+    groupColumn: 'Grupuj według tej kolumny',
+    moveLeft: 'Przenieś w lewo',
+    moveRight: 'Przenieś w prawo',
+    autoSizeColumn: 'Dopasuj szerokość do zawartości',
+    increaseColumnWidth: 'Zwiększ szerokość',
+    decreaseColumnWidth: 'Zmniejsz szerokość',
+    columnFiltered: 'Przefiltrowana',
+    columnFixedStart: 'Przypięta na początku',
+    columnFixedEnd: 'Przypięta na końcu',
+    columnSortPriority: 'Sortowanie {order}, priorytet {priority}',
+    sortedWithPriorityAnnouncement: 'Posortowano według {column}, {order}, priorytet {priority}',
+    groupLevelChangedAnnouncement: '{column} przeniesiono na poziom grupowania {level} z {count}',
+    groupingClearedAnnouncement: 'Usunięto grupowanie wszystkich kolumn',
+    groupsExpandedAnnouncement: 'Rozwinięto wszystkie grupy',
+    groupsCollapsedAnnouncement: 'Zwinięto wszystkie grupy',
+    columnResizedAnnouncement: 'Szerokość {column}: {width} px',
+    resizeHandleLabel: 'Zmień szerokość {column}',
+    groupPanelLabel: 'Grupowanie',
+    filterOperationButtonLabel: 'Operacja filtra dla {column}: {operation}',
+    searchPanelLabel: 'Szukaj w siatce',
+    headerFilterSearchLabel: 'Szukaj wartości',
+    fixStartLabel: 'Przypnij {column} na początku',
+    fixEndLabel: 'Przypnij {column} na końcu',
+    headerFilterTruncated: 'Wyświetlono {shown} z {count}',
+    headerFilterSearchAnnouncement: 'Wartości: {count}',
+    selectAllResults: 'Zaznacz wszystkie wyniki ({count})',
   },
   tr: {
     noData: 'Veri yok',
-    dragToGroup: 'Gruplamak için bir sütun başlığını buraya sürükleyin',
+    dragToGroup: 'Gruplamak için bir sütun başlığını buraya sürükleyin veya bir başlıkta Ctrl+G tuşlarına basın',
     groupLabelSeparator: ': ',
     sortAscending: 'artan',
     sortDescending: 'azalan',
@@ -806,7 +1103,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'Başa sabitle',
     fixEnd: 'Sona sabitle',
     unfix: 'Sabitlemeyi kaldır',
-    autoSize: 'İçeriğe sığdırmak için çift tıklayın',
+    autoSize: 'İçeriğe sığdırmak için çift tıklayın veya Enter tuşuna basın',
     summarySum: 'Toplam',
     summaryMin: 'En küçük',
     summaryMax: 'En büyük',
@@ -855,10 +1152,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} {count} içinde {position}. konuma taşındı',
     groupedAnnouncement: '{column} ile gruplandı',
     ungroupedAnnouncement: '{column} gruplaması kaldırıldı',
+    columnHeaderMenuLabel: '{column} seçenekleri',
+    groupColumn: 'Bu sütuna göre grupla',
+    moveLeft: 'Sola taşı',
+    moveRight: 'Sağa taşı',
+    autoSizeColumn: 'Genişliği içeriğe sığdır',
+    increaseColumnWidth: 'Genişliği artır',
+    decreaseColumnWidth: 'Genişliği azalt',
+    columnFiltered: 'Filtrelendi',
+    columnFixedStart: 'Başa sabitlendi',
+    columnFixedEnd: 'Sona sabitlendi',
+    columnSortPriority: 'Sıralama {order}, öncelik {priority}',
+    sortedWithPriorityAnnouncement: '{column} sütununa göre sıralandı, {order}, öncelik {priority}',
+    groupLevelChangedAnnouncement: '{column} gruplama düzeyi {level}/{count} konumuna taşındı',
+    groupingClearedAnnouncement: 'Tüm sütunların gruplaması kaldırıldı',
+    groupsExpandedAnnouncement: 'Tüm gruplar genişletildi',
+    groupsCollapsedAnnouncement: 'Tüm gruplar daraltıldı',
+    columnResizedAnnouncement: '{column} genişliği: {width} px',
+    resizeHandleLabel: '{column} genişliğini değiştir',
+    groupPanelLabel: 'Gruplama',
+    filterOperationButtonLabel: '{column} için filtre işlemi: {operation}',
+    searchPanelLabel: 'Tabloda ara',
+    headerFilterSearchLabel: 'Değerlerde ara',
+    fixStartLabel: '{column} sütununu başa sabitle',
+    fixEndLabel: '{column} sütununu sona sabitle',
+    headerFilterTruncated: '{count} değerden {shown} tanesi gösteriliyor',
+    headerFilterSearchAnnouncement: 'Değerler: {count}',
+    selectAllResults: 'Tüm sonuçları seç ({count})',
   },
   ja: {
     noData: 'データがありません',
-    dragToGroup: '列ヘッダーをここにドラッグしてグループ化します',
+    dragToGroup: '列ヘッダーをここにドラッグするか、ヘッダーで Ctrl+G を押してグループ化します',
     groupLabelSeparator: '：',
     sortAscending: '昇順',
     sortDescending: '降順',
@@ -872,7 +1196,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: '先頭に固定',
     fixEnd: '末尾に固定',
     unfix: '固定を解除',
-    autoSize: 'ダブルクリックで幅を自動調整',
+    autoSize: 'ダブルクリックまたは Enter で幅を自動調整',
     summarySum: '合計',
     summaryMin: '最小',
     summaryMax: '最大',
@@ -921,10 +1245,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column} を {count} 列中 {position} 番目に移動しました',
     groupedAnnouncement: '{column} でグループ化しました',
     ungroupedAnnouncement: '{column} のグループ化を解除しました',
+    columnHeaderMenuLabel: '{column} のオプション',
+    groupColumn: 'この列でグループ化',
+    moveLeft: '左へ移動',
+    moveRight: '右へ移動',
+    autoSizeColumn: '幅を内容に合わせる',
+    increaseColumnWidth: '幅を広げる',
+    decreaseColumnWidth: '幅を狭める',
+    columnFiltered: 'フィルター適用中',
+    columnFixedStart: '先頭に固定済み',
+    columnFixedEnd: '末尾に固定済み',
+    columnSortPriority: '並べ替え: {order}、優先度 {priority}',
+    sortedWithPriorityAnnouncement: '{column} で並べ替えました（{order}、優先度 {priority}）',
+    groupLevelChangedAnnouncement: '{column} をグループ化レベル {count} 中 {level} に移動しました',
+    groupingClearedAnnouncement: 'すべての列のグループ化を解除しました',
+    groupsExpandedAnnouncement: 'すべてのグループを展開しました',
+    groupsCollapsedAnnouncement: 'すべてのグループを折りたたみました',
+    columnResizedAnnouncement: '{column} の幅: {width} px',
+    resizeHandleLabel: '{column} の幅を変更',
+    groupPanelLabel: 'グループ化',
+    filterOperationButtonLabel: '{column} のフィルター演算: {operation}',
+    searchPanelLabel: 'グリッド内を検索',
+    headerFilterSearchLabel: '値を検索',
+    fixStartLabel: '{column} を先頭に固定',
+    fixEndLabel: '{column} を末尾に固定',
+    headerFilterTruncated: '{count} 件中 {shown} 件を表示',
+    headerFilterSearchAnnouncement: '値: {count}',
+    selectAllResults: '検索結果をすべて選択 ({count})',
   },
   ko: {
     noData: '데이터 없음',
-    dragToGroup: '열 머리글을 여기로 끌어 그룹화하세요',
+    dragToGroup: '열 머리글을 여기로 끌거나 머리글에서 Ctrl+G를 눌러 그룹화하세요',
     groupLabelSeparator: ': ',
     sortAscending: '오름차순',
     sortDescending: '내림차순',
@@ -938,7 +1289,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: '시작 부분에 고정',
     fixEnd: '끝 부분에 고정',
     unfix: '고정 해제',
-    autoSize: '두 번 클릭하여 너비 자동 맞춤',
+    autoSize: '두 번 클릭하거나 Enter를 눌러 너비 자동 맞춤',
     summarySum: '합계',
     summaryMin: '최소',
     summaryMax: '최대',
@@ -987,10 +1338,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '{column}을(를) {count}개 중 {position}번째로 이동했습니다',
     groupedAnnouncement: '{column}(으)로 그룹화했습니다',
     ungroupedAnnouncement: '{column} 그룹화를 해제했습니다',
+    columnHeaderMenuLabel: '{column} 옵션',
+    groupColumn: '이 열로 그룹화',
+    moveLeft: '왼쪽으로 이동',
+    moveRight: '오른쪽으로 이동',
+    autoSizeColumn: '내용에 맞게 너비 조정',
+    increaseColumnWidth: '너비 늘리기',
+    decreaseColumnWidth: '너비 줄이기',
+    columnFiltered: '필터 적용됨',
+    columnFixedStart: '시작 부분에 고정됨',
+    columnFixedEnd: '끝 부분에 고정됨',
+    columnSortPriority: '정렬: {order}, 우선순위 {priority}',
+    sortedWithPriorityAnnouncement: '{column} 기준 {order} 정렬됨, 우선순위 {priority}',
+    groupLevelChangedAnnouncement: '{column}을(를) 그룹화 수준 {count}개 중 {level}(으)로 이동했습니다',
+    groupingClearedAnnouncement: '모든 열의 그룹화를 해제했습니다',
+    groupsExpandedAnnouncement: '모든 그룹을 펼쳤습니다',
+    groupsCollapsedAnnouncement: '모든 그룹을 접었습니다',
+    columnResizedAnnouncement: '{column} 너비: {width} px',
+    resizeHandleLabel: '{column} 너비 조정',
+    groupPanelLabel: '그룹화',
+    filterOperationButtonLabel: '{column} 필터 연산: {operation}',
+    searchPanelLabel: '그리드에서 검색',
+    headerFilterSearchLabel: '값 검색',
+    fixStartLabel: '{column}을(를) 시작 부분에 고정',
+    fixEndLabel: '{column}을(를) 끝 부분에 고정',
+    headerFilterTruncated: '{count}개 중 {shown}개 표시',
+    headerFilterSearchAnnouncement: '값: {count}',
+    selectAllResults: '검색 결과 모두 선택 ({count})',
   },
   zh: {
     noData: '无数据',
-    dragToGroup: '将列标题拖到此处进行分组',
+    dragToGroup: '将列标题拖到此处，或在列标题上按 Ctrl+G 进行分组',
     groupLabelSeparator: '：',
     sortAscending: '升序',
     sortDescending: '降序',
@@ -1004,7 +1382,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: '固定到开头',
     fixEnd: '固定到末尾',
     unfix: '取消固定',
-    autoSize: '双击自动调整宽度',
+    autoSize: '双击或按 Enter 自动调整宽度',
     summarySum: '合计',
     summaryMin: '最小值',
     summaryMax: '最大值',
@@ -1053,10 +1431,37 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: '已将 {column} 移到第 {position} 位（共 {count} 位）',
     groupedAnnouncement: '已按 {column} 分组',
     ungroupedAnnouncement: '已取消按 {column} 分组',
+    columnHeaderMenuLabel: '{column} 选项',
+    groupColumn: '按此列分组',
+    moveLeft: '左移',
+    moveRight: '右移',
+    autoSizeColumn: '自动调整列宽',
+    increaseColumnWidth: '增加宽度',
+    decreaseColumnWidth: '减小宽度',
+    columnFiltered: '已筛选',
+    columnFixedStart: '已固定到开头',
+    columnFixedEnd: '已固定到末尾',
+    columnSortPriority: '排序：{order}，优先级 {priority}',
+    sortedWithPriorityAnnouncement: '已按 {column} {order}排序，优先级 {priority}',
+    groupLevelChangedAnnouncement: '已将 {column} 移到分组级别 {level}（共 {count} 级）',
+    groupingClearedAnnouncement: '已取消所有列的分组',
+    groupsExpandedAnnouncement: '已展开所有分组',
+    groupsCollapsedAnnouncement: '已折叠所有分组',
+    columnResizedAnnouncement: '{column} 宽度：{width} px',
+    resizeHandleLabel: '调整 {column} 的宽度',
+    groupPanelLabel: '分组',
+    filterOperationButtonLabel: '{column} 的筛选运算：{operation}',
+    searchPanelLabel: '在表格中搜索',
+    headerFilterSearchLabel: '搜索值',
+    fixStartLabel: '将 {column} 固定到开头',
+    fixEndLabel: '将 {column} 固定到末尾',
+    headerFilterTruncated: '显示 {count} 项中的 {shown} 项',
+    headerFilterSearchAnnouncement: '值：{count}',
+    selectAllResults: '全选搜索结果（{count}）',
   },
   ar: {
     noData: 'لا توجد بيانات',
-    dragToGroup: 'اسحب عنوان عمود إلى هنا للتجميع حسبه',
+    dragToGroup: 'اسحب عنوان عمود إلى هنا، أو اضغط Ctrl+G على عنوان، للتجميع حسبه',
     groupLabelSeparator: ': ',
     sortAscending: 'تصاعدي',
     sortDescending: 'تنازلي',
@@ -1070,7 +1475,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     fixStart: 'تثبيت في البداية',
     fixEnd: 'تثبيت في النهاية',
     unfix: 'إلغاء التثبيت',
-    autoSize: 'انقر نقرًا مزدوجًا لملاءمة العرض',
+    autoSize: 'انقر نقرًا مزدوجًا أو اضغط Enter لملاءمة العرض',
     summarySum: 'المجموع',
     summaryMin: 'الحد الأدنى',
     summaryMax: 'الحد الأقصى',
@@ -1119,6 +1524,33 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnMovedAnnouncement: 'تم نقل {column} إلى الموضع {position} من {count}',
     groupedAnnouncement: 'تم التجميع حسب {column}',
     ungroupedAnnouncement: 'تم إلغاء التجميع حسب {column}',
+    columnHeaderMenuLabel: 'خيارات {column}',
+    groupColumn: 'التجميع حسب هذا العمود',
+    moveLeft: 'نقل لليسار',
+    moveRight: 'نقل لليمين',
+    autoSizeColumn: 'ملاءمة العرض مع المحتوى',
+    increaseColumnWidth: 'زيادة العرض',
+    decreaseColumnWidth: 'تقليل العرض',
+    columnFiltered: 'مُصفّى',
+    columnFixedStart: 'مثبّت في البداية',
+    columnFixedEnd: 'مثبّت في النهاية',
+    columnSortPriority: 'الفرز {order}، الأولوية {priority}',
+    sortedWithPriorityAnnouncement: 'تم الفرز حسب {column}، {order}، الأولوية {priority}',
+    groupLevelChangedAnnouncement: 'تم نقل {column} إلى مستوى التجميع {level} من {count}',
+    groupingClearedAnnouncement: 'تم إلغاء تجميع كل الأعمدة',
+    groupsExpandedAnnouncement: 'تم توسيع كل المجموعات',
+    groupsCollapsedAnnouncement: 'تم طي كل المجموعات',
+    columnResizedAnnouncement: 'عرض {column}: {width} px',
+    resizeHandleLabel: 'تغيير عرض {column}',
+    groupPanelLabel: 'التجميع',
+    filterOperationButtonLabel: 'عملية التصفية لـ {column}: {operation}',
+    searchPanelLabel: 'البحث في الجدول',
+    headerFilterSearchLabel: 'البحث في القيم',
+    fixStartLabel: 'تثبيت {column} في البداية',
+    fixEndLabel: 'تثبيت {column} في النهاية',
+    headerFilterTruncated: 'عرض {shown} من {count}',
+    headerFilterSearchAnnouncement: 'القيم: {count}',
+    selectAllResults: 'تحديد كل النتائج ({count})',
   },
 });
 

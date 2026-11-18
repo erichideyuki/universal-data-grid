@@ -77,6 +77,7 @@ export const renderGroupRowCells = ({
       aria-colindex="1"
       data-col="group"
       tabindex=${tabIndex}
+      aria-keyshortcuts="Control+G Meta+G"
       aria-label=${ifDefined(ariaLabel)}
       colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}><span
         class="grouping-label"

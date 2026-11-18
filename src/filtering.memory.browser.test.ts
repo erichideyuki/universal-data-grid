@@ -61,7 +61,7 @@ const exerciseFilter = async (grid: DataGrid): Promise<void> => {
 
   click(header(grid, 'City').querySelector('.header-filter-button')!);
   await settle(grid);
-  root(grid).querySelector<HTMLInputElement>('.header-filter-list input')!.click();
+  root(grid).querySelector<HTMLElement>('.header-filter-list [role=treeitem]')!.click();
   click(root(grid).querySelector('.header-filter-ok')!);
   await settle(grid);
 

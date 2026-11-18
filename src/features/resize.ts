@@ -211,11 +211,15 @@ export class ColumnResizeController {
     event.stopPropagation();
 
     const physical = event.key === 'ArrowRight' ? 1 : -1;
-    const delta = physical * (this.#host._isRtl() ? -1 : 1) * RESIZE_KEYBOARD_STEP;
+    this.step(column, physical * (this.#host._isRtl() ? -1 : 1) as 1 | -1);
+    return true;
+  }
+
+  /** Um passo do teclado: \`1\` alarga, \`-1\` estreita (menu do cabeçalho, spec 17 A1). */
+  step(column: GridColumnDef, direction: 1 | -1): void {
     const { start, next, startNext } = this.#begin(column);
 
-    this.#apply(column, start, delta, next, startNext, true);
-    return true;
+    this.#apply(column, start, direction * RESIZE_KEYBOARD_STEP, next, startNext, true);
   }
 
   #begin(column: GridColumnDef) {

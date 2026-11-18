@@ -8,6 +8,7 @@ import interact from 'interactjs';
 import type { GridColumnDef, GridColumnFixed } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
 import { InteractRegistry } from './drag-helper.js';
+import { formatMessage } from './sorting.js';
 
 export interface ColumnChooserHost extends ReactiveControllerHost {
   readonly renderRoot: HTMLElement | DocumentFragment;
@@ -51,7 +52,9 @@ const pinButton = (
   { translation, onFixedChange }: ColumnChooserContext,
 ): TemplateResult => {
   const pressed = item.fixed === side;
-  const label = side === 'start' ? translation.fixStart : translation.fixEnd;
+  // Nome estável com a coluna (o estado vai no aria-pressed); o tooltip diz a ação (spec 17, A7).
+  const label = formatMessage(side === 'start' ? translation.fixStartLabel : translation.fixEndLabel, { column: item.column.label ?? '' });
+  const tooltip = side === 'start' ? translation.fixStart : translation.fixEnd;
 
   return html`
     <button
@@ -59,8 +62,7 @@ const pinButton = (
       type="button"
       aria-pressed=${pressed ? 'true' : 'false'}
       aria-label=${label}
-      aria-describedby="column-chooser-label-${item.id}"
-      title=${pressed ? translation.unfix : label}
+      title=${pressed ? translation.unfix : tooltip}
       @click=${() => onFixedChange(item.column, pressed ? null : side)}>
       <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         ${side === 'start' ? pinStartIcon : pinEndIcon}

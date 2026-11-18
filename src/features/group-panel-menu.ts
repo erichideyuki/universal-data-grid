@@ -9,9 +9,9 @@ export interface GroupPanelMenuHost extends ReactiveControllerHost {
   _isRtl(): boolean;
 }
 
-export type GroupPanelMenuAction = 'ungroupColumn' | 'ungroupAll' | 'expandAllGroups' | 'collapseAllGroups';
+export type GroupPanelMenuAction = 'ungroupColumn' | 'moveLeft' | 'moveRight' | 'ungroupAll' | 'expandAllGroups' | 'collapseAllGroups';
 
-interface MenuAnchor {
+export interface MenuAnchor {
   /** Coluna do chip (Desagrupar); nula no painel. */
   column: GridColumnDef | null;
   /** Elemento que recebe o foco de volta ao fechar. */
@@ -26,18 +26,21 @@ export const isContextMenuKey = (event: KeyboardEvent): boolean =>
   event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
 
 /**
- * Menu de contexto do painel de grupos (padrão "menu" da APG): setas,
- * Home/End, Enter/Espaço, Esc e Tab fecham; clique fora fecha. Popover
- * manual (camada do topo), posicionado no ponto do clique ou sob o chip.
+ * Menu de contexto do painel de grupos e do cabeçalho das colunas (padrão
+ * "menu" da APG): setas, Home/End, Enter/Espaço, Esc e Tab fecham; clique
+ * fora fecha. Popover manual (camada do topo), posicionado no ponto do
+ * clique ou sob o elemento de origem. \`panelClass\` separa as instâncias.
  */
 export class GroupPanelMenuController implements ReactiveController {
   readonly #host: GroupPanelMenuHost;
+  readonly #panelClass: string;
   #anchor: MenuAnchor | null = null;
   #shown = false;
   #restoreFocus: HTMLElement | null = null;
 
-  constructor(host: GroupPanelMenuHost) {
+  constructor(host: GroupPanelMenuHost, panelClass = 'group-panel-menu') {
     this.#host = host;
+    this.#panelClass = panelClass;
     host.addController(this);
   }
 
@@ -68,7 +71,7 @@ export class GroupPanelMenuController implements ReactiveController {
   }
 
   get #panel(): HTMLElement | null {
-    return this.#host.renderRoot.querySelector<HTMLElement>('.group-panel-menu');
+    return this.#host.renderRoot.querySelector<HTMLElement>(`.${this.#panelClass}`);
   }
 
   get #items(): HTMLElement[] {
@@ -101,7 +104,7 @@ export class GroupPanelMenuController implements ReactiveController {
 
     this.#position(panel, this.#anchor);
     document.addEventListener('pointerdown', this.#outsidePointerDown, true);
-    this.#items[0]?.focus();
+    (this.#items.find(item => item.getAttribute('aria-disabled') !== 'true') ?? this.#items[0])?.focus();
   }
 
   hostDisconnected(): void {
@@ -169,8 +172,11 @@ export class GroupPanelMenuController implements ReactiveController {
   }
 
   readonly #outsidePointerDown = (event: PointerEvent): void => {
+    // O botão que abriu (aria-expanded) trata o próprio clique: fecha, não reabre.
     const keep = event.composedPath().some(target =>
-      target instanceof HTMLElement && target.classList.contains('group-panel-menu'));
+      target instanceof HTMLElement
+      && (target.classList.contains(this.#panelClass)
+        || (target === this.#anchor?.returnFocus && target.getAttribute('aria-expanded') === 'true')));
 
     if (!keep) {
       this.hide();
@@ -180,19 +186,52 @@ export class GroupPanelMenuController implements ReactiveController {
 
 export interface GroupPanelMenuContext {
   translation: GridI18n;
-  /** Coluna do chip (mostra "Desagrupar"). */
+  /** Coluna do chip (mostra "Desagrupar" e "Mover"). */
   column: GridColumnDef | null;
+  /** "Mover para a esquerda/direita" desabilitados no limite (lados físicos; spec 17 A1). */
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
   onAction: (action: GroupPanelMenuAction) => void;
   onKeyDown: (event: KeyboardEvent) => void;
 }
 
+export interface MenuItem<A extends string> {
+  action: A;
+  label: string;
+  /** Visível e focável pelas setas, mas sem efeito (APG: \`aria-disabled\`). */
+  disabled?: boolean;
+  /** Texto oculto depois do rótulo (ex.: a coluna de "Desagrupar"). */
+  hiddenSuffix?: string;
+}
+
+/** Itens \`menuitem\` com foco móvel por setas (sem estado). */
+export const renderMenuItems = <A extends string>(className: string, items: readonly MenuItem<A>[], onAction: (action: A) => void): TemplateResult => html`
+  ${map(items, item => html`
+    <button
+      class=${className}
+      type="button"
+      role="menuitem"
+      tabindex="-1"
+      aria-disabled=${item.disabled ? 'true' : 'false'}
+      @click=${() => {
+        if (!item.disabled) {
+          onAction(item.action);
+        }
+      }}>${item.label}${item.hiddenSuffix ? html`<span class="visually-hidden"> ${item.hiddenSuffix}</span>` : nothing}</button>`)}`;
+
 /** O menu (sem estado): itens `menuitem` com foco móvel por setas. */
-export const renderGroupPanelMenu = ({ translation, column, onAction, onKeyDown }: GroupPanelMenuContext): TemplateResult => {
-  const actions: GroupPanelMenuAction[] = [
-    ...column ? ['ungroupColumn' as const] : [],
-    'ungroupAll',
-    'expandAllGroups',
-    'collapseAllGroups',
+export const renderGroupPanelMenu = ({ translation, column, canMoveLeft = false, canMoveRight = false, onAction, onKeyDown }: GroupPanelMenuContext): TemplateResult => {
+  const items: MenuItem<GroupPanelMenuAction>[] = [
+    ...column
+      ? [
+        { action: 'ungroupColumn' as const, label: translation.ungroupColumn, hiddenSuffix: column.label ?? '' },
+        { action: 'moveLeft' as const, label: translation.moveLeft, disabled: !canMoveLeft },
+        { action: 'moveRight' as const, label: translation.moveRight, disabled: !canMoveRight },
+      ]
+      : [],
+    { action: 'ungroupAll', label: translation.ungroupAll },
+    { action: 'expandAllGroups', label: translation.expandAllGroups },
+    { action: 'collapseAllGroups', label: translation.collapseAllGroups },
   ];
 
   return html`
@@ -202,15 +241,8 @@ export const renderGroupPanelMenu = ({ translation, column, onAction, onKeyDown 
       .popover=${'manual'}
       role="menu"
       aria-label=${translation.groupPanelMenu}
+      @contextmenu=${(event: Event) => event.preventDefault()}
       @keydown=${onKeyDown}>
-      ${map(actions, action => html`
-        <button
-          class="group-panel-menu-item"
-          type="button"
-          role="menuitem"
-          tabindex="-1"
-          @click=${() => onAction(action)}>${translation[action]}${action === 'ungroupColumn' && column?.label
-            ? html`<span class="visually-hidden"> ${column.label}</span>`
-            : nothing}</button>`)}
+      ${renderMenuItems('group-panel-menu-item', items, onAction)}
     </div>`;
 };

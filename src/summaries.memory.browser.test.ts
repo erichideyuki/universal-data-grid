@@ -59,7 +59,8 @@ const exercise = async (grid: DataGrid): Promise<void> => {
   grid.getSummaryValues(['R0']);
 
   await press(grid, chip(grid), 'F10', { shiftKey: true });
-  menuItems(grid)[3].click();
+  // "Recolher todos" (último item do menu do chip).
+  menuItems(grid).at(-1)!.click();
   await settle(grid);
   chip(grid).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 10, clientY: 10 }));
   await settle(grid);

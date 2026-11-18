@@ -235,7 +235,7 @@ describe('linha de filtro', () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.showFilterRow = true });
     const button = filterCell(grid, 1).querySelector<HTMLElement>('.filter-operation-button')!;
 
-    expect(button.getAttribute('aria-label')).toBe('Filter operation: Equals');
+    expect(button.getAttribute('aria-label')).toBe('Filter operation for Age: Equals');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
 
     click(button);
@@ -280,7 +280,7 @@ describe('linha de filtro', () => {
     await settle(grid);
 
     expect(grid.filterValue).toBeNull();
-    expect(filterCell(grid, 1).querySelector('.filter-operation-button')!.getAttribute('aria-label')).toBe('Filter operation: Equals');
+    expect(filterCell(grid, 1).querySelector('.filter-operation-button')!.getAttribute('aria-label')).toBe('Filter operation for Age: Equals');
   });
 
   it('Esc fecha o menu e devolve o foco; filterOperations/defaultFilterOperation; filterable=false sem editor', async () => {
@@ -297,7 +297,7 @@ describe('linha de filtro', () => {
     });
     const button = filterCell(grid, 0).querySelector<HTMLElement>('.filter-operation-button')!;
 
-    expect(button.getAttribute('aria-label')).toBe('Filter operation: Equals');
+    expect(button.getAttribute('aria-label')).toBe('Filter operation for Name: Equals');
     click(button);
     await settle(grid);
 
@@ -359,7 +359,7 @@ describe('linha de filtro', () => {
     await settle(grid);
 
     expect(editor(grid, 0).value).toBe('jo');
-    expect(filterCell(grid, 0).querySelector('.filter-operation-button')!.getAttribute('aria-label')).toBe('Filter operation: Starts with');
+    expect(filterCell(grid, 0).querySelector('.filter-operation-button')!.getAttribute('aria-label')).toBe('Filter operation for Name: Starts with');
     expect(editor(grid, 1).value).toBe('40');
     expect(names(grid)).toEqual(['joana']);
   });
@@ -371,7 +371,7 @@ describe('painel de busca', () => {
     const fired = events(grid);
     const input = root(grid).querySelector<HTMLInputElement>('.search-input')!;
 
-    expect(input.getAttribute('aria-label')).toBe('Search…');
+    expect(input.getAttribute('aria-label')).toBe('Search in the grid');
     expect(input.getAttribute('part')).toBe('search-input');
 
     typeInto(input, 'b>X');
@@ -416,11 +416,12 @@ describe('filtro do cabeçalho', () => {
     return root(grid).querySelector<HTMLElement>('.header-filter')!;
   };
 
+  // Lista em árvore (spec 17, A10): o item é o treeitem, marcado por aria-checked.
   const entries = (popover: HTMLElement) =>
-    [...popover.querySelectorAll('.header-filter-list .header-filter-check')].map(label => label.textContent.replace(/\s+/g, ' ').trim());
+    [...popover.querySelectorAll('.header-filter-list [role=treeitem]')].map(item => item.textContent.replace(/\s+/g, ' ').trim());
   const check = (popover: HTMLElement, text: string) =>
-    [...popover.querySelectorAll<HTMLLabelElement>('.header-filter-list .header-filter-check')]
-      .find(label => label.querySelector('.header-filter-text')!.textContent === text)!.querySelector('input')!;
+    [...popover.querySelectorAll<HTMLElement>('.header-filter-list [role=treeitem]')]
+      .find(item => item.querySelector('.header-filter-text')!.textContent === text)!;
 
   it('valores distintos com contagem e (Blanks); OK aplica; funil ativo; não ordena', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.headerFilter = true });
@@ -456,8 +457,8 @@ describe('filtro do cabeçalho', () => {
     // Reabrir mostra a seleção atual; desmarcar um só grava noneof.
     const again = await open(grid, 'City');
 
-    expect(check(again, 'Lima').checked).toBe(false);
-    expect(check(again, 'Rio').checked).toBe(true);
+    expect(check(again, 'Lima').getAttribute('aria-checked')).toBe('false');
+    expect(check(again, 'Rio').getAttribute('aria-checked')).toBe('true');
     again.querySelector<HTMLInputElement>('.header-filter-select-all input')!.click();
     await settle(grid);
     check(again, 'Rio').click();
@@ -510,7 +511,7 @@ describe('filtro do cabeçalho', () => {
 
     const year = [...popover.querySelectorAll<HTMLElement>('.header-filter-item')].find(item => item.textContent.includes('1994'))!;
 
-    year.querySelector<HTMLInputElement>('input')!.click();
+    year.click();
     click(year.querySelector<HTMLElement>('.header-filter-expand')!);
     await settle(grid);
 

@@ -61,7 +61,7 @@ export const cleanup = (): void => {
 const root = (grid: DataGrid): ShadowRoot => grid.shadowRoot!;
 
 export const headerLabels = (grid: DataGrid): string[] =>
-  [...root(grid).querySelectorAll('th.header-column')].map(th => th.textContent.trim());
+  [...root(grid).querySelectorAll('th.header-column')].map(th => th.querySelector('.header-text')?.textContent.trim() ?? '');
 
 /** Rótulo das linhas de grupo, sem a contagem/resumos (`groupInfos`). */
 export const groupLabels = (grid: DataGrid): string[] =>

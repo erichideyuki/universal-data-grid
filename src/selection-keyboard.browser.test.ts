@@ -262,6 +262,9 @@ describe('teclado já existente continua', () => {
     expect(root(grid).querySelector('th')!.getBoundingClientRect().width).toBeGreaterThan(before);
     expect(focusedText(grid)).toBe('Name');
 
+    // F2: menu do cabeçalho ("⋮", spec 17 A1), depois a alça.
+    await press(grid, 'F2');
+    expect(focused(grid)!.classList.contains('column-header-menu-button')).toBe(true);
     await press(grid, 'F2');
     expect(focused(grid)!.classList.contains('resize-handle')).toBe(true);
     expect(root(grid).querySelector('.resize-handle')!.getAttribute('tabindex')).toBe('-1');

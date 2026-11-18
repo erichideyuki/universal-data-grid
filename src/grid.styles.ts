@@ -8,6 +8,8 @@ export const styles = css`
   :host {
     display: block;
     height: 100%;
+    /* Cor do texto própria (spec 17, A4): numa página escura sem tema, não herda texto claro sobre o fundo claro do grid. */
+    color: var(--u-grid-color, var(--u-color-on-surface, rgb(29, 27, 32)));
     --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255)));
     /* Nomes antigos (antes da spec 15) seguem como fallback dos novos. */
     --_striped-background-color: var(--u-grid-striped-background-color, var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)));
@@ -22,11 +24,13 @@ export const styles = css`
     --_drop-indicator-color: var(--u-grid-drop-indicator-color, var(--u-grid-drop-indicator-bg, var(--u-color-primary, rgb(103, 80, 164))));
     --_row-lines-height: var(--u-grid-row-line-width, var(--u-grid-row-lines-height, var(--_borders-width)));
     --_header-height: var(--u-grid-toolbar-height, var(--u-grid-header-height, 56px));
-    --_toggle-color: var(--u-grid-group-toggle-color, var(--u-grid-toggle-color, var(--u-color-on-surface-variant, rgb(73, 69, 79))));
+    /* Ícones, bordas de caixas e placeholder: sem o tema, derivam da cor do texto (página escura; spec 17). */
+    --_variant-color: var(--u-color-on-surface-variant, color-mix(in srgb, currentColor 80%, transparent));
+    --_toggle-color: var(--u-grid-group-toggle-color, var(--u-grid-toggle-color, var(--_variant-color)));
     --_row-hover-opacity: var(--u-grid-row-hover-opacity, var(--u-table-hover-opacity, var(--u-state-layer-hover-opacity, 8%)));
     --_group-column-width: 32px;
     --_dir: 1;
-    --_resize-handle-width: var(--u-grid-resize-handle-width, 8px);
+    --_resize-handle-width: var(--u-grid-resize-handle-width, 24px);
     --_fixed-shadow-color: var(--u-grid-fixed-shadow-color, color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 22%, transparent));
     --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
     --_selection-column-width: 48px;
@@ -56,7 +60,7 @@ export const styles = css`
   }
 
   .container:has(.header).drop-target::after {
-    top: var(--_header-height);
+    top: var(--_toolbar-offset, var(--_header-height));
   }
 
   .scroll-container {
@@ -64,12 +68,15 @@ export const styles = css`
     overflow: auto;
   }
 
+  /* Quebra linha em telas estreitas (WCAG 1.4.10, spec 17 A9). */
   .group-container {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    flex: 1;
+    align-self: stretch;
+    flex: 1 1 200px;
     gap: 8px;
-    height: 100%;
+    min-width: 0;
   }
 
   .group-container.drop-target::before {
@@ -211,6 +218,15 @@ export const styles = css`
     background-color: var(--_row-tint);
   }
 
+  /*
+   * Seleção não só por cor (WCAG 1.4.1, spec 17 A2): barra no início da 1ª
+   * célula da linha selecionada (dentro da cadeia de box-shadow da célula).
+   */
+  tbody tr[role=row].selected:not(.group-row) > td:first-child {
+    --_select-line: inset calc(var(--u-grid-selected-row-indicator-width, 3px) * var(--_dir)) 0 0 0 var(--u-grid-selected-row-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
+    box-shadow: var(--_select-line), var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
+  }
+
   /* Célula ativa do teclado (roving tabindex); o clique não mostra o anel. */
   td[tabindex]:focus,
   th[tabindex]:focus {
@@ -256,7 +272,7 @@ export const styles = css`
     justify-content: center;
     width: 18px;
     height: 18px;
-    border: 2px solid var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    border: 2px solid var(--_variant-color);
     border-radius: 2px;
     vertical-align: middle;
     color: var(--u-color-on-primary, rgb(255, 255, 255));
@@ -329,7 +345,7 @@ export const styles = css`
   .move-container {
     --u-elevation-level: 1;
     position: fixed;
-    background-color: var(--u-color-surface-container);
+    background-color: var(--u-color-surface-container, rgb(243, 237, 247));
     border-radius: 4px;
     z-index: 2000;
     --_level: 1;
@@ -416,15 +432,21 @@ export const styles = css`
     z-index: 1;
   }
 
+  /* Alvo de 24px (WCAG 2.5.8, spec 17 A3): o \`th\` reserva o espaço da alça no fim. */
+  .header-column:has(> .resize-handle) {
+    padding-inline-end: max(var(--_cell-inline-padding), var(--_resize-handle-width));
+  }
+
+  /* Barra junto à borda da coluna; opaca no hover/foco (≥ 3:1, WCAG 1.4.11). */
   .resize-handle::after {
     content: "";
     position: absolute;
     top: 25%;
     bottom: 25%;
-    inset-inline-end: calc(var(--_resize-handle-width) / 2 - 1px);
+    inset-inline-end: 1px;
     width: 2px;
     border-radius: 1px;
-    background-color: currentColor;
+    background-color: var(--u-grid-resize-handle-color, var(--_toggle-color));
     opacity: 0;
     transition: opacity 120ms;
   }
@@ -432,7 +454,7 @@ export const styles = css`
   .header-column:hover .resize-handle::after,
   .resize-handle:focus-visible::after,
   .resizing .resize-handle:active::after {
-    opacity: 0.5;
+    opacity: 1;
   }
 
   .resize-handle:focus-visible {
@@ -537,8 +559,11 @@ export const styles = css`
     background-color: var(--u-grid-header-background-color, var(--_background-color));
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 0;
     padding: var(--_header-padding);
-    height: var(--_header-height);
+    /* \`--u-grid-toolbar-height\` é a altura mínima: a barra cresce ao quebrar linha. */
+    min-height: var(--_header-height);
     z-index: 1;
   }
 
@@ -549,7 +574,7 @@ export const styles = css`
     font-weight: var(--u-title-s-font-weight);
     display: flex;
     align-items: center;
-    height: 100%;
+    min-height: 32px;
     flex: 1;
     color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent);
   }
@@ -557,13 +582,14 @@ export const styles = css`
   .group-end-dropzone {
     display: flex;
     align-items: center;
-    height: 100%;
+    align-self: stretch;
+    min-width: 24px;
     flex: 1;
     order: 9999;
   }
 
   .header + table thead {
-    top: var(--_header-height);
+    top: var(--_toolbar-offset, var(--_header-height));
   }
 
   .column-chooser-button {
@@ -750,7 +776,8 @@ export const styles = css`
 
   /* ------------------------------------------------ menu do painel de grupos */
 
-  .group-panel-menu {
+  .group-panel-menu,
+  .column-header-menu {
     position: fixed;
     inset: auto;
     margin: 0;
@@ -788,6 +815,67 @@ export const styles = css`
   .group-panel-menu-item:focus-visible {
     outline: var(--_focus-ring);
     outline-offset: -2px;
+  }
+
+  /* Item que não se aplica agora (limite do bloco): focável pelas setas, sem efeito. */
+  .group-panel-menu-item[aria-disabled="true"] {
+    cursor: default;
+    color: color-mix(in srgb, currentColor 50%, transparent);
+  }
+
+  .group-panel-menu-item[aria-disabled="true"]:hover {
+    background: none;
+  }
+
+  /*
+   * Botão "⋮" do menu do cabeçalho (spec 17, A1): no fluxo, depois do funil
+   * (não cobre a seta nem o funil); aparece no hover/foco e fica sempre
+   * visível em telas de toque. Alvo de 24px (WCAG 2.5.8).
+   */
+  .column-header-menu-button {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 1.125rem;
+    cursor: pointer;
+    color: var(--_toggle-color);
+    opacity: 0;
+  }
+
+  .column-header-menu-button::before {
+    content: "";
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  .header-column:hover .column-header-menu-button,
+  .header-column:focus-within .column-header-menu-button,
+  .column-header-menu-button[aria-expanded="true"] {
+    opacity: 1;
+  }
+
+  .column-header-menu-button:hover,
+  .column-header-menu-button[aria-expanded="true"] {
+    background-image: linear-gradient(color-mix(in srgb, currentColor 8%, transparent), color-mix(in srgb, currentColor 8%, transparent));
+  }
+
+  .column-header-menu-button:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  @media (hover: none) {
+    .column-header-menu-button {
+      opacity: 1;
+    }
   }
 
   /* ------------------------------------------------------------- filtro */
@@ -833,7 +921,7 @@ export const styles = css`
   /* Único rótulo visível do campo: ≥ 4,5:1 sobre o fundo do campo (WCAG 1.4.3, spec 17). */
   .search-input::placeholder,
   .header-filter-search::placeholder {
-    color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    color: var(--_variant-color);
     opacity: 1;
   }
 
@@ -1042,14 +1130,53 @@ export const styles = css`
     padding: 4px 0;
   }
 
+  /* Item da árvore (spec 17, A10): a linha inteira marca; a caixa é só visual. */
   .header-filter-item {
     display: flex;
     align-items: center;
+    gap: 12px;
+    min-height: 36px;
     padding-inline: calc(16px + var(--_level, 0) * 20px) 16px;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+
+  .header-filter-item:hover {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .header-filter-item:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
+  }
+
+  .header-filter-box {
+    box-sizing: border-box;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--_variant-color);
+    border-radius: 2px;
+    color: var(--u-color-on-primary, rgb(255, 255, 255));
+  }
+
+  .header-filter-item:is([aria-checked="true"], [aria-checked="mixed"]) .header-filter-box {
+    border-color: var(--u-color-primary, rgb(103, 80, 164));
+    background-color: var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  .header-filter-note {
+    margin: 0;
+    padding: 4px 16px;
+    font-size: 0.75rem;
   }
 
   .header-filter-expand {
     margin-inline-start: -6px;
+    margin-inline-end: -8px;
   }
 
   .header-filter-expand svg {
@@ -1181,9 +1308,26 @@ export const styles = css`
 
     .column-chooser,
     .group-panel-menu,
+    .column-header-menu,
     .filter-menu,
     .header-filter {
       border: 1px solid CanvasText;
+    }
+
+    .group-panel-menu-item[aria-disabled="true"] {
+      color: GrayText;
+    }
+
+    .column-header-menu-button::before {
+      forced-color-adjust: none;
+      background-color: ButtonText;
+    }
+
+    .header-filter-item:is([aria-checked="true"], [aria-checked="mixed"]) .header-filter-box {
+      forced-color-adjust: none;
+      border-color: Highlight;
+      background-color: Highlight;
+      color: HighlightText;
     }
 
     .selection-checkbox:is([aria-checked="true"], [aria-checked="mixed"]) {

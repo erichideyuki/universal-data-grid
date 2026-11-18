@@ -16,6 +16,10 @@
               "name": "--u-grid-background-color"
             },
             {
+              "description": "Text color of the grid. Default: on-surface token (`rgb(29, 27, 32)`).",
+              "name": "--u-grid-color"
+            },
+            {
               "description": "Background of even rows when `striped`.",
               "name": "--u-grid-striped-background-color"
             },
@@ -24,7 +28,7 @@
               "name": "--u-grid-header-background-color"
             },
             {
-              "description": "Height of the bar above the table (group panel, chooser button). Default `56px`.",
+              "description": "Minimum height of the bar above the table (group panel, search, chooser button); it grows when its content wraps. Default `56px`.",
               "name": "--u-grid-toolbar-height"
             },
             {
@@ -156,6 +160,14 @@
               "name": "--u-grid-selected-row-background-color"
             },
             {
+              "description": "Bar at the start of selected rows (selection is not shown by color alone). Default: primary color.",
+              "name": "--u-grid-selected-row-indicator-color"
+            },
+            {
+              "description": "Thickness of that bar; `0` hides it. Default `3px`.",
+              "name": "--u-grid-selected-row-indicator-width"
+            },
+            {
               "description": "Text color of sorted column headers.",
               "name": "--u-grid-sorted-header-color"
             },
@@ -172,8 +184,12 @@
               "name": "--u-grid-drop-indicator-width"
             },
             {
-              "description": "Width of the column resize handle. Default `8px`.",
+              "description": "Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on. Default `24px` (WCAG 2.5.8).",
               "name": "--u-grid-resize-handle-width"
+            },
+            {
+              "description": "Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.",
+              "name": "--u-grid-resize-handle-color"
             },
             {
               "description": "Shadow at the edge of fixed columns while scrolling.",
@@ -296,6 +312,14 @@
             {
               "description": "The group panel context menu.",
               "name": "group-panel-menu"
+            },
+            {
+              "description": "The column header context menu.",
+              "name": "column-header-menu"
+            },
+            {
+              "description": "The \"⋮\" button that opens the column header menu.",
+              "name": "column-header-menu-button"
             },
             {
               "description": "The filter row (`<tr>`) below the column headers.",
@@ -467,8 +491,18 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
+              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, move the chip left/right (grouping\nlevel), ungroup all, expand/collapse all groups. Default `true`;\n`group-panel-menu=\"false\"` disables it.",
               "attribute": "group-panel-menu"
+            },
+            {
+              "kind": "field",
+              "name": "columnHeaderMenu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Context menu of the column headers (right-click, the \"⋮\" button, Shift+F10\nor the context menu key on a header): group by the column, move it\nleft/right, auto-size or widen/narrow it. It is the single-pointer\nalternative to dragging (WCAG 2.5.7): with `column-header-menu=\"false\"`\nthe host must provide one. Only actions that apply to the column are\nlisted; without any, the browser menu is kept. Default `true`.",
+              "attribute": "column-header-menu"
             },
             {
               "kind": "field",
@@ -1141,14 +1175,14 @@
               "type": {
                 "text": "CustomEvent<GridGroupEventDetail>"
               },
-              "description": "After the grouping changed (user or API)."
+              "description": "After the grouping changed (user — drag, Ctrl+G, group panel or column header menu — or API)."
             },
             {
               "name": "u-grid-column-reorder",
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
               },
-              "description": "The user moved a column (drag and drop or Alt+Shift+←/→ on the header)."
+              "description": "The user moved a column (drag and drop, Alt+Shift+←/→ on the header or the column header menu)."
             },
             {
               "name": "u-grid-column-visibility-change",
@@ -1169,7 +1203,7 @@
               "type": {
                 "text": "CustomEvent<GridColumnResizeEventDetail>"
               },
-              "description": "The user finished resizing a column (pointer release, keyboard or double-click auto-size)."
+              "description": "The user finished resizing a column (pointer release, keyboard, double-click auto-size or the column header menu)."
             },
             {
               "name": "u-grid-filter-change",
@@ -1303,8 +1337,17 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, ungroup all, expand/collapse all\ngroups. Default `true`; `group-panel-menu=\"false\"` disables it.",
+              "description": "Context menu of the group panel (right-click, Shift+F10 or the context\nmenu key on a group chip): ungroup, move the chip left/right (grouping\nlevel), ungroup all, expand/collapse all groups. Default `true`;\n`group-panel-menu=\"false\"` disables it.",
               "fieldName": "groupPanelMenu"
+            },
+            {
+              "name": "column-header-menu",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Context menu of the column headers (right-click, the \"⋮\" button, Shift+F10\nor the context menu key on a header): group by the column, move it\nleft/right, auto-size or widen/narrow it. It is the single-pointer\nalternative to dragging (WCAG 2.5.7): with `column-header-menu=\"false\"`\nthe host must provide one. Only actions that apply to the column are\nlisted; without any, the browser menu is kept. Default `true`.",
+              "fieldName": "columnHeaderMenu"
             },
             {
               "name": "show-filter-row",

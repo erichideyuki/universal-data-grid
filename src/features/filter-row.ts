@@ -148,6 +148,7 @@ export class FilterRowController implements ReactiveController {
   readonly #operations = new Map<GridColumnDef, GridFilterOperation>();
   #menuColumn: GridColumnDef | undefined;
   #menuShown = false;
+  #menuFocus: 'checked' | 'first' | 'last' = 'checked';
   #restoreFocusTo: GridColumnDef | undefined;
 
   constructor(host: FilterRowHost) {
@@ -298,11 +299,26 @@ export class FilterRowController implements ReactiveController {
       return;
     }
 
+    this.openMenu(column);
+  }
+
+  /** Abre o menu com o foco na operação atual (clique/Enter) ou no 1º/último item (↓/↑, APG Menu Button). */
+  openMenu(column: GridColumnDef, focus: 'checked' | 'first' | 'last' = 'checked'): void {
     this.closeMenu();
     this.#menuColumn = column;
+    this.#menuFocus = focus;
     this.#menuShown = false;
     this.#host.requestUpdate();
   }
+
+  /** ↓/↑ no botão de operação abrem o menu (spec 17, A11). */
+  readonly onButtonKeyDown = (event: KeyboardEvent, column: GridColumnDef): void => {
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openMenu(column, event.key === 'ArrowDown' ? 'first' : 'last');
+    }
+  };
 
   closeMenu(restoreFocus = false): void {
     if (!this.#menuColumn) {
@@ -348,7 +364,11 @@ export class FilterRowController implements ReactiveController {
 
     this.#position(menu, this.#buttonOf(this.#menuColumn));
     document.addEventListener('pointerdown', this.#outsidePointerDown, true);
-    (menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu.querySelector<HTMLElement>('[role="menuitemradio"]'))?.focus();
+    const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+    const target = this.#menuFocus === 'first' ? items[0]
+      : this.#menuFocus === 'last' ? items[items.length - 1]
+        : menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? items[0];
+    target?.focus();
   }
 
   /**
@@ -529,7 +549,10 @@ export const renderFilterCell = ({
     editors = editor(0, label);
   }
 
-  const operationLabel = `${translation.filterOperationLabel}: ${operationName(operation, translation)}`;
+  const operationLabel = formatMessage(translation.filterOperationButtonLabel, {
+    column: column.label || column.path || '',
+    operation: operationName(operation, translation),
+  });
 
   return html`
     <td class="filter-cell ${className}" style=${style} part="filter-cell" role="gridcell" aria-colindex=${colIndex}>
@@ -545,7 +568,8 @@ export const renderFilterCell = ({
               aria-expanded=${open ? 'true' : 'false'}
               aria-label=${operationLabel}
               title=${operationLabel}
-              @click=${() => controller.toggleMenu(column)}><span aria-hidden="true">${operationGlyph(operation)}</span></button>`
+              @click=${() => controller.toggleMenu(column)}
+              @keydown=${(event: KeyboardEvent) => controller.onButtonKeyDown(event, column)}><span aria-hidden="true">${operationGlyph(operation)}</span></button>`
           : nothing}
         ${editors}
       </div>

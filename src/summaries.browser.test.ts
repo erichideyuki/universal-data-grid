@@ -379,24 +379,26 @@ describe('menu do painel de grupos', () => {
 
     // Ordenável: a ativação ordena, o menu é atalho (não é "botão de menu").
     expect(chip.hasAttribute('aria-haspopup')).toBe(false);
-    expect(chip.getAttribute('aria-keyshortcuts')).toBe('Shift+F10');
+    expect(chip.getAttribute('aria-keyshortcuts')).toBe('Shift+F10 Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G');
     chip.focus();
     await press(grid, chip, 'F10', { shiftKey: true });
 
     expect(menu(grid)!.getAttribute('part')).toBe('group-panel-menu');
     // Fora do role="grid" (que só pode ter linhas).
     expect(menu(grid)!.closest('[role=grid]')).toBeNull();
-    expect(items(grid).map(item => item.textContent.trim())).toEqual(['Ungroup Country', 'Ungroup all', 'Expand all groups', 'Collapse all groups']);
+    expect(items(grid).map(item => item.textContent.trim())).toEqual(['Ungroup Country', 'Move left', 'Move right', 'Ungroup all', 'Expand all groups', 'Collapse all groups']);
+    // Um chip só: "Mover" visível, desabilitado (aria-disabled, alcançável pelas setas).
+    expect(items(grid).map(item => item.getAttribute('aria-disabled'))).toEqual(['false', 'true', 'true', 'false', 'false', 'false']);
     expect(root(grid).activeElement).toBe(items(grid)[0]);
 
     await press(grid, items(grid)[0], 'ArrowUp');
-    expect(root(grid).activeElement).toBe(items(grid)[3]);
-    await press(grid, items(grid)[3], 'Home');
+    expect(root(grid).activeElement).toBe(items(grid)[5]);
+    await press(grid, items(grid)[5], 'Home');
     expect(root(grid).activeElement).toBe(items(grid)[0]);
     await press(grid, items(grid)[0], 'End');
-    expect(root(grid).activeElement).toBe(items(grid)[3]);
+    expect(root(grid).activeElement).toBe(items(grid)[5]);
 
-    await press(grid, items(grid)[3], 'Escape');
+    await press(grid, items(grid)[5], 'Escape');
     expect(menu(grid)).toBeNull();
     expect(root(grid).activeElement).toBe(chips(grid)[0]);
   });
@@ -410,7 +412,7 @@ describe('menu do painel de grupos', () => {
 
     chips(grid)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true, clientX: 20, clientY: 20 }));
     await settle(grid);
-    items(grid)[2].click();
+    items(grid)[4].click();
     await settle(grid);
 
     expect(menu(grid)).toBeNull();
@@ -418,7 +420,7 @@ describe('menu do painel de grupos', () => {
     expect(expansion).toEqual([{ groupPath: null, groupIndex: null, expanded: true, source: 'user' }]);
 
     await press(grid, chips(grid)[0], 'ContextMenu');
-    items(grid)[1].click();
+    items(grid)[3].click();
     await settle(grid);
 
     expect(grid.getGrouping()).toEqual([]);
@@ -441,7 +443,7 @@ describe('menu do painel de grupos', () => {
     expect(root(grid).activeElement).toBe(chips(grid)[0]);
 
     await press(grid, chips(grid)[0], 'ContextMenu');
-    items(grid)[1].click();
+    items(grid)[3].click();
     await settle(grid);
 
     expect(root(grid).activeElement?.matches('th.header-column')).toBe(true);

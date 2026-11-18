@@ -1,6 +1,7 @@
 import { LitElement } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
+import { demoteRendererContent } from './features/cell-content-focus.js';
 import type { GridColumnDef } from './grid-column-def.js';
 
 /**
@@ -68,6 +69,12 @@ export class DataGridCustomCell extends LitElement {
 
     const content = column.renderer(this.item);
     this.#container.replaceChildren(...content ? [content] : []);
+
+    // Um ponto de Tab por grid: o conteúdo interativo só por Enter/F2 (spec 17, A12).
+    if (content) {
+      demoteRendererContent(content);
+    }
+
     this.#renderedColumn = column;
     this.#renderedItem = this.item;
   }
