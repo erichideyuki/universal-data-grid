@@ -503,7 +503,7 @@
               "name": "fixed-bottom-row-group"
             },
             {
-              "description": "Rows rendered by `rowRenderer` (with `row`).",
+              "description": "Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`).",
               "name": "full-width-row"
             },
             {
@@ -662,7 +662,8 @@
               "type": {
                 "text": "readonly any[]"
               },
-              "description": "Rows fixed (\"pinned\") right below the column headers (property only):\nthe host's own items, rendered with the grid columns (formatting, cell\n`renderer`, `rowRenderer`). They stay out of sorting, filtering, the\nsearch, grouping, paging (shown on every page), `getTotalCount()` and\nthe summaries; they are not selectable, editable nor expandable. The\nsame object may also be in `items` (it shows in both places)."
+              "description": "Rows fixed (\"pinned\") right below the column headers (property only):\nthe host's own items, rendered with the grid columns (formatting, cell\n`renderer`, `rowRenderer`). They stay out of sorting, filtering, the\nsearch, grouping, paging (shown on every page), `getTotalCount()` and\nthe summaries; they are not selectable, editable nor expandable. The\nsame object may also be in `items` (it shows in both places).",
+              "default": "[]"
             },
             {
               "kind": "field",
@@ -670,7 +671,8 @@
               "type": {
                 "text": "readonly any[]"
               },
-              "description": "Like `fixedTopItems`, fixed right above the totals footer (property only)."
+              "description": "Like `fixedTopItems`, fixed right above the totals footer (property only).",
+              "default": "[]"
             },
             {
               "kind": "field",
@@ -1151,7 +1153,7 @@
               "type": {
                 "text": "unknown"
               },
-              "description": "Key of the data row of the active cell (the cell keyboard navigation\nstarts from); `null` when it is a header or group row. Setting it moves\nthe active cell to that row (scrolling to it) without taking the DOM\nfocus and without firing `u-grid-focus-change`; a key not in the rows is\nignored and `null` moves it to the first header (ignored when\n`show-column-headers` is `false`)."
+              "description": "Key of the data row of the active cell (the cell keyboard navigation\nstarts from); `null` when it is a header, group or fixed row (the\nsetter only finds body rows). Setting it moves\nthe active cell to that row (scrolling to it) without taking the DOM\nfocus and without firing `u-grid-focus-change`; a key not in the rows is\nignored and `null` moves it to the first header (ignored when\n`show-column-headers` is `false`)."
             },
             {
               "kind": "field",
@@ -1860,7 +1862,7 @@
                   }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
             },
             {
               "kind": "method",

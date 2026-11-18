@@ -65,7 +65,8 @@ Tipos exportados:
   GridRowFixed; grid; signal }` (mesmo contrato dos contextos da spec 10:
   sem `rowIndex`/`selected`/`expanded`, que mudam sem o item mudar).
 - `type GridRowRenderer<TItem> = (item: TItem, ctx:
-  GridRowRenderContext<TItem>) => GridRenderResult | false`.
+  GridRowRenderContext<TItem>) => GridRowRenderResult`, com
+  `GridRowRenderResult = GridRenderResult | false` exportado.
 - `GridCellType` ganha `'full-width'` (JSDoc de `column` no foco: `null`
   nela).
 - `GridFocusChangeEventDetail` ganha `rowFixed: GridRowFixed` e
@@ -155,9 +156,10 @@ Custom properties: `--u-grid-fixed-row-background-color` (padrão
 - Renderer: mesmas regras da spec 10 (diretiva `render/content.ts`, roda
   de novo quando item, `rowRenderer` ou idioma mudam (a decisão
   `false` fica guardada com o resultado);
-  `ctx.signal` abortado ao sair da janela/grid desconectado; exceção →
-  `console.error` uma vez e célula vazia; `HTMLElement` por slot no light
-  DOM).
+  `ctx.signal` abortado ao sair da janela/grid desconectado e na hora
+  quando devolve `false`; exceção → `console.error` uma vez e a linha
+  MANTÉM as colunas (mesma estrutura no servidor e no cliente); valor
+  inválido → linha inteira vazia; `HTMLElement` por slot no light DOM).
 
 ## Acessibilidade
 - Linhas fixas: cada lado num `<tbody role="rowgroup" aria-label>` (nome
@@ -226,3 +228,32 @@ trocado pelo `false` do próprio `rowRenderer` a pedido do usuário; `rowFixed` 
 foco; `GridRowFixed` com `null`; parts com sufixo `-row`/`-row-group`;
 `focusCell` com `rowFixed`; células iniciais reais na linha inteira; fixas
 sem sticky quando ocupam demais; nomes dos `rowgroup`s).
+
+## Decisões da implementação
+- Índices internos: corpo `0..n-1`, totais `n`, fixas a partir de `n + 1`
+  (topo, depois fundo) — o virtualizador e o row model não mudam; a ordem
+  visual fica em `#toVisual`/`#fromVisual` (teclado) e `#ariaRowIndexOf`.
+  Linha fixa = `DataRow` com `fixed` (chave `f:t:N`/`f:b:N`), fora de
+  `isDataRow` (seleção, edição, detalhe e intervalo não as veem).
+- `rowRenderer`: resultado calculado ANTES do `<tr>` num cache por chave de
+  linha (`#rowRenders`), entregue pronto à diretiva `rendererContent`; o que
+  não foi renderizado no último render é solto no `updated` (`signal`
+  abortado). Exceção = linha normal; valor inválido = linha vazia.
+- Altura da linha inteira: camada esparsa do virtualizador junto com os
+  detalhes (`#applyVariableRows`), índices das já renderizadas
+  (`#fullWidthIndices`) e altura por item (`WeakMap`/LRU); refeitos quando
+  as linhas mudam. Em `wrap` a medição geral já cobre.
+- Sticky medido por `ResizeObserver` (cabeçalho, totais, fixas):
+  `--_fixed-top-offset`/`--_fixed-bottom-offset`; regra dos 50% troca a
+  classe `fixed-rows-scroll`. `scrollToIndex` desconta o que gruda embaixo
+  (`getStickyBottomHeight`).
+- Corrigido junto (frente 10): `--_viewport-inline-size` no `.container`
+  (o `style` do `.scroll-container` é do template e era apagado) e
+  `overflow: clip` nas células de detalhe e de linha inteira (o `hidden`
+  prendia o conteúdo sticky).
+- Entrega (`a11y-reviewer`): padding de rolagem zerado só com as fixas
+  grudadas; `aria-readonly` nas fixas e na célula única com edição;
+  célula única descreve "removida" e o erro da linha; seleção da linha
+  inteira em `forced-colors` por borda (conteúdo com cores do sistema).
+  Restaurar uma linha inteira removida no lote: `restoreRow()`/descartar
+  (a coluna de botões fica sob a célula única, como aprovado).

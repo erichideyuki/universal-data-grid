@@ -1582,7 +1582,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart fixed-bottom-row - Rows fixed at the bottom (with `fixed-row`).
  * @csspart fixed-top-row-group - The row group (`<tbody>`) of the rows fixed at the top.
  * @csspart fixed-bottom-row-group - The row group (`<tbody>`) of the rows fixed at the bottom.
- * @csspart full-width-row - Rows rendered by `rowRenderer` (with `row`).
+ * @csspart full-width-row - Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`).
  * @csspart full-width-cell - The cell that holds the `rowRenderer` content.
  * @csspart expanded - Master rows whose detail is expanded (with `row`).
  * @csspart pager - The pager (`<nav>`) below the table (`paging`).
@@ -1673,6 +1673,7 @@ export class DataGrid extends LitElement {
    * search, grouping, paging (shown on every page), `getTotalCount()` and
    * the summaries; they are not selectable, editable nor expandable. The
    * same object may also be in `items` (it shows in both places).
+   * @default []
    */
   @property({ attribute: false })
   get fixedTopItems(): readonly any[] {
@@ -1683,7 +1684,10 @@ export class DataGrid extends LitElement {
     this.#fixedTopItems = items ?? [];
   }
 
-  /** Like `fixedTopItems`, fixed right above the totals footer (property only). */
+  /**
+   * Like `fixedTopItems`, fixed right above the totals footer (property only).
+   * @default []
+   */
   @property({ attribute: false })
   get fixedBottomItems(): readonly any[] {
     return this.#fixedBottomItems;
@@ -2551,7 +2555,8 @@ export class DataGrid extends LitElement {
 
   /**
    * Key of the data row of the active cell (the cell keyboard navigation
-   * starts from); `null` when it is a header or group row. Setting it moves
+   * starts from); `null` when it is a header, group or fixed row (the
+   * setter only finds body rows). Setting it moves
    * the active cell to that row (scrolling to it) without taking the DOM
    * focus and without firing `u-grid-focus-change`; a key not in the rows is
    * ignored and `null` moves it to the first header (ignored when
@@ -4784,7 +4789,8 @@ export class DataGrid extends LitElement {
    * first render it only sets the active cell (the focus moves when it is
    * rendered) and fires no event. `options.rowFixed` looks for the row among
    * the fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead
-   * of the body.
+   * of the body (`false` when the key is not among them). In a full-width
+   * row (`rowRenderer`) the focus goes to its single cell for any `column`.
    */
   focusCell(rowKey: unknown, column?: GridColumnRef | null, options?: { rowFixed?: GridRowFixed } | null): boolean {
     this.#ensureRows();
@@ -10803,7 +10809,7 @@ export class DataGrid extends LitElement {
       // Cabeçalho/barra presos no topo e rodapé de totais preso embaixo: a
       // célula do corpo não para embaixo deles (WCAG 2.4.11).
       // Célula numa linha fixa grudada: só a revelação horizontal (a rolagem do corpo não pula, WCAG 2.4.3).
-      const inFixed = cell.closest('tbody.fixed-rows') !== null;
+      const inFixed = this.#stickyFixed && cell.closest('tbody.fixed-rows') !== null;
       const inBody = cell.closest('tbody') !== null && !inFixed;
       scroller.style.scrollPaddingBlockStart = cell.tagName === 'TH' || inFixed ? '0px' : `${this.#stickyTop()}px`;
       scroller.style.scrollPaddingBlockEnd = inBody ? `${this.#stickyBottom()}px` : '0px';
@@ -12879,6 +12885,7 @@ export class DataGrid extends LitElement {
             style=${cell.style}
             role="gridcell"
             aria-colindex="${cell.col + 1}"
+            aria-readonly=${ifDefined(fixed && this.#editingOn && this.#readonlyMarks ? 'true' : undefined)}
             data-col=${cell.col}
             aria-selected=${ifDefined(rangeEdges(cell.col) ? 'true' : undefined)}
             tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
@@ -12889,6 +12896,11 @@ export class DataGrid extends LitElement {
           : this.#renderCommandCell(row, rowIndex, this.#leadingColumns + this._visibleColumns.length, edit?.pending)
         : nothing}
     `;
+  }
+
+  /** `aria-readonly` nas células que não editam quando há o que editar no grid (frente 09). */
+  get #readonlyMarks(): boolean {
+    return !!this.allowEditing || this.allowAdding;
   }
 
   /** Células antes das colunas comuns: recuos de grupo, expansão e caixa (vazias nas fixas). */
@@ -12957,6 +12969,11 @@ export class DataGrid extends LitElement {
   #renderFullWidthCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean, expanded: boolean, entry: RowRenderEntry) {
     const leading = this.#leadingColumns;
     const span = this.#totalColumns(layout) - this._groupColumns.length - leading;
+    // Estado da edição (frente 09) que as células comuns diriam: removida e o erro da linha.
+    const pending = row.fixed ? undefined : this.#pendingOf(row);
+    const rowError = pending && pending.type !== 'remove' ? this.#rowErrorText(pending) : '';
+    const errorId = rowError ? `full-width-error-${rowIndex}` : undefined;
+    const describedBy = [pending?.type === 'remove' ? 'edit-desc-removed' : undefined, errorId].filter(Boolean).join(' ');
 
     return html`
       ${this.#renderLeadingCells(row, rowIndex, selected, expanded)}
@@ -12966,6 +12983,8 @@ export class DataGrid extends LitElement {
         role="gridcell"
         aria-colindex=${leading + 1}
         aria-colspan=${Math.max(this.#navColumns.length - leading, 1)}
+        aria-readonly=${ifDefined(this.#editingOn && this.#readonlyMarks ? 'true' : undefined)}
+        aria-describedby=${ifDefined(describedBy || undefined)}
         data-col=${leading}
         colspan=${Math.max(span, 1)}
         style="--_full-width-start: ${this.#stickyStart()}px"
@@ -12975,7 +12994,7 @@ export class DataGrid extends LitElement {
           deps: [entry],
           renderer: entry.renderer,
           invoke: () => entry.dead ? nothing : entry.result as GridRenderResult,
-        })}</div></td>
+        })}</div>${errorId ? html`<span class="visually-hidden" id=${errorId}>${rowError}</span>` : nothing}</td>
     `;
   }
 

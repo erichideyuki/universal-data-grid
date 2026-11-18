@@ -1594,6 +1594,17 @@ export const styles = css`
       border-block-end: 2px solid CanvasText;
     }
 
+    /* Linha inteira selecionada: o conteúdo do hospedeiro segue as cores do sistema; a seleção é uma borda. */
+    tbody tr[role=row].selected > td.full-width-cell {
+      background: Canvas;
+      color: CanvasText;
+      border-inline-start: 4px solid Highlight;
+    }
+
+    td.full-width-cell .full-width-content {
+      forced-color-adjust: auto;
+    }
+
     tbody.fixed-bottom-rows > tr:first-child > td,
     tbody.fixed-bottom-rows + tfoot .total-row > td {
       border-block-start: 2px solid CanvasText;

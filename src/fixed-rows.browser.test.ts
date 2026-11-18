@@ -315,7 +315,7 @@ describe('linhas fixas: teclado e foco', () => {
     expect(root(grid).activeElement).not.toBeNull();
   });
 
-  it('Shift+↓ a partir de uma fixa não seleciona', async () => {
+  it('Shift+↓ a partir de uma fixa seleciona só a linha de destino (âncora só no corpo)', async () => {
     const grid = await create(5, g => g.selectionMode = 'multiple');
     expect(grid.focusCell(-2, undefined, { rowFixed: 'top' })).toBe(true);
     await settle(grid);
@@ -385,4 +385,53 @@ describe('linhas fixas: axe', () => {
       expect(result.violations.map(violation => violation.id)).toEqual([]);
     });
   }
+});
+
+describe('linhas fixas: roteiros extras', () => {
+  it('sem sticky (zoom alto): focar uma fixa com o corpo rolado não a deixa sob o cabeçalho', async () => {
+    const grid = await create(300, g => {
+      g.fixedTopItems = rows(3).map(row => ({ ...row, id: -10 - row.id }));
+      g.fixedBottomItems = rows(3).map(row => ({ ...row, id: -20 - row.id }));
+      g.summary = { total: [{ column: 'amount', type: 'sum' }] };
+    }, '300px');
+    expect(root(grid).querySelector('.container')!.classList.contains('fixed-rows-scroll')).toBe(true);
+
+    expect(grid.focusCell(150)).toBe(true);
+    await settle(grid);
+
+    const visible = (): boolean => {
+      const cell = active(grid);
+      const rect = cell.getBoundingClientRect();
+      return grid.shadowRoot!.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('td, th') === cell;
+    };
+
+    expect(grid.focusCell(-11, undefined, { rowFixed: 'top' })).toBe(true);
+    await settle(grid);
+    await settle(grid);
+    expect(visible()).toBe(true);
+
+    expect(grid.focusCell(-21, undefined, { rowFixed: 'bottom' })).toBe(true);
+    await settle(grid);
+    await settle(grid);
+    expect(visible()).toBe(true);
+  });
+
+  it('com paginação, PageDown numa fixa não troca de página', async () => {
+    const grid = await create(100, g => {
+      g.paging = true;
+      g.pageSize = 10;
+    }, '700px');
+    expect(grid.focusCell(-1, undefined, { rowFixed: 'top' })).toBe(true);
+    await settle(grid);
+    await key(grid, 'PageDown');
+    expect(grid.pageIndex).toBe(0);
+    expect(activeRow(grid).closest('tbody.body-rows')).not.toBeNull();
+  });
+
+  it('com edição ligada, as células fixas são aria-readonly', async () => {
+    const grid = await create(3, g => {
+      g.allowEditing = true;
+    });
+    expect(fixedRows(grid, 'top')[0].querySelector('td[part~=cell]')!.getAttribute('aria-readonly')).toBe('true');
+  });
 });

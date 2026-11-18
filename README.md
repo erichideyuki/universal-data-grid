@@ -890,7 +890,7 @@ DOM, hidden, while scrolled away), sorting, grouping and column moves.
 ```ts
 grid.focus();                          // focus the active cell
 grid.focusCell(item, column);          // scroll to a cell and focus it (false if the row or column is not shown)
-grid.focusedRowKey;                    // key of the active data row (null in a header or group row)
+grid.focusedRowKey;                    // key of the active data row (null in a header, group or fixed row)
 grid.focusedRowKey = item;             // move the active cell without focusing (no event)
 grid.focusedRowKey = null;             // back to the first header (ignored without column headers)
 ```
@@ -898,10 +898,11 @@ grid.focusedRowKey = null;             // back to the first header (ignored with
 `u-grid-focus-change` fires when the active cell changes by keyboard, click or `focusCell()` — not
 when `focusedRowKey` is set, nor when the active cell moves because its row or column left the grid
 (read `focusedRowKey` then): `detail` is
-`{ rowKey, column, cellType, previousRowKey, previousColumn, source }`, where `cellType` is
-`'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command'` and `column` is
-`null` in the checkbox and detail toggle columns, in detail rows and in group rows (in a detail row,
-`rowKey` is the key of its master row).
+`{ rowKey, column, cellType, previousRowKey, previousColumn, rowFixed, previousRowFixed, source }`, where `cellType` is
+`'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command' | 'full-width'` and `column` is
+`null` in the checkbox and detail toggle columns, in detail rows, in group rows and in full-width cells
+(in a detail row, `rowKey` is the key of its master row); `rowFixed` is `'top'`/`'bottom'` in a
+[fixed row](#fixed-pinned-rows) and `null` otherwise.
 
 Group footers and the totals footer ([Summaries](#summaries)) are rows of the navigation too (the
 totals footer is the last row, `cellType: 'summary'`). A group row is a single stop: summaries shown
@@ -2160,6 +2161,8 @@ interface GridI18n {
   filteredAnnouncement: string; // after a user filter: "Rows: {count}"
   selectRow: string;           // row checkbox label: "Select row"
   rowDetails: string;          // master-detail toggle button and column: "Row details"
+  fixedTopRowsLabel: string;   // row group of fixedTopItems: "Pinned rows at top"
+  fixedBottomRowsLabel: string; // row group of fixedBottomItems: "Pinned rows at bottom"
   selectAllRows: string;       // "select all" checkbox label: "Select all rows"
   rowsSelectedAnnouncement: string; // after a bulk selection: "Selected rows: {count}"
   rowsCopiedAnnouncement: string;   // after Ctrl+C: "Copied rows: {count}"
@@ -2290,7 +2293,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `selectionMode`    | `selection-mode`      | `'none' \| 'single' \| 'multiple'` | `'none'` | Row selection. See [Selection & keyboard](#selection--keyboard). |
 | `showCheckboxes`   | `show-checkboxes`     | `boolean` | `false` | Checkbox column with "select all" (`multiple` only). |
 | `selectedKeys`     | *(property only)*     | `readonly unknown[]` | `[]` | Selected row keys (`keyExpr` values, or the items without it). Setting it fires no event. |
-| `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell. Setting it fires no event. |
+| `focusedRowKey`    | *(property only)*     | `unknown` | `null` | Key of the data row of the active cell (`null` in a header, group or fixed row; the setter only finds body rows). Setting it fires no event. |
 | `keyExpr`          | `key-expr`            | `string \| (item) => GridRowKey \| null` | `null` | Row key. See [Row keys](#row-keys-keyexpr). |
 | `dataSource`       | *(property only)*     | `GridDataSource \| null` | `null` | Data source (alternative to `items`). See [Data source](#data-source). |
 | `remoteOperations` | `remote-operations`   | `boolean \| GridRemoteOperations` | `false` | What the server does (the attribute is all or nothing). |
@@ -2456,6 +2459,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `detail-row` | Detail rows (with `row`). |
 | `detail-cell` | The full-width cell of a detail row. |
 | `fixed-row` | Fixed rows (with `row`, `odd`/`even`, and `fixed-top-row` or `fixed-bottom-row`; never `selected`). |
+| `fixed-top-row` | Rows fixed at the top (with `fixed-row`). |
+| `fixed-bottom-row` | Rows fixed at the bottom (with `fixed-row`). |
 | `fixed-top-row-group` / `fixed-bottom-row-group` | The row group (`<tbody>`) of each side's fixed rows. |
 | `full-width-row` | Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`). |
 | `full-width-cell` | The cell that holds the `rowRenderer` content. |

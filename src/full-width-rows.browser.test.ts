@@ -368,3 +368,76 @@ describe('linha inteira: axe', () => {
     });
   }
 });
+
+describe('linha inteira: roteiros extras', () => {
+  it('Tab numa linha inteira mais alta que a área (com 3+3 fixas) não para sob o que gruda', async () => {
+    const tall: GridRowRenderer<Row> = item => item.id === 4 && html`<div>
+      <button class="first">First</button><div style="height: 900px"></div><button class="last">Last</button></div>`;
+    const grid = await create(40, g => {
+      g.rowRenderer = tall;
+      g.fixedTopItems = rows(3).map(row => ({ ...row, id: -10 - row.id, banner: false }));
+      g.fixedBottomItems = rows(3).map(row => ({ ...row, id: -20 - row.id, banner: false }));
+    }, '1000px');
+    const visible = (): boolean => {
+      const element = active(grid);
+      const rect = element.getBoundingClientRect();
+      const hit = root(grid).elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit === element || element.contains(hit);
+    };
+
+    expect(grid.focusCell(4)).toBe(true);
+    await settle(grid);
+    await key(grid, 'Enter');
+    expect(active(grid).classList.contains('first')).toBe(true);
+    expect(visible()).toBe(true);
+    await key(grid, 'Tab');
+    await settle(grid);
+    expect(active(grid).classList.contains('last')).toBe(true);
+    expect(visible()).toBe(true);
+    await key(grid, 'Tab');
+    await settle(grid);
+    expect(active(grid).classList.contains('first')).toBe(true);
+    expect(visible()).toBe(true);
+  });
+
+  it('RTL: ←/→ espelhados entre a caixa e a célula única', async () => {
+    const grid = await create(6, g => {
+      g.setAttribute('dir', 'rtl');
+      g.selectionMode = 'multiple';
+      g.showCheckboxes = true;
+    });
+    expect(grid.focusCell(1)).toBe(true);
+    await settle(grid);
+    await key(grid, 'ArrowRight');
+    expect(active(grid).classList.contains('selection-cell')).toBe(true);
+    await key(grid, 'ArrowLeft');
+    expect(active(grid).classList.contains('full-width-cell')).toBe(true);
+  });
+
+  it('foco dentro do conteúdo quando a linha deixa de ser inteira: vai à célula, não ao body', async () => {
+    const grid = await create();
+    expect(grid.focusCell(1)).toBe(true);
+    await settle(grid);
+    await key(grid, 'Enter');
+    expect(active(grid).classList.contains('act')).toBe(true);
+
+    grid.rowRenderer = () => false;
+    await settle(grid);
+    expect(root(grid).activeElement).not.toBeNull();
+    expect(active(grid).closest('tr')!.getAttribute('data-index')).toBe('1');
+  });
+
+  it('removida no lote: a célula única diz que a linha foi removida; aria-readonly com edição', async () => {
+    const grid = await create(6, g => {
+      g.editMode = 'batch';
+      g.allowEditing = true;
+      g.allowRemoving = true;
+    });
+    const cell = (): HTMLElement => rowOf(grid, 1).querySelector<HTMLElement>('td.full-width-cell')!;
+    expect(cell().getAttribute('aria-readonly')).toBe('true');
+
+    await grid.removeRow(1);
+    await settle(grid);
+    expect(cell().getAttribute('aria-describedby')).toContain('edit-desc-removed');
+  });
+});
