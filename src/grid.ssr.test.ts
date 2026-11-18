@@ -5,7 +5,7 @@ import { html } from 'lit';
 
 import { describe, expect, it } from 'vitest';
 
-import type { GridColumnDef, GridDetailRenderer, GridFilterExpression, GridSummary } from './grid-column-def.js';
+import type { GridColumnDef, GridDetailRenderer, GridFilterExpression, GridRowRenderer, GridSummary } from './grid-column-def.js';
 import type { GridToolbarItem, GridToolbarItemName } from './grid.js';
 
 import './grid.js';
@@ -364,12 +364,12 @@ describe('SSR da barra (frente 18)', () => {
 describe('SSR das linhas fixas e da linha inteira (frente 20)', () => {
   it('linhas fixas e linha inteira (frente 20), em pt e ar/RTL; renderer que monta DOM fica com as colunas', async () => {
     const flat: GridColumnDef[] = [{ path: 'country', label: 'Country' }, { path: 'year', label: 'Year' }];
-    const rowRenderer = (item: { year: number }) => item.year === 2021 && html`<b class="wide">Wide ${item.year}</b>`;
+    const rowRenderer: GridRowRenderer = (item: { year: number }) => item.year === 2021 && html`<b class="wide">Wide ${item.year}</b>`;
     const output = await renderToString(html`
       <u-grid language="pt" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'Meta', year: 1 }]}
         .fixedBottomItems=${[{ country: 'Média', year: 2 }]} .rowRenderer=${rowRenderer}></u-grid>
       <u-grid language="ar" dir="rtl" .columns=${flat} .items=${items} .fixedTopItems=${[{ country: 'X', year: 3 }]}></u-grid>
-      <u-grid .columns=${flat} .items=${items} .rowRenderer=${() => document.createElement('div')}></u-grid>`);
+      <u-grid .columns=${flat} .items=${items} .rowRenderer=${(() => document.createElement('div')) as GridRowRenderer}></u-grid>`);
 
     expect(output).toMatch(/<tbody[^>]*class="fixed-rows fixed-top-rows"[^>]*aria-label="Linhas fixadas no topo"/);
     expect(output).toMatch(/aria-label="Linhas fixadas no rodapé"/);

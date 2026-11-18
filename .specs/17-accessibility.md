@@ -331,3 +331,20 @@ Deixados (BAIXA, justificados): `lang` da mensagem quando o texto é da i18n
 interface na maioria dos casos); exemplo do formato do número (texto i18n
 novo — fica para aval); erro de salvar do modo linha na barra (não junto aos
 botões); mensagem da última linha visível pode ficar sob o rodapé fixo.
+
+## Frente 20 — linhas fixas e linha inteira
+
+Desenho revisado pelo `a11y-reviewer` antes do aval (seção
+"Acessibilidade" da spec 20), todos os achados acatados: fixas em
+`rowgroup`s próprios com nome (`fixedTopRowsLabel`/`fixedBottomRowsLabel`;
+🔎 conferir se algum leitor lê o nome do `rowgroup`), `aria-rowindex` na
+ordem visual, `aria-level="1"` no `treegrid`; sequência de teclado
+cabeçalho → fixas do topo → corpo → fixas do fundo → totais; PageUp/PageDown
+por blocos; foco em fixa só revela na horizontal (a rolagem do corpo não
+pula); `#stickyTop`/`#stickyBottom`/`scrollToIndex` descontam as fixas
+(WCAG 2.4.11); fixas deixam de ser sticky quando o que gruda passa de 50% da
+área (zoom, 1.4.10); linha inteira com as células iniciais reais (expansão,
+caixa) e uma `gridcell` com `aria-colspan`, Enter/F2/Esc como o detalhe.
+Corrigido junto: o conteúdo do detalhe (frente 10) não ficava na largura
+visível ao rolar na horizontal (a `--_viewport-inline-size` era apagada pelo
+`style` do template e o `overflow: hidden` da célula prendia o sticky).

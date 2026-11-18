@@ -702,6 +702,68 @@ const detailScenario = (rows: number, label: string) => {
   });
 };
 
+/**
+ * Frente 20: 1 milhão de linhas com 3+3 linhas fixas e linhas inteiras (1 a
+ * cada 50, com altura própria medida): ligar as fixas e o \`rowRenderer\`,
+ * rolar e saltar, navegar pelas fixas. O \`rowRenderer\` só roda nas linhas
+ * renderizadas; sem custo por linha não visível.
+ */
+const fixedRowsScenario = (rows: number, label: string) => {
+  it(`${label} linhas com 3+3 linhas fixas e linhas inteiras: ligar, rolar, saltar, focar uma fixa`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+    let calls = 0;
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeLeanColumns());
+    const fixed = (seed: number) => makeLeanItems(3).map((item, index) => ({ ...item, id: -seed - index }));
+
+    const renderer = (item: { id?: unknown }) => {
+      calls++;
+      return Number(item.id) % 50 === 7 && html`<div style="height: 72px; padding: 8px">Wide ${String(item.id)}</div>`;
+    };
+
+    const enableFixed = await interaction(
+      'enableFixedRows',
+      grid,
+      () => {
+        grid.fixedTopItems = fixed(10);
+        grid.fixedBottomItems = fixed(20);
+      },
+      () => {
+        grid.fixedTopItems = [];
+        grid.fixedBottomItems = [];
+      },
+    );
+    grid.fixedTopItems = fixed(10);
+    grid.fixedBottomItems = fixed(20);
+    const enableWide = await interaction('enableFullWidth', grid, () => grid.rowRenderer = renderer, () => grid.rowRenderer = null);
+    grid.rowRenderer = renderer;
+    await painted(grid);
+    calls = 0;
+    const scroll = await scrollMetrics(grid, 'fixed.');
+    const callsWhileScrolling = calls;
+    const focusFixed = await interaction(
+      'focusFixedRow',
+      grid,
+      () => grid.focusCell(-10, undefined, { rowFixed: 'top' }),
+      () => grid.focusCell(0),
+    );
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+    const renders = grid._memoryStats.rowRenders;
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = { firstRenderMs, ...enableFixed, ...enableWide, ...scroll, ...focusFixed, domNodes: nodes };
+
+    checkBudgets(rows, metrics, perf.report(`fixed-rows-${label}`, metrics));
+    expect(renders, 'resultados do rowRenderer só das linhas renderizadas').toBeLessThan(200);
+    expect(callsWhileScrolling, 'rowRenderer só nas linhas que entram na janela').toBeLessThan(20_000);
+  });
+};
+
 // ------------------------------------------------------- frente 08: fonte
 
 const LEAN_COUNTRIES = Array.from({ length: 16 }, (_, i) => `Country ${String.fromCharCode(65 + i)}`);
@@ -1296,6 +1358,7 @@ describe('perfil de máquina fraca', () => {
   applyChangesScenario(1_000_000, '1m');
   exportScenario(1_000_000, '1m');
   detailScenario(1_000_000, '1m');
+  fixedRowsScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');
   editingScenario(1_000_000, '1m');
   menusScenario(1_000_000, '1m');

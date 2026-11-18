@@ -221,6 +221,14 @@
               "name": "--u-grid-summary-background-color"
             },
             {
+              "description": "Background of the fixed rows (opaque). Default: the header background.",
+              "name": "--u-grid-fixed-row-background-color"
+            },
+            {
+              "description": "Line between the fixed rows and the body. Default: the line color.",
+              "name": "--u-grid-fixed-row-shadow-color"
+            },
+            {
               "description": "Font weight of summary cells. Default `500`.",
               "name": "--u-grid-summary-cell-font-weight"
             },
@@ -303,7 +311,7 @@
           ],
           "cssParts": [
             {
-              "description": "Every body row (`<tr>`; not the header nor the totals footer).",
+              "description": "Every body row (`<tr>`; not the header nor the totals footer), fixed rows included.",
               "name": "row"
             },
             {
@@ -475,6 +483,34 @@
               "name": "detail-cell"
             },
             {
+              "description": "Fixed rows (`fixedTopItems`/`fixedBottomItems`; with `row`, `odd`/`even`, never `selected`).",
+              "name": "fixed-row"
+            },
+            {
+              "description": "Rows fixed at the top (with `fixed-row`).",
+              "name": "fixed-top-row"
+            },
+            {
+              "description": "Rows fixed at the bottom (with `fixed-row`).",
+              "name": "fixed-bottom-row"
+            },
+            {
+              "description": "The row group (`<tbody>`) of the rows fixed at the top.",
+              "name": "fixed-top-row-group"
+            },
+            {
+              "description": "The row group (`<tbody>`) of the rows fixed at the bottom.",
+              "name": "fixed-bottom-row-group"
+            },
+            {
+              "description": "Rows rendered by `rowRenderer` (with `row`).",
+              "name": "full-width-row"
+            },
+            {
+              "description": "The cell that holds the `rowRenderer` content.",
+              "name": "full-width-cell"
+            },
+            {
               "description": "Master rows whose detail is expanded (with `row`).",
               "name": "expanded"
             },
@@ -619,6 +655,31 @@
               "default": "false",
               "description": "Detail rows start expanded. INITIAL default: afterwards expansion is grid\nstate (`expandRow`, `collapseRow`); changing it resets that state (no\nevent).",
               "attribute": "auto-expand-rows"
+            },
+            {
+              "kind": "field",
+              "name": "fixedTopItems",
+              "type": {
+                "text": "readonly any[]"
+              },
+              "description": "Rows fixed (\"pinned\") right below the column headers (property only):\nthe host's own items, rendered with the grid columns (formatting, cell\n`renderer`, `rowRenderer`). They stay out of sorting, filtering, the\nsearch, grouping, paging (shown on every page), `getTotalCount()` and\nthe summaries; they are not selectable, editable nor expandable. The\nsame object may also be in `items` (it shows in both places)."
+            },
+            {
+              "kind": "field",
+              "name": "fixedBottomItems",
+              "type": {
+                "text": "readonly any[]"
+              },
+              "description": "Like `fixedTopItems`, fixed right above the totals footer (property only)."
+            },
+            {
+              "kind": "field",
+              "name": "rowRenderer",
+              "type": {
+                "text": "GridRowRenderer | null"
+              },
+              "default": "null",
+              "description": "Full-width rows (property only): builds the content of ONE cell spanning\nthe data columns of a data or fixed row (group indents, detail toggle\nand selection checkbox stay). Return `false` to keep that row's columns\n— `null`/`nothing`/`''` give an EMPTY full-width row. See\n`GridRowRenderer` for when it runs."
             },
             {
               "kind": "field",
@@ -1790,9 +1851,16 @@
                   "type": {
                     "text": "GridColumnRef | null"
                   }
+                },
+                {
+                  "name": "options",
+                  "optional": true,
+                  "type": {
+                    "text": "{ rowFixed?: GridRowFixed } | null"
+                  }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a visible, ungrouped column (a band\nreturns `false`). Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body."
             },
             {
               "kind": "method",
@@ -2957,6 +3025,38 @@
           "name": "GridRenderResult",
           "declaration": {
             "name": "GridRenderResult",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRowFixed",
+          "declaration": {
+            "name": "GridRowFixed",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRowRenderContext",
+          "declaration": {
+            "name": "GridRowRenderContext",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRowRenderer",
+          "declaration": {
+            "name": "GridRowRenderer",
+            "module": "dist/grid-column-def.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "GridRowRenderResult",
+          "declaration": {
+            "name": "GridRowRenderResult",
             "module": "dist/grid-column-def.js"
           }
         },

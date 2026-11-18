@@ -1399,11 +1399,11 @@ interface RowRenderEntry {
 }
 
 /** `rowRenderer` que já lançou ou devolveu valor inválido (um `console.error` por função). */
-const reportedRowRenderers = new WeakSet<object>();
+const reportedRowRenderers = new WeakSet();
 
 const isRenderResult = (value: unknown): value is GridRenderResult =>
   value === null || value === undefined || value === nothing || typeof value === 'string'
-  || (typeof value === 'object' && ('_$litType$' in (value as object) || typeof (value as Node).nodeType === 'number'));
+  || (typeof value === 'object' && ('_$litType$' in value || typeof (value as Node).nodeType === 'number'));
 
 type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true }
   | { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number };
@@ -1511,6 +1511,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
  * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
  * @cssprop --u-grid-summary-background-color - Background of the totals footer and group footers. Default: the header background.
+ * @cssprop --u-grid-fixed-row-background-color - Background of the fixed rows (opaque). Default: the header background.
+ * @cssprop --u-grid-fixed-row-shadow-color - Line between the fixed rows and the body. Default: the line color.
  * @cssprop --u-grid-summary-cell-font-weight - Font weight of summary cells. Default `500`.
  * @cssprop --u-grid-filter-row-height - Height of the filter row. Default: `--u-grid-header-cell-height` (`46px`).
  * @cssprop --u-grid-search-highlight-background-color - Background of the search matches in cells.
@@ -1532,7 +1534,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-cell-range-border-color - Outline around each cell range (not shown by color alone). Default: primary color (`Highlight` in forced colors).
  * @cssprop --u-grid-cell-range-border-width - Thickness of that outline. Default `2px`.
  *
- * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
+ * @csspart row - Every body row (`<tr>`; not the header nor the totals footer), fixed rows included.
  * @csspart group-row - Group header rows.
  * @csspart odd - Data rows in odd positions (the first data row is `odd`).
  * @csspart even - Data rows in even positions.
@@ -1575,6 +1577,13 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart detail-toggle-button - The expand/collapse button of a master row.
  * @csspart detail-row - Detail rows (with `row`).
  * @csspart detail-cell - The full-width cell of a detail row.
+ * @csspart fixed-row - Fixed rows (`fixedTopItems`/`fixedBottomItems`; with `row`, `odd`/`even`, never `selected`).
+ * @csspart fixed-top-row - Rows fixed at the top (with `fixed-row`).
+ * @csspart fixed-bottom-row - Rows fixed at the bottom (with `fixed-row`).
+ * @csspart fixed-top-row-group - The row group (`<tbody>`) of the rows fixed at the top.
+ * @csspart fixed-bottom-row-group - The row group (`<tbody>`) of the rows fixed at the bottom.
+ * @csspart full-width-row - Rows rendered by `rowRenderer` (with `row`).
+ * @csspart full-width-cell - The cell that holds the `rowRenderer` content.
  * @csspart expanded - Master rows whose detail is expanded (with `row`).
  * @csspart pager - The pager (`<nav>`) below the table (`paging`).
  * @csspart pager-button - Pager buttons (first, previous, page numbers, next, last).
@@ -1732,6 +1741,7 @@ export class DataGrid extends LitElement {
   #invokeRowRenderer(item: unknown, renderer: GridRowRenderer, epoch: object, fixed: GridRowFixed): RowRenderEntry {
     const entry: RowRenderEntry = { item, renderer, epoch, fixed, result: false, controller: undefined, pass: this.#rowRenderPass, dead: false };
     const grid = this;
+
     const report = (message: string, error?: unknown): void => {
       if (!reportedRowRenderers.has(renderer)) {
         reportedRowRenderers.add(renderer);
@@ -3502,7 +3512,7 @@ export class DataGrid extends LitElement {
       // O corpo começa depois do cabeçalho e das linhas fixas do topo (no fluxo, sticky ou não).
       return scroller && table
         ? table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (table.tHead?.offsetHeight ?? 0)
-          + (table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows')?.offsetHeight ?? 0)
+        + (table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows')?.offsetHeight ?? 0)
         : 0;
     },
     // Barra, cabeçalho e fixas do topo grudam: a área coberta vai até o fim do último.
@@ -4286,9 +4296,9 @@ export class DataGrid extends LitElement {
    * (ou `rowHeight`) e a medida acerta a rolagem como a do detalhe.
    */
   #measureFullWidth(): void {
-    const map = this.#fullWidthIndices;
+    const measuredIndices = this.#fullWidthIndices;
 
-    if (!this.rowRenderer && !map.size) {
+    if (!this.rowRenderer && !measuredIndices.size) {
       return;
     }
 
@@ -4304,12 +4314,12 @@ export class DataGrid extends LitElement {
       if (tr.classList.contains('full-width-row')) {
         measured.push(tr);
 
-        if (!map.has(index)) {
+        if (!measuredIndices.has(index)) {
           const row = this.#rowAt(index);
-          map.set(index, (row && !row.isGroup && !row.isFooter ? this.#fullWidthSizeOf(row.item) : undefined) ?? this.rowHeight);
+          measuredIndices.set(index, (row && !row.isGroup && !row.isFooter ? this.#fullWidthSizeOf(row.item) : undefined) ?? this.rowHeight);
           changed = true;
         }
-      } else if (map.delete(index)) {
+      } else if (measuredIndices.delete(index)) {
         // Deixou de ser inteira (o renderer devolveu `false`): volta à altura base.
         changed = true;
       }
@@ -4330,7 +4340,7 @@ export class DataGrid extends LitElement {
       const size = virtualizer.sizeOf(index);
       const row = this.#rowAt(index);
 
-      map.set(index, size);
+      measuredIndices.set(index, size);
 
       if (row && !row.isGroup && !row.isFooter) {
         const { item } = row;

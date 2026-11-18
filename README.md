@@ -28,7 +28,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Toolbar & context menus](#toolbar--context-menus) (built-in and custom toolbar items, "More actions", export button, context menus)
-- [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
+- [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers, fixed rows, full-width rows)
 - [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
 - [Editing](#editing) (cell, row and batch modes, editors, validation, add and delete rows)
 - [Internationalization (i18n)](#internationalization-i18n)
@@ -1280,6 +1280,7 @@ nesting level is not written as empty columns.
 | `selectedOnly` | `false` | Only the selected rows, in the current order and filter (not the selection order of `getSelectedItems()`). Group counts and summaries are computed over them. |
 | `includeGroups` | `true` | Group rows. `false` exports a flat list in the current order with the grouped columns first. |
 | `includeSummaries` | `true` | Group footers, totals and the summaries of group rows. |
+| `includeFixedRows` | `true` | Fixed rows (`fixedTopItems` before the body, `fixedBottomItems` before the totals; `fixed` on each data row). `selectedOnly` leaves them out. |
 | `separator` | `'auto'` | Field separator. `auto`: `;` when the grid language uses a decimal comma (pt, de, fr…: what Excel expects there), `,` otherwise. |
 | `bom` | `true` | UTF-8 byte order mark, so Excel opens the file as UTF-8. |
 | `includeHeaders` | `true` | First line with the column labels. |
@@ -1697,6 +1698,76 @@ grid.isRowExpanded(orders[0]);       // false
   template (see [Accessibility](#accessibility)).
 - Style with the `detail-toggle-cell`, `detail-toggle-button`, `detail-row`, `detail-cell` and
   `expanded` parts.
+
+### Fixed (pinned) rows
+
+`fixedTopItems` and `fixedBottomItems` (property only) are rows of **your own data** fixed below
+the column headers and above the totals footer — targets, last year, averages, a custom total
+(AG Grid calls them *pinned rows*). They use the grid columns, formatting, cell `renderer` and
+`rowRenderer`, scroll horizontally with the columns (fixed columns stay fixed) and never scroll
+vertically:
+
+```ts
+grid.fixedTopItems = [{ name: 'Target', amount: 50_000 }];
+grid.fixedBottomItems = [{ name: 'Average', amount: average }];
+```
+
+- They stay out of sorting, filtering, the search (no highlight), grouping and paging (shown on
+  every page), `getTotalCount()` and the summaries. They are not selectable, editable nor
+  expandable (their checkbox, toggle and buttons cells are empty). To fix an item of `items`, put
+  the same object in `fixedTopItems` — it shows in both places.
+- **Keyboard:** they are part of the row sequence — headers, top fixed rows, body, bottom fixed
+  rows, totals. `PageUp`/`PageDown` move by the body page and never jump over a block (last body
+  row → first bottom fixed row → totals). Moving among fixed rows doesn't scroll the body; a body
+  cell is never left under them. `Enter`/`F2` reach a cell renderer's content.
+- **Focus API:** `u-grid-focus-change` carries `rowFixed` (`'top' | 'bottom' | null`) and
+  `previousRowFixed`; `focusedRowKey` is `null` on a fixed row; `focusCell(key, column, { rowFixed:
+  'top' })` focuses one.
+- **Export:** `getExportData()`/CSV include them (`fixed` on each data row; top rows before the
+  body, bottom rows before the totals); `includeFixedRows: false` or `selectedOnly: true` leave them
+  out. `Ctrl+C` on a fixed cell copies it.
+- **Accessibility:** each side is a `rowgroup` named "Pinned rows at top"/"…at bottom"
+  (`fixedTopRowsLabel`/`fixedBottomRowsLabel`); `aria-rowindex` follows the visual order. Few
+  screen readers announce row group names, so let the row content say what it is ("Target",
+  "Average"). Keep them few: when the headers, fixed rows and totals take more than half of the
+  grid height (high zoom), the fixed rows stop sticking and scroll with the content.
+- Style with the `fixed-row`, `fixed-top-row`, `fixed-bottom-row`, `fixed-top-row-group` and
+  `fixed-bottom-row-group` parts and `--u-grid-fixed-row-background-color` /
+  `--u-grid-fixed-row-shadow-color`.
+
+### Full-width rows (`rowRenderer`)
+
+`rowRenderer(item, ctx)` (`ctx`: `item`, `rowKey`, `fixed`, `grid`, `signal`) replaces the data
+cells of a row with **one cell spanning the grid** — a card, a banner, a notice. Return `false` to
+keep that row's columns:
+
+```ts
+grid.rowRenderer = (item: Order) => item.type === 'notice'
+  && html`<div class="notice">${item.text}</div>`;   // false → normal row
+// ✗ item.type === 'notice' ? html`…` : nothing   → EMPTY full-width rows for every other item
+```
+
+- `null`, `undefined`, `''` and `nothing` are an *empty* full-width row; only `false` keeps the
+  columns. A renderer that throws keeps the columns (one `console.error`).
+- It runs for every **rendered** data or fixed row (never for rows outside the virtual window, nor
+  for group, summary, detail, skeleton or newly added rows): decide `false` first, cheaply,
+  deterministically and without touching `document` (server and client must decide the same).
+  The result — `false` included — is cached per row: it runs again when the item object, the
+  function or the language change and when the row comes back to the window. Assign a new item or a
+  new function to re-decide. `ctx.signal` aborts when the content is discarded, and right away when
+  the renderer returns `false`.
+- The group indents, the detail toggle and the selection checkbox stay as real cells before the
+  full-width cell (select and expand as usual); the content is kept within the visible width while
+  scrolling horizontally. The row height is the content height (at least `row-height`), measured
+  like a detail row; the scrollbar uses `row-height` until a row is rendered.
+- It is still a data row: selection (`Space`, click, `Shift`), `aria-selected`, striping,
+  master-detail, `removeRow`, export (the column values — the template is only visual). It is not
+  editable (`editCell`/`editRow` return `false`).
+- **Keyboard:** the full-width cell is one cell (`cellType: 'full-width'`, `column: null` in
+  `u-grid-focus-change`); `←`/`→` move between it and the leading cells, `↑`/`↓` keep the column of
+  the rows around it, `Enter`/`F2` move into its content, `Tab` cycles there, `Esc` comes back.
+  `Ctrl+C` on it copies the row.
+- Style with the `full-width-row` and `full-width-cell` parts.
 
 ---
 
@@ -2234,6 +2305,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
+| `fixedTopItems`    | *(property only)*     | `readonly any[]` | `[]` | Rows fixed below the headers. See [Fixed rows](#fixed-pinned-rows). |
+| `fixedBottomItems` | *(property only)*     | `readonly any[]` | `[]` | Rows fixed above the totals footer. |
+| `rowRenderer`      | *(property only)*     | `GridRowRenderer \| null` | `null` | Full-width row content (`false` keeps the columns). See [Full-width rows](#full-width-rows-rowrenderer). |
 | `editMode`         | `edit-mode`           | `'cell' \| 'row' \| 'batch'` | `'cell'` | How rows are edited. See [Editing](#editing). |
 | `allowEditing`     | `allow-editing`       | `boolean \| (item) => boolean` | `false` | Let the user edit cells (the function: property only). |
 | `allowAdding`      | `allow-adding`        | `boolean` | `false` | "Add row" button and `addRow()`. |
@@ -2305,6 +2379,8 @@ tint derive from it.
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |
 | `--u-grid-summary-background-color` | header background | Background of the totals footer and group footers (opaque: the footer covers the rows). |
 | `--u-grid-summary-cell-font-weight` | `500` | Font weight of summary cells. |
+| `--u-grid-fixed-row-background-color` | header background | Background of the fixed rows (opaque: the body scrolls under them). |
+| `--u-grid-fixed-row-shadow-color` | line color | Line between the fixed rows and the body. |
 | `--u-grid-filter-row-height` | header cell height (`46px`) | Height of the filter row. |
 | `--u-grid-search-highlight-background-color` / `--u-grid-search-highlight-color` | primary token at 24% / inherited | Search matches in cells. |
 | `--u-grid-header-filter-button-active-color` | primary token | Funnel of a filtered column. |
@@ -2379,6 +2455,10 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `detail-toggle-button` | The expand/collapse button of a master row. |
 | `detail-row` | Detail rows (with `row`). |
 | `detail-cell` | The full-width cell of a detail row. |
+| `fixed-row` | Fixed rows (with `row`, `odd`/`even`, and `fixed-top-row` or `fixed-bottom-row`; never `selected`). |
+| `fixed-top-row-group` / `fixed-bottom-row-group` | The row group (`<tbody>`) of each side's fixed rows. |
+| `full-width-row` | Rows rendered by `rowRenderer` (with `row`, `odd`/`even`, `selected`, `expanded`). |
+| `full-width-cell` | The cell that holds the `rowRenderer` content. |
 | `expanded` | Master rows whose detail is expanded (with `row`). |
 | `pager` | The pager (`<nav>`) below the table. |
 | `pager-button` | Pager buttons (first, previous, page numbers, next, last). |
@@ -2514,7 +2594,7 @@ CSS property and part for IDEs and tooling.
 | `refresh()` | Reload the data source (or recompute local data); resolves when done. |
 | `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
 | `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
-| `focusCell(rowKey, column?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded). |
+| `focusCell(rowKey, column?, options?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded). `{ rowFixed: 'top' \| 'bottom' }` looks among the fixed rows. |
 | `selectCellRange(range, { append })` | Select a range of data cells (`append`: add it, `multiple` only); `false` (nothing changes) when the mode is `none`, a column is not a visible data column, a row is not a data row of the displayed body, or the range is a single cell without `append` and another range. See [Cell ranges](#cell-ranges). |
 | `getCellRanges()` / `clearCellRanges()` | The cell ranges (copies, frozen) / clear them. |
 | `getCellRangeSummary({ signal })` | `Promise<GridCellRangeSummary>`: count, sum and average of the selected cells. |
@@ -2600,8 +2680,8 @@ import {
   type GridChangeSource,    // 'user' | 'api'
   type GridSelectionMode,   // 'none' | 'single' | 'multiple'
   type GridSelectionChangeEventDetail, // { selectedKeys, previous, added, removed, source }
-  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command'
-  type GridFocusChangeEventDetail, // { rowKey, column, cellType, previousRowKey, previousColumn, source }
+  type GridCellType,        // 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command' | 'full-width'
+  type GridFocusChangeEventDetail, // { rowKey, column, cellType, previousRowKey, previousColumn, rowFixed, previousRowFixed, source }
   type GridSortEventDetail, // { sorting, previous, source }
   type GridGroupEventDetail, // { grouping, previous, source }
   type GridGroupExpansionChangeEventDetail, // { groupPath, groupIndex, expanded, source }
@@ -2633,6 +2713,10 @@ import {
   type GridHeaderRenderContext, // { column, grid, signal }
   type GridGroupRenderContext, // { column, value, text, groupPath, groupIndex, itemCount, expanded, summaries, defaultText, grid, signal }
   type GridDetailRenderContext, // { item, rowKey, grid, signal }
+  type GridRowRenderer,     // (item, GridRowRenderContext) => GridRowRenderResult
+  type GridRowRenderResult, // GridRenderResult | false (false = keep the row's columns)
+  type GridRowRenderContext, // { item, rowKey, fixed, grid, signal }
+  type GridRowFixed,        // 'top' | 'bottom' | null
   type GridNoDataRenderContext, // { filtered, grid, signal }
   type GridRowExpansionChangeEventDetail, // { rowKey, expanded, source }
   type GridRowKey,          // string | number
@@ -2653,7 +2737,7 @@ import {
   type GridPageChangeEventDetail, // { pageIndex, previousPageIndex, pageSize, previousPageSize, source }
   type GridI18n,
   type GridI18nInput,       // Partial<GridI18n> that still accepts the deprecated keys
-  type GridExportOptions,   // { selectedOnly?, includeGroups?, includeSummaries?, signal? }
+  type GridExportOptions,   // { selectedOnly?, includeGroups?, includeSummaries?, includeFixedRows?, signal? }
   type GridCsvOptions,      // + { separator?, bom?, includeHeaders?, escapeFormulas?, rawValues? }
   type GridCsvDownloadOptions, // + { fileName? }
   type GridExportData,      // { columns: GridExportColumn[]; rows: GridExportRow[] }

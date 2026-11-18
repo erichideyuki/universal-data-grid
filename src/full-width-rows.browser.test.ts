@@ -118,6 +118,7 @@ describe('linha inteira: render', () => {
 
   it('nothing/null dão linha inteira vazia; exceção mantém as colunas (um console.error)', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
     const throwing: GridRowRenderer<Row> = item => {
       if (item.banner) {
         throw new Error('boom');
@@ -127,7 +128,7 @@ describe('linha inteira: render', () => {
     };
 
     const grid = await create(6, g => g.rowRenderer = item => item.banner ? nothing : false);
-    expect(rowOf(grid, 1).querySelector('td.full-width-cell')!.textContent!.trim()).toBe('');
+    expect(rowOf(grid, 1).querySelector('td.full-width-cell')!.textContent.trim()).toBe('');
 
     grid.rowRenderer = throwing;
     await settle(grid);
@@ -297,10 +298,12 @@ describe('linha inteira: teclado e foco', () => {
 describe('linha inteira: signal, linhas fixas e exportação', () => {
   it('signal abortado no false, ao sair da janela, ao trocar o renderer e ao desconectar', async () => {
     const signals = new Map<number, AbortSignal>();
+
     const renderer: GridRowRenderer<Row> = (item, ctx) => {
       signals.set(item.id, ctx.signal);
       return item.banner && html`<b>${item.name}</b>`;
     };
+
     const grid = await create(2000, g => g.rowRenderer = renderer);
 
     expect(signals.get(0)!.aborted).toBe(true);
@@ -321,6 +324,7 @@ describe('linha inteira: signal, linhas fixas e exportação', () => {
     const fixedSeen: unknown[] = [];
     const grid = await create(4, g => {
       g.fixedTopItems = [{ id: -1, name: 'Fixed', team: 'X', banner: true }];
+
       g.rowRenderer = (item: Row, ctx) => {
         fixedSeen.push(ctx.fixed);
         return item.banner && html`<span class="fixed-banner">${item.name}</span>`;
@@ -342,15 +346,19 @@ describe('linha inteira: signal, linhas fixas e exportação', () => {
 describe('linha inteira: axe', () => {
   for (const [label, configure] of [
     ['simples', () => undefined],
-    ['com caixas e detalhe', (grid: DataGrid) => {
-      grid.selectionMode = 'multiple';
-      grid.showCheckboxes = true;
-      grid.detailRenderer = () => 'Detail';
-    }],
-    ['agrupado (treegrid)', (grid: DataGrid) => {
-      grid.columns = [columns()[0], { ...columns()[1], groupIndex: 0 }];
-      grid.autoExpandGroups = true;
-    }],
+    [
+      'com caixas e detalhe', (grid: DataGrid) => {
+        grid.selectionMode = 'multiple';
+        grid.showCheckboxes = true;
+        grid.detailRenderer = () => 'Detail';
+      },
+    ],
+    [
+      'agrupado (treegrid)', (grid: DataGrid) => {
+        grid.columns = [columns()[0], { ...columns()[1], groupIndex: 0 }];
+        grid.autoExpandGroups = true;
+      },
+    ],
     ['RTL', (grid: DataGrid) => grid.setAttribute('dir', 'rtl')],
   ] as const) {
     it(`sem violações: ${label}`, async () => {

@@ -28,8 +28,8 @@ const columns = (): GridColumnDef[] => [
   { path: 'amount', label: 'Amount', dataType: 'number' },
 ];
 
-const top = (): Row[] => [{ id: -1, name: 'Target', team: 'ZZ', amount: 999 }, { id: -2, name: 'Last year', team: 'AA', amount: 1 }];
-const bottom = (): Row[] => [{ id: -3, name: 'Average', team: 'MM', amount: 50 }];
+const topItems = (): Row[] => [{ id: -1, name: 'Target', team: 'ZZ', amount: 999 }, { id: -2, name: 'Last year', team: 'AA', amount: 1 }];
+const bottomItems = (): Row[] => [{ id: -3, name: 'Average', team: 'MM', amount: 50 }];
 
 const root = (grid: DataGrid): ShadowRoot => grid.shadowRoot!;
 
@@ -37,11 +37,7 @@ const fixedRows = (grid: DataGrid, side: 'top' | 'bottom'): HTMLTableRowElement[
   [...root(grid).querySelectorAll<HTMLTableRowElement>(`tbody.fixed-${side}-rows > tr`)];
 
 const fixedNames = (grid: DataGrid, side: 'top' | 'bottom'): string[] =>
-  fixedRows(grid, side).map(tr => tr.querySelectorAll('td[part~=cell]')[0].textContent!.trim());
-
-const bodyNames = (grid: DataGrid): string[] =>
-  [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody.body-rows > tr[data-index]:not(.pinned):not(.group-row)')]
-    .map(tr => tr.querySelectorAll('td[part~=cell]')[0]?.textContent!.trim() ?? '');
+  fixedRows(grid, side).map(tr => tr.querySelectorAll('td[part~=cell]')[0].textContent.trim());
 
 const active = (grid: DataGrid): HTMLElement => root(grid).activeElement as HTMLElement;
 
@@ -55,8 +51,8 @@ const create = (count = 50, configure?: (grid: DataGrid) => void, height = '400p
   items: rows(count),
   height,
   configure: grid => {
-    grid.fixedTopItems = top();
-    grid.fixedBottomItems = bottom();
+    grid.fixedTopItems = topItems();
+    grid.fixedBottomItems = bottomItems();
     grid.keyExpr = 'id';
     configure?.(grid);
   },
@@ -192,7 +188,7 @@ describe('linhas fixas: teclado e foco', () => {
     for (let i = 0; i < 7; i++) {
       await key(grid, 'ArrowDown');
       const tr = activeRow(grid);
-      visited.push(tr.closest('tfoot') ? 'totals' : tr.querySelectorAll('td[part~=cell]')[0].textContent!.trim());
+      visited.push(tr.closest('tfoot') ? 'totals' : tr.querySelectorAll('td[part~=cell]')[0].textContent.trim());
     }
 
     expect(visited).toEqual(['Target', 'Last year', 'Name 0', 'Name 1', 'Name 2', 'Average', 'totals']);
@@ -212,7 +208,7 @@ describe('linhas fixas: teclado e foco', () => {
     expect(grid.focusCell(-2, grid.columns[1], { rowFixed: 'top' })).toBe(true);
     await settle(grid);
     expect(activeRow(grid).closest('tbody')!.classList.contains('fixed-top-rows')).toBe(true);
-    expect(active(grid).textContent!.trim()).toBe('AA');
+    expect(active(grid).textContent.trim()).toBe('AA');
     expect(grid.focusedRowKey).toBeNull();
 
     // Sem a opção, só o corpo.
@@ -272,6 +268,7 @@ describe('linhas fixas: teclado e foco', () => {
 
   it('PageUp/PageDown andam por blocos sem atravessar um de uma vez', async () => {
     const grid = await create(200, g => g.summary = { total: [{ column: 'amount', type: 'sum' }] }, '700px');
+
     const where = (): string => {
       const tr = activeRow(grid);
       return tr.closest('tfoot') ? 'totals' : tr.closest('tbody.fixed-top-rows') ? 'top' : tr.closest('tbody.fixed-bottom-rows') ? 'bottom' : 'body';
@@ -308,9 +305,9 @@ describe('linhas fixas: teclado e foco', () => {
     expect(grid.focusCell(-2, undefined, { rowFixed: 'top' })).toBe(true);
     await settle(grid);
 
-    grid.fixedTopItems = [top()[0], { id: -9, name: 'New', team: 'NN', amount: 0 }];
+    grid.fixedTopItems = [topItems()[0], { id: -9, name: 'New', team: 'NN', amount: 0 }];
     await settle(grid);
-    expect(active(grid).textContent!.trim()).toBe('New');
+    expect(active(grid).textContent.trim()).toBe('New');
 
     grid.fixedTopItems = [];
     await settle(grid);
@@ -336,9 +333,8 @@ describe('linhas fixas: exportação', () => {
     });
 
     const data = await grid.getExportData();
-    expect(data.rows.map(row => row.rowType === 'data' ? `${row.texts[0]}:${row.fixed}` : row.rowType)).toEqual([
-      'Target:top', 'Last year:top', 'Name 0:null', 'Name 1:null', 'Average:bottom', 'total',
-    ]);
+    const labels = data.rows.map(row => row.rowType === 'data' ? `${row.texts[0]}:${row.fixed}` : row.rowType);
+    expect(labels).toEqual(['Target:top', 'Last year:top', 'Name 0:null', 'Name 1:null', 'Average:bottom', 'total']);
 
     const without = await grid.getExportData({ includeFixedRows: false });
     expect(without.rows.map(row => row.rowType)).toEqual(['data', 'data', 'total']);
@@ -354,6 +350,7 @@ describe('linhas fixas: exportação', () => {
     await settle(grid);
 
     let text = '';
+
     const listener = (event: ClipboardEvent) => {
       text = event.clipboardData!.getData('text/plain');
     };
@@ -373,11 +370,13 @@ describe('linhas fixas: exportação', () => {
 describe('linhas fixas: axe', () => {
   for (const [label, configure] of [
     ['simples', (grid: DataGrid) => grid.summary = { total: [{ column: 'amount', type: 'sum' }] }],
-    ['agrupado com caixas', (grid: DataGrid) => {
-      grid.selectionMode = 'multiple';
-      grid.showCheckboxes = true;
-      grid.columns = [{ ...columns()[0] }, { ...columns()[1], groupIndex: 0 }, columns()[2]];
-    }],
+    [
+      'agrupado com caixas', (grid: DataGrid) => {
+        grid.selectionMode = 'multiple';
+        grid.showCheckboxes = true;
+        grid.columns = [{ ...columns()[0] }, { ...columns()[1], groupIndex: 0 }, columns()[2]];
+      },
+    ],
     ['RTL', (grid: DataGrid) => grid.setAttribute('dir', 'rtl')],
   ] as const) {
     it(`sem violações: ${label}`, async () => {
