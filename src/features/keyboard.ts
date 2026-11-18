@@ -115,3 +115,68 @@ export const rangeBetween = (from: number, to: number): number[] => {
 
   return result;
 };
+
+/** Célula do cabeçalho multinível (frente 13), em colunas navegáveis. */
+export interface HeaderCellSpan {
+  /** Nível de cima e quantos níveis cobre. */
+  level: number;
+  rowSpan: number;
+  /** Primeira coluna navegável coberta e quantas. */
+  start: number;
+  span: number;
+}
+
+export interface HeaderNavigationContext {
+  /** Níveis do cabeçalho (linhas `-levels..-1`; `-1` = o de baixo). */
+  levels: number;
+  colCount: number;
+  /** Há linhas no corpo (↓ do último nível vai à 1ª). */
+  hasBody: boolean;
+  cellAt: (level: number, col: number) => HeaderCellSpan | undefined;
+}
+
+/**
+ * Próxima célula a partir de um nível do cabeçalho (padrão espacial da APG):
+ * ←/→, Home/End andam no nível lembrado pulando o `colspan` inteiro (célula
+ * com `rowspan` não muda o nível); ↑/↓ mudam de nível pela borda da célula;
+ * ↓ do último nível vai à 1ª linha do corpo. `undefined` = a tecla segue a
+ * navegação comum (`nextCell`).
+ */
+export const nextHeaderCell = (from: CellPosition, key: NavigationKey, context: HeaderNavigationContext): CellPosition | undefined => {
+  const { levels, colCount, hasBody, cellAt } = context;
+  const level = Math.min(Math.max(from.row + levels, 0), levels - 1);
+  const lastCol = Math.max(colCount - 1, 0);
+  const col = Math.min(Math.max(from.col, 0), lastCol);
+  const cell = cellAt(level, col) ?? { level, rowSpan: 1, start: col, span: 1 };
+  const row = level - levels;
+
+  switch (key) {
+    case 'left':
+      return { row, col: cell.start > 0 ? cell.start - 1 : col };
+    case 'right':
+      return { row, col: cell.start + cell.span <= lastCol ? cell.start + cell.span : col };
+    case 'home':
+      return { row, col: 0 };
+    case 'end':
+      return { row, col: lastCol };
+    case 'gridHome':
+      return { row: -levels, col: 0 };
+    case 'up':
+      return { row: cell.level > 0 ? cell.level - 1 - levels : row, col };
+
+    case 'down': {
+      const below = cell.level + cell.rowSpan;
+
+      if (below < levels) {
+        return { row: below - levels, col };
+      }
+
+      return hasBody ? { row: 0, col } : { row, col };
+    }
+
+    case 'pageUp':
+      return { row, col };
+    default:
+      return undefined;
+  }
+};

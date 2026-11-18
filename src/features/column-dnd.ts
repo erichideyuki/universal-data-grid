@@ -108,7 +108,8 @@ export class ColumnDragAndDropAdapter {
 
         const position = calcCursorRelativePosition(event);
 
-        let targetIndex = this.#grid._regularColumns.indexOf(targetColumn);
+        // Índice entre as irmãs (mesma banda ou nível de cima, frente 13).
+        let targetIndex = this.#grid._siblingIndexOf(targetColumn);
 
         if (position === RelativePosition.After) {
           targetIndex++;
@@ -121,7 +122,8 @@ export class ColumnDragAndDropAdapter {
 
   /**
    * Soltar em outro cabeçalho do MESMO bloco (fixas no início, livres, fixas
-   * no fim). Chip de grupo pode cair em qualquer lugar (desagrupa).
+   * no fim) e da mesma banda (frente 13: banda só entre irmãs, coluna não sai
+   * da própria banda). Chip de grupo pode cair em qualquer lugar (desagrupa).
    */
   #accepts(event: DropEvent): boolean {
     if (event.target === event.draggable.target) {
@@ -135,7 +137,7 @@ export class ColumnDragAndDropAdapter {
       return true;
     }
 
-    return this.#grid._sameBlock(targetColumn, movingColumn);
+    return this.#grid._canDropColumn(movingColumn, targetColumn);
   }
 
   detach(): void {

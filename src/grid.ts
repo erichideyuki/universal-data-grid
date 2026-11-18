@@ -5,6 +5,7 @@ import { customElement, property, state as internalState } from 'lit/decorators.
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
+import { repeat } from 'lit/directives/repeat.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
@@ -78,6 +79,7 @@ import {
   type NavigationKey,
   navigationKeyOf,
   nextCell,
+  nextHeaderCell,
   rangeBetween,
 } from './features/keyboard.js';
 import {
@@ -112,6 +114,7 @@ import {
   type GridColumnDataType,
   type GridColumnDef,
   type GridColumnFixed,
+  type GridColumnRenderingMode,
   type GridDetailRenderer,
   type GridNoDataRenderer,
   type GridColumnRef,
@@ -131,6 +134,7 @@ import {
   isColumnEditable,
   type GridEditorRenderContext,
   type GridValidationContext,
+  isBand,
 } from './grid-column-def.js';
 import { type DataGridColumn, type GridColumnChange } from './grid-column.js';
 import {
@@ -142,14 +146,28 @@ import {
 } from './grid-i18n.js';
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
+import { prefixOffsets, columnWindow, type ColumnWindow } from './render/column-window.js';
 import { rendererContent } from './render/content.js';
 import { renderBuiltInEditor } from './render/editors.js';
-import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
+import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryColumnLayout, type SummaryText } from './render/footer.js';
 import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
-import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
+import { isActivationKey, renderBandHeaderCell, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
+import {
+  ancestorsOf,
+  buildColumnTree,
+  buildHeaderRows,
+  type ColumnTree,
+  headerCellAt,
+  type HeaderCellLayout,
+  type HeaderSlot,
+  moveAmongSiblings,
+  normalizeLeafOrder,
+  orderedSiblings,
+  rootOf,
+} from './row-model/columns.js';
 import { createComparer } from './row-model/compare.js';
 import { distinctValues, type DistinctValues } from './row-model/distinct.js';
 import {
@@ -220,6 +238,7 @@ export type {
   GridColumnDataType,
   GridColumnDef,
   GridColumnFixed,
+  GridColumnRenderingMode,
   GridColumnFormat,
   GridColumnFormatter,
   GridColumnRef,
@@ -757,9 +776,13 @@ interface PublicFocus {
   cellType: GridCellType;
 }
 
-/** `detail` of `u-grid-column-visibility-change`. */
+/**
+ * `detail` of `u-grid-column-visibility-change`: one event per column whose
+ * own visibility changed (a band first, then each column it shows). A band
+ * that disappears because none of its columns is visible fires nothing.
+ */
 export interface GridColumnVisibilityChangeEventDetail {
-  /** The column shown or hidden. */
+  /** The column (or band) shown or hidden. */
   column: GridColumnDef;
   /** New visibility. */
   visible: boolean;
@@ -777,11 +800,13 @@ export interface GridColumnFixedChangeEventDetail {
 
 /** `detail` of `u-grid-column-reorder`. Positions among the regular (non-grouped) columns; hidden ones count. */
 export interface GridColumnReorderEventDetail {
-  /** The moved column. */
+  /** The moved column (a leaf column or a band). */
   column: GridColumnDef;
-  /** New position. */
+  /** Band that contains the column; `null` at the top level. */
+  band: GridColumnDef | null;
+  /** New position among the column's siblings (same band, or top level) that are not grouped; hidden ones count. */
   index: number;
-  /** Position before the move. */
+  /** Position before the move, among the same siblings. */
   previousIndex: number;
   /** @deprecated Use `previousIndex`. */
   fromIndex: number;
@@ -884,7 +909,44 @@ interface ColumnLayout {
   bounds: WidthBounds;
   /** Largura conhecida (px) ou `undefined` antes da 1ª medição. */
   width: number | undefined;
+  /** Índice entre as navegáveis (0-based; `aria-colindex` - 1), também com colunas fora do DOM. */
+  col: number;
+  /** Largura (px) da espaçadora antes desta coluna: colunas fora do DOM (virtualização, frente 13). */
+  gapBefore: number;
 }
+
+/** Ordenação do cabeçalho de um render (prioridades só com mais de uma coluna). */
+interface HeaderSorting {
+  rowSorting: GridSort[];
+  showIndex: boolean;
+}
+
+/** Chave de uma célula do cabeçalho (virtualização: segue a coluna, não a posição). */
+const headerKeyOf = (header: HeaderCellLayout<NavColumn>): string | number =>
+  header.column === null ? `gap-${header.start}` : typeof header.column === 'object' ? columnIdOf(header.column) : header.column;
+
+/** Prefixo comum de duas cadeias de bandas. */
+const commonPrefix = <T>(a: readonly T[], b: readonly T[]): T[] => {
+  const result: T[] = [];
+
+  for (let index = 0; index < Math.min(a.length, b.length) && a[index] === b[index]; index++) {
+    result.push(a[index]);
+  }
+
+  return result;
+};
+
+/** `columnRenderingMode="auto"`: virtual acima deste número de colunas folha definidas. */
+const VIRTUAL_COLUMNS_THRESHOLD = 50;
+
+/** Largura de coluna sem `width` na virtualização de colunas. */
+const DEFAULT_VIRTUAL_COLUMN_WIDTH = 150;
+
+/** Antes de medir (SSR, 1º render): largura suposta da área visível. */
+const DEFAULT_VIEWPORT_WIDTH = 1920;
+
+/** Folga da janela horizontal de cada lado (px). */
+const COLUMN_OVERSCAN = 300;
 
 const normalizeFixed = (fixed: unknown): GridColumnFixed =>
   fixed === 'start' || fixed === 'end' ? fixed : null;
@@ -1546,6 +1608,8 @@ export class DataGrid extends LitElement {
   /** Colunas por propriedade; `undefined` = usar os `<u-grid-column>` filhos. */
   #columnsProperty: GridColumnDef[] | undefined;
   #declarativeColumns: GridColumnDef[] = [];
+  /** Árvore das definições (bandas, frente 13); folhas em `leaves`. */
+  #columnTree: ColumnTree<GridColumnDef> = buildColumnTree<GridColumnDef>([]);
 
   /** @internal */
   readonly _nativeColumnMap = new WeakMap<HTMLElement, GridColumnDef>();
@@ -1573,9 +1637,21 @@ export class DataGrid extends LitElement {
   readonly #autoWidths = new Map<GridColumnDef, number>();
   /** Largura renderizada (px) de cada coluna visível, medida após o layout. */
   readonly #renderedWidths = new Map<GridColumnDef, number>();
+  /** Virtualização de colunas (frente 13): somas das larguras das roláveis, janela e rolagem. */
+  #freeOffsets: number[] | undefined;
+  #fixedArea = 0;
+  #columnWindow: ColumnWindow = { first: 0, last: -1 };
+  #scrollStart = 0;
+  #viewportWidth = 0;
+  /** Espaçadora depois da última coluna renderizada. */
+  #trailingGap = 0;
+  /** Níveis do cabeçalho (0 sem cabeçalho) e células por (nível, coluna navegável). */
+  #headerLevels = 1;
+  #headerGrid: HeaderCellLayout<NavColumn>[][] = [];
   readonly #hostOptions = new Map<GridColumnDef, HostColumnOptions>();
   #layoutDirty = true;
   #autoWidthDirty = true;
+  #warnedRenderingMode = false;
 
   /**
    * Column definitions (property only). When set they take precedence over
@@ -1729,6 +1805,15 @@ export class DataGrid extends LitElement {
 
   /** Columns without `width` take the width of their content (header and rendered rows). */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-auto-width' }) columnAutoWidth = false;
+
+  /**
+   * How columns are rendered: `virtual` keeps only the columns in view (plus
+   * the fixed columns and the focused one) in the DOM, for very wide grids;
+   * `standard` renders all; `auto` (default) is `virtual` with more than 50
+   * leaf columns defined (visible, hidden or grouped). Under `virtual` a
+   * column without `width` takes its auto-size width or `max(minWidth, 150)` px.
+   */
+  @property({ attribute: 'column-rendering-mode' }) columnRenderingMode: GridColumnRenderingMode = 'auto';
 
   // ------------------------------------------------------ seleção e foco
 
@@ -3032,7 +3117,7 @@ export class DataGrid extends LitElement {
     if (this.#columnMenu.open && (
       !this.columnHeaderMenu
       || !columnMenuColumn
-      || !this._visibleColumns.includes(columnMenuColumn))) {
+      || !(this._isBand(columnMenuColumn) ? this._isColumnVisible(columnMenuColumn) : this._visibleColumns.includes(columnMenuColumn)))) {
       this.#columnMenu.hide();
     }
 
@@ -3047,6 +3132,18 @@ export class DataGrid extends LitElement {
     if (changed.has('columnAutoWidth')) {
       this.#autoWidths.clear();
       this.#autoWidthDirty = true;
+    }
+
+    if (changed.has('columnRenderingMode')) {
+      const mode = this.columnRenderingMode;
+
+      if (mode !== 'auto' && mode !== 'virtual' && mode !== 'standard' && !this.#warnedRenderingMode) {
+        this.#warnedRenderingMode = true;
+        console.warn(`<u-grid>: unknown column-rendering-mode "${String(mode)}"; "auto" is used.`);
+      }
+
+      this.#layoutDirty = true;
+      this.#dragAndDropDirty = true;
     }
 
     if (
@@ -3065,6 +3162,7 @@ export class DataGrid extends LitElement {
 
   override firstUpdated() {
     this._scrollContainerRef.value?.addEventListener('scroll', this.#updateScrollShadows, { passive: true });
+    this._scrollContainerRef.value?.addEventListener('scroll', this.#onHorizontalScroll, { passive: true });
     this.#observeScrollContainer();
 
     // Hidratado: agora lê o storage (o 1º render casou com o do servidor).
@@ -3182,9 +3280,13 @@ export class DataGrid extends LitElement {
    * Sorts by `column` in `order` (`null` removes the column from the
    * sorting). Without `append` the column replaces the current sorting; with
    * it, the column is added (or keeps its priority if already sorted). For a
-   * grouped column it sets the direction of its groups.
+   * grouped column it sets the direction of its groups. A band does nothing.
    */
   sortColumn(column: GridColumnDef, order: GridSortOrder | null, options: { append?: boolean } = {}): void {
+    if (this._isBand(column)) {
+      return;
+    }
+
     this.#changeSorting(nextSorting(this.#sorting, column, order, options.append ?? false, this.#isGrouped), 'api');
   }
 
@@ -3206,7 +3308,9 @@ export class DataGrid extends LitElement {
 
   /**
    * Groups by `column` at grouping level `targetIndex` (default: the
-   * innermost level). An already grouped column moves to that level.
+   * innermost level). An already grouped column moves to that level. Only
+   * leaf columns group (a band does nothing); a grouped column leaves its
+   * band in the header and returns to the end of it when ungrouped.
    */
   groupColumn(column: GridColumnDef, targetIndex?: number): void {
     this.#moveColumnTo(true, column, targetIndex ?? this._groupColumns.length, 'api');
@@ -3594,9 +3698,11 @@ export class DataGrid extends LitElement {
   }
 
   /**
-   * Moves a column to `targetIndex` among the regular (non-grouped) columns.
-   * The column stays in its block: fixed at the start, free, or fixed at the
-   * end. A grouped column is ungrouped.
+   * Moves a column (or a band, with all its columns) to `targetIndex` among
+   * its siblings — the columns of the same band, or the top level — that are
+   * not grouped (hidden ones count). Without bands that is the index among
+   * the regular columns. The column stays in its band and in its block: fixed
+   * at the start, free, or fixed at the end. A grouped column is ungrouped.
    */
   moveColumn(column: GridColumnDef, targetIndex: number): void {
     this.#moveColumnTo(false, column, targetIndex, 'api');
@@ -3610,7 +3716,7 @@ export class DataGrid extends LitElement {
     this.#dragged = true;
   }
 
-  /** Sets the width (px) of a column, within its `minWidth`/`maxWidth`. */
+  /** Sets the width (px) of a column, within its `minWidth`/`maxWidth`. A band does nothing. */
   setColumnWidth(column: GridColumnDef, width: number): void {
     if (!this._regularColumns.includes(column) || !Number.isFinite(width)) {
       return;
@@ -3620,8 +3726,15 @@ export class DataGrid extends LitElement {
     this._setUserWidths(new Map([[column, clampWidth(width, min, max)]]));
   }
 
-  /** Fits the width of a column to its header and rendered cells. */
+  /** Fits the width of a column to its header and rendered cells; for a band, each of its visible columns. */
   autoSizeColumn(column: GridColumnDef): void {
+    if (this._isBand(column)) {
+      this._visibleColumns
+        .filter(leaf => this._bandChainOf(leaf).includes(column))
+        .forEach(leaf => this.autoSizeColumn(leaf));
+      return;
+    }
+
     const width = this.#measureColumnContent(column);
 
     if (width !== undefined) {
@@ -3811,7 +3924,8 @@ export class DataGrid extends LitElement {
    * Scrolls to the cell of the row `rowKey` and `column` (default: the first
    * visible column) and moves the DOM focus to it. Returns `false` when the
    * row is not in the grid (filtered out or in a collapsed group — groups are
-   * not expanded) or `column` is not a visible, ungrouped column. Before the
+   * not expanded) or `column` is not a visible, ungrouped column (a band
+   * returns `false`). Before the
    * first render it only sets the active cell (the focus moves when it is
    * rendered) and fires no event.
    */
@@ -5558,6 +5672,26 @@ export class DataGrid extends LitElement {
    */
   _columnChanged(column: GridColumnDef, change: GridColumnChange): void {
 
+    if (change === 'columns') {
+      // Colunas aninhadas entraram/saíram de uma banda declarativa.
+      if (!this.#columnsProperty) {
+        this.#syncColumns();
+      }
+
+      return;
+    }
+
+    if (this.#columnTree.childrenOf.has(column) || isBand(column)) {
+      // Banda (ou coluna que virou banda): rótulo, fixação e visibilidade são do cabeçalho.
+      if (isBand(column) !== this.#columnTree.childrenOf.has(column)) {
+        this.#syncColumns();
+      }
+
+      this.#layoutDirty = true;
+      this.requestUpdate();
+      return;
+    }
+
     const grouped = this._groupColumns.includes(column);
 
     if (!grouped && !this._regularColumns.includes(column)) {
@@ -5620,8 +5754,11 @@ export class DataGrid extends LitElement {
    * `groupIndex` (inicial) ou na posição da definição.
    */
   #syncColumns(): void {
-    const definitions = this.columns;
-    const defined = new Set(definitions);
+    const tree = buildColumnTree<GridColumnDef>(this.columns);
+    this.#columnTree = tree;
+    // Só as folhas têm células; as bandas são só cabeçalho.
+    const definitions = tree.leaves;
+    const defined = new Set(tree.parentOf.keys());
 
     // Colunas reatribuídas podem trazer outro `path` no mesmo objeto.
     this.#rankCache.clear();
@@ -5636,8 +5773,9 @@ export class DataGrid extends LitElement {
       }
     }
 
-    const regular = this._regularColumns.filter(c => defined.has(c));
-    const group = this._groupColumns.filter(c => defined.has(c));
+    // Coluna que virou banda sai das listas de folhas.
+    const regular = this._regularColumns.filter(c => defined.has(c) && !tree.childrenOf.has(c));
+    const group = this._groupColumns.filter(c => defined.has(c) && !tree.childrenOf.has(c));
     const newGroupColumns: GridColumnDef[] = [];
 
     // Ordenação: some a das colunas removidas; as novas trazem `sortOrder`.
@@ -5668,6 +5806,7 @@ export class DataGrid extends LitElement {
       .forEach(column => group.splice(Math.min(column.groupIndex!, group.length), 0, column));
 
     this.#autoWidthDirty = true;
+    this.#layoutDirty = true;
     this.#filterRow.prune(defined);
     this.#headerFilterPopover.closeIfRemoved(defined);
     this.#setColumnState(regular, group);
@@ -5676,27 +5815,61 @@ export class DataGrid extends LitElement {
   /** `source` nulo: mudança vinda da definição da coluna, sem evento. */
   #moveColumnTo(toGroup: boolean, column: GridColumnDef, targetIndex: number, source: GridChangeSource | null): void {
     const previous = this.getGrouping();
-    const regular = [...this._regularColumns];
+    let regular = [...this._regularColumns];
     const group = [...this._groupColumns];
+    const tree = this.#columnTree;
+
+    if (tree.childrenOf.has(column)) {
+      // Banda: só reordena entre os irmãos (não agrupa).
+      if (!toGroup && this._isRegularColumn(column)) {
+        this.#setColumnState(moveAmongSiblings(regular, tree, column, targetIndex), group);
+      }
+
+      return;
+    }
+
     const from = regular.includes(column) ? regular : group.includes(column) ? group : null;
 
     if (!from) {
       return;
     }
 
-    const target = toGroup ? group : regular;
-    const targetColumn = target[targetIndex];
+    if (!toGroup) {
+      if (from === group) {
+        // Desagrupada: volta ao fim da própria banda (ou ao fim das comuns).
+        group.splice(group.indexOf(column), 1);
+        const parent = tree.parentOf.get(column) ?? null;
+        let insertAt = regular.length;
 
-    if (targetColumn === column) {
-      return;
+        if (parent) {
+          for (let index = regular.length - 1; index >= 0; index--) {
+            if (ancestorsOf(tree, regular[index]).includes(parent)) {
+              insertAt = index + 1;
+              break;
+            }
+          }
+        }
+
+        regular.splice(insertAt, 0, column);
+        regular = normalizeLeafOrder(regular, tree);
+      }
+
+      // Índice entre os irmãos (mesma banda ou nível de cima); sem bandas, entre as comuns.
+      this.#setColumnState(moveAmongSiblings(regular, tree, column, targetIndex), group);
+    } else {
+      const targetColumn = group[targetIndex];
+
+      if (targetColumn === column) {
+        return;
+      }
+
+      from.splice(from.indexOf(column), 1);
+
+      const insertAt = targetColumn ? group.indexOf(targetColumn) : group.length;
+      group.splice(insertAt, 0, column);
+
+      this.#setColumnState(regular, group);
     }
-
-    from.splice(from.indexOf(column), 1);
-
-    const insertAt = targetColumn ? target.indexOf(targetColumn) : target.length;
-    target.splice(insertAt, 0, column);
-
-    this.#setColumnState(regular, group);
 
     if (source && !sameItems(previous, this._groupColumns)) {
       this.dispatchEvent(new CustomEvent('u-grid-group-change', this.#eventInit<GridGroupEventDetail>({
@@ -5718,7 +5891,7 @@ export class DataGrid extends LitElement {
       this.#sortDirty = true;
     }
 
-    const partitioned = this.#partition(regular);
+    const partitioned = this.#partition(normalizeLeafOrder(regular, this.#columnTree));
 
     if (!sameItems(partitioned, this._regularColumns)) {
       this._regularColumns = partitioned;
@@ -5770,6 +5943,7 @@ export class DataGrid extends LitElement {
 
     this._regularColumns.forEach(reconcile);
     this._groupColumns.forEach(reconcile);
+    this.#columnTree.bands.forEach(reconcile);
 
     const partitioned = this.#partition(this._regularColumns);
 
@@ -5786,21 +5960,126 @@ export class DataGrid extends LitElement {
     }
   }
 
-  /** @internal */
-  _isColumnVisible(column: GridColumnDef): boolean {
+  /** Visibilidade PRÓPRIA (usuário > hospedeiro), sem olhar as bandas. */
+  #ownVisible(column: GridColumnDef): boolean {
     return this.#userVisible.get(column) ?? column.visible !== false;
   }
 
-  /** @internal */
+  /**
+   * Visibilidade efetiva: a própria e a de todas as bandas acima; a banda
+   * ainda precisa de uma folha visível (não agrupada).
+   * @internal
+   */
+  _isColumnVisible(column: GridColumnDef): boolean {
+    const tree = this.#columnTree;
+
+    if (!this.#ownVisible(column)) {
+      return false;
+    }
+
+    let parent = tree.parentOf.get(column) ?? null;
+
+    while (parent) {
+      if (!this.#ownVisible(parent)) {
+        return false;
+      }
+
+      parent = tree.parentOf.get(parent) ?? null;
+    }
+
+    if (!tree.childrenOf.has(column)) {
+      return true;
+    }
+
+    return this._regularColumns.some(leaf => this.#ownVisible(leaf) && this.#bandShows(column, leaf));
+  }
+
+  /** `leaf` está dentro de `band` (em qualquer nível) e as bandas entre as duas estão visíveis. */
+  #bandShows(band: GridColumnDef, leaf: GridColumnDef): boolean {
+    let parent = this.#columnTree.parentOf.get(leaf) ?? null;
+
+    while (parent) {
+      if (parent === band) {
+        return true;
+      }
+
+      if (!this.#ownVisible(parent)) {
+        return false;
+      }
+
+      parent = this.#columnTree.parentOf.get(parent) ?? null;
+    }
+
+    return false;
+  }
+
+  /**
+   * Lado fixo: o da coluna do nível de cima (banda fixa leva os filhos;
+   * `fixed` numa coluna aninhada não vale).
+   * @internal
+   */
   _fixedOf(column: GridColumnDef): GridColumnFixed {
-    return this.#userFixed.has(column)
-      ? this.#userFixed.get(column)!
-      : normalizeFixed(column.fixed);
+    const root = this.#columnTree.parentOf.has(column) ? rootOf(this.#columnTree, column) : column;
+
+    return this.#userFixed.has(root)
+      ? this.#userFixed.get(root)!
+      : normalizeFixed(root.fixed);
   }
 
   /** @internal */
+  _isBand(column: GridColumnDef): boolean {
+    return this.#columnTree.childrenOf.has(column);
+  }
+
+  /** @internal */
+  _parentBandOf(column: GridColumnDef): GridColumnDef | null {
+    return this.#columnTree.parentOf.get(column) ?? null;
+  }
+
+  /** @internal */
+  _bandChainOf(column: GridColumnDef): GridColumnDef[] {
+    return ancestorsOf(this.#columnTree, column);
+  }
+
+  /** Irmãos (mesma banda ou nível de cima) na ordem atual, com alguma folha comum. */
+  #siblingsOf(column: GridColumnDef): GridColumnDef[] {
+    const parent = this.#columnTree.parentOf.get(column) ?? null;
+
+    // Cache por ordem/árvore: o menu e os atalhos perguntam por célula do cabeçalho a cada render.
+    if (this.#siblingCache.regular !== this._regularColumns || this.#siblingCache.tree !== this.#columnTree) {
+      this.#siblingCache = { regular: this._regularColumns, tree: this.#columnTree, byParent: new Map() };
+    }
+
+    let siblings = this.#siblingCache.byParent.get(parent);
+
+    if (!siblings) {
+      siblings = orderedSiblings(this._regularColumns, this.#columnTree, parent);
+      this.#siblingCache.byParent.set(parent, siblings);
+    }
+
+    return siblings;
+  }
+
+  #siblingCache: { regular: GridColumnDef[]; tree: ColumnTree<GridColumnDef>; byParent: Map<GridColumnDef | null, GridColumnDef[]> } = {
+    regular: [],
+    tree: buildColumnTree<GridColumnDef>([]),
+    byParent: new Map(),
+  };
+
+  /** Irmãos visíveis do mesmo bloco (fixas no início, livres, fixas no fim): mover pelo teclado/menu. */
+  #movableSiblingsOf(column: GridColumnDef): GridColumnDef[] {
+    return this.#siblingsOf(column).filter(sibling => this._isColumnVisible(sibling) && this._sameBlock(column, sibling));
+  }
+
+  /** @internal */
+  _siblingIndexOf(column: GridColumnDef): number {
+    return this.#siblingsOf(column).indexOf(column);
+  }
+
+  /** Folha comum (não agrupada) ou banda com alguma. @internal */
   _isRegularColumn(column: GridColumnDef): boolean {
-    return this._regularColumns.includes(column);
+    return this._regularColumns.includes(column)
+      || (this.#columnTree.childrenOf.has(column) && this._regularColumns.some(leaf => ancestorsOf(this.#columnTree, leaf).includes(column)));
   }
 
   /**
@@ -5809,6 +6088,14 @@ export class DataGrid extends LitElement {
    */
   _sameBlock(a: GridColumnDef, b: GridColumnDef): boolean {
     return this._fixedOf(a) === this._fixedOf(b);
+  }
+
+  /**
+   * Arrasto: soltar `moving` sobre `target` só entre irmãos do mesmo bloco.
+   * @internal
+   */
+  _canDropColumn(moving: GridColumnDef, target: GridColumnDef): boolean {
+    return this._parentBandOf(moving) === this._parentBandOf(target) && this._sameBlock(moving, target);
   }
 
   #hasFixedColumns(): boolean {
@@ -5820,15 +6107,16 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _userMoveColumn(column: GridColumnDef, targetIndex: number): void {
-    const previousIndex = this._regularColumns.indexOf(column);
+    const previousIndex = this._siblingIndexOf(column);
 
     this.#moveColumnTo(false, column, targetIndex, 'user');
 
-    const index = this._regularColumns.indexOf(column);
+    const index = this._siblingIndexOf(column);
 
     if (previousIndex >= 0 && index !== previousIndex) {
       this.dispatchEvent(new CustomEvent('u-grid-column-reorder', this.#eventInit<GridColumnReorderEventDetail>({
         column,
+        band: this._parentBandOf(column),
         index,
         previousIndex,
         fromIndex: previousIndex,
@@ -5855,19 +6143,53 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _userSetVisible(column: GridColumnDef, visible: boolean): boolean {
-    if (!this._isRegularColumn(column) || this._isColumnVisible(column) === visible) {
+    if (!this._isRegularColumn(column)) {
       return false;
     }
 
-    if (!visible && this._visibleColumns.length <= 1) {
+    const tree = this.#columnTree;
+    // Uma mudança por coluna cujo estado PRÓPRIO muda: bandas de cima primeiro.
+    const changes: GridColumnDef[] = [];
+
+    const change = (target: GridColumnDef, value: boolean): void => {
+      if (this.#ownVisible(target) !== value) {
+        changes.push(target);
+      }
+    };
+
+    if (visible) {
+      ancestorsOf(tree, column).forEach(band => change(band, true));
+      change(column, true);
+
+      // Banda marcada (APG tri-state): todas as colunas dela visíveis.
+      if (tree.childrenOf.has(column)) {
+        const showAll = (band: GridColumnDef): void => (tree.childrenOf.get(band) ?? []).forEach(child => {
+          change(child, true);
+          showAll(child);
+        });
+        showAll(column);
+      }
+    } else if (this._isColumnVisible(column)) {
+      change(column, false);
+    }
+
+    if (!changes.length) {
+      return false;
+    }
+
+    const previous = new Map(changes.map(target => [target, this.#userVisible.get(target)]));
+    changes.forEach(target => this.#userVisible.set(target, visible));
+
+    // Nunca oculta a última coluna visível.
+    if (!visible && !this._regularColumns.some(leaf => this._isColumnVisible(leaf))) {
+      previous.forEach((value, target) => value === undefined ? this.#userVisible.delete(target) : this.#userVisible.set(target, value));
       this.requestUpdate();
       return false;
     }
 
-    this.#userVisible.set(column, visible);
     this.#layoutDirty = true;
     this.requestUpdate();
-    this.dispatchEvent(new CustomEvent('u-grid-column-visibility-change', this.#eventInit<GridColumnVisibilityChangeEventDetail>({ column, visible })));
+    changes.forEach(target => this.dispatchEvent(new CustomEvent('u-grid-column-visibility-change', this.#eventInit<GridColumnVisibilityChangeEventDetail>({ column: target, visible }))));
     return true;
   }
 
@@ -5878,7 +6200,8 @@ export class DataGrid extends LitElement {
   _userSetFixed(column: GridColumnDef, fixed: GridColumnFixed): void {
     const previousFixed = this._fixedOf(column);
 
-    if (!this._isRegularColumn(column) || previousFixed === fixed) {
+    // Só o nível de cima fixa (a banda leva os filhos).
+    if (!this._isRegularColumn(column) || this._parentBandOf(column) || previousFixed === fixed) {
       return;
     }
 
@@ -5901,11 +6224,107 @@ export class DataGrid extends LitElement {
       ?? this.#autoWidths.get(column);
 
     if (width === null || width === undefined) {
-      return undefined;
+      // Virtualização de colunas: precisa de todas as larguras (frente 13).
+      return this.#virtualColumns
+        ? clampWidth(Math.max(column.minWidth ?? 0, DEFAULT_VIRTUAL_COLUMN_WIDTH), column.minWidth ?? 0, column.maxWidth ?? Infinity)
+        : undefined;
     }
 
     return clampWidth(width, column.minWidth ?? 0, column.maxWidth ?? Infinity);
   }
+
+  /** Virtualização de colunas ligada (`columnRenderingMode`; valor desconhecido = `auto`). */
+  get #virtualColumns(): boolean {
+    const mode = this.columnRenderingMode;
+    return mode === 'virtual' || (mode !== 'standard' && this.#columnTree.leaves.length > VIRTUAL_COLUMNS_THRESHOLD);
+  }
+
+  /**
+   * Colunas que entram no DOM: todas, ou (virtual) as fixas, as da janela
+   * horizontal e a da célula ativa; as demais viram espaçadoras
+   * (`gapBefore` e `#trailingGap`).
+   */
+  #renderedLayout(layout: ColumnLayout[]): ColumnLayout[] {
+    this.#trailingGap = 0;
+
+    if (!this.#virtualColumns) {
+      this.#freeOffsets = undefined;
+      return layout;
+    }
+
+    const free = layout.filter(cell => !this._fixedOf(cell.column));
+    const offsets = prefixOffsets(free.map(cell => cell.width ?? 0));
+    const fixedArea = this.#stickyStart() + layout.reduce((sum, cell) => sum + (this._fixedOf(cell.column) ? cell.width ?? 0 : 0), 0);
+
+    this.#freeOffsets = offsets;
+    this.#fixedArea = fixedArea;
+
+    const window = this.#horizontalWindow();
+    this.#columnWindow = window;
+
+    const kept = new Set<ColumnLayout>(free.slice(window.first, window.last + 1));
+    const activeCell = layout[this.#activeCol - this.#leadingColumns];
+
+    if (activeCell) {
+      // A célula ativa (foco, editor) sobrevive à virtualização.
+      kept.add(activeCell);
+    }
+
+    const result: ColumnLayout[] = [];
+    let gap = 0;
+
+    for (const cell of layout) {
+      if (this._fixedOf(cell.column) || kept.has(cell)) {
+        result.push(gap ? { ...cell, gapBefore: gap } : cell);
+        gap = 0;
+      } else {
+        gap += cell.width ?? 0;
+      }
+    }
+
+    this.#trailingGap = gap;
+    return result;
+  }
+
+  /** Janela das colunas roláveis pela rolagem e largura guardadas (sem ler o DOM no render). */
+  #horizontalWindow(): ColumnWindow {
+    const offsets = this.#freeOffsets;
+
+    if (!offsets) {
+      return { first: 0, last: -1 };
+    }
+
+    const viewport = this.#viewportWidth || DEFAULT_VIEWPORT_WIDTH;
+    return columnWindow(offsets, this.#scrollStart, Math.max(viewport - this.#fixedArea, 0), COLUMN_OVERSCAN);
+  }
+
+  /** Rolagem horizontal: re-renderiza só quando a janela de colunas muda. */
+  readonly #onHorizontalScroll = (): void => {
+    const scroller = this._scrollContainerRef.value;
+
+    if (!scroller || !this.#freeOffsets) {
+      return;
+    }
+
+    // Em RTL o scrollLeft vai de 0 a negativo.
+    const start = Math.abs(scroller.scrollLeft);
+    const viewport = scroller.clientWidth;
+
+    if (start === this.#scrollStart && viewport === this.#viewportWidth) {
+      return;
+    }
+
+    this.#scrollStart = start;
+    this.#viewportWidth = viewport;
+
+    const next = this.#horizontalWindow();
+
+    if (next.first !== this.#columnWindow.first || next.last !== this.#columnWindow.last) {
+      // Cabeçalhos novos no DOM: o arrasto precisa deles.
+      this.#dragAndDropDirty = true;
+      this.requestUpdate();
+    }
+  };
 
   /** @internal */
   _boundsOf(column: GridColumnDef): WidthBounds {
@@ -6038,14 +6457,16 @@ export class DataGrid extends LitElement {
     let cells = [...root.querySelectorAll<HTMLElement>('th.header-column')];
 
     if (!cells.length) {
-      const row = root.querySelector('tbody tr[role=row]:not(.group-row)');
-      cells = row ? [...row.querySelectorAll<HTMLElement>('td[role=gridcell]:not(.selection-cell)')] : [];
+      const row = root.querySelector('tbody tr[role=row]:not(.group-row):not(.detail-row)');
+      cells = row ? [...row.querySelectorAll<HTMLElement>('td[role=gridcell]:not(.selection-cell):not(.detail-toggle-cell)')] : [];
     }
 
     let changed = false;
+    const leading = this.#leadingColumns;
 
-    cells.forEach((cell, index) => {
-      const column = this._visibleColumns[index];
+    cells.forEach(cell => {
+      // Pelo `aria-colindex` (colunas fora do DOM e bandas não contam).
+      const column = this._visibleColumns[Number(cell.getAttribute('aria-colindex')) - 1 - leading];
 
       if (!column) {
         return;
@@ -6072,6 +6493,7 @@ export class DataGrid extends LitElement {
     this.#resizeObserver = new ResizeObserver(entries => {
       if (entries.some(entry => entry.target === scroller)) {
         this.#layoutDirty = true;
+        this.#viewportWidth = scroller.clientWidth;
         // Largura visível: o conteúdo do detalhe não passa dela (WCAG 1.4.10).
         scroller.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
         this.requestUpdate();
@@ -6210,6 +6632,8 @@ export class DataGrid extends LitElement {
         resizable,
         bounds,
         width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
+        col: index + this.#leadingColumns,
+        gapBefore: 0,
       };
     });
   }
@@ -7706,7 +8130,7 @@ export class DataGrid extends LitElement {
     return 'key' in target ? isDataRow(row) && this.#keyOf(row.item) === target.key : row.key === target.rowKey;
   }
 
-  #currentNavColumns(): NavColumn[] {
+  #leadingNavColumns(): NavColumn[] {
     const leading: NavColumn[] = [];
 
     if (this.#showDetailColumn) {
@@ -7717,9 +8141,47 @@ export class DataGrid extends LitElement {
       leading.push(SELECTION_COLUMN);
     }
 
+    return leading;
+  }
+
+  #currentNavColumns(): NavColumn[] {
+    const leading = this.#leadingNavColumns();
+
+    // Coluna de botões da edição (frente 09) depois das colunas comuns.
     return this.#showCommandColumn
       ? [...leading, ...this._visibleColumns, COMMAND_COLUMN]
       : [...leading, ...this._visibleColumns];
+  }
+
+  /**
+   * Cabeçalho lógico (todas as colunas navegáveis, sem virtualização): níveis
+   * e a célula de cada (nível, coluna) para a navegação entre níveis.
+   */
+  #updateHeaderGrid(navColumns: NavColumn[]): void {
+    if (!this.showColumnHeaders) {
+      this.#headerLevels = 0;
+      this.#headerGrid = [];
+      return;
+    }
+
+    const slots: HeaderSlot<NavColumn>[] = navColumns.map(column => ({
+      leaf: column,
+      chain: typeof column === 'object' ? this._bandChainOf(column) : [],
+    }));
+    const levels = 1 + slots.reduce((max, slot) => Math.max(max, slot.chain.length), 0);
+
+    this.#headerLevels = levels;
+    this.#headerGrid = buildHeaderRows(slots, levels);
+  }
+
+  /** Célula do cabeçalho em (linha `-níveis..-1`, coluna navegável). */
+  #headerCellAt(row: number, col: number): HeaderCellLayout<NavColumn> | undefined {
+    return headerCellAt(this.#headerGrid, row + this.#headerLevels, col);
+  }
+
+  /** Banda ou coluna da célula ativa do cabeçalho (`undefined` fora dele). */
+  #activeHeaderColumn(): NavColumn | undefined {
+    return this.#activeRowIndex < 0 ? this.#headerCellAt(this.#activeRowIndex, this.#activeCol)?.column ?? undefined : undefined;
   }
 
   #publicFocus(): PublicFocus {
@@ -7727,8 +8189,9 @@ export class DataGrid extends LitElement {
     const row = this.#rowAt(this.#activeRowIndex);
 
     if (!row) {
-      const cellType = this.#activeRowIndex === HEADER_ROW ? 'header' : 'summary';
-      return { rowKey: null, column: dataColumnOf(column), cellType };
+      const header = this.#activeRowIndex < 0;
+      // No cabeçalho de banda, a coluna é a banda.
+      return { rowKey: null, column: dataColumnOf(header ? this.#activeHeaderColumn() ?? column : column), cellType: header ? 'header' : 'summary' };
     }
 
     if (row.isGroup) {
@@ -7768,7 +8231,7 @@ export class DataGrid extends LitElement {
     { focus = false, reveal = false }: { focus?: boolean; reveal?: boolean } = {},
   ): void {
     const navColumns = this.#currentNavColumns();
-    const index = row === HEADER_ROW || this.#refAt(row) ? row : this.#activeRowIndex;
+    const index = row < 0 || this.#refAt(row) ? row : this.#activeRowIndex;
 
     this.#activeRowIndex = index;
     this.#activeRef = this.#refAt(index);
@@ -7842,12 +8305,13 @@ export class DataGrid extends LitElement {
       index = lastRow;
     }
 
-    if (index === HEADER_ROW && !this.showColumnHeaders && rows.length) {
+    if (index < 0 && !this.showColumnHeaders && rows.length) {
       index = 0;
     }
 
-    if (index < HEADER_ROW) {
-      index = HEADER_ROW;
+    // Cabeçalho com menos níveis (banda saiu): o nível mais próximo que existe.
+    if (index < -Math.max(this.#headerLevels, 1)) {
+      index = -Math.max(this.#headerLevels, 1);
     }
 
     let col = this.#activeColumn === undefined ? -1 : navColumns.indexOf(this.#activeColumn);
@@ -7985,7 +8449,10 @@ export class DataGrid extends LitElement {
     }
 
     const section = tr.parentElement?.tagName;
-    const row = section === 'THEAD' ? HEADER_ROW : section === 'TFOOT' ? this.#rows.length : Number(tr.getAttribute('data-index') ?? NaN);
+    // Cabeçalho: nível de baixo da célula (`data-level`) → linha `-níveis..-1`.
+    const row = section === 'THEAD'
+      ? Number(cell.getAttribute('data-level') ?? this.#headerLevels - 1) - this.#headerLevels
+      : section === 'TFOOT' ? this.#rows.length : Number(tr.getAttribute('data-index') ?? NaN);
 
     if (Number.isNaN(row)) {
       return undefined;
@@ -8003,6 +8470,11 @@ export class DataGrid extends LitElement {
     const position = cell && this.#positionOf(cell);
 
     if (!cell || !position) {
+      return;
+    }
+
+    // Mesma célula do cabeçalho (banda ou folha com `rowspan`): o nível lembrado fica.
+    if (position.row < 0 && this.#activeRowIndex < 0 && this.#headerCellAt(position.row, position.col)?.column === this.#activeHeaderColumn()) {
       return;
     }
 
@@ -8043,12 +8515,12 @@ export class DataGrid extends LitElement {
       if (event.key === 'Escape') {
         event.preventDefault();
         cell.focus();
-      } else if (event.key === 'Tab' && position.row !== HEADER_ROW && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      } else if (event.key === 'Tab' && position.row >= 0 && !event.ctrlKey && !event.altKey && !event.metaKey) {
         // Conteúdo da célula: Tab circula entre os focáveis dela (spec 17, A12).
         if (cycleWithin(cell, path[0] as Element, event.shiftKey)) {
           event.preventDefault();
         }
-      } else if (event.key === 'F2' && position.row === HEADER_ROW) {
+      } else if (event.key === 'F2' && position.row < 0) {
         // F2 percorre o conteúdo do cabeçalho (spec 05: funil, depois a alça) e volta à célula.
         const controls = this.#headerControls(cell);
         const next = controls[controls.indexOf(path[0] as HTMLElement) + 1] ?? cell;
@@ -8059,11 +8531,18 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const ctrl = event.ctrlKey || event.metaKey;
-    const column = this.#navColumns[position.col];
-    const row = this.#rowAt(position.row);
+    // Célula ativa do cabeçalho (banda, folha com `rowspan`): nível e coluna lembrados, não os do DOM.
+    if (position.row < 0 && this.#activeRowIndex < 0 && this.#headerCellAt(position.row, position.col)?.column === this.#activeHeaderColumn()) {
+      position.row = this.#activeRowIndex;
+      position.col = this.#activeCol;
+    }
 
-    if (position.row === HEADER_ROW && this.#onHeaderKeyDown(event, cell, column)) {
+    const ctrl = event.ctrlKey || event.metaKey;
+    const row = this.#rowAt(position.row);
+    // No cabeçalho a coluna vem da célula (banda ou folha).
+    const column = position.row < 0 ? this.#headerCellAt(position.row, position.col)?.column ?? this.#navColumns[position.col] : this.#navColumns[position.col];
+
+    if (position.row < 0 && column && this.#onHeaderKeyDown(event, cell, column)) {
       return;
     }
 
@@ -8378,6 +8857,10 @@ export class DataGrid extends LitElement {
 
   /** Teclas próprias do cabeçalho; `true` = tratada. */
   #onHeaderKeyDown(event: KeyboardEvent, cell: HTMLElement, column: NavColumn | undefined): boolean {
+    if (typeof column === 'object' && this._isBand(column)) {
+      return this.#onBandKeyDown(event, cell, column);
+    }
+
     if (column === SELECTION_COLUMN) {
       if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
         event.preventDefault();
@@ -8451,6 +8934,40 @@ export class DataGrid extends LitElement {
     return false;
   }
 
+  /** Banda (frente 13): só mover (Alt+Shift+←/→), menu (Shift+F10) e F2; não ordena nem agrupa. */
+  #onBandKeyDown(event: KeyboardEvent, cell: HTMLElement, band: GridColumnDef): boolean {
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    if (event.altKey && event.shiftKey && !ctrl && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      const forward = (event.key === 'ArrowRight') !== this._isRtl();
+      this.#keyboardMoveColumn(band, forward ? 1 : -1);
+      return true;
+    }
+
+    if (isContextMenuKey(event)) {
+      if (this.columnHeaderMenu && this.#columnMenuItems(band).length) {
+        event.preventDefault();
+        this.#columnMenu.show({ column: band, returnFocus: cell });
+      }
+
+      return true;
+    }
+
+    if (event.key === 'F2') {
+      const target = this.#headerControls(cell)[0];
+
+      if (target) {
+        event.preventDefault();
+        target.focus();
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
   #navigate(event: KeyboardEvent, position: CellPosition, key: NavigationKey, row: Row | undefined): void {
     event.preventDefault();
 
@@ -8466,6 +8983,26 @@ export class DataGrid extends LitElement {
         }
       }
 
+      return;
+    }
+
+    // Cabeçalho multinível (frente 13): navegação espacial entre os níveis.
+    if (position.row < 0 && this.#headerLevels) {
+      const next = nextHeaderCell(position, key, {
+        levels: this.#headerLevels,
+        colCount: this.#navColumns.length,
+        hasBody: this.#rows.length + (this.#hasTotals ? 1 : 0) > 0,
+        cellAt: (level, col) => headerCellAt(this.#headerGrid, level, col),
+      });
+
+      if (next) {
+        this.#setActive(next, 'user', { focus: true });
+        return;
+      }
+    }
+
+    if (key === 'gridHome' && this.showColumnHeaders && this.#headerLevels > 1) {
+      this.#setActive({ row: -this.#headerLevels, col: 0 }, 'user', { focus: true });
       return;
     }
 
@@ -8519,20 +9056,23 @@ export class DataGrid extends LitElement {
     return -1;
   }
 
-  /** Alt+Shift+←/→ no cabeçalho: troca a coluna com a vizinha visível do mesmo bloco. */
+  /**
+   * Alt+Shift+←/→ no cabeçalho: troca a coluna (ou a banda inteira) com a
+   * irmã visível do mesmo bloco; coluna de banda não sai dela.
+   */
   #keyboardMoveColumn(column: GridColumnDef, direction: 1 | -1): void {
-    const visible = this._visibleColumns;
-    const neighbor = visible[visible.indexOf(column) + direction];
+    const movable = this.#movableSiblingsOf(column);
+    const neighbor = movable[movable.indexOf(column) + direction];
 
-    if (!neighbor || !this._sameBlock(column, neighbor)) {
+    if (!neighbor) {
       return;
     }
 
-    const neighborIndex = this._regularColumns.indexOf(neighbor);
+    const neighborIndex = this._siblingIndexOf(neighbor);
     this._userMoveColumn(column, direction > 0 ? neighborIndex + 1 : neighborIndex);
 
-    // `_visibleColumns` só é refeito no próximo update: posição pela ordem nova das comuns.
-    const visibleAfter = this._regularColumns.filter(c => this._isColumnVisible(c));
+    // Posição entre as irmãs visíveis (o `_regularColumns` já tem a ordem nova).
+    const visibleAfter = this.#siblingsOf(column).filter(sibling => this._isColumnVisible(sibling));
 
     this.#announce(formatMessage(this.#translation.columnMovedAnnouncement, {
       column: column.label ?? '',
@@ -8654,10 +9194,13 @@ export class DataGrid extends LitElement {
     this.#lastWindowFirst = rows.offset + window.first;
 
     const navColumns = this.#currentNavColumns();
+    this.#updateHeaderGrid(navColumns);
     this.#resolveActive(navColumns);
 
-    const layout = this.#columnLayout();
-    const headerRows = (this.showColumnHeaders ? 1 : 0) + (this.showFilterRow ? 1 : 0);
+    const fullLayout = this.#columnLayout();
+    // Virtualização de colunas: só as da janela, as fixas e a ativa (frente 13).
+    const layout = this.#renderedLayout(fullLayout);
+    const headerRows = this.#headerLevels + (this.showFilterRow ? 1 : 0);
     const footerRows = this.#totalSpecs.length ? 1 : 0;
     const selectionMode = this.#selectionMode;
     const classes = {
@@ -8668,12 +9211,12 @@ export class DataGrid extends LitElement {
 
     // Com todas as larguras definidas a tabela não estica: soma exata (como
     // no modo `widget` da referência). Com alguma automática, ocupa a largura.
-    const fit = layout.length > 0 && layout.every(({ column }) =>
-      this.#userWidths.has(column) || (column.width !== null && column.width !== undefined));
+    const fit = fullLayout.length > 0 && (this.#virtualColumns || fullLayout.every(({ column }) =>
+      this.#userWidths.has(column) || (column.width !== null && column.width !== undefined)));
 
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
-    const fixedEnd = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
-    const fixedStart = layout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
+    const fixedEnd = fullLayout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'end' ? width ?? 0 : 0), 0);
+    const fixedStart = fullLayout.reduce((sum, { column, width }) => sum + (this._fixedOf(column) === 'start' ? width ?? 0 : 0), 0);
     // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
     const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
       + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
@@ -8744,7 +9287,7 @@ export class DataGrid extends LitElement {
         <col class="group-column"/>`)}
       ${this.#showDetailColumn ? html`<col class="detail-toggle-column"/>` : nothing}
       ${this.#showSelectionColumn ? html`<col class="selection-column"/>` : nothing}
-      ${map(layout, ({ column }) => {
+      ${map(layout, ({ column, gapBefore }) => {
         const width = this.#widthOf(column);
         const colStyles: { width?: string } = {};
 
@@ -8752,11 +9295,34 @@ export class DataGrid extends LitElement {
           colStyles.width = `${width}px`;
         }
 
-        return html`
+        return html`${gapBefore ? html`<col class="column-spacer" style="width: ${gapBefore}px"/>` : nothing}
           <col style="${styleMap(colStyles)}"/>`;
       })}
+      ${this.#trailingGap ? html`<col class="column-spacer" style="width: ${this.#trailingGap}px"/>` : nothing}
       ${this.#showCommandColumn ? html`<col class="command-column"/>` : nothing}
     `;
+  }
+
+  /**
+   * Células por coluna: com a virtualização de colunas a janela desliza e
+   * cada célula precisa seguir a SUA coluna (chave), senão o elemento focado
+   * passaria a mostrar a vizinha. Sem virtualização, por posição (mais barato).
+   */
+  get #cellKey(): ((cell: SummaryColumnLayout) => unknown) | undefined {
+    return this.#virtualColumns ? cell => (cell as ColumnLayout).id : undefined;
+  }
+
+  #mapCells(layout: ColumnLayout[], render: (cell: ColumnLayout) => unknown) {
+    return this.#virtualColumns ? repeat(layout, cell => cell.id, render) : map(layout, render);
+  }
+
+  /** Célula espaçadora (colunas fora do DOM): sem papel, sem índice, sem `part`. */
+  #spacerCell(width: number) {
+    return width ? html`<td class="column-spacer" role="presentation"></td>` : nothing;
+  }
+
+  #trailingSpacerCell() {
+    return this.#spacerCell(this.#trailingGap);
   }
 
   /** Estado da caixa "selecionar tudo" pelas linhas filtradas. */
@@ -8789,7 +9355,7 @@ export class DataGrid extends LitElement {
 
     return html`
       <thead role="rowgroup">
-        ${this.showColumnHeaders ? this.#renderHeaderRow(layout) : nothing}
+        ${this.showColumnHeaders ? this.#renderHeaderRows(layout) : nothing}
         ${this.showFilterRow ? this.#renderFilterRow(layout) : nothing}
       </thead>
     `;
@@ -8800,7 +9366,7 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
 
     return html`
-      <tr class="filter-row" part="filter-row" role="row" aria-rowindex=${this.showColumnHeaders ? 2 : 1}>
+      <tr class="filter-row" part="filter-row" role="row" aria-rowindex=${this.#headerLevels + 1}>
         ${map(this._groupColumns, (_, index) => html`
           <td
             role="presentation"
@@ -8815,7 +9381,7 @@ export class DataGrid extends LitElement {
             aria-colindex=${this.#selectionCol + 1}
             style="inset-inline-start: ${this.#selectionInset}px"></td>`
           : nothing}
-        ${map(layout, (cell, index) => renderFilterCell({
+        ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${renderFilterCell({
           controller: this.#filterRow,
           column: cell.column,
           dataType: this.#dataTypeOf(cell.column),
@@ -8823,98 +9389,232 @@ export class DataGrid extends LitElement {
           translation,
           className: cell.className,
           style: cell.style,
-          colIndex: index + 1 + this.#leadingColumns,
-        }))}
-        ${this.#renderEmptyCommandCell(null, this.#leadingColumns + layout.length)}
+          colIndex: cell.col + 1,
+        })}`)}
+        ${this.#trailingSpacerCell()}
+        ${this.#renderEmptyCommandCell(null, this.#leadingColumns + this._visibleColumns.length)}
       </tr>`;
   }
 
-  #renderHeaderRow(layout: ColumnLayout[]) {
+  /**
+   * Linhas do cabeçalho (frente 13): uma por nível, banda com `colspan`
+   * nativo, folha sem banda acima com `rowspan` até o fim; recuos, caixa,
+   * detalhe e espaçadoras da virtualização ocupam todos os níveis.
+   */
+  #renderHeaderRows(layout: ColumnLayout[]) {
+    const levels = this.#headerLevels;
+    const slots: HeaderSlot<NavColumn>[] = [];
+    // Por posição: entrada do layout (folhas renderizadas) ou `null` (caixa, detalhe, espaçadora).
+    const cells: (ColumnLayout | null)[] = [];
+
+    for (const column of this.#leadingNavColumns()) {
+      slots.push({ leaf: column, chain: [] });
+      cells.push(null);
+    }
+
+    let previousChain: readonly GridColumnDef[] = [];
+
+    for (const cell of layout) {
+      const chain = this._bandChainOf(cell.column);
+
+      if (cell.gapBefore) {
+        // Espaçadora sob as bandas comuns aos vizinhos: a banda não se parte.
+        slots.push({ leaf: null, chain: commonPrefix(previousChain, chain) });
+        cells.push(null);
+      }
+
+      slots.push({ leaf: cell.column, chain });
+      cells.push(cell);
+      previousChain = chain;
+    }
+
+    if (this.#trailingGap) {
+      slots.push({ leaf: null, chain: [] });
+      cells.push(null);
+    }
+
+    if (this.#showCommandColumn) {
+      // Coluna de botões da edição (frente 09): todos os níveis, depois das comuns.
+      slots.push({ leaf: COMMAND_COLUMN, chain: [] });
+      cells.push(null);
+    }
+
+    const rows = buildHeaderRows<NavColumn>(slots, levels);
+    const active = this.#activeHeaderColumn();
     const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
-    const showIndex = rowSorting.length > 1;
-    const filterValue = this.#filtering.filterValue;
-    const offset = this.#leadingColumns;
-    const selectionCol = this.#selectionCol;
+    const sorting: HeaderSorting = { rowSorting, showIndex: rowSorting.length > 1 };
+
+    return map(rows, (row, level) => html`
+        <tr id=${ifDefined(level === 0 ? 'header-columns-row' : undefined)} role="row" aria-rowindex=${level + 1}>
+          ${level === 0
+            ? map(this._groupColumns, (_, index) => html`
+              <th
+                role="presentation"
+                class="group-column sticky-cell"
+                rowspan=${ifDefined(levels > 1 ? levels : undefined)}
+                style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)
+            : nothing}
+          ${this.#virtualColumns
+            ? repeat(row, header => headerKeyOf(header), header => this.#renderHeaderSlot(header, cells, active, sorting))
+            : map(row, header => this.#renderHeaderSlot(header, cells, active, sorting))}
+        </tr>`);
+  }
+
+  #renderHeaderSlot(
+    header: HeaderCellLayout<NavColumn>,
+    cells: readonly (ColumnLayout | null)[],
+    active: NavColumn | undefined,
+    { rowSorting, showIndex }: HeaderSorting,
+  ) {
+    const rowSpan = header.rowSpan > 1 ? header.rowSpan : undefined;
+    // Nível de baixo coberto: ↓ de uma folha com `rowspan` sai pelo fim dela.
+    const bottom = header.level + header.rowSpan - 1;
     const translation = this.#translation;
+    const column = header.column;
 
-    return html`
-        <tr id="header-columns-row" role="row" aria-rowindex="1">
-          ${map(this._groupColumns, (_, index) => html`
-            <th
-              role="presentation"
-              class="group-column sticky-cell"
-              style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)}
-          ${this.#showDetailColumn
-            ? html`
-              <th
-                class="detail-toggle-cell sticky-cell"
-                part="detail-toggle-cell"
-                role="columnheader"
-                aria-colindex="1"
-                data-col="0"
-                tabindex=${this.#isActive(HEADER_ROW, 0) ? 0 : -1}
-                style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span></th>`
-            : nothing}
-          ${this.#showSelectionColumn
-            ? html`
-              <th
-                class="selection-cell sticky-cell"
-                part="selection-cell"
-                role="columnheader"
-                aria-colindex=${selectionCol + 1}
-                data-col=${selectionCol}
-                tabindex=${this.#isActive(HEADER_ROW, selectionCol) ? 0 : -1}
-                style="inset-inline-start: ${this.#selectionInset}px"
-                @click=${() => this.#toggleAll()}>${this.#lazy
-                  ? html`<span class="visually-hidden">${translation.selectRow}</span>`
-                  : this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`
-            : nothing}
-          ${map(layout, (cell, index) => {
-            const { column } = cell;
-            const position = rowSorting.findIndex(spec => spec.column === column);
+    if (column === null) {
+      return html`<th class="column-spacer" role="presentation" rowspan=${ifDefined(rowSpan)}></th>`;
+    }
 
-            return renderHeaderCell({
-              column,
-              classes: cell.headerClasses,
-              styles: cell.headerStyles,
-              colIndex: index + 1 + offset,
-              tabIndex: this.#isActive(HEADER_ROW, index + offset) ? 0 : -1,
-              sortable: this.#canSortByUser(column),
-              order: rowSorting[position]?.order,
-              sortIndex: showIndex && position >= 0 ? position + 1 : undefined,
-              onActivate: this.#onHeaderActivate,
-              onPointerDown: this.#onSortPointerDown,
-              // Alt+Shift+←/→ move a coluna (no grid); só Alt+←/→ redimensiona.
-              onKeyDown: cell.resizable
-                ? (event: KeyboardEvent) => {
-                  // Na alça focada o leitor lê o aria-valuenow; no cabeçalho, anuncia a largura (spec 17, A6).
-                  if (!event.shiftKey && this.#resize.keyDown(event, column, true)) {
-                    this.#announceWidth(column, 500);
-                  }
-                }
-                : undefined,
-              trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
-              filterButton: this.headerFilter && isColumnFilterable(column)
-                ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${index + 1 + offset}`)
-                : nothing,
-              filtered: hasColumnCondition(filterValue, column),
-              description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
-              onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
-              menuButton: this.#renderColumnMenuButton(column),
-              keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
-              label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
-            });
-          })}
-          ${this.#showCommandColumn
-            ? html`<th
-              class="command-cell"
-              part="command-cell"
-              role="columnheader"
-              aria-colindex=${offset + layout.length + 1}
-              data-col=${offset + layout.length}
-              tabindex=${this.#isActive(HEADER_ROW, offset + layout.length) ? 0 : -1}><span class="header-text">${translation.commandColumn}</span></th>`
-            : nothing}
-        </tr>`;
+    if (column === DETAIL_TOGGLE_COLUMN) {
+      return html`
+        <th
+          class="detail-toggle-cell sticky-cell"
+          part="detail-toggle-cell"
+          role="columnheader"
+          rowspan=${ifDefined(rowSpan)}
+          aria-colindex="1"
+          data-col="0"
+          data-level=${bottom}
+          tabindex=${active === column ? 0 : -1}
+          style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span></th>`;
+    }
+
+    if (column === SELECTION_COLUMN) {
+      const selectionCol = this.#selectionCol;
+
+      return html`
+        <th
+          class="selection-cell sticky-cell"
+          part="selection-cell"
+          role="columnheader"
+          rowspan=${ifDefined(rowSpan)}
+          aria-colindex=${selectionCol + 1}
+          data-col=${selectionCol}
+          data-level=${bottom}
+          tabindex=${active === column ? 0 : -1}
+          style="inset-inline-start: ${this.#selectionInset}px"
+          @click=${() => this.#toggleAll()}>${this.#lazy
+            ? html`<span class="visually-hidden">${translation.selectRow}</span>`
+            : this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`;
+    }
+
+    if (column === COMMAND_COLUMN) {
+      const col = this.#leadingColumns + this._visibleColumns.length;
+
+      return html`<th
+        class="command-cell"
+        part="command-cell"
+        role="columnheader"
+        rowspan=${ifDefined(rowSpan)}
+        aria-colindex=${col + 1}
+        data-col=${col}
+        data-level=${bottom}
+        tabindex=${active === column ? 0 : -1}><span class="header-text">${translation.commandColumn}</span></th>`;
+    }
+
+    if (header.band) {
+      return this.#renderBandHeader(column, header, cells, active);
+    }
+
+    const cell = cells[header.start]!;
+    const filterValue = this.#filtering.filterValue;
+    const position = rowSorting.findIndex(spec => spec.column === column);
+    const idSuffix = `${header.level}-${cell.col + 1}`;
+
+    return renderHeaderCell({
+      column,
+      classes: cell.headerClasses,
+      styles: cell.headerStyles,
+      colIndex: cell.col + 1,
+      tabIndex: active === column ? 0 : -1,
+      level: bottom,
+      rowSpan,
+      idSuffix,
+      columnId: cell.id,
+      sortable: this.#canSortByUser(column),
+      order: rowSorting[position]?.order,
+      sortIndex: showIndex && position >= 0 ? position + 1 : undefined,
+      onActivate: this.#onHeaderActivate,
+      onPointerDown: this.#onSortPointerDown,
+      // Alt+Shift+←/→ move a coluna (no grid); só Alt+←/→ redimensiona.
+      onKeyDown: cell.resizable
+        ? (event: KeyboardEvent) => {
+          // Na alça focada o leitor lê o aria-valuenow; no cabeçalho, anuncia a largura (spec 17, A6).
+          if (!event.shiftKey && this.#resize.keyDown(event, column, true)) {
+            this.#announceWidth(column, 500);
+          }
+        }
+        : undefined,
+      trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
+      filterButton: this.headerFilter && isColumnFilterable(column)
+        ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${idSuffix}`)
+        : nothing,
+      filtered: hasColumnCondition(filterValue, column),
+      description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
+      onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
+      menuButton: this.#renderColumnMenuButton(column),
+      keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
+      label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
+    });
+  }
+
+  /** Banda: `colspan` = posições renderizadas sob ela; fixa como as filhas. */
+  #renderBandHeader(column: GridColumnDef, header: HeaderCellLayout<NavColumn>, cells: readonly (ColumnLayout | null)[], active: NavColumn | undefined) {
+    const children = cells.slice(header.start, header.start + header.span).filter((cell): cell is ColumnLayout => !!cell);
+    const first = children[0];
+    const last = children[children.length - 1];
+
+    if (!first) {
+      return html`<th class="column-spacer" role="presentation" colspan=${header.span}></th>`;
+    }
+
+    const translation = this.#translation;
+    const side = this._fixedOf(column);
+    const alignment = column.alignment ?? 'center';
+    const classes: Record<string, boolean> = {
+      fixed: !!side,
+      'fixed-start': side === 'start',
+      'fixed-end': side === 'end',
+      'fixed-start-edge': side === 'start' && !!last.headerClasses['fixed-start-edge'],
+      'fixed-end-edge': side === 'end' && !!first.headerClasses['fixed-end-edge'],
+      'align-center': alignment === 'center',
+      'align-end': alignment === 'end',
+    };
+    const id = columnIdOf(column);
+    const hasMenu = this.#hasColumnMenu(column);
+    const { insetInlineStart: startOffset } = first.headerStyles;
+    const { insetInlineEnd: endOffset } = last.headerStyles;
+
+    return renderBandHeaderCell({
+      column,
+      classes,
+      styles: {
+        insetInlineStart: side === 'start' ? startOffset : undefined,
+        insetInlineEnd: side === 'end' ? endOffset : undefined,
+      },
+      colIndex: first.col + 1,
+      colSpan: header.span,
+      level: header.level,
+      tabIndex: active === column ? 0 : -1,
+      idSuffix: `${header.level}-${first.col + 1}`,
+      columnId: id,
+      description: side === 'start' ? translation.columnFixedStart : side === 'end' ? translation.columnFixedEnd : '',
+      keyShortcuts: ['Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight', ...hasMenu ? ['Shift+F10', 'F2'] : []].join(' '),
+      onContextMenu: this.columnHeaderMenu ? (event: MouseEvent) => this.#onHeaderContextMenu(event, column) : undefined,
+      menuButton: this.#renderColumnMenuButton(column),
+      label: column.headerRenderer ? this.#renderHeaderContent(column, id) : column.label,
+    });
   }
 
   /**
@@ -9208,8 +9908,12 @@ export class DataGrid extends LitElement {
     `;
   }
 
+  /** Colunas do DOM (com as espaçadoras): `colspan` das linhas de célula única. */
   #totalColumns(layout: ColumnLayout[]): number {
-    return this._groupColumns.length + this.#leadingColumns + layout.length + (this.#showCommandColumn ? 1 : 0);
+    return this._groupColumns.length + this.#leadingColumns + layout.length
+      + layout.reduce((count, cell) => count + (cell.gapBefore ? 1 : 0), 0)
+      + (this.#trailingGap ? 1 : 0);
+      + (this.#showCommandColumn ? 1 : 0);
   }
 
   /**
@@ -9358,10 +10062,12 @@ export class DataGrid extends LitElement {
     // Colunas depois do botão: recuos dos níveis internos, caixas e colunas comuns.
     const base = groupColumns - row.level - 1 + offset;
     const specs = this.#groupSpecs;
-    let alignedFrom = layout.length;
+    const visible = this._visibleColumns;
+    // Índices LÓGICOS (todas as visíveis): o texto não muda com a virtualização de colunas.
+    let alignedFrom = visible.length;
 
     const indexOf = (column: GridColumnDef | undefined): number =>
-      column ? layout.findIndex(cell => cell.column === column) : -1;
+      column ? visible.indexOf(column) : -1;
 
     for (const { item, spec } of specs) {
       const index = indexOf(spec.column);
@@ -9392,8 +10098,12 @@ export class DataGrid extends LitElement {
 
     const info = parts.length ? formatMessage(this.#translation.groupInfoText, { info: this.#formatList(parts) }) : '';
     const alignedTexts = this.#textsByColumn(specs, row.summaries, summary => isAligned(summary, (summary.item as GridGroupSummaryItem).display));
-    const aligned = alignedFrom < layout.length
-      ? renderSummaryCells(layout, alignedTexts, alignedFrom, this.#listSeparatorText, offset)
+    // Primeira célula renderizada a partir da 1ª alinhada; o rótulo cobre as do DOM antes dela.
+    let renderedFrom = layout.findIndex(cell => cell.col - offset >= alignedFrom);
+    renderedFrom = renderedFrom < 0 ? layout.length : renderedFrom;
+    const labelDomColumns = renderedFrom + layout.slice(0, renderedFrom).reduce((count, cell) => count + (cell.gapBefore ? 1 : 0), 0);
+    const aligned = renderedFrom < layout.length
+      ? renderSummaryCells(layout, alignedTexts, renderedFrom, this.#listSeparatorText, offset, undefined, this.#trailingGap, this.#cellKey)
       : nothing;
     // A linha de grupo é um ponto só da navegação: os resumos alinhados entram no rótulo dela.
     const alignedLabels = [...alignedTexts.values()].flat().map(text => text.label);
@@ -9420,8 +10130,10 @@ export class DataGrid extends LitElement {
       valueText,
       info,
       ariaLabel,
-      labelSpan: base + alignedFrom + (aligned === nothing && this.#showCommandColumn ? 1 : 0),
-      trailing: aligned === nothing ? nothing : html`${aligned}${this.#showCommandColumn ? html`<td class="command-cell" role="gridcell" aria-colindex=${offset + layout.length + 1}></td>` : nothing}`,
+      labelSpan: renderedFrom < layout.length ? base + labelDomColumns : undefined,
+      trailing: aligned === nothing
+        ? nothing
+        : html`${aligned}${this.#showCommandColumn ? html`<td class="command-cell" role="gridcell" aria-colindex=${offset + this._visibleColumns.length + 1}></td>` : nothing}`,
       tabIndex: this.#isActive(rowIndex, -1) ? 0 : -1,
       onToggle: this.#toggleGroup,
     });
@@ -9435,8 +10147,8 @@ export class DataGrid extends LitElement {
       ${renderIndentCells(this._groupColumns.length, GROUP_COLUMN_WIDTH)}
       ${this.#renderEmptyDetailToggleCell(rowIndex)}
       ${this.#renderEmptySelectionCell(rowIndex)}
-      ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText, offset, col => this.#isActive(rowIndex, col) ? 0 : -1)}
-      ${this.#renderEmptyCommandCell(rowIndex, offset + layout.length)}
+      ${renderSummaryCells(layout, texts, 0, this.#listSeparatorText, offset, col => this.#isActive(rowIndex, col) ? 0 : -1, this.#trailingGap, this.#cellKey)}
+      ${this.#renderEmptyCommandCell(rowIndex, offset + this._visibleColumns.length)}
     `;
   }
 
@@ -9481,14 +10193,15 @@ export class DataGrid extends LitElement {
       rowIndex: ariaRowIndex,
       separator: this.#listSeparatorText,
       leading: html`${this.#renderEmptyDetailToggleCell(rowIndex)}${this.#renderEmptySelectionCell(rowIndex)}`,
-      trailing: this.#renderEmptyCommandCell(rowIndex, this.#leadingColumns + layout.length),
+      trailing: this.#renderEmptyCommandCell(rowIndex, this.#leadingColumns + this._visibleColumns.length),
       colOffset: this.#leadingColumns,
       tabIndexOf: col => this.#isActive(rowIndex, col) ? 0 : -1,
+      trailingGap: this.#trailingGap,
+      keyOf: this.#cellKey,
     });
   }
 
   #renderDataRowCells(row: DataRow, rowIndex: number, layout: ColumnLayout[], selected: boolean, expanded: boolean) {
-    const offset = this.#leadingColumns;
     const selectionCol = this.#selectionCol;
     const matcher = this.#highlightMatcher();
     const edit: RowEditState | undefined = this.#editingOn && !row.skeleton
@@ -9545,28 +10258,29 @@ export class DataGrid extends LitElement {
               ? nothing
               : this.#renderCheckbox(selected ? 'true' : 'false', this.#translation.selectRow)}</td>`
         : nothing}
-      ${map(layout, (cell, index) => row.skeleton
+      ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${row.skeleton
         ? html`
           <td
             part="cell"
             class=${cell.cellClassName}
             style=${cell.style}
             role="gridcell"
-            aria-colindex="${index + 1 + offset}"
-            data-col=${index + offset}
-            tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
+            aria-colindex="${cell.col + 1}"
+            data-col=${cell.col}
+            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}><span class="skeleton" aria-hidden="true"></span><span class="visually-hidden">${this.#translation.loading}</span></td>`
         : edit
-          ? this.#renderEditableCell(row, rowIndex, cell, index + offset, matcher, edit)
+          ? this.#renderEditableCell(row, rowIndex, cell, cell.col, matcher, edit)
           : html`
           <td
             part="cell"
             class=${cell.cellClassName}
             style=${cell.style}
             role="gridcell"
-            aria-colindex="${index + 1 + offset}"
-            data-col=${index + offset}
-            tabindex=${this.#isActive(rowIndex, index + offset) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`)}
-      ${this.#showCommandColumn ? this.#renderCommandCell(row, rowIndex, offset + layout.length, edit?.pending) : nothing}
+            aria-colindex="${cell.col + 1}"
+            data-col=${cell.col}
+            tabindex=${this.#isActive(rowIndex, cell.col) ? 0 : -1}>${this.#renderCellContent(row, cell, matcher)}</td>`}`)}
+      ${this.#trailingSpacerCell()}
+      ${this.#showCommandColumn ? this.#renderCommandCell(row, rowIndex, this.#leadingColumns + this._visibleColumns.length, edit?.pending) : nothing}
     `;
   }
 
@@ -10217,17 +10931,17 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
     const items: MenuItem<ColumnHeaderMenuAction>[] = [];
 
-    if (!this._groupColumns.includes(column) && isColumnGroupable(column)) {
+    const band = this._isBand(column);
+
+    if (!band && !this._groupColumns.includes(column) && isColumnGroupable(column)) {
       items.push({ action: 'groupColumn', label: translation.groupColumn });
     }
 
-    const visible = this._visibleColumns;
-    const index = visible.indexOf(column);
+    // Irmãs visíveis do mesmo bloco (coluna de banda só se move dentro dela).
+    const movable = this.#movableSiblingsOf(column);
+    const index = movable.indexOf(column);
 
-    const canMove = (direction: 1 | -1) => {
-      const neighbor = visible[index + direction];
-      return !!neighbor && this._sameBlock(column, neighbor);
-    };
+    const canMove = (direction: 1 | -1) => !!movable[index + direction];
 
     const rtl = this._isRtl() ? -1 : 1;
 
@@ -10238,7 +10952,7 @@ export class DataGrid extends LitElement {
       );
     }
 
-    if (this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
+    if (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
       items.push(
         { action: 'autoSizeColumn', label: translation.autoSizeColumn },
         { action: 'increaseColumnWidth', label: translation.increaseColumnWidth },
@@ -10255,13 +10969,13 @@ export class DataGrid extends LitElement {
       return false;
     }
 
-    const visible = this._visibleColumns;
-    const index = visible.indexOf(column);
-    const movable = [visible[index - 1], visible[index + 1]].some(neighbor => neighbor && this._sameBlock(column, neighbor));
+    const band = this._isBand(column);
+    const movable = this.#movableSiblingsOf(column);
+    const index = movable.indexOf(column);
 
-    return (!this._groupColumns.includes(column) && isColumnGroupable(column))
-      || (index >= 0 && movable)
-      || (this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
+    return (!band && !this._groupColumns.includes(column) && isColumnGroupable(column))
+      || (index >= 0 && movable.length > 1)
+      || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
   }
 
   /** Clique direito no cabeçalho: abre o menu se houver o que fazer (senão fica o do navegador). */
@@ -10462,19 +11176,35 @@ export class DataGrid extends LitElement {
 
   #renderColumnChooser() {
     const visibleCount = this._visibleColumns.length;
-    const items: ColumnChooserItem[] = this._regularColumns
+    const tree = this.#columnTree;
+
+    // Árvore na ordem atual (frente 13); banda com `showInChooser: false` sai com as colunas.
+    const itemsOf = (parent: GridColumnDef | null): ColumnChooserItem[] => orderedSiblings(this._regularColumns, tree, parent)
       .filter(column => column.showInChooser !== false)
       .map(column => {
         const visible = this._isColumnVisible(column);
+        const fixed = parent ? undefined : this._fixedOf(column);
+
+        if (!tree.childrenOf.has(column)) {
+          return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, fixed };
+        }
+
+        const leaves = this._regularColumns.filter(leaf => ancestorsOf(tree, leaf).includes(column));
+        const shown = leaves.filter(leaf => this._isColumnVisible(leaf)).length;
 
         return {
           column,
           id: columnIdOf(column),
-          visible,
-          canToggle: !visible || visibleCount > 1,
-          fixed: this._fixedOf(column),
+          visible: visible && shown === leaves.length,
+          indeterminate: visible && shown > 0 && shown < leaves.length,
+          // Ocultar a banda não pode esconder a última coluna visível.
+          canToggle: !visible || visibleCount > shown,
+          fixed,
+          children: itemsOf(column),
         };
       });
+
+    const items = itemsOf(null);
 
     return renderColumnChooser({
       items,
@@ -10498,8 +11228,12 @@ export class DataGrid extends LitElement {
     this.#columnDragAndDrop.prune();
     this.#groupDragAndDrop.prune();
 
-    root.querySelectorAll<HTMLElement>('th.header-column').forEach((th, index) => {
-      const column = this._visibleColumns[index];
+    // Folhas e bandas pela identidade (`data-column-id`): com bandas e virtualização o índice não serve.
+    const byId = new Map<string, GridColumnDef>();
+    this.#columnTree.parentOf.forEach((_, column) => byId.set(String(columnIdOf(column)), column));
+
+    root.querySelectorAll<HTMLElement>('th.header-column, th.band-header').forEach(th => {
+      const column = byId.get(th.getAttribute('data-column-id') ?? '');
 
       if (column) {
         this._nativeColumnMap.set(th, column);

@@ -42,6 +42,34 @@ export interface HeaderCellContext {
   menuButton?: TemplateResult | typeof nothing;
   /** Conteúdo do rótulo (`headerRenderer`); padrão: `column.label`. */
   label?: unknown;
+  /** Nível de baixo coberto pela célula (`data-level`, frente 13). */
+  level?: number;
+  /** Linhas cobertas (folha sem banda acima: até o último nível). */
+  rowSpan?: number;
+  /** Sufixo único dos ids (nível + coluna): banda e folha não repetem id. */
+  idSuffix?: string;
+  /** Identidade da coluna para o arrasto (`data-column-id`). */
+  columnId?: number;
+}
+
+/** Banda do cabeçalho multinível (frente 13): sem ordenar, filtrar nem redimensionar. */
+export interface BandHeaderCellContext {
+  column: GridColumnDef;
+  /** Classes de fixação e alinhamento. */
+  classes: Record<string, boolean>;
+  styles: StyleInfo;
+  /** `aria-colindex` = primeira coluna renderizada sob a banda. */
+  colIndex: number;
+  colSpan: number;
+  level: number;
+  tabIndex: 0 | -1;
+  idSuffix: string;
+  columnId: number;
+  description?: string;
+  keyShortcuts?: string;
+  onContextMenu?: (event: MouseEvent) => void;
+  menuButton?: TemplateResult | typeof nothing;
+  label?: unknown;
 }
 
 const ariaSort = (order: GridSortOrder | undefined): 'ascending' | 'descending' | 'none' =>
@@ -91,8 +119,47 @@ export const renderSortIndicator = (order: GridSortOrder | undefined, sortIndex?
     : nothing;
 
 /** Descrição oculta do cabeçalho (lida por \`aria-describedby\`; spec 17, A14). */
-const renderDescription = (colIndex: number, description: string): TemplateResult | typeof nothing =>
-  description ? html`<span id="header-description-${colIndex}" hidden>${description}</span>` : nothing;
+const renderDescription = (idSuffix: string, description: string): TemplateResult | typeof nothing =>
+  description ? html`<span id="header-description-${idSuffix}" hidden>${description}</span>` : nothing;
+
+/**
+ * Banda: `colspan` nativo (a ARIA manda usar o da linguagem numa `<table>`),
+ * sem `aria-sort`; o rótulo quebra linha (WCAG 1.4.12).
+ */
+export const renderBandHeaderCell = ({
+  column,
+  classes,
+  styles,
+  colIndex,
+  colSpan,
+  level,
+  tabIndex,
+  idSuffix,
+  columnId,
+  description = '',
+  keyShortcuts,
+  onContextMenu,
+  menuButton = nothing,
+  label = column.label,
+}: BandHeaderCellContext): TemplateResult => html`
+  <th
+    class="band-header ${classMap(classes)}"
+    style=${styleMap(styles)}
+    part="header-cell band-header-cell"
+    role="columnheader"
+    colspan=${colSpan}
+    aria-colindex="${colIndex}"
+    aria-labelledby="header-text-${idSuffix}"
+    aria-describedby=${ifDefined(description ? `header-description-${idSuffix}` : undefined)}
+    aria-keyshortcuts=${ifDefined(keyShortcuts || undefined)}
+    data-col=${colIndex - 1}
+    data-level=${level}
+    data-column-id=${columnId}
+    tabindex=${tabIndex}
+    @contextmenu=${onContextMenu ?? nothing}>
+    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${menuButton}</span>${
+      renderDescription(idSuffix, description)}
+  </th>`;
 
 export const renderHeaderCell = ({
   column,
@@ -114,18 +181,25 @@ export const renderHeaderCell = ({
   onContextMenu,
   menuButton = nothing,
   label = column.label,
+  level,
+  rowSpan,
+  idSuffix = String(colIndex),
+  columnId,
 }: HeaderCellContext): TemplateResult => html`
   <th
     class="header-column ${classMap({ ...classes, sortable, sorted: !!order, filtered })}"
     style=${styleMap(styles)}
     part="header-cell"
     role="columnheader"
+    rowspan=${ifDefined(rowSpan && rowSpan > 1 ? rowSpan : undefined)}
     aria-colindex="${colIndex}"
-    aria-labelledby="header-text-${colIndex}"
+    aria-labelledby="header-text-${idSuffix}"
     aria-sort=${ifDefined(sortable || order ? ariaSort(sortIndex === undefined || sortIndex === 1 ? order : undefined) : undefined)}
-    aria-describedby=${ifDefined(description ? `header-description-${colIndex}` : undefined)}
+    aria-describedby=${ifDefined(description ? `header-description-${idSuffix}` : undefined)}
     aria-keyshortcuts=${ifDefined(keyShortcuts || undefined)}
     data-col=${colIndex - 1}
+    data-level=${ifDefined(level)}
+    data-column-id=${ifDefined(columnId)}
     tabindex=${tabIndex}
     @pointerdown=${sortable ? onPointerDown : nothing}
     @contextmenu=${onContextMenu ?? nothing}
@@ -140,6 +214,6 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${colIndex}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
-      renderDescription(colIndex, description)}
+    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
+      renderDescription(idSuffix, description)}
   </th>`;

@@ -485,8 +485,34 @@ export const styles = css`
     touch-action: none;
   }
 
-  .header-column.fixed {
+  .header-column.fixed,
+  .band-header.fixed {
     position: sticky;
+  }
+
+  /*
+   * Banda (frente 13): o rótulo quebra linha (WCAG 1.4.12) e os limites
+   * (fim e base) ficam sempre visíveis, com ou sem \`show-column-lines\`.
+   */
+  th:where(.grid-table > * > * > *).band-header {
+    position: relative;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    user-select: none;
+    touch-action: none;
+    --_col-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
+    --_row-line: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
+    box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
+  }
+
+  .band-header .header-text {
+    white-space: normal;
+  }
+
+  /* Colunas fora do DOM (virtualização de colunas): só ocupam a largura. */
+  :where(.grid-table) .column-spacer {
+    padding: 0;
+    box-shadow: none;
   }
 
   .resize-handle {
@@ -561,6 +587,7 @@ export const styles = css`
   }
 
   .header-column:focus-visible,
+  .band-header:focus-visible,
   .group:focus-visible {
     outline: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
     outline-offset: -2px;
@@ -725,6 +752,22 @@ export const styles = css`
     gap: 2px;
     min-height: 40px;
     padding-inline: 16px 8px;
+  }
+
+  /* Banda no seletor (frente 13): as colunas dela numa lista aninhada, recuada. */
+  .column-chooser-band {
+    flex-wrap: wrap;
+  }
+
+  .column-chooser-nested {
+    flex-basis: 100%;
+    margin: 0;
+    padding: 0;
+    padding-inline-start: 16px;
+  }
+
+  .column-chooser-nested .column-chooser-item {
+    padding-inline-end: 0;
   }
 
   .column-chooser-check {
@@ -1342,6 +1385,11 @@ export const styles = css`
     thead,
     .row-lines tbody tr[role=row]:not(.last) > td,
     .group-row > td {
+      border-block-end: 1px solid CanvasText;
+    }
+
+    th.band-header {
+      border-inline-end: 1px solid CanvasText;
       border-block-end: 1px solid CanvasText;
     }
 

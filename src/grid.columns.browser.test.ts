@@ -440,7 +440,7 @@ describe('reordenar', () => {
     await settle(grid);
 
     expect(headerLabels(grid)).toEqual(['C', 'A', 'B']);
-    expect(events).toEqual([{ column: columns[2], index: 0, previousIndex: 2, fromIndex: 2, toIndex: 0 }]);
+    expect(events).toEqual([{ column: columns[2], band: null, index: 0, previousIndex: 2, fromIndex: 2, toIndex: 0 }]);
   });
 });
 

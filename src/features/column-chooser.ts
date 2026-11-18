@@ -1,4 +1,4 @@
-import { html, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
+import { html, nothing, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
 import { live } from 'lit/directives/live.js';
 import { repeat } from 'lit/directives/repeat.js';
 
@@ -22,10 +22,16 @@ export interface ColumnChooserHost extends ReactiveControllerHost {
 export interface ColumnChooserItem {
   column: GridColumnDef;
   id: number;
+  /** Estado efetivo (banda oculta = desmarcada); na banda, todas as colunas visíveis. */
   visible: boolean;
+  /** Banda com só parte das colunas visíveis (caixa mista, frente 13). */
+  indeterminate?: boolean;
   /** `false` na última coluna visível (não pode ser ocultada). */
   canToggle: boolean;
-  fixed: GridColumnFixed;
+  /** `undefined` = sem botões de fixar (colunas dentro de banda). */
+  fixed: GridColumnFixed | undefined;
+  /** Colunas da banda, numa lista aninhada. */
+  children?: ColumnChooserItem[];
 }
 
 export interface ColumnChooserContext {
@@ -50,7 +56,7 @@ const pinButton = (
   item: ColumnChooserItem,
   side: 'start' | 'end',
   { translation, onFixedChange }: ColumnChooserContext,
-): TemplateResult => {
+): TemplateResult | typeof nothing => {
   const pressed = item.fixed === side;
   // Nome estável com a coluna (o estado vai no aria-pressed); o tooltip diz a ação (spec 17, A7).
   const label = formatMessage(side === 'start' ? translation.fixStartLabel : translation.fixEndLabel, { column: item.column.label ?? '' });
@@ -70,9 +76,37 @@ const pinButton = (
     </button>`;
 };
 
+/**
+ * Item do seletor; a banda leva a caixa nativa tri-state (o clique segue a
+ * APG: misto → todas visíveis → banda oculta) e as colunas numa lista
+ * aninhada com o rótulo da banda.
+ */
+const renderChooserItems = (items: ColumnChooserItem[], context: ColumnChooserContext): TemplateResult => {
+  const { translation, onVisibleChange } = context;
+
+  return html`${repeat(items, item => item.id, item => html`
+    <li class="column-chooser-item ${item.children ? 'column-chooser-band' : ''}">
+      <label class="column-chooser-check">
+        <input
+          type="checkbox"
+          .checked=${live(item.visible)}
+          .indeterminate=${live(!!item.indeterminate)}
+          ?disabled=${!item.canToggle}
+          title=${item.visible ? translation.hideColumn : translation.showColumn}
+          @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
+        <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
+      </label>
+      ${item.fixed === undefined ? nothing : pinButton(item, 'start', context)}
+      ${item.fixed === undefined ? nothing : pinButton(item, 'end', context)}
+      ${item.children
+        ? html`<ul class="column-chooser-list column-chooser-nested" aria-labelledby="column-chooser-label-${item.id}">${renderChooserItems(item.children, context)}</ul>`
+        : nothing}
+    </li>`)}`;
+};
+
 /** Painel do seletor de colunas (popover leve, sem dependência nova). */
 export const renderColumnChooser = (context: ColumnChooserContext): TemplateResult => {
-  const { items, translation, onVisibleChange, onKeyDown, onFocusOut } = context;
+  const { items, translation, onKeyDown, onFocusOut } = context;
 
   return html`
     <div
@@ -84,22 +118,7 @@ export const renderColumnChooser = (context: ColumnChooserContext): TemplateResu
       @keydown=${onKeyDown}
       @focusout=${onFocusOut}>
       <div class="column-chooser-title" aria-hidden="true">${translation.columnChooser}</div>
-      <ul class="column-chooser-list">
-        ${repeat(items, item => item.id, item => html`
-          <li class="column-chooser-item">
-            <label class="column-chooser-check">
-              <input
-                type="checkbox"
-                .checked=${live(item.visible)}
-                ?disabled=${!item.canToggle}
-                title=${item.visible ? translation.hideColumn : translation.showColumn}
-                @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
-              <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
-            </label>
-            ${pinButton(item, 'start', context)}
-            ${pinButton(item, 'end', context)}
-          </li>`)}
-      </ul>
+      <ul class="column-chooser-list">${renderChooserItems(items, context)}</ul>
       <div class="column-chooser-drop-hint" aria-hidden="true">${translation.hideColumn}</div>
     </div>`;
 };

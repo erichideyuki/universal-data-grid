@@ -288,7 +288,8 @@ describe('memória: registros globais', () => {
       dataType: 'number',
       format: { minimumFractionDigits: n % 20, minimumIntegerDigits: 1 + (n % 21) },
     }));
-    const grid = await createGrid({ columns, items: [{ v: 1 }] });
+    // Todas no DOM (sem virtualização de colunas): cada célula formata.
+    const grid = await createGrid({ columns, items: [{ v: 1 }], configure: g => g.columnRenderingMode = 'standard' });
 
     expect(grid.shadowRoot!.querySelectorAll('td').length).toBe(300);
     expect(_formatterCacheSize()).toBeLessThanOrEqual(FORMATTER_CACHE_LIMIT);

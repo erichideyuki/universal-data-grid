@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
+import { repeat } from 'lit/directives/repeat.js';
 
 import type { GridColumnDef } from '../grid-column-def.js';
 
@@ -17,7 +18,15 @@ export interface SummaryColumnLayout {
   column: GridColumnDef;
   className: string;
   style: string;
+  /** Índice entre as navegáveis (frente 13: colunas fora do DOM no meio). */
+  col?: number;
+  /** Espaçadora antes da coluna (virtualização de colunas). */
+  gapBefore?: number;
 }
+
+/** Célula espaçadora da virtualização de colunas: sem papel, índice nem `part`. */
+export const renderSpacerCell = (width: number | undefined): TemplateResult | typeof nothing =>
+  width ? html`<td class="column-spacer" role="presentation"></td>` : nothing;
 
 /**
  * O nome acessível vem do conteúdo: texto visível escondido do leitor e o
@@ -37,12 +46,14 @@ export const renderSummaryCells = (
   separator = ', ',
   colOffset = 0,
   tabIndexOf?: (col: number) => 0 | -1,
-): TemplateResult =>
-  html`${map(layout.slice(from), (cell, index) => {
+  trailingGap = 0,
+  keyOf?: (cell: SummaryColumnLayout) => unknown,
+): TemplateResult => {
+  const render = (cell: SummaryColumnLayout, index: number) => {
     const summaries = texts.get(cell.column);
-    const col = colOffset + from + index;
+    const col = cell.col ?? colOffset + from + index;
 
-    return summaries?.length
+    return html`${renderSpacerCell(cell.gapBefore)}${summaries?.length
       ? html`<td
           part="summary-cell"
           class="summary-cell ${cell.className}"
@@ -59,8 +70,13 @@ export const renderSummaryCells = (
           role="gridcell"
           aria-colindex=${col + 1}
           data-col=${ifDefined(tabIndexOf ? col : undefined)}
-          tabindex=${ifDefined(tabIndexOf?.(col))}></td>`;
-  })}`;
+          tabindex=${ifDefined(tabIndexOf?.(col))}></td>`}`;
+  };
+  const cells = layout.slice(from);
+
+  // Virtualização de colunas: cada célula segue a sua coluna (o foco não troca de coluna ao rolar).
+  return html`${keyOf ? repeat(cells, keyOf, render) : map(cells, render)}${renderSpacerCell(trailingGap)}`;
+};
 
 /** Recuos das colunas de grupo (rodapés e linhas de dados). */
 export const renderIndentCells = (groupColumns: number, groupColumnWidth: number): TemplateResult =>
@@ -86,6 +102,10 @@ export interface TotalFooterContext {
   tabIndexOf?: (col: number) => 0 | -1;
   /** Células depois das colunas comuns (coluna de botões da edição). */
   trailing?: TemplateResult | typeof nothing;
+  /** Espaçadora depois da última coluna renderizada. */
+  trailingGap?: number;
+  /** Chave das células (virtualização de colunas). */
+  keyOf?: (cell: SummaryColumnLayout) => unknown;
 }
 
 /** Rodapé de totais: `rowgroup` próprio, fixo embaixo (fora do virtualizador). */
@@ -100,12 +120,14 @@ export const renderTotalFooter = ({
   trailing = nothing,
   colOffset = 0,
   tabIndexOf,
+  trailingGap = 0,
+  keyOf,
 }: TotalFooterContext): TemplateResult => html`
   <tfoot class="total-footer" role="rowgroup">
     <tr class="summary-row total-row" part="summary-row total-row" role="row" aria-rowindex=${rowIndex}>
       ${groupColumns ? renderIndentCells(groupColumns, groupColumnWidth) : nothing}
       ${leading}
-      ${renderSummaryCells(layout, texts, 0, separator, colOffset, tabIndexOf)}
+      ${renderSummaryCells(layout, texts, 0, separator, colOffset, tabIndexOf, trailingGap, keyOf)}
       ${trailing}
     </tr>
   </tfoot>`;

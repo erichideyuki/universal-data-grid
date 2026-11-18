@@ -69,7 +69,20 @@ export type GridColumnFixed = 'start' | 'end' | null;
  * the row item in the callbacks.
  */
 export interface GridColumnDef<TItem = any> {
-  /** Width in px. */
+  /**
+   * Nested columns: a column with at least one nested column is a BAND (a
+   * header over its columns, no cells). In a band only `label`,
+   * `headerRenderer`, `alignment` (of the label; default `center`), `fixed`,
+   * `visible` and `showInChooser` apply; the other fields are ignored. A band
+   * is shown while it is visible and has a visible column. Columns reorder
+   * only inside their own band; only leaf columns sort, group and export.
+   * `null` or `[]` = a regular column.
+   */
+  columns?: readonly GridColumnDef<TItem>[] | null;
+  /**
+   * Width in px. Under virtual column rendering (`columnRenderingMode`) a
+   * column without `width` takes its auto-size width or `max(minWidth, 150)` px.
+   */
   width?: number | null;
   /** Minimum width in px (also when resizing and auto-sizing). */
   minWidth?: number | null;
@@ -90,7 +103,7 @@ export interface GridColumnDef<TItem = any> {
   dataType?: GridColumnDataType | null;
   /** `Intl` options or a formatter function. */
   format?: GridColumnFormat<TItem> | null;
-  /** Logical alignment; default by data type (numbers at the end). */
+  /** Logical alignment; default by data type (numbers at the end). In a band, of the header label (default `center`). */
   alignment?: GridColumnAlignment | null;
   /** Cell value used to group, sort and filter. Default: read `path`. */
   valueGetter?: ((item: TItem) => unknown) | null;
@@ -137,7 +150,10 @@ export interface GridColumnDef<TItem = any> {
   resizable?: boolean | null;
   /** Maximum width in px when resizing and auto-sizing. */
   maxWidth?: number | null;
-  /** Fixes the column at the start or end of the scrollable area. */
+  /**
+   * Fixes the column at the start or end of the scrollable area. A fixed band
+   * fixes its columns; ignored on nested columns (they follow the top band).
+   */
   fixed?: GridColumnFixed;
   /** INITIAL visibility (default `true`); afterwards the user changes it in the chooser. */
   visible?: boolean | null;
@@ -291,7 +307,7 @@ export interface GridCellRenderContext<TItem = any> extends GridRenderContextBas
 
 /** Context of a `headerRenderer`. */
 export interface GridHeaderRenderContext<TItem = any> extends GridRenderContextBase {
-  /** The column of the header. */
+  /** The column of the header; in a band header, the band (it has `columns` and no `path`). */
   readonly column: GridColumnDef<TItem>;
 }
 
@@ -509,3 +525,17 @@ export type GridEditorRenderer<TItem = any> = (item: TItem, ctx: GridEditorRende
  */
 export const isColumnEditable = (column: GridColumnDef): boolean =>
   column.editable ?? (!!column.path || !!column.valueSetter);
+
+/**
+ * A coluna é banda (`columns` com pelo menos 1 item).
+ * @internal
+ */
+export const isBand = (column: GridColumnDef | null | undefined): boolean =>
+  !!column && Array.isArray(column.columns) && column.columns.length > 0;
+
+/**
+ * How columns are rendered: `virtual` keeps only the columns in view (plus the
+ * fixed ones and the focused one) in the DOM; `standard` renders all;
+ * `auto` is `virtual` with more than 50 leaf columns defined.
+ */
+export type GridColumnRenderingMode = 'auto' | 'virtual' | 'standard';

@@ -6,7 +6,7 @@ import type { GroupRow } from '../row-model/types.js';
 
 export interface GroupRowContext {
   row: GroupRow;
-  /** Colunas de grupo + colunas comuns. */
+  /** Colunas do DOM: de grupo + comuns + espaçadoras da virtualização. */
   totalColumns: number;
   separator: string;
   /** Valor do grupo já formatado (`displayValue`/`format` da coluna). */

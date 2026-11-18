@@ -29,7 +29,7 @@ const columnAt = (offsets: readonly number[], position: number): number => {
   let high = count - 1;
 
   while (low < high) {
-    const middle = (low + high + 1) >> 1;
+    const middle = Math.floor((low + high + 1) / 2);
 
     if (offsets[middle] <= position) {
       low = middle;

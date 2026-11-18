@@ -1,4 +1,4 @@
-import { LitElement, type PropertyValues } from 'lit';
+import { html, LitElement, type PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
 import { booleanAttribute, filterOperationAttribute, filterOperationsAttribute, type LegacyAttributes, optionalBooleanAttribute } from './attribute-converters.js';
@@ -24,7 +24,7 @@ import type {
  * `value`: muda o valor das células; `display`: só a exibição/layout.
  * @internal
  */
-export type GridColumnChange = 'width' | 'groupIndex' | 'value' | 'display';
+export type GridColumnChange = 'width' | 'groupIndex' | 'value' | 'display' | 'columns';
 
 const optionalBoolean = optionalBooleanAttribute;
 
@@ -41,6 +41,12 @@ interface ColumnHost extends HTMLElement {
 const isColumnHost = (element: Element | null): element is ColumnHost =>
   !!element && typeof (element as Partial<ColumnHost>)._columnChanged === 'function';
 
+const isColumnElement = (node: Node): node is DataGridColumn =>
+  node instanceof Element && node.localName === 'u-grid-column';
+
+const sameElements = (a: readonly Element[], b: readonly Element[]): boolean =>
+  a.length === b.length && a.every((element, index) => element === b[index]);
+
 const fixedSide = {
   fromAttribute: (value: string | null): GridColumnFixed =>
     value === 'start' || value === 'end' ? value : null,
@@ -49,9 +55,10 @@ const fixedSide = {
 /**
  * Declarative column of a `<u-grid>`: one direct child `<u-grid-column>` per
  * column. The text content is the header label. Every option mirrors a
- * `GridColumnDef` field with the same property name.
+ * `GridColumnDef` field with the same property name. A `<u-grid-column>`
+ * with nested `<u-grid-column>` elements is a band (multi-level header).
  *
- * @slot - Header label (text content).
+ * @slot - Header label text and, in a band, the nested `<u-grid-column>` elements.
  */
 @customElement('u-grid-column')
 export class DataGridColumn extends LitElement implements GridColumnDef {
@@ -61,6 +68,7 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   }
 
   readonly #warnedDeprecations = new Set<string>();
+  #nested: readonly DataGridColumn[] = Object.freeze([]);
 
   #width: number | null = null;
   #groupIndex: number | null = null;
@@ -270,10 +278,45 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
     }
   }
 
-  /** Header label: the trimmed text content of the element. */
-  get label(): string {
-    return (this.textContent ?? '').trim();
+  /**
+   * Nested `<u-grid-column>` elements (read-only): when there is at least
+   * one, this column is a band. `null` without nested columns. The array is
+   * frozen and stays the same while the nested columns don't change.
+   */
+  get columns(): readonly DataGridColumn[] | null {
+    const nested = Array.from(this.children).filter(isColumnElement);
+
+    if (!sameElements(nested, this.#nested)) {
+      this.#nested = Object.freeze(nested);
+    }
+
+    return this.#nested.length ? this.#nested : null;
   }
+
+  /** Header label: the trimmed text content of the element, without the text of nested columns. */
+  get label(): string {
+    if (!this.columns) {
+      return (this.textContent ?? '').trim();
+    }
+
+    let text = '';
+
+    for (const node of this.childNodes) {
+      if (!isColumnElement(node)) {
+        text += node.textContent ?? '';
+      }
+    }
+
+    return text.trim();
+  }
+
+  // Só para saber quando as colunas aninhadas mudam (o grid não mostra este conteúdo).
+  protected override render() {
+    return html`<slot @slotchange=${this.#onSlotChange}></slot>`;
+  }
+
+  // O grid compara a árvore e ignora quando nada mudou.
+  readonly #onSlotChange = (): void => this.#notify('columns');
 
   #deprecated(name: string, replacement: string): void {
     if (this.#warnedDeprecations.has(name)) {
@@ -285,10 +328,15 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   }
 
   #notify(change: GridColumnChange): void {
-    const grid = this.parentElement;
+    // Coluna aninhada: sobe pelas bandas até o grid.
+    let host = this.parentElement;
 
-    if (isColumnHost(grid)) {
-      grid._columnChanged(this, change);
+    while (host && !isColumnHost(host) && isColumnElement(host)) {
+      host = host.parentElement;
+    }
+
+    if (isColumnHost(host)) {
+      host._columnChanged(this, change);
     }
   }
 }
