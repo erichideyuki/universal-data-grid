@@ -26,3 +26,6 @@ dist-ssr
 # Saída de falhas do Vitest browser
 .vitest-attachments
 __screenshots__
+
+# Resultados do npm run test:perf (a linha de base versionada fica em .specs/)
+perf-results.json

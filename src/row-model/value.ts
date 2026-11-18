@@ -32,6 +32,43 @@ export const getCellValue = (item: unknown, column: GridColumnDef): unknown =>
     ? column.valueGetter(item)
     : getValueByPath(item, column.path);
 
+/**
+ * Leitor de valor da coluna para laços sobre todos os itens (ordenar,
+ * agrupar): mesmo resultado de {@link getCellValue}, com o `path` já
+ * quebrado uma vez (spec 16).
+ */
+export const cellValueReader = (column: GridColumnDef): (item: unknown) => unknown => {
+  const { valueGetter, path } = column;
+
+  if (valueGetter) {
+    return item => valueGetter(item);
+  }
+
+  if (!path) {
+    return () => undefined;
+  }
+
+  const keys = path.split('.');
+
+  if (keys.length === 1) {
+    return item => item === null || item === undefined ? undefined : (item as any)[path];
+  }
+
+  return item => {
+    let value: any = item;
+
+    for (const key of keys) {
+      if (value === null || value === undefined) {
+        return undefined;
+      }
+
+      value = value[key];
+    }
+
+    return value;
+  };
+};
+
 /** Texto cru de um valor, sem formatação (a formatada está em `format.ts`). */
 export const toDisplayText = (value: unknown): string =>
   value === null || value === undefined

@@ -187,6 +187,11 @@ export const styles = css`
     box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
   }
 
+  /* Espaçadora do virtualizador (altura até a 1ª linha da janela): sem linha nem borda. */
+  tr.spacer {
+    box-shadow: none;
+  }
+
   /* Realce da linha de dados sob o ponteiro (\`--u-grid-row-hover-opacity: 0%\` desliga). */
   tbody tr[role=row]:not(.group-row):hover {
     --_row-tint: color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent);

@@ -1,7 +1,6 @@
 import type { GridColumnDef, GridSort } from '../grid-column-def.js';
 import { rankValues } from './compare.js';
-import { coerceValue } from './format.js';
-import { getCellValue } from './value.js';
+import { cellValueReader } from './value.js';
 
 /** Uma chave de ordenação: coluna + direção. */
 export type SortSpec = GridSort;
@@ -32,7 +31,8 @@ const prepareKey = (
   const comparator = column.comparator;
 
   if (comparator) {
-    const values = items.map(item => getCellValue(item, column));
+    const read = cellValueReader(column);
+    const values = items.map(read);
     const direction = descending ? -1 : 1;
 
     return { compare: (a, b) => (comparator(values[a], values[b], items[a], items[b]) || 0) * direction };
@@ -42,10 +42,7 @@ const prepareKey = (
 
   if (!ranks) {
     // Como no agrupamento: com `dataType` informado, compara no tipo ("10" > "9" em `number`).
-    const dataType = column.dataType;
-    const values = items.map(item => getCellValue(item, column));
-
-    ranks = rankValues(dataType ? values.map(value => coerceValue(value, dataType)) : values, language);
+    ranks = rankValues(items.map(cellValueReader(column)), language, column.dataType);
     cache?.set(column, ranks);
   }
 
@@ -57,29 +54,34 @@ const prepareKey = (
  * posto é invertido; empates mantêm a ordem que já estava em `order`.
  */
 const countingSort = (order: Int32Array, ranks: Int32Array, descending: boolean): Int32Array => {
+  const count = order.length;
   let max = 0;
 
   for (const rank of ranks) {
-    max = Math.max(max, rank);
+    if (rank > max) {
+      max = rank;
+    }
   }
 
-  const bucketOf = descending
-    ? (index: number) => max - ranks[index]
-    : (index: number) => ranks[index];
+  // Laços sem closure: é o caminho quente com 1 milhão de linhas (spec 16).
+  const sign = descending ? -1 : 1;
+  const base = descending ? max : 0;
   const starts = new Int32Array(max + 2);
 
-  for (const index of order) {
-    starts[bucketOf(index) + 1]++;
+  for (let i = 0; i < count; i++) {
+    starts[base + sign * ranks[order[i]] + 1]++;
   }
 
   for (let bucket = 1; bucket < starts.length; bucket++) {
     starts[bucket] += starts[bucket - 1];
   }
 
-  const sorted = new Int32Array(order.length);
+  const sorted = new Int32Array(count);
 
-  for (const index of order) {
-    sorted[starts[bucketOf(index)]++] = index;
+  for (let i = 0; i < count; i++) {
+    const index = order[i];
+
+    sorted[starts[base + sign * ranks[index]]++] = index;
   }
 
   return sorted;
@@ -109,7 +111,11 @@ export const sortItems = <T>(
   }
 
   const keys = sorting.map(spec => prepareKey(items, spec, language, cache));
-  let order: Int32Array = Int32Array.from({ length: items.length }, (_, i) => i);
+  let order: Int32Array = new Int32Array(items.length);
+
+  for (let i = 0; i < order.length; i++) {
+    order[i] = i;
+  }
 
   if (keys.every((key): key is RankKey => 'ranks' in key)) {
     for (const key of [...keys].reverse()) {
@@ -133,5 +139,11 @@ export const sortItems = <T>(
     });
   }
 
-  return Array.from(order, i => items[i]);
+  const sorted = new Array<T>(order.length);
+
+  for (let i = 0; i < order.length; i++) {
+    sorted[i] = items[order[i]];
+  }
+
+  return sorted;
 };

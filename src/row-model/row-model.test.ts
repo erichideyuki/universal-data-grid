@@ -99,7 +99,7 @@ describe('flattenRows', () => {
   const keyOf = (item: any) => String(item.id);
 
   it('sem grupos: uma linha por item, com índice para a listra', () => {
-    const rows = flattenRows([{ id: 1 }, { id: 2 }], [], () => true, keyOf);
+    const rows = flattenRows([{ id: 1 }, { id: 2 }], [], () => true, keyOf).slice();
     expect(rows.map(r => [r.key, !r.isGroup && r.index])).toEqual([['d:1', 0], ['d:2', 1]]);
   });
 
@@ -108,15 +108,28 @@ describe('flattenRows', () => {
     const groups = buildGroups(items, [col('g')], byColumn);
     const expanded = new Set([groups[1].key]);
 
-    const rows = flattenRows(items, groups, key => expanded.has(key), keyOf);
+    const rows = flattenRows(items, groups, key => expanded.has(key), keyOf).slice();
 
     expect(rows.map(r => r.isGroup ? `G${r.value}` : `${r.item.id}/${r.index}`))
       .toEqual(['Ga', 'Gb', '2/0', '3/1']);
   });
 
-  it('o mesmo item duas vezes recebe chaves distintas', () => {
+  it('o mesmo item duas vezes recebe chaves distintas na fatia', () => {
     const item = { id: 1 };
-    const rows = flattenRows([item, item], [], () => true, keyOf);
-    expect(rows.map(r => r.key)).toEqual(['d:1', 'd:1#1']);
+    const rows = flattenRows([item, item, { id: 2 }], [], () => true, keyOf);
+    expect(rows.slice().map(r => r.key)).toEqual(['d:1', 'd:1#1', 'd:2']);
+    expect(rows.slice(1).map(r => r.key)).toEqual(['d:1', 'd:2']);
+  });
+
+  it('não cria uma linha por item: at() monta a linha pedida', () => {
+    const items = Array.from({ length: 100_000 }, (_, id) => ({ id, g: id % 3 }));
+    const groups = buildGroups(items, [col('g')], byColumn);
+    const rows = flattenRows(items, groups, () => true, keyOf);
+    const last = rows.at(rows.length - 1);
+
+    expect(rows.length).toBe(100_003);
+    expect(rows.at(0).isGroup).toBe(true);
+    expect(last.isGroup || [last.item.id, last.index]).toEqual([99_998, 33_332]);
+    expect(rows.at(33_335).isGroup).toBe(true);
   });
 });

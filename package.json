@@ -68,7 +68,8 @@
     "bundle": "rollup -c",
     "bundle:browser": "esbuild src/grid.ts --bundle --format=esm --minify --outfile=dist/grid.min.js",
     "typecheck": "tsc --noEmit -p src && tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --project node --project browser",
+    "test:perf": "vitest run --project perf --reporter=verbose",
     "test:watch": "vitest",
     "analyze": "cem analyze",
     "lint": "npm run lint:lit-analyzer && npm run lint:eslint ",
@@ -79,7 +80,6 @@
   },
   "dependencies": {
     "@lit/context": "^1.1.6",
-    "@tanstack/lit-virtual": "^3.13.13",
     "interactjs": "^1.10.27",
     "lit": "^3.3.1",
     "tslib": "^2.8.1"

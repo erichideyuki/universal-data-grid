@@ -122,6 +122,60 @@ describe('rankValues', () => {
     }
   });
 
+  // Atalhos da spec 16: chaves numéricas dos pesos primários (textos ASCII)
+  // e ordenação nativa (só números / só datas) — mesma ordem do comparador.
+  const expectSameOrder = (values: unknown[], language: string, dataType?: 'number') => {
+    const comparer = createComparer(language, dataType);
+    const ranks = rankValues(values, language, dataType);
+    const expected = values.map((_, i) => i).sort((a, b) => comparer(values[a], values[b]));
+
+    for (let i = 1; i < expected.length; i++) {
+      const [a, b] = [expected[i - 1], expected[i]];
+      expect(Math.sign(ranks[a] - ranks[b]), `${language}: ${String(values[a])} × ${String(values[b])}`).toBe(Math.sign(comparer(values[a], values[b])));
+    }
+  };
+
+  it('atalho de texto ASCII: mesma ordem, inclusive em idiomas com contrações', () => {
+    const alphabet = ['a', 'A', 'b', 'B', 'c', 'h', 'H', 'y', 'i', 'j', 'z', 'Z', '0', '1', '2', '9', ' ', 'aa', 'ch', 'll'];
+    let seed = 7;
+    const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const texts = Array.from({ length: 2000 }, () =>
+      Array.from({ length: 1 + Math.floor(random() * 14) }, () => alphabet[Math.floor(random() * alphabet.length)]).join(''));
+
+    for (const language of ['en', 'pt', 'de', 'sv', 'ja', 'cs', 'da', 'lt', 'es', 'th']) {
+      expectSameOrder(texts, language);
+    }
+  });
+
+  it('atalho de texto: prefixo comum longo, só caixa diferente e textos iguais', () => {
+    const long = 'Same text that is longer than twenty chars';
+    const texts = Array.from({ length: 500 }, (_, i) => [`Item ${i}`, `item ${i}`, `ITEM ${i}`, `Item ${i} `, long, `${long}!`][i % 6]);
+
+    expectSameOrder(texts, 'en');
+  });
+
+  it('atalho de textos distintos: dígitos de larguras diferentes, zeros à esquerda e repetidos', () => {
+    const texts = Array.from({ length: 3000 }, (_, i) => [
+      `Item ${(i * 7919) % 3000}`,
+      `item 00${i % 50}`,
+      `Item ${i % 7} part ${i}`,
+      `x${i}y${i * 3}`,
+      'Item 10',
+    ][i % 5]);
+
+    for (const language of ['en', 'pt', 'cs']) {
+      expectSameOrder(texts, language);
+    }
+  });
+
+  it('atalho numérico: só números (com NaN, -0, Infinity, vazios) e só datas', () => {
+    const numbers = Array.from({ length: 300 }, (_, i) => [i * 7 % 50 - 25, 0.5, -0, 0, Infinity, -Infinity, Number.NaN, null, undefined, 1e21][i % 10]);
+
+    expectSameOrder(numbers, 'en');
+    expectSameOrder(numbers, 'en', 'number');
+    expectSameOrder(Array.from({ length: 100 }, (_, i) => i % 7 ? new Date(2024, 0, i % 13) : new Date(Number.NaN)), 'en');
+  });
+
   it('textos com dígitos não ASCII, mistura de tipos e vazios', () => {
     const values = ['item ١٠', 'item ٢', 'b', 3, null, new Date(0), true, 'a 10', 'a 9', undefined];
     const comparer = createComparer('ar');

@@ -44,7 +44,10 @@ testes e docs (ex.: "Ordenação"), não um botão. Cada frente tem uma spec em
    no demo (`npm run dev`) em `en`, `pt` e `ar` (RTL). Suíte verde, lint e
    `tsc` limpos. Todo listener/observer/timer/cache global novo libera no
    `disconnectedCallback` (ou é limitado) e ganha teste de vazamento com
-   `src/test/leak.ts` (spec 14).
+   `src/test/leak.ts` (spec 14). Frente que mexe em dados, render ou
+   interação roda `npm run test:perf` (perfil de máquina fraca) e não piora
+   a linha de base além da tolerância nem estoura os orçamentos; recurso
+   novo entra com cenário de perf (spec 16).
 9. **Docs** — README (seção do recurso + API reference) e
    `custom-elements.json` (`npm run analyze`).
 10. **Revisão da API implementada** — rodar de novo o
@@ -132,6 +135,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 |---|---|---|---|
 | Fundação | `01-foundation.md` | infra de testes; correção dos bugs da auditoria; separar row model, render e controllers; higiene de dependências e scripts | feito |
 | Memória | `14-memory.md` | inventário do que retém o grid; helper `src/test/leak.ts`; testes de coleta, heap e grid de vida longa; correção dos vazamentos | feito |
+| Desempenho em máquina fraca | `16-performance.md` | perfil fraco calibrado (`npm run test:perf`); orçamentos e linha de base de 100 mil a 5 milhões de linhas; virtualizador próprio com escala; row model sem objeto por linha; postos rápidos | em curso |
 
 ### Fase A — o dia a dia de qualquer grid
 

@@ -2,7 +2,7 @@ import type { GridColumnDef, GridSortOrder } from '../grid-column-def.js';
 import type { Comparer } from './compare.js';
 import { coerceValue } from './format.js';
 import type { GroupNode } from './types.js';
-import { getCellValue } from './value.js';
+import { cellValueReader } from './value.js';
 
 /** Identidade de um valor para agrupar: 1 e "1" são grupos diferentes. */
 const valueIdentity = (value: unknown): string => {
@@ -40,19 +40,71 @@ export const buildGroups = (
   const build = (levelItems: readonly unknown[], level: number, parentPath: unknown[]): GroupNode[] => {
     const column = groupColumns[level];
     const compare = compareFor(column);
-    const buckets = new Map<string, { value: unknown; items: unknown[] }>();
+    const read = cellValueReader(column);
+    // 1º por valor cru (uma consulta de `Map` por item, sem montar texto);
+    // depois junta os valores equivalentes no tipo — poucos, os distintos
+    // (spec 16).
+    const byRaw = new Map<unknown, unknown[]>();
+    // `Date` por tempo (cada objeto seria uma entrada); o valor do grupo é a 1ª.
+    const dates = new Map<string, Date>();
 
-    for (const item of levelItems) {
-      const value = getCellValue(item, column);
-      const identity = valueIdentity(coerceValue(value, column.dataType));
-      let bucket = buckets.get(identity);
-
-      if (!bucket) {
-        bucket = { value, items: [] };
-        buckets.set(identity, bucket);
+    const rawKeyOf = (value: unknown): unknown => {
+      if (!(value instanceof Date)) {
+        return value;
       }
 
-      bucket.items.push(item);
+      const key = `\0date:${value.getTime()}`;
+
+      if (!dates.has(key)) {
+        dates.set(key, value);
+      }
+
+      return key;
+    };
+
+    for (const item of levelItems) {
+      const rawKey = rawKeyOf(read(item));
+      const bucketItems = byRaw.get(rawKey);
+
+      if (bucketItems) {
+        bucketItems.push(item);
+      } else {
+        byRaw.set(rawKey, [item]);
+      }
+    }
+
+    const buckets = new Map<string, { value: unknown; items: unknown[] }>();
+    const identityOf = new Map<unknown, string>();
+    let merged = false;
+
+    for (const [rawKey, bucketItems] of byRaw) {
+      const value = typeof rawKey === 'string' ? dates.get(rawKey) ?? rawKey : rawKey;
+      const identity = valueIdentity(coerceValue(value, column.dataType));
+      const existing = buckets.get(identity);
+
+      identityOf.set(rawKey, identity);
+
+      if (existing) {
+        merged = true;
+        existing.items = [];
+      } else {
+        buckets.set(identity, { value, items: bucketItems });
+      }
+    }
+
+    // Valores crus diferentes no mesmo grupo (10 e "10"): refaz os itens
+    // desses grupos na ordem de entrada.
+    if (merged) {
+      const refill = new Set([...buckets.values()].filter(bucket => !bucket.items.length));
+
+      for (const item of levelItems) {
+        const value = read(item);
+        const bucket = buckets.get(identityOf.get(rawKeyOf(value))!)!;
+
+        if (refill.has(bucket)) {
+          bucket.items.push(item);
+        }
+      }
     }
 
     const direction = orders[level] === 'desc' ? -1 : 1;

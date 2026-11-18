@@ -35,8 +35,9 @@ React, Vue, Svelte — or with no framework at all.
 
 ## Features
 
-- **Row virtualization** — only visible rows are rendered (powered by `@tanstack/lit-virtual`), so
-  the grid stays responsive with very large datasets.
+- **Row virtualization** — only visible rows are rendered, with no per-row cost when sorting,
+  grouping or expanding, so the grid stays responsive with millions of rows (beyond the browser's
+  maximum element height, the scroll range is scaled).
 - **Sorting** — click a header to sort, Shift+click to sort by several columns, stable and fast
   (100,000 rows in under 200 ms), with keyboard and screen reader support.
 - **Grouping** — group by one or more columns, with expand/collapse, multi-level nesting and an
@@ -63,7 +64,7 @@ npm i @universal-material/data-grid
 ```
 
 The package is published on npm as modern **ESM** with TypeScript declarations. `lit`,
-`@lit/context`, `@tanstack/lit-virtual` and `interactjs` are regular dependencies, so your bundler
+`@lit/context` and `interactjs` are regular dependencies, so your bundler
 deduplicates them with the rest of your app. Importing the package registers the custom elements as
 a side effect.
 

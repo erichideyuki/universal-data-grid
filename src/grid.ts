@@ -8,9 +8,6 @@ import { map } from 'lit/directives/map.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
-import { VirtualizerController } from '@tanstack/lit-virtual';
-import type { VirtualItem } from '@tanstack/virtual-core';
-
 import { booleanAttribute, type LegacyAttributes } from './attribute-converters.js';
 import {
   ColumnChooserController,
@@ -62,8 +59,9 @@ import { renderDataCell } from './render/cell.js';
 import { renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
+import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { createComparer } from './row-model/compare.js';
-import { flattenRows } from './row-model/flatten.js';
+import { flattenRows, RowList } from './row-model/flatten.js';
 import { type FormatContext, formatCellValue, resolveAlignment, resolveDataType } from './row-model/format.js';
 import { buildGroups } from './row-model/group.js';
 import { type RankCache, sortItems } from './row-model/sort.js';
@@ -113,9 +111,6 @@ export interface GridGroupEventDetail {
 }
 export type { GridColumnResizeEventDetail, GridResizeMode } from './features/resize.js';
 export { setGridLanguage, setGridTranslation, gridLanguageContext, type GridI18n, type GridI18nInput } from './grid-i18n.js';
-
-/** Linhas renderizadas antes de o virtualizador medir o contêiner (1º render, SSR). */
-const INITIAL_RENDER_ROWS = 30;
 
 /** Largura (px) de cada coluna de recuo de grupo; igual ao `--_group-column-width`. */
 const GROUP_COLUMN_WIDTH = 32;
@@ -346,7 +341,6 @@ export class DataGrid extends LitElement {
   set items(items: readonly any[] | null | undefined) {
     this.#items = items ?? [];
     this.#sortDirty = true;
-    this.#itemsReplaced = true;
     this.#rankCache.clear();
     this.#dataTypes.clear();
     this.#autoWidthDirty = true;
@@ -358,11 +352,10 @@ export class DataGrid extends LitElement {
   /** Postos por coluna para os `items` e o idioma atuais (inverter a direção não reordena textos). */
   readonly #rankCache: RankCache = new Map();
   #groups: GroupNode[] = [];
-  #rows: Row[] = [];
+  #rows = new RowList(rowKeyOf);
   #sortDirty = true;
   #groupsDirty = true;
   #rowsDirty = true;
-  #itemsReplaced = false;
   #modelLanguage: string | undefined;
   /** `dataType` efetivo (informado ou inferido dos itens) por coluna. */
   readonly #dataTypes = new Map<GridColumnDef, GridColumnDataType | undefined>();
@@ -585,12 +578,25 @@ export class DataGrid extends LitElement {
   /** @internal */
   readonly _groupContainerRef: Ref<HTMLDivElement> = createRef();
 
-  readonly #virtualizerController = new VirtualizerController(this, {
+  readonly #virtualizer = new RowVirtualizer(this, {
     getScrollElement: () => this._scrollContainerRef.value ?? null,
-    count: 0,
-    estimateSize: () => this.rowHeight,
-    getItemKey: index => this.#rows[index]?.key ?? index,
-    overscan: 5,
+    rowHeight: () => this.rowHeight,
+    overscan: 3,
+    getScrollMargin: () => {
+      const scroller = this._scrollContainerRef.value;
+      const table = scroller?.querySelector('table');
+
+      return scroller && table
+        ? table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (table.tHead?.offsetHeight ?? 0)
+        : 0;
+    },
+    // Barra e cabeçalho grudam no topo: a área coberta vai até o fim do `<thead>`.
+    getStickyHeight: () => {
+      const scroller = this._scrollContainerRef.value;
+      const thead = scroller?.querySelector('thead');
+
+      return scroller && thead ? Math.max(0, thead.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top) : 0;
+    },
   });
 
   readonly #columnDragAndDrop = new ColumnDragAndDropAdapter(this);
@@ -610,19 +616,25 @@ export class DataGrid extends LitElement {
   }
 
   /**
+   * Virtualizador de linhas (testes e adaptadores; spec 16).
+   * @internal
+   */
+  get _virtualizer(): RowVirtualizer {
+    return this.#virtualizer;
+  }
+
+  /**
    * Tamanho dos registros internos que crescem com o uso (diagnóstico e
    * testes de vazamento, spec 14). Num grid de vida longa têm de ficar
    * estáveis.
    * @internal
    */
   get _memoryStats(): Record<string, number> {
-    const virtualizer = this.#virtualizerController.getVirtualizer();
-
     return {
       dragAndDrop: this._dragAndDropRegistrations,
-      measuredElements: virtualizer.elementsCache.size,
-      // privado no tipo do virtual-core; só leitura para diagnóstico
-      measuredSizes: (virtualizer as unknown as { itemSizeCache: Map<unknown, number> }).itemSizeCache.size,
+      // O virtualizador próprio não guarda elementos (spec 16).
+      measuredElements: 0,
+      measuredSizes: this.#virtualizer.measuredSizes,
       dataTypes: this.#dataTypes.size,
       expansion: this.#expansion.size,
       sortRanks: this.#rankCache.size,
@@ -690,14 +702,10 @@ export class DataGrid extends LitElement {
   }
 
   override updated(changed: PropertyValues<this>) {
-    const virtualizer = this.#virtualizerController.getVirtualizer();
+    const virtualizer = this.#virtualizer;
 
-    if (changed.has('rowHeight')) {
-      virtualizer.measure();
-    }
-
-    // Com `wrap` a linha pode crescer: mede as renderizadas (o virtualizador
-    // observa o tamanho delas daí em diante).
+    // Com `wrap` a linha pode crescer: mede as renderizadas a cada render
+    // (alturas por índice; trocar as linhas ou o `rowHeight` as esquece).
     if (this.#hasWrap !== this.#measuredWrap) {
       this.#measuredWrap = this.#hasWrap;
 
@@ -706,20 +714,8 @@ export class DataGrid extends LitElement {
       }
     }
 
-    // Alturas medidas são por chave de linha: com itens novos as chaves
-    // antigas nunca mais voltam (sem `keyExpr` a chave é o objeto) e o mapa
-    // cresceria a cada troca de `items`.
-    if (this.#itemsReplaced) {
-      this.#itemsReplaced = false;
-
-      if (this.#hasWrap) {
-        virtualizer.measure();
-      }
-    }
-
     if (this.#hasWrap) {
-      this.renderRoot.querySelectorAll<HTMLElement>('tbody tr[data-index]')
-        .forEach(row => virtualizer.measureElement(row));
+      virtualizer.measureRows(this.renderRoot.querySelectorAll<HTMLElement>('tbody tr[data-index]'));
     }
 
     if (this.#layoutDirty) {
@@ -735,11 +731,6 @@ export class DataGrid extends LitElement {
         this.requestUpdate();
       }
     }
-
-    // O virtualizador guarda cada `<tr>` medida e só solta as que saíram do
-    // DOM quando chamado sem elemento: sem isso, rolar retém toda linha já
-    // vista (e os itens dela).
-    virtualizer.measureElement(null);
 
     if (
       this.#dragAndDropDirty
@@ -1500,6 +1491,8 @@ export class DataGrid extends LitElement {
     if (this.#rowsDirty) {
       this.#rows = flattenRows(this.#sortedItems, this.#groups, this.#isExpanded, rowKeyOf);
       this.#rowsDirty = false;
+      // Alturas medidas (`wrap`) são por índice: outras linhas, outras alturas.
+      this.#virtualizer.measure();
     }
   }
 
@@ -1651,26 +1644,13 @@ export class DataGrid extends LitElement {
     this.#hasWrap = this._visibleColumns.some(column => column.wrap);
 
     const rows = this.#rows;
-    const virtualizer = this.#virtualizerController.getVirtualizer();
+    const virtualizer = this.#virtualizer;
 
-    if (virtualizer.options.count !== rows.length) {
-      virtualizer.setOptions({ ...virtualizer.options, count: rows.length });
-    }
+    virtualizer.count = rows.length;
 
-    let virtualRows: VirtualItem[] = virtualizer.getVirtualItems();
-
-    // Antes de medir (1º render, SSR, contêiner sem altura) o virtualizador
-    // não devolve nada: mostra as primeiras linhas em vez de "sem dados".
-    if (!virtualRows.length && rows.length) {
-      virtualRows = rows.slice(0, INITIAL_RENDER_ROWS).map((row, index) => ({
-        key: row.key,
-        index,
-        start: index * this.rowHeight,
-        end: (index + 1) * this.rowHeight,
-        size: this.rowHeight,
-        lane: 0,
-      }));
-    }
+    // Antes de medir (1º render, SSR, contêiner sem altura) a janela são as
+    // primeiras linhas, em vez de "sem dados".
+    const window = virtualizer.renderWindow();
 
     const layout = this.#columnLayout();
     const headerRows = this.showColumnHeaders ? 1 : 0;
@@ -1697,8 +1677,9 @@ export class DataGrid extends LitElement {
           <table class=${fit ? 'fit' : ''} @pointerover=${this.#updateCellHint}>
             <colgroup>${this.#renderColGroups(layout)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
-            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize() || virtualRows.length * this.rowHeight}px;">
-              ${this.#renderBody(virtualRows, headerRows, layout)}
+            <tbody role="rowgroup" style="height: ${virtualizer.getTotalSize()}px;">
+              <tr class="spacer" aria-hidden="true" style="height: ${window.offset}px;"></tr>
+              ${this.#renderBody(window, headerRows, layout)}
               <tr></tr>
             </tbody>
           </table>
@@ -1799,7 +1780,7 @@ export class DataGrid extends LitElement {
       }}></div>`;
   }
 
-  #renderBody(virtualRows: VirtualItem[], headerRows: number, layout: ColumnLayout[]) {
+  #renderBody(window: VirtualWindow, headerRows: number, layout: ColumnLayout[]) {
 
     if (!this.#rows.length) {
       return html`
@@ -1809,25 +1790,30 @@ export class DataGrid extends LitElement {
       `;
     }
 
-    // As linhas ficam no fluxo da tabela, uma após a outra: todas descem o
-    // início da 1ª linha virtual (vale também com alturas diferentes, `wrap`).
-    const offset = virtualRows[0]?.start ?? 0;
+    // As linhas ficam no fluxo da tabela, uma após a outra, depois de uma
+    // linha espaçadora com a altura até a 1ª linha da janela (vale também
+    // com alturas diferentes, `wrap`). Só a espaçadora muda de estilo ao
+    // rolar — um `transform` por linha recalcularia o estilo de todas, e no
+    // `<tbody>` encolheria a caixa da tabela e soltaria o cabeçalho
+    // `sticky` (spec 16).
+    const { first, end } = window;
+    const entries = this.#rows.slice(first, end).map((row, i) => ({ row, index: first + i }));
 
     return keyedRows(
-      virtualRows,
-      virtualRow => virtualRow.key,
-      virtualRow => this.#renderRow(virtualRow, offset, this.#rows[virtualRow.index], headerRows, layout),
+      entries,
+      entry => entry.row.key,
+      entry => this.#renderRow(entry.index, entry.row, headerRows, layout),
     );
   }
 
-  #renderRow(virtualRow: VirtualItem, offset: number, row: Row, headerRows: number, layout: ColumnLayout[]) {
+  #renderRow(index: number, row: Row, headerRows: number, layout: ColumnLayout[]) {
     const parity = row.isGroup
       ? ''
       : row.index % 2 === 0 ? 'odd' : 'even';
 
     const classes: Record<string, boolean> = {
       'group-row': row.isGroup,
-      last: virtualRow.index === this.#rows.length - 1,
+      last: index === this.#rows.length - 1,
     };
 
     if (parity) {
@@ -1836,10 +1822,10 @@ export class DataGrid extends LitElement {
 
     return html`
       <tr
-        style="transform: translateY(${offset}px); height: ${this.rowHeight}px;"
-        data-index=${virtualRow.index}
+        style="height: ${this.rowHeight}px;"
+        data-index=${index}
         role="row"
-        aria-rowindex="${virtualRow.index + 1 + headerRows}"
+        aria-rowindex="${index + 1 + headerRows}"
         aria-level=${row.isGroup ? row.level + 1 : nothing}
         class="${classMap(classes)}"
         part="row ${row.isGroup ? 'group-row' : parity}">

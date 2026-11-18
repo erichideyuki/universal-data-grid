@@ -1,117 +1,403 @@
-import { afterEach, describe, expect, it } from 'vitest';
+/**
+ * Desempenho no perfil de máquina fraca (spec 16): `npm run test:perf`.
+ *
+ * Cada cenário mede no grid real (Chromium sem GPU) o trabalho de cada
+ * render, passo de rolagem e interação, convertido para a máquina fraca pelo
+ * fator calibrado (`src/test/perf.ts`), e confere (1) os orçamentos da spec
+ * e (2) a linha de base em `.specs/16-performance.baseline.json`, com
+ * tolerância. Cada medida é a melhor de {@link REPEATS} (o ruído da máquina
+ * só soma tempo). Os dados são gerados antes de medir (não são o grid).
+ */
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { cleanup, createGrid, nextFrame, settle } from './test/fixture.js';
+import type { GridColumnDef } from './grid-column-def.js';
+import type { DataGrid } from './grid.js';
+import { cleanup } from './test/fixture.js';
+import { makeColumns, makeItems, makeLeanColumns, makeLeanItems } from './test/perf-data.js';
+import {
+  domNodes,
+  heapMiB,
+  jumpPositions,
+  measureScroll,
+  measureWork,
+  painted,
+  type PerfSession,
+  startPerf,
+  updatesDone,
+  wheelPositions,
+} from './test/perf.js';
+import './grid.js';
 
-afterEach(cleanup);
+/** Repetições de cada medida; vale a melhor. */
+const REPEATS = 3;
 
-const ROWS = 100_000;
+let perf: PerfSession;
 
-const items = Array.from({ length: ROWS }, (_, i) => ({
-  country: `Country ${i % 16}`,
-  code: `C${i % 16}`,
-  year: 1960 + i % 65,
-  population: i * 7,
-}));
+const byLabel = (grid: DataGrid, label: string): GridColumnDef =>
+  grid.columns.find(column => column.label === label)!;
 
-describe('desempenho com 100 mil linhas', () => {
-  it('agrupa, expande, rola e reagrupa dentro do orçamento', async () => {
-    const grid = await createGrid({
-      columns: [
-        { path: 'country', label: 'Country', groupIndex: 0 },
-        { path: 'code', label: 'Code' },
-        { path: 'year', label: 'Year' },
-        { path: 'population', label: 'Population' },
-      ],
-      items,
-      configure: g => g.autoExpandGroups = true,
-      height: '600px',
-    });
+/** Cria o grid já com dados e mede o trabalho do 1º render (script, estilo e layout). */
+const firstRender = async (items: object[], columns = makeColumns()) => {
+  const grid = document.createElement('u-grid');
 
-    const scroller = grid.shadowRoot!.querySelector('.scroll-container')!;
-    const frameTimes: number[] = [];
+  grid.style.display = 'block';
+  grid.style.height = '600px';
+  grid.columns = columns;
+  grid.items = items;
 
-    for (let i = 0; i < 40; i++) {
-      const start = performance.now();
-      scroller.scrollTop += 4800;
-      await nextFrame();
-      await grid.updateComplete;
-      frameTimes.push(performance.now() - start);
-    }
+  perf.recalibrate();
+  const start = performance.now();
 
-    let start = performance.now();
-    grid.groupColumn(grid._regularColumns[1], 1);
-    await settle(grid);
-    const regroupMs = performance.now() - start;
+  document.body.append(grid);
+  await updatesDone(grid);
+  // Estilo e layout do 1º render (o que bloqueia antes de pintar).
+  grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
 
-    start = performance.now();
-    grid.items = [...items];
-    await settle(grid);
-    const reloadMs = performance.now() - start;
+  const ms = perf.weak(performance.now() - start);
 
-    const worstFrame = Math.max(...frameTimes);
-    console.log(`[perf] pior frame ${worstFrame.toFixed(1)} ms, reagrupar ${regroupMs.toFixed(0)} ms, trocar items ${reloadMs.toFixed(0)} ms`);
+  await painted(grid);
 
-    expect(grid.shadowRoot!.querySelectorAll('tbody tr[role=row]').length).toBeLessThan(80);
-    expect(worstFrame).toBeLessThan(100);
-    expect(regroupMs).toBeLessThan(1000);
-    expect(reloadMs).toBeLessThan(1000);
-  });
+  expect(grid.shadowRoot!.querySelectorAll('tbody tr[role=row]').length).toBeGreaterThan(5);
+  return { grid, ms };
+};
 
-  it('ordena 100 mil linhas do demo em < 200 ms', async () => {
-    const grid = await createGrid({
-      columns: [
-        { path: 'country', label: 'Country' },
-        { path: 'code', label: 'Code' },
-        { path: 'year', label: 'Year' },
-        { path: 'population', label: 'Population' },
-      ],
-      items,
-      configure: g => g.sortMode = 'multiple',
-      height: '600px',
-    });
+/** Aquece o JIT com todos os caminhos medidos, para o 1º cenário não pagar a compilação. */
+const warmUp = async () => {
+  const { grid } = await firstRender(makeItems(20_000));
 
-    const timings = await measureSorts(grid, [
-      ['Country', 'asc'],
-      ['Country', 'desc'],
-      ['Year', 'desc', true],
-      ['Population', 'desc'],
-    ]);
+  await measureScroll(grid, wheelPositions(grid, 20, 120));
+  await measureScroll(grid, jumpPositions(grid, 10));
 
-    expect(grid.getSorting().map(s => s.column.label)).toEqual(['Population']);
-
-    for (const ms of Object.values(timings)) {
-      expect(ms).toBeLessThan(200);
-    }
-  });
-
-  it('pior caso: 100 mil textos únicos fora de ordem', async () => {
-    const rows = items.map((item, i) => ({ ...item, name: `Item ${(i * 7919) % ROWS}` }));
-    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name' }], items: rows, height: '600px' });
-
-    const timings = await measureSorts(grid, [['Name', 'asc'], ['Name', 'desc']]);
-
-    expect(grid.shadowRoot!.querySelector('tbody tr[role=row] td')!.textContent.trim()).toBe('Item 99999');
-    // 1ª ordenação calcula os postos (Intl.Collator); inverter reaproveita.
-    expect(timings['Name asc']).toBeLessThan(400);
-    expect(timings['Name desc']).toBeLessThan(200);
-  });
-});
-
-const measureSorts = async (
-  grid: Awaited<ReturnType<typeof createGrid>>,
-  steps: [label: string, order: 'asc' | 'desc', append?: boolean][],
-): Promise<Record<string, number>> => {
-  const timings: Record<string, number> = {};
-
-  for (const [label, order, append] of steps) {
-    const column = grid.columns.find(c => c.label === label)!;
-    const start = performance.now();
-    grid.sortColumn(column, order, { append });
-    await grid.updateComplete;
-    timings[`${label} ${order}`] = performance.now() - start;
+  for (const label of ['Country', 'Name', 'Amount', 'Date']) {
+    await measureWork(grid, () => grid.sortColumn(byLabel(grid, label), 'asc'));
   }
 
-  const summary = Object.entries(timings).map(([k, v]) => `${k} ${v.toFixed(0)} ms`);
-  console.log(`[perf] ordenar 100 mil: ${summary.join(', ')}`);
-  return timings;
+  await measureWork(grid, () => grid.groupColumn(byLabel(grid, 'Country')));
+  await measureWork(grid, () => grid.groupColumn(byLabel(grid, 'Category'), 1));
+  await measureWork(grid, () => grid.autoExpandGroups = true);
+  await measureScroll(grid, jumpPositions(grid, 10));
+  grid.remove();
 };
+
+beforeAll(async () => {
+  perf = await startPerf();
+  await warmUp();
+});
+
+afterEach(async () => {
+  await perf.unthrottle();
+  cleanup();
+});
+
+afterAll(async () => {
+  await perf.finish();
+});
+
+// -------------------------------------------------------------- orçamentos
+
+/**
+ * Orçamentos da spec 16 (máquina fraca). Interações escalam com o volume:
+ * até 100 mil linhas valem os 200 ms de "resposta imediata"; acima, 1,5 ms
+ * por mil linhas (1 milhão: 1,5 s) — tarefa longa é inevitável sem
+ * trabalhador, mas limitada. O 1º render não depende do volume.
+ */
+const BUDGET = {
+  /** Trabalho por passo de roda: 30 fps no p95. */
+  scrollP95Ms: 33,
+  scrollWorstMs: 67,
+  /** Salto da barra (todas as linhas da janela novas): 10 fps no p95. */
+  jumpP95Ms: 100,
+  firstRenderMs: 500,
+  interactionMs: (rows: number) => Math.max(200, rows * 1.5 / 1000),
+  /** Pior caso, ordenar texto todo distinto: o dobro (ver pendências da spec). */
+  uniqueSortMs: (rows: number) => Math.max(400, rows * 3 / 1000),
+  domNodes: 2500,
+  /** Heap do grid (fora os itens) por milhão de linhas. */
+  gridHeapMiBPerMillion: 64,
+};
+
+const checkBudgets = (rows: number, metrics: Record<string, number>, regressions: string[]) => {
+  const over: string[] = [];
+
+  const check = (name: string, value: number | undefined, budget: number) => {
+    if (value !== undefined && value > budget) {
+      over.push(`${name}: ${value.toFixed(1)} > orçamento ${budget}`);
+    }
+  };
+
+  check('firstRenderMs', metrics.firstRenderMs, BUDGET.firstRenderMs);
+  check('gridHeapMiB', metrics.gridHeapMiB, Math.max(8, BUDGET.gridHeapMiBPerMillion * rows / 1_000_000));
+  check('domNodes', metrics.domNodes, BUDGET.domNodes);
+
+  for (const [name, value] of Object.entries(metrics)) {
+    if (name.endsWith('scrollP95Ms')) {
+      check(name, value, BUDGET.scrollP95Ms);
+    } else if (name.endsWith('scrollWorstMs')) {
+      check(name, value, BUDGET.scrollWorstMs);
+    } else if (name.endsWith('jumpP95Ms')) {
+      check(name, value, BUDGET.jumpP95Ms);
+    } else if (name === 'sortUniqueMs') {
+      check(name, value, BUDGET.uniqueSortMs(rows));
+    } else if (name.endsWith('Ms') && !(/(firstRender|jumpWorst)Ms$/).test(name)) {
+      check(name, value, BUDGET.interactionMs(rows));
+    }
+  }
+
+  expect.soft(over, 'orçamento estourado').toEqual([]);
+  expect.soft(regressions, 'pior que a linha de base').toEqual([]);
+};
+
+// ------------------------------------------------------------------ medidas
+
+/** Rola com a roda (passos de 120 px) e pela barra (saltos): melhor de {@link REPEATS}. */
+const scrollMetrics = async (grid: DataGrid, prefix = '') => {
+  const best = { wheelP95: Infinity, wheelWorst: Infinity, jumpP95: Infinity, jumpWorst: Infinity };
+
+  for (let i = 0; i < REPEATS; i++) {
+    perf.recalibrate();
+    const wheel = await measureScroll(grid, wheelPositions(grid, 60, 120));
+    const jump = await measureScroll(grid, jumpPositions(grid, 30));
+
+    best.wheelP95 = Math.min(best.wheelP95, perf.weak(wheel.p95Ms));
+    best.wheelWorst = Math.min(best.wheelWorst, perf.weak(wheel.worstMs));
+    best.jumpP95 = Math.min(best.jumpP95, perf.weak(jump.p95Ms));
+    best.jumpWorst = Math.min(best.jumpWorst, perf.weak(jump.worstMs));
+  }
+
+  return {
+    [`${prefix}scrollP95Ms`]: best.wheelP95,
+    [`${prefix}scrollWorstMs`]: best.wheelWorst,
+    [`${prefix}jumpP95Ms`]: best.jumpP95,
+    [`${prefix}jumpWorstMs`]: best.jumpWorst,
+  };
+};
+
+/**
+ * Interação → `{nome}Ms`: trabalho que bloqueia a página, na máquina fraca,
+ * melhor de {@link REPEATS}. `undo` (fora da medida) volta ao estado de antes
+ * da ação para repeti-la.
+ */
+const interaction = async (name: string, grid: DataGrid, action: () => void, undo: () => void) => {
+  let best = Infinity;
+
+  for (let i = 0; i < REPEATS; i++) {
+    if (i) {
+      undo();
+      await painted(grid);
+    }
+
+    perf.recalibrate();
+    best = Math.min(best, perf.weak(await measureWork(grid, action)));
+  }
+
+  return { [`${name}Ms`]: best };
+};
+
+/** 1º render: melhor de {@link REPEATS} grids novos (fica o último). */
+const bestFirstRender = async (items: object[], columns?: GridColumnDef[]) => {
+  let best = Infinity;
+  let grid: DataGrid | undefined;
+
+  for (let i = 0; i < REPEATS; i++) {
+    grid?.remove();
+    const result = await firstRender(items, columns);
+
+    grid = result.grid;
+    best = Math.min(best, result.ms);
+  }
+
+  return { grid: grid!, firstRenderMs: best };
+};
+
+/** Índice da última linha visível depois de rolar até o fim (altura máxima de elemento do navegador). */
+const lastReachableRow = async (grid: DataGrid): Promise<number> => {
+  const scroller = grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+
+  scroller.scrollTop = scroller.scrollHeight;
+  await painted(grid);
+  await painted(grid);
+
+  const indexes = [...grid.shadowRoot!.querySelectorAll<HTMLElement>('tbody tr[data-index]')]
+    .map(row => Number(row.getAttribute('data-index')));
+
+  return Math.max(...indexes);
+};
+
+/** Ações de ordenação e "voltar" (sem postos em cache — `items` de novo — e a ordenação de antes). */
+const sorting = (grid: DataGrid, items: () => object[]) => {
+  const sortBy = (label: string, order: 'asc' | 'desc') => () => grid.sortColumn(byLabel(grid, label), order);
+
+  const resetTo = (before?: () => void) => () => {
+    grid.clearSorting();
+    grid.items = items();
+    before?.();
+  };
+
+  return { sortBy, resetTo };
+};
+
+// ---------------------------------------------------------------- cenários
+
+const flatScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 24 colunas: render, rolagem, ordenação, troca de items`, async () => {
+    let items: object[] | undefined = makeItems(rows);
+    const heapBefore = await heapMiB();
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items);
+    const scroll = await scrollMetrics(grid);
+    const nodes = domNodes(grid);
+    const { sortBy, resetTo } = sorting(grid, () => items!);
+
+    const sortText = await interaction('sortText', grid, sortBy('Country', 'asc'), resetTo());
+    const sortUnique = await interaction('sortUnique', grid, sortBy('Name', 'asc'), resetTo(sortBy('Country', 'asc')));
+    const sortReverse = await interaction('sortReverse', grid, sortBy('Name', 'desc'), sortBy('Name', 'asc'));
+    const sortNumber = await interaction('sortNumber', grid, sortBy('Amount', 'desc'), resetTo(sortBy('Name', 'desc')));
+    const sortDate = await interaction('sortDate', grid, sortBy('Date', 'asc'), resetTo(sortBy('Amount', 'desc')));
+    const sortedScroll = await scrollMetrics(grid, 'sorted.');
+    const replace = await interaction('replaceItems', grid, () => grid.items = [...items!], () => undefined);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+    const lastRow = await lastReachableRow(grid);
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...scroll,
+      ...sortText,
+      ...sortUnique,
+      ...sortReverse,
+      ...sortNumber,
+      ...sortDate,
+      ...sortedScroll,
+      ...replace,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`flat-${label}`, metrics));
+    expect(lastRow, 'última linha visível no fim da rolagem').toBe(rows - 1);
+  });
+};
+
+const groupedScenario = (rows: number, label: string) => {
+  it(`${label} linhas agrupadas em 2 níveis e ordenadas: agrupar, expandir tudo, rolar, reagrupar`, async () => {
+    let items: object[] | undefined = makeItems(rows);
+    const heapBefore = await heapMiB();
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items);
+    const column = (name: string) => byLabel(grid, name);
+
+    const group1 = await interaction('group', grid, () => grid.groupColumn(column('Country')), () => grid.ungroupColumn(column('Country')));
+    const group2 = await interaction(
+      'groupLevel2',
+      grid,
+      () => grid.groupColumn(column('Category'), 1),
+      () => grid.ungroupColumn(column('Category')),
+    );
+    const sort = await interaction('sortGrouped', grid, () => grid.sortColumn(column('Amount'), 'desc'), () => {
+      grid.clearSorting();
+      grid.items = items!;
+    });
+    const expand = await interaction('expandAll', grid, () => grid.autoExpandGroups = true, () => grid.autoExpandGroups = false);
+    const scroll = await scrollMetrics(grid);
+    const nodes = domNodes(grid);
+    const regroup = await interaction('regroup', grid, () => {
+      grid.ungroupColumn(column('Category'));
+      grid.groupColumn(column('Status'), 1);
+    }, () => {
+      grid.ungroupColumn(column('Status'));
+      grid.groupColumn(column('Category'), 1);
+    });
+    const collapse = await interaction('collapseAll', grid, () => grid.autoExpandGroups = false, () => grid.autoExpandGroups = true);
+    const replace = await interaction('replaceItems', grid, () => grid.items = [...items!], () => undefined);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+
+    expect(grid.getGrouping().map(c => c.label)).toEqual(['Country', 'Status']);
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...group1,
+      ...group2,
+      ...sort,
+      ...expand,
+      ...scroll,
+      ...regroup,
+      ...collapse,
+      ...replace,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`grouped-${label}`, metrics));
+  });
+};
+
+const hugeScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 8 colunas: render, rolagem até o fim, ordenar, agrupar, expandir`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+    const heapBefore = await heapMiB();
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeLeanColumns());
+    const scroll = await scrollMetrics(grid);
+    const { sortBy, resetTo } = sorting(grid, () => items!);
+
+    const sortNumber = await interaction('sortNumber', grid, sortBy('Quantity', 'desc'), resetTo());
+    const sortText = await interaction('sortText', grid, sortBy('Country', 'asc'), resetTo(sortBy('Quantity', 'desc')));
+    const sortUnique = await interaction('sortUnique', grid, sortBy('Name', 'asc'), resetTo(sortBy('Country', 'asc')));
+    const group = await interaction(
+      'group',
+      grid,
+      () => grid.groupColumn(byLabel(grid, 'Category')),
+      () => grid.ungroupColumn(byLabel(grid, 'Category')),
+    );
+    const expand = await interaction('expandAll', grid, () => grid.autoExpandGroups = true, () => grid.autoExpandGroups = false);
+    const groupedScroll = await scrollMetrics(grid, 'grouped.');
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+    const lastRow = await lastReachableRow(grid);
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs,
+      ...scroll,
+      ...sortNumber,
+      ...sortText,
+      ...sortUnique,
+      ...group,
+      ...expand,
+      ...groupedScroll,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`lean-${label}`, metrics));
+    // Agrupado e expandido: 12 linhas de grupo a mais.
+    expect(lastRow, 'última linha visível no fim da rolagem').toBe(rows + 12 - 1);
+  });
+};
+
+describe('perfil de máquina fraca', () => {
+  flatScenario(100_000, '100k');
+  groupedScenario(100_000, '100k');
+  flatScenario(1_000_000, '1m');
+  groupedScenario(1_000_000, '1m');
+  hugeScenario(5_000_000, '5m');
+});

@@ -1,7 +1,7 @@
 # Data Grid — regras do repositório
 
 `<u-grid>` (`@universal-material/data-grid`): web component de grid de dados
-em Lit, com virtualização de linhas (`@tanstack/lit-virtual`), agrupamento e
+em Lit, com virtualização de linhas (própria, `src/render/virtualizer.ts`), agrupamento e
 reordenação por arrasto (`interactjs`), i18n por Lit context e SSR
 (`@lit-labs/ssr`).
 
@@ -63,7 +63,12 @@ anota o que mediu na própria spec (seção "Referência medida").
   `src/test/fixture.ts`.
 - `npm run lint` e `npm run typecheck` limpos (o typecheck cobre o build e os
   testes; o `tsconfig` de `src/` exclui os testes do `dist/`).
-- Desempenho: `src/grid.perf.browser.test.ts` (100 mil linhas). Não medir no
+- `npm run test:perf` — projeto `perf` (`src/**/*.perf.browser.test.ts`), fora
+  do `npm test`: perfil de máquina fraca (GPU desligada, CPU 4× mais lenta
+  que o desktop de referência — trabalho medido × fator calibrado por
+  micro-benchmark —, heap de 1 GiB, 1366×768), cenários de 100 mil a 5
+  milhões de linhas. Harness em `src/test/perf.ts`; orçamentos,
+  calibração e linha de base em `.specs/16-performance.md`. Não medir no
   painel de navegador do app — ele estrangula o `requestAnimationFrame`.
 - Demo: `npm run dev` (dados sintéticos; `?rows=100000`, `?remote` para a API
   countriesnow.space).
@@ -76,11 +81,20 @@ anota o que mediu na própria spec (seção "Referência medida").
   grid usado com o recurso e removido é coletado, e o uso repetido num grid
   de vida longa não cresce. Inventário do que já existe em
   `.specs/14-memory.md`.
+- **Desempenho (regra permanente, spec 16)**: toda frente que mexe em dados,
+  render ou interação roda `npm run test:perf` no perfil fraco antes de
+  entregar e não pode piorar a linha de base
+  (`.specs/16-performance.baseline.json`) além da tolerância, nem estourar
+  os orçamentos da spec 16. Recurso novo entra com cenário/métrica no
+  `src/grid.perf.browser.test.ts`; linha de base só é regravada
+  (`PERF_UPDATE_BASELINE=1`) no mesmo commit da mudança, com o porquê. Nada
+  de custo por linha onde o custo pode ser por linha VISÍVEL (o row model
+  guarda segmentos, `RowList`, não um objeto por item).
 
 ## Segurança e dependências
 
 - Só o que o componente usa em runtime fica em `dependencies` (hoje `lit`,
-  `@lit/context`, `@tanstack/lit-virtual`, `interactjs`). Servidor de dev,
+  `@lit/context`, `interactjs`). Servidor de dev,
   SSR de demo e Material Web são `devDependencies`.
 - O servidor de dev escuta só em `localhost`.
 - `npm audit --omit=dev` precisa estar zerado para publicar.

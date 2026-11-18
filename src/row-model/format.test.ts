@@ -226,7 +226,7 @@ describe('valueGetter e displayValue no agrupamento', () => {
     expect(groups.map(g => [g.value, g.items.length])).toEqual([[1980, 1], [1990, 2]]);
 
     const rows = flattenRows(items, groups, () => false, item => String((item as any).name));
-    const groupRow = rows[1];
+    const groupRow = rows.at(1);
 
     expect(groupRow.isGroup && groupRow.firstItem).toBe(items[0]);
     expect(groupRow.isGroup && formatCellValue(groupRow.value, groupRow.firstItem, decade, ctx('en', 'number')))
