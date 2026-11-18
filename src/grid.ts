@@ -6227,7 +6227,8 @@ export class DataGrid extends LitElement {
     this.#rangesPublic = ranges.length ? Object.freeze(ranges.map(corners => publicRange(corners, navColumns))) : EMPTY_RANGES;
     this.#rangeSignature = this.#rangeStructure();
     this.requestUpdate();
-    this.#scheduleRangeAnnouncement();
+    // Anuncia gesto (e o arrasto em curso); método do hospedeiro, não (como a ordenação).
+    this.#scheduleRangeAnnouncement(source !== 'api');
 
     if (source) {
       this.#dispatchRangeChange(previous, source);
@@ -6278,12 +6279,18 @@ export class DataGrid extends LitElement {
   /** Teclas de intervalo numa célula do corpo; `true` = tratada. */
   #onRangeKeyDown(event: KeyboardEvent, position: CellPosition, column: NavColumn | undefined): boolean {
     const mode = this.#cellSelectionMode;
+    const ctrl = event.ctrlKey || event.metaKey;
+
+    // "Adicionar à seleção" ligado e o foco levado ao cabeçalho: Shift+F8 e Esc ainda desligam.
+    if (this.#rangeAddMode && position.row < 0 && ((event.key === 'F8' && event.shiftKey && !ctrl) || event.key === 'Escape')) {
+      event.preventDefault();
+      this.#setRangeAddMode(false);
+      return true;
+    }
 
     if (mode === 'none' || position.row < 0 || event.altKey) {
       return false;
     }
-
-    const ctrl = event.ctrlKey || event.metaKey;
 
     if (event.key === 'F8' && event.shiftKey && !ctrl) {
       if (mode !== 'multiple') {
@@ -6785,7 +6792,7 @@ export class DataGrid extends LitElement {
 
   // Anúncios e resumo: só o último, depois de uma pausa (spec 19).
 
-  #scheduleRangeAnnouncement(): void {
+  #scheduleRangeAnnouncement(announce = true): void {
     this.#rangeSummaryAbort?.abort();
     this.#rangeSummaryAbort = undefined;
 
@@ -6801,7 +6808,11 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    this.#rangeAnnouncer.run('range', () => this.#announceRange(), RANGE_ANNOUNCE_DELAY);
+    if (announce) {
+      this.#rangeAnnouncer.run('range', () => this.#announceRange(), RANGE_ANNOUNCE_DELAY);
+    } else {
+      this.#rangeAnnouncer.cancel('range');
+    }
 
     if (this.showCellRangeSummary) {
       this.#rangeAnnouncer.run('summary', () => this.#updateRangeSummary(), RANGE_ANNOUNCE_DELAY);
@@ -7076,6 +7087,8 @@ export class DataGrid extends LitElement {
     const pasted = detail.values;
     const pastedRows = Math.max(pasted.length, 1);
     const pastedCols = Math.max(1, ...pasted.map(line => line.length));
+    const results: (ValidationResult | Promise<ValidationResult>)[] = [];
+    const touched = new Set<PendingRow>();
     let written = 0;
     let skipped = 0;
 
@@ -7112,7 +7125,8 @@ export class DataGrid extends LitElement {
           continue;
         }
 
-        this.#writeCell(pendingRow, column, value);
+        results.push(this.#writeCell(pendingRow, column, value));
+        touched.add(pendingRow);
         written++;
       }
     });
@@ -7124,14 +7138,39 @@ export class DataGrid extends LitElement {
     this.#edits.touch();
     this.requestUpdate();
 
-    const announcement = formatMessage(this.#translation.cellsPastedAnnouncement, { count: format.format(written) });
-    this.#announce(skipped
-      ? `${announcement}. ${formatMessage(this.#translation.cellsSkippedAnnouncement, { count: format.format(skipped) })}`
-      : announcement);
+    const translation = this.#translation;
+    const announcement = skipped
+      ? formatMessage(translation.cellsSkippedAnnouncement, { count: format.format(written), skipped: format.format(skipped) })
+      : formatMessage(translation.cellsPastedAnnouncement, { count: format.format(written) });
 
     // Célula e linha salvam já (um `u-grid-saving`); inválidos barram o salvamento como na 09.
     if (written && this.#editMode !== 'batch') {
+      this.#announce(announcement);
       void this.#save('user');
+      return;
+    }
+
+    // Lote: os inválidos ficam pendentes marcados; o anúncio os cita e o foco vai ao 1º (como o salvar barrado da 09).
+    const report = (): void => {
+      const invalidRows = [...touched].filter(row => this.#edits.get(row.rowKey) === row && (row.errors.size || row.unparsed.size || row.rowError));
+
+      if (!invalidRows.length) {
+        this.#announce(announcement);
+        return;
+      }
+
+      const invalid = formatMessage(translation.invalidRowsMessage, { count: format.format(invalidRows.length) });
+      this.#announce(`${announcement} ${invalid} ${this.#firstErrorText(invalidRows)}`.trim());
+      this.#focusFirstInvalid(invalidRows);
+      this.requestUpdate();
+    };
+
+    const pending = results.filter((result): result is Promise<ValidationResult> => isPromiseLike(result));
+
+    if (pending.length) {
+      void Promise.all(pending).then(report);
+    } else {
+      report();
     }
   };
 

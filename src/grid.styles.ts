@@ -2096,8 +2096,10 @@ export const styles = css`
     background-color: var(--u-grid-selected-cell-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 14%, transparent));
   }
 
+  /* Contexto de empilhamento próprio: o contorno não pinta por cima das colunas fixas ao rolar. */
   td.in-range:not(.fixed):not(.sticky-cell) {
     position: relative;
+    z-index: 0;
   }
 
   td.in-range::before {
@@ -2125,6 +2127,11 @@ export const styles = css`
     border-inline-end: var(--_range-border);
   }
 
+  /* A barra da linha selecionada (A2, spec 17) fica visível ao lado do contorno. */
+  tbody tr[role=row].selected:not(.group-row) > td:first-child.range-start::before {
+    inset-inline-start: var(--u-grid-selected-row-indicator-width, 3px);
+  }
+
   /* Célula ativa dentro do intervalo: anel + faixa clara (o anel não se funde ao contorno; WCAG 2.4.7). */
   td:where(.grid-table > * > * > *).in-range[tabindex]:focus-visible {
     outline: var(--_focus-ring);
@@ -2132,11 +2139,28 @@ export const styles = css`
     box-shadow:
       inset 0 0 0 calc(var(--u-grid-focus-ring-width, 2px) + 2px) var(--u-color-surface, #fff),
       var(--_col-line),
-      var(--_row-line);
+      var(--_row-line),
+      var(--_edge-line),
+      var(--_edge-shadow);
   }
 
   td.in-range[tabindex]:focus-visible::before {
     inset: calc(var(--u-grid-focus-ring-width, 2px) + 2px);
+  }
+
+  /* Inválida focada dentro do intervalo: anel, faixa clara e a borda de erro (não some). */
+  td:where(.grid-table > * > * > *).in-range.invalid[tabindex]:focus-visible {
+    box-shadow:
+      inset 0 0 0 calc(var(--u-grid-focus-ring-width, 2px) + 2px) var(--u-color-surface, #fff),
+      inset 0 0 0 calc(var(--u-grid-focus-ring-width, 2px) + 4px) var(--u-grid-invalid-cell-color, var(--u-color-error, rgb(179, 38, 30))),
+      var(--_col-line),
+      var(--_row-line),
+      var(--_edge-line),
+      var(--_edge-shadow);
+  }
+
+  td.in-range.invalid[tabindex]:focus-visible::before {
+    inset: calc(var(--u-grid-focus-ring-width, 2px) + 4px);
   }
 
   .range-dragging {
@@ -2169,13 +2193,17 @@ export const styles = css`
   }
 
   @media (forced-colors: active) {
+    /* Sem fundo no alto contraste: marca pontilhada em toda célula do intervalo (o interior também). */
     td.in-range::before {
       --_range-border: var(--u-grid-cell-range-border-width, 2px) solid Highlight;
       forced-color-adjust: none;
+      outline: 1px dotted Highlight;
+      outline-offset: -3px;
     }
 
     tbody tr[role=row].selected > td.in-range::before {
       --_range-border: var(--u-grid-cell-range-border-width, 2px) solid HighlightText;
+      outline-color: HighlightText;
     }
 
     td:where(.grid-table > * > * > *).in-range[tabindex]:focus-visible {

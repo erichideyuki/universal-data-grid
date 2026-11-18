@@ -2087,7 +2087,7 @@ interface GridI18n {
   addingToSelection: string;        // visible text while Shift+F8 is on: "Adding to selection"
   cellsCopiedAnnouncement: string;  // "Copied cells: {count}"
   cellsPastedAnnouncement: string;  // "Pasted cells: {count}"
-  cellsSkippedAnnouncement: string; // appended when cells were skipped: "Skipped: {count}"
+  cellsSkippedAnnouncement: string; // after pasting with skipped cells: "Pasted cells: {count}. Skipped: {skipped}"
   copyLimitExceededAnnouncement: string;  // "Too many cells to copy: {count}. Limit: {max}"
   pasteLimitExceededAnnouncement: string; // "Too many cells to paste: {count}. Limit: {max}"
   rowsNotLoadedAnnouncement: string; // copy refused: rows of a remote source not loaded yet
@@ -2153,7 +2153,7 @@ interface GridI18n {
 ```
 
 `{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}`,
-`{cells}`, `{rows}`, `{columns}`, `{max}` and `{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
+`{cells}`, `{rows}`, `{columns}`, `{max}`, `{skipped}` and `{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
 `sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` and `groupPanelMenu` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 

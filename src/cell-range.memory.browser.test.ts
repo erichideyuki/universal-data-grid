@@ -131,7 +131,9 @@ describe('memória do intervalo de células', () => {
 
     await expectCollected(await swap(1));
 
-    for (let n = 0; n < 6; n++) {
+    // Aquecimento longo: a cópia, o resumo e o arrasto exercitam muito código
+    // (JIT e caches internos crescem nas primeiras dezenas de rodadas, depois param).
+    for (let n = 0; n < 30; n++) {
       await swap(10 + n * 3);
     }
 
@@ -152,5 +154,5 @@ describe('memória do intervalo de células', () => {
     expect(delta.nodes, report).toBeLessThan(30);
     expect(delta.listeners, report).toBeLessThan(30);
     expect(await aliveAfterGc(await swap(500))).toEqual([]);
-  }, 120_000);
+  }, 240_000);
 });

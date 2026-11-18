@@ -147,7 +147,11 @@ Frente 19 (intervalo de células): 🔎 conferir se NVDA/JAWS leem
 "selecionado" ao entrar numa célula de um intervalo e o anúncio do tamanho
 depois da pausa; "linha selecionada + intervalo" (linha com
 `aria-selected="true"` e células do intervalo); Shift+F8 → setas →
-Shift+seta → Esc. Hoje só `aria-selected="true"` vai nas células (o
+Shift+seta → Esc; a tinta de 14 % do intervalo no modo normal (o contorno
+é o indicador ≥ 3:1). ⏳ 2.5.7 do intervalo depende dos itens da frente 18
+(`extendSelectionToCell`/`addCellToSelection` no menu da célula, pressionar
+longo no toque): a 19 sozinha não fecha o 2.5.7 para quem usa só ponteiro.
+Hoje só `aria-selected="true"` vai nas células (o
 `false` não é emitido, como no AG Grid) para não dizer "não selecionado" a
 cada seta; se o leitor não ler o "selecionado" sem o `false` nas vizinhas,
 reavaliar.

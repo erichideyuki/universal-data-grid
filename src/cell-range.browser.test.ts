@@ -242,6 +242,49 @@ describe('teclado', () => {
     expect(root(grid).querySelector('.cell-range-adding')).toBeNull();
   });
 
+  it('foco saindo do grid desliga o "adicionar à seleção" (anunciado); no cabeçalho Esc também', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    const grid = await create();
+    cell(grid, 0, 0).focus();
+
+    await press(grid, 'F8', { shiftKey: true });
+    outside.focus();
+    await settle(grid);
+    expect(announcement(grid)).toContain('Stopped adding to selection');
+    expect(root(grid).querySelector('.cell-range-adding')).toBeNull();
+
+    cell(grid, 0, 0).focus();
+    await press(grid, 'F8', { shiftKey: true });
+    await press(grid, 'ArrowUp');
+    expect(focused(grid)?.tagName).toBe('TH');
+    await press(grid, 'Escape');
+    expect(root(grid).querySelector('.cell-range-adding')).toBeNull();
+    outside.remove();
+  });
+
+  it('agrupado (treegrid): Shift+↓ pula a linha de grupo, que não é marcada; axe', async () => {
+    const grid = await createGrid({
+      items: people(),
+      columns: [{ path: 'city', label: 'City', groupIndex: 0 }, { path: 'name', label: 'Name' }, { path: 'age', label: 'Age' }],
+      configure: g => {
+        g.cellSelectionMode = 'single';
+        g.autoExpandGroups = true;
+      },
+    });
+    const rows = [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr[role=row]')];
+    const firstData = rows.findIndex(tr => !tr.classList.contains('group-row'));
+    rows[firstData].querySelector<HTMLElement>('td[data-col]')!.focus();
+
+    // BH: Duda; Natal: =1+1 — o próximo dado está depois de uma linha de grupo.
+    await press(grid, 'ArrowDown', { shiftKey: true });
+    const range = grid.getCellRanges()[0];
+    expect(range.endRowIndex - range.startRowIndex).toBe(2);
+    expect(root(grid).querySelector('tr.group-row [aria-selected]')).toBeNull();
+    expect(root(grid).querySelectorAll('td[aria-selected="true"]').length).toBe(2);
+    expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
+  });
+
   it('RTL: Shift+← estende para a coluna seguinte', async () => {
     const grid = await create(g => g.setAttribute('dir', 'rtl'));
     cell(grid, 0, 0).focus();
@@ -263,6 +306,28 @@ describe('ponteiro', () => {
     expect(events.length).toBe(1);
     expect(focused(grid)?.textContent.trim()).toBe('Rio');
     expect(grid._memoryStats.rangeDrag).toBe(0);
+  });
+
+  it('arrasto até a borda rola sozinho; ao soltar, o foco fica no fim (fora da janela inicial)', async () => {
+    const items = Array.from({ length: 500 }, (_, index) => ({ name: `n${index}`, city: `c${index}`, age: index }));
+    const grid = await create(undefined, items);
+    const scroller = root(grid).querySelector<HTMLElement>('.scroll-container')!;
+    const from = cell(grid, 0, 0);
+
+    pointer('pointerdown', from, from);
+    from.focus();
+    const box = scroller.getBoundingClientRect();
+    pointer('pointermove', table(grid), from, { clientY: box.bottom - 4 });
+    await wait(400);
+    await settle(grid);
+    pointer('pointerup', table(grid), from, { clientY: box.bottom - 4 });
+    await settle(grid);
+
+    expect(scroller.scrollTop).toBeGreaterThan(0);
+    const range = grid.getCellRanges()[0];
+    expect(range.endRowIndex).toBeGreaterThan(8);
+    expect(focused(grid)?.closest('tr')
+      ?.getAttribute('aria-rowindex')).toBe(String(range.endRowIndex + 2));
   });
 
   it('Shift+clique estende da âncora; Ctrl+clique soma intervalos', async () => {
@@ -361,7 +426,9 @@ describe('copiar e colar', () => {
     ]);
     // `'=2` virou `=2`: texto que não é número na coluna numérica fica pendente inválido.
     expect(dataRows(grid)[1].querySelectorAll('td.invalid').length).toBe(1);
-    expect(announcement(grid)).toBe('Pasted cells: 8');
+    // Lote: o anúncio cita os inválidos e o foco vai ao 1º (como o salvar barrado da 09).
+    expect(announcement(grid)).toContain('Pasted cells: 8 Fix the errors before saving. Rows with errors: 2');
+    expect(focused(grid)).toBe(cell(grid, 1, 2));
   });
 
   it('cola no modo célula: salva de uma vez; cancelado não muda nada; sem copy-paste não cola', async () => {
@@ -471,6 +538,21 @@ describe('virtualização, fixas e bandas', () => {
     await press(grid, 'Home', { ctrlKey: true, shiftKey: true });
     expect(grid.getCellRanges()[0]).toMatchObject({ startRowIndex: 9_999, endRowIndex: 0 });
     expect(selectedTexts(grid)[0][0]).toBe('n0');
+  });
+
+  it('célula do meio no intervalo tem empilhamento próprio (o contorno não cobre as fixas)', async () => {
+    const grid = await createGrid({
+      items: people(),
+      columns: [{ path: 'name', label: 'Name', fixed: 'start' }, { path: 'city', label: 'City' }, { path: 'age', label: 'Age' }],
+      configure: g => {
+        g.cellSelectionMode = 'single';
+      },
+    });
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'city', endColumn: 'age' });
+    await settle(grid);
+
+    expect(getComputedStyle(cell(grid, 0, 1)).zIndex).toBe('0');
+    expect(Number(getComputedStyle(cell(grid, 0, 0)).zIndex)).toBeGreaterThan(0);
   });
 
   it('atravessa colunas fixas e bandas na ordem de exibição', async () => {
