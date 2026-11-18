@@ -4,6 +4,23 @@
     "applyRemoveMs": 209.4,
     "applyAddMs": 129.4
   },
+  "bands-1m": {
+    "firstRenderMs": 41.4,
+    "scrollP95Ms": 13.7,
+    "scrollWorstMs": 19.2,
+    "jumpP95Ms": 23.8,
+    "jumpWorstMs": 32.2,
+    "horizontal.scrollP95Ms": 28.8,
+    "horizontal.scrollWorstMs": 30.8,
+    "horizontal.jumpP95Ms": 43.2,
+    "horizontal.jumpWorstMs": 48.4,
+    "middle.scrollP95Ms": 14.2,
+    "middle.scrollWorstMs": 19,
+    "middle.jumpP95Ms": 26.4,
+    "middle.jumpWorstMs": 38.8,
+    "domNodes": 497,
+    "gridHeapMiB": 1.2
+  },
   "detail-1m": {
     "firstRenderMs": 18.9,
     "enableDetailMs": 6.5,
@@ -150,6 +167,16 @@
     "gridEndMs": 2.4,
     "domNodes": 259
   },
+  "state-1m": {
+    "restoreFirstRenderMs": 1033.8,
+    "getStateMs": 0,
+    "setStateMs": 504.8,
+    "restored.scrollP95Ms": 11.4,
+    "restored.scrollWorstMs": 13.2,
+    "restored.jumpP95Ms": 32.5,
+    "restored.jumpWorstMs": 33.2,
+    "gridHeapMiB": 10.4
+  },
   "summaries-1m": {
     "firstRenderMs": 45.5,
     "summaryMs": 301.1,
@@ -165,14 +192,21 @@
     "domNodes": 619,
     "gridHeapMiB": 14.3
   },
-  "state-1m": {
-    "restoreFirstRenderMs": 1033.8,
-    "getStateMs": 0,
-    "setStateMs": 504.8,
-    "restored.scrollP95Ms": 11.4,
-    "restored.scrollWorstMs": 13.2,
-    "restored.jumpP95Ms": 32.5,
-    "restored.jumpWorstMs": 33.2,
-    "gridHeapMiB": 10.4
+  "wide-1m": {
+    "firstRenderMs": 36.8,
+    "scrollP95Ms": 10.1,
+    "scrollWorstMs": 12.3,
+    "jumpP95Ms": 27.7,
+    "jumpWorstMs": 29,
+    "horizontal.scrollP95Ms": 18,
+    "horizontal.scrollWorstMs": 19.8,
+    "horizontal.jumpP95Ms": 26.6,
+    "horizontal.jumpWorstMs": 27.1,
+    "middle.scrollP95Ms": 19.7,
+    "middle.scrollWorstMs": 24.6,
+    "middle.jumpP95Ms": 43.4,
+    "middle.jumpWorstMs": 43.8,
+    "domNodes": 484,
+    "gridHeapMiB": 1.2
   }
 }
