@@ -870,7 +870,7 @@ column chooser button are separate stops in the bar above.
 | `Ctrl`+`G` on a header | Group by the column (same as dragging it to the group panel). |
 | `Ctrl`+`G` on a group row | Ungroup that row's column (works without the group panel). |
 | `Shift`+`F10` / menu key on a header | Open the column header menu (sort, group, pin, move left/right, auto-size, widen/narrow). |
-| `Shift`+`F10` / menu key on a cell | Open the row menu (built-in items with `row-menu`, or yours). |
+| `Shift`+`F10` / menu key on a cell | Open the row menu (built-in items with `row-menu`; the cell range items with `cell-selection-mode`; or yours). |
 | `←`/`→`, `Home`/`End` in the toolbar | Move between the toolbar buttons and the group chips (one `Tab` stop). |
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
@@ -1400,7 +1400,8 @@ modes — invalid ones stay pending and marked. Up to 200,000 cells. Paste in an
 editor's.
 
 The cancelable `u-grid-pasting` event fires before anything changes; `detail` is
-`{ text, values, range, clipboardData }`. `values` (one array of strings per row) belongs to the
+`{ text, values, range, clipboardData }` (`clipboardData`: the native one on Ctrl+V; for the menu's
+"Paste", a `DataTransfer` of the grid with only `text/plain`). `values` (one array of strings per row) belongs to the
 grid: change the strings to transform what is pasted. `range` is the area that will be written; it
 is not recomputed, so edited `values` are tiled into it. After
 `preventDefault()` the grid changes nothing and the native paste goes on:
@@ -1489,7 +1490,7 @@ group row. Built-in items:
 | ------ | -------------------------------------- | ------------- |
 | `header` | Sort ascending / descending / Clear sorting, Group by this column, Pin to start / end / Unpin (with `column-chooser`), Move left / right, Auto-size, Increase / Decrease width | `column-header-menu="false"` |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
-| `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | `cell-selection-mode="none"` (Paste: `clipboard-mode` other than `copy-paste`) — shown without `row-menu` |
+| `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | shown with `cell-selection-mode` (Paste: also needs `clipboard-mode="copy-paste"`), even without `row-menu`; without cell ranges, Paste only with `row-menu`. To keep the browser menu, remove them in `u-grid-context-menu-opening` |
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details | **off by default**: `row-menu` turns them on |
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
 
@@ -1533,16 +1534,18 @@ after "Delete" in the confirmation dialog; after the other items, back where the
 **Cell ranges in the menu.** On a data cell, with [cell ranges](#cell-ranges) on, the menu offers
 `copySelectedCells` (with ranges), `paste` (with `clipboard-mode="copy-paste"` on an editable cell;
 it reads the clipboard with the Clipboard API — the browser may ask for permission; if it cannot, the
-grid announces it and `Ctrl+V` still works), `extendSelectionToCell` (the active range — or the
+grid announces it and the keyboard paste still works; it pastes into the active range when the cell
+is in it, like `Ctrl+V`), `extendSelectionToCell` (the active range — or the
 cell that was active before the menu opened — grows to this cell; same as `Shift`+click) and, in
 `multiple`, `addCellToSelection` (same as `Ctrl`+click). They are the single-pointer alternative
-to dragging (WCAG 2.5.7): right-click or a long press on touch screens. The focus goes to the new
+to dragging (WCAG 2.5.7): right-click (on a Mac also Ctrl+click), or a long press on touch screens;
+"Extend" starts from the cell that was active before the right-click. The focus goes to the new
 corner after "Extend"/"Add", and back to the cell after "Copy"/"Paste".
 
 ### Copy by API
 
-`copySelection()` copies like `Ctrl+C` (the cell ranges, else the selected rows, else the active
-cell) through the asynchronous Clipboard API and resolves `true` when written. Call it within the
+`copySelection()` copies like `Ctrl+C` (the cell ranges — wherever the active cell is —, else the
+selected rows, else the active cell; `false` when the ranges exceed the cell limit, announced) through the asynchronous Clipboard API and resolves `true` when written. Call it within the
 user's gesture (browsers require it). It fires `u-grid-copying` with `source: 'api'` and a
 `DataTransfer` of the grid: cancel it and `setData` your own content, as with `Ctrl+C`.
 
@@ -2157,7 +2160,7 @@ interface GridI18n {
   // Toolbar and menus: toolbarLabel, toolbarMoreButtonLabel, exportButtonLabel, exportCsv,
   // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
   // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
-  // copySelectedCells, paste, pasteFailedAnnouncement (cell ranges),
+  // copySelectedCells, paste, pasteFailedAnnouncement, copyFailedAnnouncement (cell ranges),
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
 }
@@ -2188,7 +2191,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
 | `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Built-in items of the group panel menu (ungroup, move, expand/collapse all). See [Context menus](#context-menus). |
 | `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, "⋮", Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
-| `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). |
+| `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). With `cell-selection-mode`, the cell menu also opens with the range items. |
 | `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
 | `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
 | `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter(ExcelJS)`). |
@@ -2225,8 +2228,8 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `pageIndex`        | `page-index`          | `number`  | `0`     | Current page (0-based, clamped). Setting it fires no event. |
 | `pageSizeOptions`  | `page-size-options`   | `readonly number[]` | `[10, 20, 50, 100]` | Page sizes of the pager (attribute: `"10, 20, 50"`; empty hides the selector). |
 | `scrollMode`       | `scroll-mode`         | `'virtual' \| 'infinite'` | `'virtual'` | Infinite scrolling for a remote source. |
-| `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'copy-paste' \| 'none'` | `'copy'` | Ctrl+C copies the cell ranges, the selected rows or the focused cell; `copy-paste` also pastes with Ctrl+V. See [Export & clipboard](#export--clipboard). |
-| `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. See [Cell ranges](#cell-ranges). |
+| `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'copy-paste' \| 'none'` | `'copy'` | Ctrl+C copies the cell ranges, the selected rows or the focused cell; `copy-paste` also pastes with Ctrl+V (and the cell menu "Paste" with cell ranges or `row-menu`). See [Export & clipboard](#export--clipboard). |
+| `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. Also opens the cell context menu with the range items, even without `row-menu`. See [Cell ranges](#cell-ranges). |
 | `showCellRangeSummary` | `show-cell-range-summary` | `boolean` | `false` | Bar with the count, sum and average of the selected cells. |
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |

@@ -6,7 +6,7 @@
  */
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { commands } from 'vitest/browser';
+import { commands, userEvent } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type {
@@ -683,6 +683,78 @@ describe('menu de contexto da célula (frente 18; WCAG 2.5.7)', () => {
     expect(focused(grid)).toBe(cell(grid, 4, 2));
   });
 
+  it('clique direito REAL (o mousedown move o foco antes do menu): "Estender" usa a ativa de antes', async () => {
+    const grid = await create();
+
+    await userEvent.click(cell(grid, 0, 0));
+    await settle(grid);
+    await userEvent.click(cell(grid, 2, 1), { button: 'right' });
+    await settle(grid);
+    expect(menuTexts(grid)).toEqual(['Extend selection to this cell', 'Add cell to selection']);
+
+    await choose(grid, 'Extend selection to this cell');
+    expect(selectedTexts(grid)).toEqual([['Ana', 'Rio'], ['Bia', 'SP'], ['Caio', 'Rio']]);
+  });
+
+  it('toque longo (sem teclado nem arrasto) abre o menu com "Estender" a partir da célula tocada antes', async () => {
+    const grid = await create();
+    const target = cell(grid, 3, 2);
+    cell(grid, 1, 0).focus();
+    await settle(grid);
+
+    const touch = (type: string) => target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, composed: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 9, ...centerOf(target),
+    }));
+    touch('pointerdown');
+    await wait(650);
+    await settle(grid);
+    touch('pointerup');
+
+    expect(menuTexts(grid)).toContain('Extend selection to this cell');
+    await choose(grid, 'Extend selection to this cell');
+    expect(grid.getCellRanges()).toEqual([{ startRowIndex: 1, endRowIndex: 3, startColumn: grid.columns[0], endColumn: grid.columns[2] }]);
+  });
+
+  it('teclado e RTL: Shift+F10, ↓, Enter ativam o item; o foco fica na célula somada', async () => {
+    const grid = await create(g => g.setAttribute('dir', 'rtl'));
+    cell(grid, 0, 0).focus();
+    await press(grid, 'ArrowLeft', { shiftKey: true });
+    // "Adicionar à seleção" (Shift+F8): a ativa anda sem desfazer o intervalo.
+    await press(grid, 'F8', { shiftKey: true });
+    await press(grid, 'ArrowDown');
+    await press(grid, 'ArrowDown');
+    await press(grid, 'F10', { shiftKey: true });
+    expect(menuTexts(grid)).toEqual(['Copy selected cells', 'Add cell to selection']);
+
+    await press(grid, 'ArrowDown');
+    expect(focused(grid)?.textContent.trim()).toBe('Add cell to selection');
+    // Enter num item (botão) é o clique nativo: tecla confiável.
+    await userEvent.keyboard('{Enter}');
+    await settle(grid);
+    expect(menu(grid)).toBeNull();
+    expect(focused(grid)).toBe(cell(grid, 2, 1));
+    expect(grid.getCellRanges().length).toBe(2);
+    expect(cell(grid, 2, 1).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('"Adicionar" não aparece quando não somaria nada; falha ao copiar é anunciada', async () => {
+    vi.spyOn(navigator.clipboard, 'write').mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+    const grid = await create();
+    cell(grid, 1, 1).focus();
+    await press(grid, 'F10', { shiftKey: true });
+    // Sem intervalo e a âncora na própria célula: nem "Estender" nem "Adicionar" (menu vazio = nativo).
+    expect(menu(grid)).toBeNull();
+    // O `contextmenu` que o navegador solta depois da tecla de menu é ignorado por 1 s (frente 18).
+    await wait(1100);
+
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'name', endColumn: 'city' });
+    await settle(grid);
+    await rightClick(grid, cell(grid, 0, 0));
+    await choose(grid, 'Copy selected cells');
+    await settle(grid);
+    expect(announcement(grid)).toBe('Could not copy to the clipboard.');
+  });
+
   it('"Copiar células selecionadas" escreve os intervalos pela Clipboard API', async () => {
     const writes: string[] = [];
     vi.spyOn(navigator.clipboard, 'write').mockImplementation(async items => {
@@ -723,7 +795,7 @@ describe('menu de contexto da célula (frente 18; WCAG 2.5.7)', () => {
     await rightClick(grid, cell(grid, 2, 1));
     await choose(grid, 'Paste');
     await settle(grid);
-    expect(announcement(grid)).toBe('Could not read the clipboard. Use Ctrl+V.');
+    expect(announcement(grid)).toBe('Could not read the clipboard. Paste with the keyboard.');
   });
 
   it('axe com o menu aberto (itens do intervalo)', async () => {

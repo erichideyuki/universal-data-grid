@@ -83,7 +83,12 @@ export interface GridPasteEventDetail<TItem = any> {
   readonly values: string[][];
   /** Area that will be written (after tiling and clipping at the grid edges). */
   readonly range: GridCellRange<TItem>;
-  /** The clipboard of the native `paste` event. After `preventDefault()` the grid changes nothing and the native paste goes on. */
+  /**
+   * The clipboard data: from the native `paste` event (Ctrl/Cmd+V) or, for
+   * the cell menu's "Paste", a `DataTransfer` of the grid holding only
+   * `text/plain`. After `preventDefault()` the grid changes nothing (on
+   * Ctrl/Cmd+V the native paste goes on).
+   */
   readonly clipboardData: DataTransfer;
 }
 

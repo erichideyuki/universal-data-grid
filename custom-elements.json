@@ -16,6 +16,10 @@
           "description": "The automatic toolbar (`toolbarItems = null`), in order. Spread it to add your own items without losing future built-ins."
         },
         {
+          "kind": "variable",
+          "name": "value"
+        },
+        {
           "kind": "class",
           "description": "Data grid with row virtualization, grouping, sorting, filtering (filter\nrow, header filter, search panel), column resizing, fixing, hiding and\nreordering, i18n and SSR.\n\nName the grid with `aria-label` or `aria-labelledby` on `<u-grid>`: they\nname the inner `role=\"grid\"`/`\"treegrid\"` table. `aria-labelledby` ids are\nresolved in the grid's root (document or enclosing shadow root); their\ntext is copied and kept in sync.",
           "name": "DataGrid",
@@ -283,6 +287,18 @@
             {
               "description": "Opacity of rows marked for removal (their text is also struck through). Default `0.7`.",
               "name": "--u-grid-removed-row-opacity"
+            },
+            {
+              "description": "Background of cells in a cell range. Default: primary color at 14%.",
+              "name": "--u-grid-selected-cell-background-color"
+            },
+            {
+              "description": "Outline around each cell range (not shown by color alone). Default: primary color (`Highlight` in forced colors).",
+              "name": "--u-grid-cell-range-border-color"
+            },
+            {
+              "description": "Thickness of that outline. Default `2px`.",
+              "name": "--u-grid-cell-range-border-width"
             }
           ],
           "cssParts": [
@@ -303,7 +319,7 @@
               "name": "even"
             },
             {
-              "description": "Selected data rows (with `row`).",
+              "description": "Selected data rows (with `row`) and data cells in a cell range (with `cell`): use `row selected` or `cell selected`.",
               "name": "selected"
             },
             {
@@ -521,6 +537,10 @@
             {
               "description": "The validation error shown below an invalid cell.",
               "name": "validation-message"
+            },
+            {
+              "description": "The bar below the grid with the count, sum and average of the selected cells (`show-cell-range-summary`) and the \"Adding to selection\" text (Shift+F8).",
+              "name": "cell-range-summary"
             },
             {
               "description": "Cells and header of the row buttons column (edit, delete).",
@@ -811,7 +831,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
               "attribute": "row-menu"
             },
             {
@@ -973,8 +993,28 @@
                 "text": "GridClipboardMode"
               },
               "default": "'copy'",
-              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected\nrows (or, without a selection, the focused cell) as tab separated text\nand an HTML table; `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
+              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the cell\nranges, else the selected rows, else the focused cell, as tab separated\ntext and an HTML table; `copy-paste` also lets Ctrl/Cmd+V paste tab\nseparated text into editable cells (with `allowEditing`; fires\n`u-grid-pasting`); `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
               "attribute": "clipboard-mode"
+            },
+            {
+              "kind": "field",
+              "name": "cellSelectionMode",
+              "type": {
+                "text": "GridCellSelectionMode"
+              },
+              "default": "'none'",
+              "description": "Cell range selection, like a spreadsheet: `none` (default), `single`\n(one rectangular range — not one cell) or `multiple` (Ctrl/Cmd+click,\nCtrl/Cmd+drag and Shift+F8 add ranges). Drag, Shift+click, Shift+arrows,\nShift+Home/End/PageUp/PageDown and Ctrl+A select data cells; with row\nselection on too, rows are selected with the checkbox column and Space.\nRanges are cleared when rows or columns change (sorting, filtering,\ngrouping, paging…). The cell context menu then opens (even without\n`row-menu`) with \"Copy selected cells\", \"Paste\" (`copy-paste`), \"Extend\nselection to this cell\" and \"Add cell to selection\".",
+              "attribute": "cell-selection-mode"
+            },
+            {
+              "kind": "field",
+              "name": "showCellRangeSummary",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a bar below the grid with the count, sum and average of the\nselected cells (two or more). Numbers are summed by value, not by text.",
+              "attribute": "show-cell-range-summary"
             },
             {
               "kind": "field",
@@ -1748,7 +1788,7 @@
                   "name": "column",
                   "optional": true,
                   "type": {
-                    "text": "GridColumnDef"
+                    "text": "GridColumnRef | null"
                   }
                 }
               ],
@@ -1772,7 +1812,7 @@
                 {
                   "name": "column",
                   "type": {
-                    "text": "GridColumnDef"
+                    "text": "GridColumnRef"
                   }
                 }
               ],
@@ -1950,6 +1990,106 @@
             },
             {
               "kind": "method",
+              "name": "getCellRanges",
+              "return": {
+                "type": {
+                  "text": "GridCellRange[]"
+                }
+              },
+              "description": "Ranges of selected cells, in creation order (the last one is the active range). A copy."
+            },
+            {
+              "kind": "method",
+              "name": "selectCellRange",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "range",
+                  "type": {
+                    "text": "GridCellRangeInit"
+                  }
+                },
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "{ append?: boolean }"
+                  }
+                }
+              ],
+              "description": "Selects a range of data cells (`startRowIndex`/`endRowIndex` as in\n`getRowIndex`; columns by definition, `name` or `path`). With `append`\n(`cell-selection-mode=\"multiple\"`) it is added to the current ranges;\notherwise it replaces them. The active cell moves to the `end` corner\n(`u-grid-focus-change` with `source: 'api'`) without moving the DOM focus.\nReturns `false` (nothing changes) when the mode is `none`, a column is\nnot a visible data column, a row is not a data row of the displayed body,\nor the range is a single cell without `append`."
+            },
+            {
+              "kind": "method",
+              "name": "clearCellRanges",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Clears the cell ranges (fires `u-grid-cell-range-change` if there were any)."
+            },
+            {
+              "kind": "method",
+              "name": "getCellRangeSummary",
+              "return": {
+                "type": {
+                  "text": "Promise<GridCellRangeSummary>"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "{ signal?: AbortSignal }"
+                  }
+                }
+              ],
+              "description": "Count, sum and average of the selected cells (each cell once), computed\nin slices so that millions of cells do not block the page. It reads the\nranges at the call; rejects only through `signal`, with its `reason`\n(an `AbortError` by default).\nRows not loaded yet (remote data source) are left out (`complete: false`)."
+            },
+            {
+              "kind": "method",
+              "name": "getRowIndex",
+              "return": {
+                "type": {
+                  "text": "number"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowKey",
+                  "type": {
+                    "text": "unknown"
+                  }
+                }
+              ],
+              "description": "Position of the data row `rowKey` in the displayed body (the index used\nby `GridCellRange`; the current page with `paging`); `-1` when the row is\nnot displayed (filtered out, collapsed group, other page, not loaded)."
+            },
+            {
+              "kind": "method",
+              "name": "getRowKey",
+              "return": {
+                "type": {
+                  "text": "unknown"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "rowIndex",
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ],
+              "description": "Key of the data row at `rowIndex` (see `getRowIndex`); `undefined` for group, detail and footer rows and rows not loaded."
+            },
+            {
+              "kind": "method",
               "name": "focus",
               "return": {
                 "type": {
@@ -1975,7 +2115,7 @@
                   "text": "Promise<boolean>"
                 }
               },
-              "description": "Copies like Ctrl/Cmd+C: the selected rows (current order and filter) or,\nwithout a selection, the active cell — TSV and an HTML table through the\nasynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).\nResolves `false` when there is nothing to copy, `clipboardMode` is\n`none`, the listener canceled without setting data, or the browser\ndenied the write. Browsers need a user activation: call it inside the\nuser's gesture (click or key handler)."
+              "description": "Copies like Ctrl/Cmd+C: the cell ranges, else the selected rows (current\norder and filter), else the active cell — TSV and an HTML table through the\nasynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).\nResolves `false` when there is nothing to copy, `clipboardMode` is\n`none`, the listener canceled without setting data, the browser\ndenied the write, or the cell ranges exceed the cell limit (announced). Browsers need a user activation: call it inside the\nuser's gesture (click or key handler)."
             },
             {
               "kind": "method",
@@ -2099,6 +2239,20 @@
               "description": "The changes were saved and applied (`items` copy or `dataSource.applyChanges`)."
             },
             {
+              "name": "u-grid-cell-range-change",
+              "type": {
+                "text": "CustomEvent<GridCellRangeChangeEventDetail>"
+              },
+              "description": "The cell ranges changed: user gesture (once, on release, for a drag), `selectCellRange`/`clearCellRanges`, or the grid cleared them because rows or columns changed (`source` of the cause: a gesture, or `api` for methods and setters such as `items`, `columns`, `cellSelectionMode`)."
+            },
+            {
+              "name": "u-grid-pasting",
+              "type": {
+                "text": "CustomEvent<GridPasteEventDetail>"
+              },
+              "description": "Before Ctrl/Cmd+V or the cell menu \"Paste\" pastes into editable cells (`clipboard-mode=\"copy-paste\"`; user only). Cancelable: nothing changes (on Ctrl/Cmd+V the native paste goes on)."
+            },
+            {
               "name": "u-grid-column-reorder",
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
@@ -2166,7 +2320,7 @@
               "type": {
                 "text": "CustomEvent<GridFocusChangeEventDetail>"
               },
-              "description": "The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation)."
+              "description": "The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter nor a relocation)."
             },
             {
               "name": "u-grid-exporting",
@@ -2201,7 +2355,7 @@
               "type": {
                 "text": "CustomEvent<GridCopyEventDetail>"
               },
-              "description": "Before Ctrl/Cmd+C, the row menu Copy items or `copySelection()` write the selected rows (or the focused cell) to the clipboard (`source: 'user' | 'api'`). Cancelable."
+              "description": "Before Ctrl/Cmd+C, the menu Copy items or `copySelection()` write the cell ranges, the selected rows (or the focused cell) to the clipboard (`source: 'user' | 'api'`). Cancelable."
             },
             {
               "type": {
@@ -2411,7 +2565,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
+              "description": "Built-in items of the row context menu (right-click, long press,\nShift+F10 or the context menu key on a cell): copy the cell or the\nselected rows, export the selected rows, edit, delete/restore, show/hide\nthe detail; on group rows, expand/collapse and ungroup. Default `false`\n(unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the\ncells stays; the host may still add items through\n`u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu\nopens anyway with its cell range items (the single-pointer alternative to\ndragging); remove them in `u-grid-context-menu-opening` to keep the\nbrowser menu (empty = browser menu). The browser menu is always kept with\nselected text, on editable fields and with Ctrl+right-click.",
               "fieldName": "rowMenu"
             },
             {
@@ -2526,8 +2680,26 @@
                 "text": "GridClipboardMode"
               },
               "default": "'copy'",
-              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the selected\nrows (or, without a selection, the focused cell) as tab separated text\nand an HTML table; `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
+              "description": "Ctrl/Cmd+C on a cell of the grid: `copy` (default) copies the cell\nranges, else the selected rows, else the focused cell, as tab separated\ntext and an HTML table; `copy-paste` also lets Ctrl/Cmd+V paste tab\nseparated text into editable cells (with `allowEditing`; fires\n`u-grid-pasting`); `none` leaves the clipboard alone. Text selected with\nthe mouse is copied natively.",
               "fieldName": "clipboardMode"
+            },
+            {
+              "name": "cell-selection-mode",
+              "type": {
+                "text": "GridCellSelectionMode"
+              },
+              "default": "'none'",
+              "description": "Cell range selection, like a spreadsheet: `none` (default), `single`\n(one rectangular range — not one cell) or `multiple` (Ctrl/Cmd+click,\nCtrl/Cmd+drag and Shift+F8 add ranges). Drag, Shift+click, Shift+arrows,\nShift+Home/End/PageUp/PageDown and Ctrl+A select data cells; with row\nselection on too, rows are selected with the checkbox column and Space.\nRanges are cleared when rows or columns change (sorting, filtering,\ngrouping, paging…). The cell context menu then opens (even without\n`row-menu`) with \"Copy selected cells\", \"Paste\" (`copy-paste`), \"Extend\nselection to this cell\" and \"Add cell to selection\".",
+              "fieldName": "cellSelectionMode"
+            },
+            {
+              "name": "show-cell-range-summary",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows a bar below the grid with the count, sum and average of the\nselected cells (two or more). Numbers are summed by value, not by text.",
+              "fieldName": "showCellRangeSummary"
             },
             {
               "name": "edit-mode",
@@ -2684,7 +2856,11 @@
         },
         {
           "kind": "variable",
-          "name": "value"
+          "name": "anchorCol"
+        },
+        {
+          "kind": "variable",
+          "name": "endCol"
         }
       ],
       "exports": [

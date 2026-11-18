@@ -151,6 +151,11 @@ Shift+seta → Esc; a tinta de 14 % do intervalo no modo normal (o contorno
 é o indicador ≥ 3:1). ⏳ 2.5.7 do intervalo depende dos itens da frente 18
 (`extendSelectionToCell`/`addCellToSelection` no menu da célula, pressionar
 longo no toque): a 19 sozinha não fecha o 2.5.7 para quem usa só ponteiro.
+✅ Fechado depois do merge da 18: os itens estão no menu da célula (clique
+direito real com a âncora de antes do `mousedown`, toque longo, Ctrl+clique
+no Mac), com testes em `cell-range.browser.test.ts` ("menu de contexto da
+célula"). Deixado (BAIXA): o nome do menu continua "Row options"
+(`rowMenuLabel`) mesmo só com itens de célula — chave nova, fica para aval.
 Hoje só `aria-selected="true"` vai nas células (o
 `false` não é emitido, como no AG Grid) para não dizer "não selecionado" a
 cada seta; se o leitor não ler o "selecionado" sem o `false` nas vizinhas,

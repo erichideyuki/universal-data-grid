@@ -122,7 +122,21 @@ ativa de ANTES do menu (o menu move a ativa para a célula clicada).
 "Colar" lê pela Clipboard API (`readText`; falhou → anuncia
 `pasteFailedAnnouncement`) e segue o mesmo caminho do Ctrl+V
 (`u-grid-pasting`, 09). `copySelection()` passou a seguir a precedência do
-Ctrl+C (intervalos → linhas → célula).
+Ctrl+C (intervalos → linhas → célula), com os intervalos valendo seja onde
+for a célula ativa (por API).
+
+Revisões da integração: sem intervalo, "Colar" só com `row-menu` (o menu
+nativo das células fica, como a 18 aprovou); "Colar" aparece se alguma
+célula do destino (o intervalo ativo que contém a célula, senão ela) for
+editável; a âncora de "Estender" é a célula ativa de antes do clique de
+contexto (o `mousedown` do botão direito move o foco antes do
+`contextmenu`); "Adicionar" só quando soma algo; falhas de copiar/colar pelo
+menu anunciadas (`copyFailedAnnouncement`, `pasteFailedAnnouncement` com
+texto sem atalho: Mac e toque); Ctrl+clique no Mac é clique de contexto
+(não soma célula; abre o menu do grid). Pendente de aval do usuário: os
+nomes/chaves novos (`copySelectedCells`, `paste`, `pasteFailedAnnouncement`,
+`copyFailedAnnouncement`), a precedência nova de `copySelection()` e o menu
+da célula abrir sem `row-menu` com `cell-selection-mode`.
 
 ## Comportamento
 - Intervalo = retângulo de índices (linha no corpo exibido × coluna de

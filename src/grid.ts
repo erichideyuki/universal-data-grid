@@ -787,6 +787,11 @@ interface RangeDrag {
   table: HTMLTableElement;
 }
 
+/** Mac: Ctrl+clique (botão principal) é o clique de contexto. */
+const isMacContextClick = (event: MouseEvent): boolean =>
+  event.ctrlKey && !event.metaKey && event.button === 0
+  && typeof navigator !== 'undefined' && (/Mac|iPhone|iPad/).test(navigator.platform || navigator.userAgent);
+
 /** Cantos internos → `GridCellRange` (congelado). */
 const publicRange = (corners: CellCorners, navColumns: readonly NavColumn[]): GridCellRange => Object.freeze({
   startRowIndex: corners.anchorRow,
@@ -1388,8 +1393,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * to the clipboard (`source: 'user' | 'api'`). Cancelable.
  * @fires {CustomEvent<GridCellRangeChangeEventDetail>} u-grid-cell-range-change - The cell ranges changed: user gesture (once, on release, for a drag), `selectCellRange`/`clearCellRanges`,
  * or the grid cleared them because rows or columns changed (`source` of the cause: a gesture, or `api` for methods and setters such as `items`, `columns`, `cellSelectionMode`).
- * @fires {CustomEvent<GridPasteEventDetail>} u-grid-pasting - Before Ctrl/Cmd+V pastes into editable cells (`clipboard-mode="copy-paste"`; user only).
- * Cancelable: nothing changes and the native paste goes on.
+ * @fires {CustomEvent<GridPasteEventDetail>} u-grid-pasting - Before Ctrl/Cmd+V or the cell menu "Paste" pastes into editable cells (`clipboard-mode="copy-paste"`; user only).
+ * Cancelable: nothing changes (on Ctrl/Cmd+V the native paste goes on).
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
@@ -2052,7 +2057,10 @@ export class DataGrid extends LitElement {
    * the detail; on group rows, expand/collapse and ungroup. Default `false`
    * (unlike `columnHeaderMenu`/`groupPanelMenu`), so the browser menu of the
    * cells stays; the host may still add items through
-   * `u-grid-context-menu-opening`. The browser menu is always kept with
+   * `u-grid-context-menu-opening`. With `cell-selection-mode` the cell menu
+   * opens anyway with its cell range items (the single-pointer alternative to
+   * dragging); remove them in `u-grid-context-menu-opening` to keep the
+   * browser menu (empty = browser menu). The browser menu is always kept with
    * selected text, on editable fields and with Ctrl+right-click.
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'row-menu' }) rowMenu = false;
@@ -2220,7 +2228,9 @@ export class DataGrid extends LitElement {
    * Shift+Home/End/PageUp/PageDown and Ctrl+A select data cells; with row
    * selection on too, rows are selected with the checkbox column and Space.
    * Ranges are cleared when rows or columns change (sorting, filtering,
-   * grouping, paging…).
+   * grouping, paging…). The cell context menu then opens (even without
+   * `row-menu`) with "Copy selected cells", "Paste" (`copy-paste`), "Extend
+   * selection to this cell" and "Add cell to selection".
    */
   @property({ attribute: 'cell-selection-mode' }) cellSelectionMode: GridCellSelectionMode = 'none';
 
@@ -6141,6 +6151,12 @@ export class DataGrid extends LitElement {
   #rangeSummaryText = '';
   #rangeSummaryAbort: AbortController | undefined;
   #warnedRangeCheckboxes = false;
+  /**
+   * Célula ativa antes do clique de contexto (botão 2, ou Ctrl+clique no Mac):
+   * o `mousedown` foca a célula clicada antes do `contextmenu`, e "Estender
+   * seleção" precisa da âncora de antes (WCAG 2.5.7).
+   */
+  #menuAnchorBefore: { position: CellPosition; at: number } | undefined;
 
   get #cellSelectionMode(): GridCellSelectionMode {
     return normalizeCellSelectionMode(this.cellSelectionMode);
@@ -6489,6 +6505,12 @@ export class DataGrid extends LitElement {
   #onRangePointerDown(event: PointerEvent): void {
     const mode = this.#cellSelectionMode;
     this.#rangeDragEnded = false;
+
+    // Clique de contexto: guarda a ativa de antes (o foco vai andar antes do `contextmenu`).
+    if (event.button === 2 || isMacContextClick(event)) {
+      this.#menuAnchorBefore = { position: { row: this.#activeRowIndex, col: this.#activeCol }, at: performance.now() };
+      return;
+    }
 
     if (mode === 'none' || event.button !== 0 || event.pointerType === 'touch' || event.altKey) {
       return;
@@ -7028,9 +7050,7 @@ export class DataGrid extends LitElement {
 
     const blockRows = values.length;
     const blockCols = Math.max(...values.map(row => row.length));
-    const active = this.#rangeRects[this.#rangeRects.length - 1];
-    const inActive = !!active && position.row >= active.top && position.row <= active.bottom && position.col >= active.left && position.col <= active.right;
-    const target: CellRect = inActive ? active : { top: position.row, bottom: position.row, left: position.col, right: position.col };
+    const target = this.#pasteTarget(position);
     const size = pasteSize(blockRows, blockCols, this.#dataRowCount(target.top, target.bottom), target.right - target.left + 1);
     const format = getNumberFormat(this.language, { maximumFractionDigits: 0 });
 
@@ -11108,7 +11128,7 @@ export class DataGrid extends LitElement {
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
             @copy=${this.#onCopy}
-            data-row-menu=${ifDefined(this.rowMenu || this.#cellSelectionMode !== 'none' || this.clipboardMode === 'copy-paste' ? '' : undefined)}
+            data-row-menu=${ifDefined(this.rowMenu || this.#cellSelectionMode !== 'none' ? '' : undefined)}
             @contextmenu=${this.#onTableContextMenu}
             @pointerdown=${this.#onLongPressStart}
             @click=${this.#longPressClickCapture}
@@ -13539,7 +13559,10 @@ export class DataGrid extends LitElement {
       return false;
     }
 
-    request.rangeFrom = { row: this.#activeRowIndex, col: this.#activeCol };
+    const before = this.#menuAnchorBefore;
+    this.#menuAnchorBefore = undefined;
+    // Clique de contexto há pouco: a ativa de antes dele (o foco já andou); senão a ativa de agora.
+    request.rangeFrom = before && performance.now() - before.at < 1000 ? before.position : { row: this.#activeRowIndex, col: this.#activeCol };
     this.#setActive(position, 'user');
 
     return this.#openContextMenuWith(
@@ -13835,9 +13858,8 @@ export class DataGrid extends LitElement {
       items.push({ name: 'copySelectedCells', text: translation.copySelectedCells });
     }
 
-    const row = this.#rowAt(rowIndex);
-
-    if (this.#canPaste() && isDataRow(row) && request.column && this.#cellEditable(row, request.column)) {
+    // Sem intervalo, "Colar" só com `row-menu` (o menu nativo das células fica, como na 18).
+    if ((mode !== 'none' || this.rowMenu) && this.#canPaste() && this.#pasteTargetEditable({ row: rowIndex, col })) {
       items.push({ name: 'paste', text: translation.paste });
     }
 
@@ -13855,7 +13877,12 @@ export class DataGrid extends LitElement {
       items.push({ name: 'extendSelectionToCell', text: translation.extendSelectionToCell });
     }
 
-    if (mode === 'multiple' && !this.#rangeEdgesAt(rowIndex, col)) {
+    // "Adicionar" só quando soma algo: já há intervalo, ou a ativa de antes é outra célula de dados (vira o 1º).
+    const addsSomething = this.#ranges.length > 0
+      || (!!request.rangeFrom && this.#isRangeCell(request.rangeFrom.row, request.rangeFrom.col)
+        && (request.rangeFrom.row !== rowIndex || request.rangeFrom.col !== col));
+
+    if (mode === 'multiple' && addsSomething && !this.#rangeEdgesAt(rowIndex, col)) {
       items.push({ name: 'addCellToSelection', text: translation.addCellToSelection });
     }
 
@@ -13864,6 +13891,38 @@ export class DataGrid extends LitElement {
     }
 
     return items;
+  }
+
+  /** Destino da colagem a partir da célula (o intervalo ativo que a contém, senão ela): alguma célula editável? */
+  #pasteTargetEditable(position: CellPosition): boolean {
+    const target = this.#pasteTarget(position);
+    const navColumns = this.#currentNavColumns();
+    let budget = 1000;
+
+    for (let index = target.top; index <= target.bottom && budget > 0; index++) {
+      const row = this.#rowAt(index);
+
+      if (!isDataRow(row)) {
+        continue;
+      }
+
+      const pending = this.#pendingOf(row);
+
+      for (let col = target.left; col <= target.right && budget-- > 0; col++) {
+        if (this.#cellEditable(row, navColumns[col] as GridColumnDef, pending)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /** O intervalo ativo que contém a célula, senão a própria célula. */
+  #pasteTarget(position: CellPosition): CellRect {
+    const active = this.#rangeRects[this.#rangeRects.length - 1];
+    const inActive = !!active && position.row >= active.top && position.row <= active.bottom && position.col >= active.left && position.col <= active.right;
+    return inActive ? active : { top: position.row, bottom: position.row, left: position.col, right: position.col };
   }
 
   /** "Colar" do menu: lê a área de transferência (Clipboard API; o navegador pode pedir permissão). */
@@ -13882,12 +13941,15 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    if (!this.#canPaste()) {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', text);
+
+    // Vazio (ou a edição mudou enquanto lia): nada a colar, dito em voz alta.
+    if (!text || !this.#canPaste()) {
+      this.#announce(this.#translation.pasteFailedAnnouncement);
       return;
     }
 
-    const clipboardData = new DataTransfer();
-    clipboardData.setData('text/plain', text);
     this.#pasteText(text, position, clipboardData);
   }
 
@@ -14101,7 +14163,11 @@ export class DataGrid extends LitElement {
         if (content && 'refused' in content) {
           this.#announce(content.refused);
         } else if (content) {
-          void this.#writeToClipboard(content, 'user');
+          void this.#writeToClipboard(content, 'user').then(written => {
+            if (!written) {
+              this.#announce(this.#translation.copyFailedAnnouncement);
+            }
+          });
         }
 
         break;
@@ -14358,7 +14424,8 @@ export class DataGrid extends LitElement {
 
   /** `contextmenu` na tabela: cabeçalho (coluna/banda) ou linha do corpo. */
   readonly #onTableContextMenu = (event: MouseEvent): void => {
-    if (event.defaultPrevented || event.ctrlKey) {
+    // Ctrl+clique no Mac é o clique de contexto (mouse de um botão), não o "Ctrl+botão direito" que deixa o nativo.
+    if (event.defaultPrevented || (event.ctrlKey && !isMacContextClick(event))) {
       return;
     }
 
@@ -14424,8 +14491,8 @@ export class DataGrid extends LitElement {
    * order and filter), else the active cell — TSV and an HTML table through the
    * asynchronous Clipboard API. Fires `u-grid-copying` (`source: 'api'`).
    * Resolves `false` when there is nothing to copy, `clipboardMode` is
-   * `none`, the listener canceled without setting data, or the browser
-   * denied the write. Browsers need a user activation: call it inside the
+   * `none`, the listener canceled without setting data, the browser
+   * denied the write, or the cell ranges exceed the cell limit (announced). Browsers need a user activation: call it inside the
    * user's gesture (click or key handler).
    */
   async copySelection(): Promise<boolean> {
@@ -14436,8 +14503,10 @@ export class DataGrid extends LitElement {
     this.#ensureRows();
 
     const position = { row: this.#activeRowIndex, col: this.#activeCol };
-    // Como o Ctrl+C: intervalos (frente 19) > linhas selecionadas > célula ativa.
-    const ranges = position.row >= 0 ? this.#copyRanges(position) : undefined;
+    // Como o Ctrl+C: intervalos (frente 19) > linhas selecionadas > célula ativa. Por API os
+    // intervalos valem com a ativa em qualquer coluna (posição: o canto do intervalo ativo).
+    const active = this.#ranges[this.#ranges.length - 1];
+    const ranges = active ? this.#copyRanges({ row: active.endRow, col: active.endCol }) : undefined;
 
     if (ranges && 'refused' in ranges) {
       this.#announce(ranges.refused);
