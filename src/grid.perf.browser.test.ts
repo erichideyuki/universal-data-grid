@@ -713,6 +713,86 @@ const detailScenario = (rows: number, label: string) => {
 };
 
 /**
+ * Trabalho de um redimensionamento do grid (frente 21): do quadro em que a
+ * largura muda até o fim do `ResizeObserver` do grid e do render que ele
+ * pede (microtarefa), com o layout novo. Um observador criado DEPOIS do do
+ * grid roda depois dele no mesmo quadro; o tempo ocioso até o quadro não conta.
+ */
+const measureResize = (grid: DataGrid, width: number): Promise<number> => new Promise(resolve => {
+  const scroller = grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+  let start = 0;
+
+  const observer = new ResizeObserver(() => {
+    grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+    observer.disconnect();
+    resolve(performance.now() - start);
+  });
+
+  requestAnimationFrame(() => {
+    start = performance.now();
+    grid.style.width = `${width}px`;
+    observer.observe(scroller);
+  });
+});
+
+/** Redimensionar → `{nome}Ms` na máquina fraca, melhor de {@link REPEATS} (`from` antes de cada medida). */
+const resizeInteraction = async (name: string, grid: DataGrid, from: number, to: number) => {
+  let best = Infinity;
+
+  for (let i = 0; i < REPEATS; i++) {
+    grid.style.width = `${from}px`;
+    await painted(grid);
+    await painted(grid);
+    perf.recalibrate();
+    best = Math.min(best, perf.weak(await measureResize(grid, to)));
+    await updatesDone(grid);
+    await painted(grid);
+  }
+
+  return { [`${name}Ms`]: best };
+};
+
+/**
+ * Frente 21: 1 milhão de linhas × 8 colunas com `autoHideColumns`:
+ * estreitar (colunas saem para a linha adaptativa), alargar (voltam), rolar
+ * estreito com linhas adaptativas abertas. O cálculo é O(colunas) e só as
+ * linhas renderizadas desenham campos: nada por linha não visível.
+ */
+const responsiveScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 8 colunas com auto-hide-columns: estreitar, alargar, rolar com linhas adaptativas`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+    const { grid, firstRenderMs } = await bestFirstRender(items, makeLeanColumns(), g => {
+      g.style.width = '1366px';
+      g.autoHideColumns = true;
+    });
+    const hide = await resizeInteraction('resizeHide', grid, 1366, 520);
+    const hidden = grid.getAdaptiveColumns().length;
+    const show = await resizeInteraction('resizeShow', grid, 520, 1366);
+    const shown = grid.getAdaptiveColumns().length;
+
+    grid.style.width = '520px';
+    await painted(grid);
+    await painted(grid);
+    [0, 3, 7, Math.floor(rows / 2), rows - 1].forEach(index => grid.expandRow(items![index]));
+    await painted(grid);
+    const scroll = await scrollMetrics(grid, 'adaptive.');
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+    grid.remove();
+    items = undefined;
+
+    const metrics = { firstRenderMs, ...hide, ...show, ...scroll, domNodes: nodes };
+
+    checkBudgets(rows, metrics, perf.report(`responsive-${label}`, metrics));
+    expect(hidden, 'estreito: colunas ocultas').toBeGreaterThan(0);
+    expect(shown, 'largo: nenhuma oculta').toBe(0);
+  });
+};
+
+/**
  * Frente 20: 1 milhão de linhas com 3+3 linhas fixas e linhas inteiras (1 a
  * cada 50, com altura própria medida): ligar as fixas e o \`rowRenderer\`,
  * rolar e saltar, navegar pelas fixas. O \`rowRenderer\` só roda nas linhas
@@ -1372,4 +1452,5 @@ describe('perfil de máquina fraca', () => {
   wideScenario(1_000_000, '1m', 0);
   wideScenario(1_000_000, '1m', 10);
   cellRangeScenario(1_000_000, '1m');
+  responsiveScenario(1_000_000, '1m');
 });

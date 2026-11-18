@@ -26,6 +26,8 @@ export interface HydrationScenario {
   fixedTopItems?: Record<string, unknown>[];
   fixedBottomItems?: Record<string, unknown>[];
   rowRenderer?: GridRowRenderer;
+  /** Frente 21: `auto-hide-columns` e largura do hospedeiro (px; o servidor não sabe a largura). */
+  autoHideWidth?: number;
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -95,6 +97,7 @@ export const hydrationScenarios = {
     fixedBottomItems: [{ country: 'Média', code: 'MED', year: 2001, population: 2, official: false }],
     rowRenderer: (item: { year: number; country: string }) => item.year % 5 === 0 && html`<p class="wide">${item.country} ${item.year}</p>`,
   },
+  responsive: { language: 'en', columns: fixedColumns, items, autoHideWidth: 420 },
 } satisfies Record<string, HydrationScenario>;
 
 export type HydrationScenarioName = keyof typeof hydrationScenarios;

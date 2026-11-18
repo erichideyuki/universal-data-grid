@@ -3755,6 +3755,9 @@ export class DataGrid extends LitElement {
       cachedBlocks: this.#loader.blocksCached,
       loadTimers: (this.#flushTimer === undefined ? 0 : 1) + (this.#loadingTimer === undefined ? 0 : 1),
       rowExpansion: this.#rowExpansion.size,
+      // Responsivo (frente 21): o anúncio das ocultas por espaço e o que é guardado por coluna.
+      adaptiveTimers: this.#adaptiveTimer === undefined ? 0 : 1,
+      adaptiveColumns: this.#adaptiveColumns.length + this.#reportedAdaptive.length,
       primitiveDetailSizes: this.#primitiveDetailSizes.size,
       observedDetails: this.#observedDetails.size,
       hostLabelObservers: this.#hostLabel.observers,

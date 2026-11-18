@@ -68,6 +68,7 @@ const hydrate = async (name: HydrationScenarioName): Promise<{ grid: DataGrid; s
   grid.fixedTopItems = scenario.fixedTopItems ?? [];
   grid.fixedBottomItems = scenario.fixedBottomItems ?? [];
   grid.rowRenderer = scenario.rowRenderer ?? null;
+  grid.autoHideColumns = !!scenario.autoHideWidth;
   document.body.append(host);
   await settle(grid);
 
@@ -143,6 +144,21 @@ describe('hidratação do SSR', () => {
     const wide = root.querySelectorAll('td.full-width-cell .wide');
     expect(wide.length).toBeGreaterThan(0);
     expect(root.querySelectorAll('td.full-width-cell')).toHaveLength(wide.length);
+    expect(new Set(rowIndexes(grid)).size).toBe(rowIndexes(grid).length);
+  });
+
+  it('responsivo (frente 21): o servidor renderiza todas; o cliente esconde depois da hidratação, sem erro', async () => {
+    const html = await commands.renderGridSsr('responsive');
+    expect(html).toContain('>Year<');
+
+    const { grid, ssrIndexes } = await hydrate('responsive');
+    await settle(grid);
+    const root = grid.shadowRoot!;
+
+    expect(errors).toEqual([]);
+    expect(rowIndexes(grid)[0]).toBe(ssrIndexes[0]);
+    expect(grid.getAdaptiveColumns().map(column => column.label)).toEqual(['Year']);
+    expect(root.querySelector('th.detail-toggle-cell')).not.toBeNull();
     expect(new Set(rowIndexes(grid)).size).toBe(rowIndexes(grid).length);
   });
 
