@@ -38,6 +38,8 @@ const firstCells = (grid: DataGrid): string[] =>
   dataRows(grid).filter(tr => !tr.classList.contains('pinned'))
     .map(tr => cellText(tr.querySelector('td[part~=cell]')!));
 const skeletonRows = (grid: DataGrid) => root(grid).querySelectorAll('tr.skeleton-row').length;
+const bodyRowsOf = (grid: DataGrid): HTMLTableRowElement[] =>
+  [...root(grid).querySelectorAll<HTMLTableRowElement>('tbody tr[role=row]:not(.pinned)')];
 
 const key = async (grid: DataGrid, name: string, init: KeyboardEventInit = {}): Promise<void> => {
   const target = root(grid).activeElement ?? root(grid).querySelector('table [tabindex="0"]')!;
@@ -738,5 +740,73 @@ describe('master-detail com chave e fonte remota (frente 10)', () => {
     expect(detailRows(grid)[0].textContent.trim()).toBe('Detail 2');
     expect(dataRows(grid).find(tr => !tr.classList.contains('detail-row'))!.getAttribute('aria-rowindex')).toBe('2');
     expect(grid.getTotalCount()).toBe(5000);
+  });
+});
+
+describe('acessibilidade de esqueleto e detalhe juntos', () => {
+  it('pages count only non-detail rows and keep the detail on its master page', async () => {
+    const grid = await createGrid({
+      columns: columns(),
+      items: makePeople(40),
+      height: '1200px',
+      configure: element => {
+        element.keyExpr = 'id';
+        element.paging = true;
+        element.pageSize = 10;
+        element.detailRenderer = (item: Person) => `Detail ${item.id}`;
+      },
+    });
+
+    grid.expandRow(9);
+    grid.pageIndex = 0;
+    await settle(grid);
+
+    expect(root(grid).querySelector('[part=page-info]')!.textContent).toBe('Page 1 of 4 (40 items)');
+    const rows = bodyRowsOf(grid);
+    expect(rows.at(-1)!.classList.contains('detail-row')).toBe(true);
+    expect(rows.at(-1)!.getAttribute('aria-labelledby')).toBe(rows.at(-2)!.id);
+
+    grid.expandRow(12);
+    grid.pageIndex = 1;
+    await settle(grid);
+
+    const detail = root(grid).querySelector('tr.detail-row:not(.pinned)')!;
+    const master = detail.previousElementSibling!;
+    // Página 2: 1ª linha = 11ª de dados, depois de 1 detalhe e do cabeçalho.
+    expect(bodyRowsOf(grid)[0].getAttribute('aria-rowindex')).toBe('13');
+    expect(Number(detail.getAttribute('aria-rowindex'))).toBe(Number(master.getAttribute('aria-rowindex')) + 1);
+  });
+
+  it('skeleton rows have no detail toggle and focus on them does not break with a function keyExpr', async () => {
+    const source = new FakeSource(makePeople(2000), 400);
+    const grid = await createSourceGrid(source, element => {
+      element.remoteOperations = true;
+      element.pageSize = 50;
+      element.autoExpandRows = true;
+      element.detailRenderer = (item: Person) => `Detail ${item.id}`;
+    });
+
+    grid.keyExpr = (person: Person) => person.id;
+    await settle(grid);
+    grid.focusCell(0);
+    await settle(grid);
+    // Ctrl+End: última linha, ainda esqueleto; coluna de expandir.
+    await key(grid, 'End', { ctrlKey: true });
+    await key(grid, 'Home');
+
+    const skeleton = root(grid).activeElement!.closest('tr')!;
+    expect(skeleton.classList.contains('skeleton-row')).toBe(true);
+    expect(skeleton.querySelector('[part~=detail-toggle-button]')).toBeNull();
+    expect(skeleton.querySelector('[aria-expanded]')).toBeNull();
+    expect(grid.focusedRowKey).toBeNull();
+    expect(await (async () => {
+      const { default: axe } = await import('axe-core');
+      return (await axe.run(grid, { resultTypes: ['violations'] })).violations.map(violation => violation.id);
+    })()).toEqual([]);
+
+    // Ao carregar (com detalhes acima), o foco fica no mesmo registro.
+    await waitFor(() => skeletonRows(grid) === 0, 5000);
+    await settle(grid);
+    expect(grid.focusedRowKey).toBe(1999);
   });
 });

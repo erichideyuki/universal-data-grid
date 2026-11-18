@@ -183,6 +183,16 @@ mantendo seleção, foco e expansão.
   remoto só as linhas carregadas têm detalhe (`all: false`, posições dos
   carregados); o esqueleto não tem. Com paginação, o virtualizador recebe
   os detalhes da página (índices relativos).
+- Revisão de acessibilidade depois da frente 10: esqueleto sem botão de
+  expandir (célula vazia navegável) e com `rowKey: null` no foco; páginas
+  contam só linhas que não são detalhe e o detalhe fica na página da
+  mestre (`pageBounds`, como a referência); `aria-rowindex` do detalhe com
+  o deslocamento da página; foco num esqueleto segue a mesma posição do
+  bloco quando ele carrega (`indexOfSkeletonKey`); esqueleto de lista de
+  subgrupos no nível dos subgrupos. Limites conhecidos: detalhe aberto de
+  um bloco despejado do cache some até o bloco voltar (as linhas depois
+  dele andam), e o foco num detalhe cuja linha saiu do cache não volta
+  sozinho a ela quando recarrega.
 - `aria-rowindex` é o índice real (com a página), não reinicia por página
   como na referência; `aria-rowcount="-1"` na rolagem infinita até o fim.
 

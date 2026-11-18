@@ -138,7 +138,7 @@ import {
   replaceColumnCondition,
   searchExpression,
 } from './row-model/filter.js';
-import { type BlockDetails, flattenRows, RowList, RowPage, type Rows } from './row-model/flatten.js';
+import { type BlockDetails, flattenRows, pageBounds, RowList, RowPage, type Rows } from './row-model/flatten.js';
 import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
   DEFAULT_DATE,
@@ -3849,7 +3849,8 @@ export class DataGrid extends LitElement {
 
     const size = this.#effectivePageSize;
     const known = !this.#dataSource || !!this.#loader.current || !this.#lazy;
-    const count = Math.max(1, Math.ceil(all.length / size));
+    // Linhas de detalhe não contam no `pageSize` e ficam na página da mestre (como a referência).
+    const count = Math.max(1, Math.ceil((all.length - all.detailCount) / size));
 
     if (known && this.#pageIndex >= count && !this.#isLoading) {
       // Sem causa (setter de `pageIndex`/`pageSize`): limita calado.
@@ -3864,12 +3865,12 @@ export class DataGrid extends LitElement {
       this.#pageCause = undefined;
     }
 
-    const offset = this.#pageIndex * size;
+    const { offset, length } = pageBounds(all, this.#pageIndex * size, size);
     const page = this.#rows;
 
     // A mesma página das mesmas linhas: reaproveita (o virtualizador guarda as alturas dela).
-    if (!(page instanceof RowPage && page.source === all && page.offset === Math.min(offset, all.length) && page.size === size)) {
-      this.#rows = new RowPage(all, offset, size);
+    if (!(page instanceof RowPage && page.source === all && page.offset === offset && page.length === length)) {
+      this.#rows = new RowPage(all, offset, length);
     }
 
     this.#syncDetailsIfChanged();
@@ -3887,7 +3888,8 @@ export class DataGrid extends LitElement {
 
   /** Número de páginas (`paging`). */
   #pageCount(): number {
-    return Math.max(1, Math.ceil(this.#allRows.length / this.#effectivePageSize));
+    const all = this.#allRows;
+    return Math.max(1, Math.ceil((all.length - all.detailCount) / this.#effectivePageSize));
   }
 
   /** Único ponto que muda a página por gesto ou correção; evento só se mudou. */
@@ -4850,15 +4852,16 @@ export class DataGrid extends LitElement {
       return { rowKey: null, column: dataColumnOf(column), cellType: 'summary' };
     }
 
+    // Esqueleto (frente 08): ainda sem item, sem chave.
+    const rowKey = !row.isDetail && row.skeleton ? null : this.#keyOf(row.item);
+
     if (row.isDetail) {
-      return { rowKey: this.#keyOf(row.item), column: null, cellType: 'detail' };
+      return { rowKey, column: null, cellType: 'detail' };
     }
 
     if (column === DETAIL_TOGGLE_COLUMN) {
-      return { rowKey: this.#keyOf(row.item), column: null, cellType: 'detail-toggle' };
+      return { rowKey, column: null, cellType: 'detail-toggle' };
     }
-
-    const rowKey = row.skeleton ? null : this.#keyOf(row.item);
 
     return column === SELECTION_COLUMN || !column
       ? { rowKey, column: null, cellType: column ? 'selection' : 'data' }
@@ -4925,7 +4928,14 @@ export class DataGrid extends LitElement {
 
     const active = this.#activeRef;
 
-    if (active && !this.#isRefAt(index, active)) {
+    if (active && !this.#isRefAt(index, active) && 'rowKey' in active && active.rowKey.startsWith('s:')) {
+      // Esqueleto que carregou (frente 08): a mesma posição do mesmo bloco, agora com item.
+      const found = rows.indexOfSkeletonKey(active.rowKey);
+
+      if (found >= 0) {
+        index = found;
+      }
+    } else if (active && !this.#isRefAt(index, active)) {
       // Detalhe recolhido com o foco nele: o foco volta à linha mestre.
       const found = 'totals' in active
         ? this.#hasTotals ? rows.length : -1
@@ -6064,6 +6074,11 @@ export class DataGrid extends LitElement {
       return nothing;
     }
 
+    if (!row.isGroup && !row.isFooter && !row.isDetail && row.skeleton && row.level !== undefined) {
+      // Esqueleto de uma lista de subgrupos remota: no nível dos grupos que ela representa.
+      return row.level + 1;
+    }
+
     return row.isGroup ? row.level + 1 : row.isFooter ? row.level + 2 : this._groupColumns.length + 1;
   }
 
@@ -6141,8 +6156,8 @@ export class DataGrid extends LitElement {
       <tr
         data-index=${index}
         role="row"
-        aria-rowindex="${index + 1 + headerRows}"
-        aria-labelledby=${`row-${index - 1}`}
+        aria-rowindex="${index + 1 + headerRows + this.#rows.offset}"
+        aria-labelledby=${ifDefined(index > 0 ? `row-${index - 1}` : undefined)}
         aria-level=${this.#ariaLevelOf(row)}
         style="height: 1px;"
         class=${classMap({ 'detail-row': true, last: index === this.#rows.length - 1, pinned })}
@@ -6325,7 +6340,8 @@ export class DataGrid extends LitElement {
           role="presentation"
           class="group-column sticky-cell"
           style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
-      ${this.#showDetailColumn
+      ${this.#showDetailColumn && row.skeleton ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
+      ${this.#showDetailColumn && !row.skeleton
         ? html`
           <td
             class="detail-toggle-cell sticky-cell"

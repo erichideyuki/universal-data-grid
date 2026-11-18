@@ -58,6 +58,8 @@ export interface DataRow {
   index: number;
   /** Linha de fonte remota ainda não carregada (esqueleto; `item` indefinido). */
   skeleton?: true;
+  /** Esqueleto de uma lista de subgrupos remota: nível (0-based) dos grupos dela. */
+  level?: number;
 }
 
 /** Item de bloco remoto ainda não carregado (linha-esqueleto). */
@@ -72,6 +74,8 @@ export interface LazyItems {
   readonly lazy: true;
   /** Identidade estável do bloco (chave das linhas-esqueleto). */
   readonly id: string;
+  /** Lista de subgrupos (agrupamento remoto): nível dos grupos dela. */
+  readonly level?: number;
   readonly length: number;
   get(position: number): unknown;
   peek(position: number): unknown;

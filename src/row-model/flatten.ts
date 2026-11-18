@@ -153,7 +153,45 @@ export interface Rows {
   readonly detailCount: number;
   /** Índices (crescentes) das linhas de detalhe. */
   detailIndices(): Int32Array;
+  /** Índice da linha que era o esqueleto `key`; `-1` se não está. */
+  indexOfSkeletonKey(key: string): number;
 }
+
+/**
+ * Página de `size` linhas que não são detalhe, a partir da `baseStart`-ésima
+ * (frente 08): as linhas de detalhe não contam e ficam na página da mestre
+ * (como a referência). Devolve o trecho da lista inteira (`offset`, `length`).
+ */
+export const pageBounds = (rows: Rows, baseStart: number, size: number): { offset: number; length: number } => {
+  const details = rows.detailCount ? rows.detailIndices() : undefined;
+
+  // O detalhe j (índice d) vem depois de `d - j` linhas comuns: entra antes da comum `base` se `d - j <= base`.
+  const toFull = (base: number): number => {
+    if (!details) {
+      return base;
+    }
+
+    let low = 0;
+    let high = details.length;
+
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+
+      if (details[middle] - middle <= base) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    return base + low;
+  };
+
+  const offset = Math.min(toFull(baseStart), rows.length);
+  const end = Math.min(toFull(baseStart + size), rows.length);
+
+  return { offset, length: Math.max(0, end - offset) };
+};
 
 /**
  * Lista de linhas visíveis, SEM um objeto por linha (spec 16): guarda só
@@ -239,8 +277,8 @@ export class RowList implements Rows {
 
     // Bloco remoto ainda não carregado: linha-esqueleto (frente 08).
     if (item === MISSING) {
-      const id = (segment.items as LazyItems).id;
-      return { isGroup: false, key: `s:${id}:${position}${detail ? ':x' : ''}`, item: undefined, index: position, skeleton: true } satisfies DataRow;
+      const { id, level } = segment.items as LazyItems;
+      return { isGroup: false, key: `s:${id}:${position}${detail ? ':x' : ''}`, item: undefined, index: position, skeleton: true, level } satisfies DataRow;
     }
 
     const key = `d:${this.#keyOf(item)}`;
@@ -267,6 +305,28 @@ export class RowList implements Rows {
     }
 
     return undefined;
+  }
+
+  /**
+   * Índice da linha que era o esqueleto `key` (`s:<bloco>:<posição>`): a
+   * mesma posição do mesmo bloco remoto, carregada ou não; `-1` se o bloco
+   * saiu das linhas.
+   */
+  indexOfSkeletonKey(key: string): number {
+    const body = key.slice(2).replace(/:x$/, '');
+    const separator = body.lastIndexOf(':');
+    const id = body.slice(0, separator);
+    const position = Number(body.slice(separator + 1));
+
+    for (let i = 0; i < this.#segments.length; i++) {
+      const segment = this.#segments[i];
+
+      if (isBlock(segment) && isLazy(segment.items) && segment.items.id === id && position < segment.items.length) {
+        return this.#starts[i] + itemOffset(segment, position);
+      }
+    }
+
+    return -1;
   }
 
   /** Índice da 1ª linha de dados do item; `-1` se ele não está nas linhas (foco e seleção, frente 05). */
@@ -382,11 +442,12 @@ export class RowPage implements Rows {
   readonly size: number;
   #details: Int32Array | undefined;
 
-  constructor(rows: Rows, offset: number, size: number) {
+  /** `length` linhas da lista inteira a partir de `offset` (os limites vêm de `pageBounds`). */
+  constructor(rows: Rows, offset: number, length: number) {
     this.#rows = rows;
-    this.size = size;
+    this.size = length;
     this.offset = Math.max(0, Math.min(offset, rows.length));
-    this.length = Math.max(0, Math.min(size, rows.length - this.offset));
+    this.length = Math.max(0, Math.min(length, rows.length - this.offset));
   }
 
   /** A lista inteira da qual esta é uma página. */
@@ -426,6 +487,11 @@ export class RowPage implements Rows {
     }
 
     return -1;
+  }
+
+  indexOfSkeletonKey(key: string): number {
+    const index = this.#rows.indexOfSkeletonKey(key) - this.offset;
+    return index >= 0 && index < this.length ? index : -1;
   }
 
   #indexWhere(key: unknown, keyOf: ((item: unknown) => unknown) | undefined, detail: boolean): number {
