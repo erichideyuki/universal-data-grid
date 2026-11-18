@@ -169,6 +169,41 @@ describe('hidratação do SSR', () => {
     expect(dataRows(grid).length).toBeGreaterThan(0);
   });
 
+  it('com state-storage: o servidor manda "carregando estado" e o cliente hidrata e restaura sem erro', async () => {
+    const key = hydrationScenarios.stored.stateStorageKey;
+    const html = await commands.renderGridSsr('stored');
+
+    // O servidor não lê storage: nada de linhas no layout padrão, só o painel.
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('part="load-panel"');
+    expect(html).toContain('aria-rowcount="-1"');
+    expect(html).not.toContain('Country: Argentina');
+
+    localStorage.setItem(key, JSON.stringify({
+      version: 1,
+      columns: [{ name: 'year', sortOrder: 'asc', sortIndex: 0 }, { name: 'code' }, { name: 'country', groupIndex: null }],
+    }));
+
+    try {
+      const { grid } = await hydrate('stored');
+      const root = grid.shadowRoot!;
+
+      expect(errors).toEqual([]);
+      expect([...root.querySelectorAll('th.header-column .header-text')].map(th => th.textContent.trim()).slice(0, 3))
+        .toEqual(['Year', 'Code', 'Country']);
+      expect(grid.getGrouping()).toEqual([]);
+      expect(root.querySelector('table')!.getAttribute('aria-busy')).toBeNull();
+      expect(root.querySelector('[part~="load-panel"]')).toBeNull();
+
+      const indexes = rowIndexes(grid);
+      expect(indexes.length).toBeGreaterThan(0);
+      expect(new Set(indexes).size).toBe(indexes.length);
+      expect(dataRows(grid)[0].textContent).toContain('1960');
+    } finally {
+      localStorage.removeItem(key);
+    }
+  });
+
   it('grid hidratado e removido é coletado', async () => {
     const scenario = async (): Promise<Tracked> => {
       const { grid } = await hydrate('pt');

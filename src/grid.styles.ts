@@ -53,6 +53,13 @@ export const styles = css`
     min-height: 0;
   }
 
+  /* Esperando o estado salvo (frente 11): nada do layout padrão aparece nem
+     recebe foco/gesto até ele entrar; só o painel de carga. */
+  .layout.state-loading .scroll-container,
+  .layout.state-loading .pager {
+    visibility: hidden;
+  }
+
   .container {
     position: relative;
     display: block;

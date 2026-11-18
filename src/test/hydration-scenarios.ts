@@ -20,6 +20,8 @@ export interface HydrationScenario {
   /** `aria-label`/`aria-labelledby` no hospedeiro (o alvo do `labelledby` fica na página, ao lado). */
   ariaLabel?: string;
   ariaLabelledBy?: string;
+  /** Frente 11: `state-storage="local"` com esta chave (o servidor não lê storage). */
+  stateStorageKey?: string;
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -80,6 +82,7 @@ export const hydrationScenarios = {
     items,
     detailRenderer: (item: { country: string; year: number }) => html`<p class="detail">${item.country} ${item.year}</p>`,
   },
+  stored: { language: 'en', columns, items, stateStorageKey: 'u-grid-hydration-state' },
 } satisfies Record<string, HydrationScenario>;
 
 export type HydrationScenarioName = keyof typeof hydrationScenarios;

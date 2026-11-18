@@ -41,6 +41,18 @@ describe('SSR', () => {
     expect(output.match(/aria-label="Sales"/g)).toHaveLength(2);
   });
 
+  it('com state-storage: renderiza "carregando estado" (sem linhas, sem "sem dados") e não toca storage', async () => {
+    const output = await renderToString(html`
+      <u-grid language="pt" state-storage="local" state-storage-key="k" .columns=${columns} .items=${items}></u-grid>`);
+
+    expect(output).toContain('aria-busy="true"');
+    expect(output).toContain('aria-rowcount="-1"');
+    expect(output).toContain('part="load-panel"');
+    expect(output).toContain('state-loading');
+    expect(output).not.toContain('Country: Argentina');
+    expect(output).not.toContain('Sem dados');
+  });
+
   it('sem itens mostra o texto de vazio traduzido', async () => {
     const output = await renderToString(html`
       <u-grid language="pt" .columns=${columns} .items=${[]}></u-grid>`);

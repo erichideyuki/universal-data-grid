@@ -28,6 +28,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers)
+- [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
 - [Internationalization (i18n)](#internationalization-i18n)
 - [Appearance & behavior](#appearance--behavior)
 - [Theming (CSS custom properties & parts)](#theming)
@@ -245,6 +246,8 @@ Both approaches map to the same shape:
 interface GridColumnDef<TItem = any> {
   /** Dot-path into each item, e.g. `"user.address.city"`. */
   path?: string;
+  /** Stable id in the saved state and in string column references (summaries). Default: `path`. */
+  name?: string;
   /** Header text. With <u-grid-column>, this is the element's text content. */
   label?: string;
   /** Fixed column width in pixels. Omit for auto width. */
@@ -1348,6 +1351,95 @@ grid.isRowExpanded(orders[0]);       // false
 
 ---
 
+## State persistence
+
+The grid keeps the user's choices — column order, width, visibility and fixing, grouping, sorting,
+the filter and the search text, expanded groups, the page and page size, and (with `keyExpr`) the
+selection and the expanded detail rows — and can save and restore them.
+
+### Saving automatically
+
+```html
+<u-grid state-storage="local" state-storage-key="orders-grid" key-expr="id"></u-grid>
+```
+
+`state-storage="local"` (or `"session"`) reads the state from `localStorage` (`sessionStorage`)
+when the grid connects, **before the first render of data** (no flash of the default layout), and
+writes it `state-change-delay` ms (default `500`) after each change — and right away on disconnect
+or `pagehide` when a save is pending. Or pass your own storage (server, IndexedDB…) as a property:
+
+```ts
+grid.stateStorage = {
+  load: () => fetch('/api/grid-state').then(r => (r.ok ? r.json() : null)),
+  save: state => fetch('/api/grid-state', { method: 'PUT', body: JSON.stringify(state) }),
+};
+```
+
+While an asynchronous `load()` runs, the grid shows the load panel and no rows, and is `aria-busy`
+(nothing to click or focus yet). A rejected or throwing `load()`, unreadable JSON or an invalid
+state is ignored with a console warning and the grid starts from its initial state. Calling
+`setState()` before the grid connects skips the read. Changing `stateStorage` or
+`stateStorageKey` reads again.
+
+| Property           | Attribute            | Type | Default | Description |
+| ------------------ | -------------------- | ---- | ------- | ----------- |
+| `stateStorage`     | `state-storage`      | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Where the state is saved (an object only as a property). |
+| `stateStorageKey`  | `state-storage-key`  | `string` | `''` | Key in `localStorage`/`sessionStorage` (required for them). |
+| `stateChangeDelay` | `state-change-delay` | `number` | `500` | Delay (ms) of `u-grid-state-change` and of the save after the last change. |
+
+### `getState()` / `setState()` / `resetState()`
+
+```ts
+const state = grid.getState();          // { version: 1, columns: [...], filterValue, ... }
+localStorage.setItem('view', JSON.stringify(state));
+
+grid.setState(JSON.parse(localStorage.getItem('view')!));
+grid.setState({ version: 1, searchText: 'brazil' }, { partial: true }); // only the search changes
+grid.resetState();                      // back to the column definitions and initial properties
+```
+
+- `getState()` returns a new, JSON-serializable object. It never holds row data: rows appear only
+  by key, and only with `keyExpr` and string/number keys (without `keyExpr` the key is the item
+  itself, so the selection and the detail rows are left out).
+- Columns are identified by `name` (`GridColumnDef.name` / `<u-grid-column name>`), or by `path`
+  without one. A column without either is left out of the state (console warning); give two
+  columns with the same `path` different names. `filterValue` refers to columns by `path`, like the
+  property.
+- `setState()` validates the state first; an invalid one is ignored with a warning. A state of an
+  older version is migrated, an unknown version ignored. Unknown column names are ignored; columns
+  missing from `columns` go back to their definition, at the end, in definition order. Only page
+  sizes offered by `pageSizeOptions` (or the initial `pageSize`) are restored.
+- Without `partial`, every top-level key missing from the state goes back to its **initial**
+  value: the column definitions and the `filterValue`, `searchText`, `pageIndex`, `pageSize` and
+  `selectedKeys` the host set before the grid connected. With `partial: true` only the keys
+  present change (`columns`, when present, is the whole layout).
+- Like the setters, `setState` fires none of the per-feature events (`u-grid-sort-change`…), only
+  `u-grid-state-change`. It never moves the focus nor announces anything to screen readers: when a
+  user gesture triggers it (a "Restore layout" button, saved views), announce the result yourself.
+- Setting a property afterwards (`pageSize`, `filterValue`…) wins over the restored state: in
+  frameworks, don't re-assign them on every render.
+
+Grouped dates travel as ISO text and are matched back on `date`/`datetime` columns; group values
+that are other objects are left out of `groupExpansion`.
+
+### `u-grid-state-change`
+
+Fires `state-change-delay` ms after the last change of any part of the state — user gesture,
+method, property or `setState` — once per burst and only if the state really changed (a burst that
+ends in the same state fires nothing). `detail.sources` lists where the changes came from
+(`'user'`, `'api'`); a restore from `stateStorage` fires it with `['storage']` (the state is ready)
+and is not saved back.
+
+```ts
+grid.addEventListener('u-grid-state-change', e => saveView(e.detail.state));
+```
+
+With server-side rendering and `stateStorage`, the server (which has no storage) renders the
+"loading state" panel instead of the default layout; the client hydrates it and restores the
+state in the next render.
+
+---
+
 ## Internationalization (i18n)
 
 The grid renders a small set of built-in strings (empty state, grouping hint, group label
@@ -1722,7 +1814,9 @@ import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
 import '@universal-material/data-grid';
 ```
 
-See [the i18n SSR note](#ssr-note) about language resolution during SSR.
+See [the i18n SSR note](#ssr-note) about language resolution during SSR. With `state-storage`,
+the server renders the "loading state" panel and the client restores the saved state after
+hydrating (see [State persistence](#state-persistence)).
 
 ---
 
@@ -1762,6 +1856,10 @@ For React < 19, assign `ref.current.columns` / `ref.current.items` and call
 
 (Register `u-grid` as a custom element with your bundler/compiler options as needed.)
 
+With [state persistence](#state-persistence), a property set after the grid connected wins over
+the restored state: bind `pageSize`, `filterValue`, `searchText` or `selectedKeys` once (or keep
+them in sync from `u-grid-state-change`) instead of re-assigning them on every render.
+
 Renderers that return an `HTMLElement` add nodes to the grid's light DOM — see the
 [light DOM note](#cell-renderer) before letting a framework manage the grid's children.
 
@@ -1780,7 +1878,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -1818,6 +1916,9 @@ CSS property and part for IDEs and tooling.
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
 | `exportCsv(options?)` | `Promise<Blob>`: CSV of what the user sees. |
 | `downloadCsv(options?)` | Build the CSV and download it (`fileName`, default `export.csv`). |
+| `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
+| `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
+| `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
 
 ### `<u-grid>` events
 
@@ -1842,6 +1943,7 @@ All bubble and are `composed`.
 | `u-grid-load-error` | `GridLoadErrorEventDetail` (`{ options, error }`) | — (every load) | A `load` call rejected; the error bar is shown. |
 | `u-grid-page-change` | `GridPageChangeEventDetail` | corrections only (not the setters) | The page or page size changed (pager, `PageUp`/`PageDown`, new filter, clamp). |
 | `u-grid-copying` | `GridCopyEventDetail` | no | Before Ctrl+C writes to the clipboard. Cancelable. |
+| `u-grid-state-change` | `GridStateChangeEventDetail` (`{ state, sources }`) | yes (also setters and `setState`) | `state-change-delay` ms after the last change of the state, once per burst, only if it really changed; after a restore from `stateStorage` with `sources: ['storage']`. |
 
 The state-change events that also fire for API calls carry `source: 'user' | 'api'` in `detail`
 
@@ -1875,7 +1977,7 @@ import {
   type GridGroupEventDetail, // { grouping, previous, source }
   type GridGroupExpansionChangeEventDetail, // { groupPath, groupIndex, expanded, source }
   type GridGroupPath,       // readonly unknown[] — group values from the outermost level
-  type GridColumnRef,       // string (path) | GridColumnDef
+  type GridColumnRef,       // string (name, else path) | GridColumnDef
   type GridSummary,         // { total?: GridSummaryItem[]; group?: GridGroupSummaryItem[] }
   type GridSummaryItem,     // { column, type, label?, format?, name? }
   type GridGroupSummaryItem, // GridSummaryItem + display?: 'inline' | 'column' | 'footer'
@@ -1933,6 +2035,14 @@ import {
   type GridExportSummaryRow,
   type GridClipboardMode,   // 'copy' | 'none'
   type GridCopyEventDetail, // { items, columns, text, html, clipboardData }
+  type GridState,           // { version: 1, columns?, filterValue?, searchText?, groupExpansion?, selectedKeys?, rowExpansion?, pageIndex?, pageSize? }
+  type GridColumnState,     // { name, width?, visible?, fixed?, groupIndex?, sortOrder?, sortIndex? }
+  type GridGroupExpansionState, // { all, levels, expanded: GridStateGroupPath[], collapsed: GridStateGroupPath[] }
+  type GridRowExpansionState, // { expanded: GridRowKey[], collapsed: GridRowKey[] }
+  type GridStateGroupPath,  // readonly (string | number | boolean | null)[]
+  type GridStateStorage,    // { load(): GridState | null | Promise<…>; save(state): void | Promise<void> }
+  type GridStateChangeSource, // 'user' | 'api' | 'storage'
+  type GridStateChangeEventDetail, // { state, sources }
 } from '@universal-material/data-grid';
 
 import {

@@ -79,6 +79,13 @@ export interface GridColumnDef<TItem = any> {
   label?: string;
   /** Dot path of the cell value in the row item (`"address.city"`). */
   path?: string;
+  /**
+   * Stable id of the column in the grid state (`getState`, `stateStorage`)
+   * and in string column references (`summary` items look it up before
+   * `path`). Default: `path`. A column without `name` and `path` is left out
+   * of the state.
+   */
+  name?: string;
   /** Data type; without it, inferred from the first non-null value. */
   dataType?: GridColumnDataType | null;
   /** `Intl` options or a formatter function. */
@@ -157,7 +164,7 @@ export interface GridColumnDef<TItem = any> {
   exportable?: boolean | null;
 }
 
-/** A column of the grid: its `path` (first column with that path) or the column itself. */
+/** A column of the grid: its `name`, its `path` (first column with that name, else with that path) or the column itself. */
 export type GridColumnRef<TItem = any> = string | GridColumnDef<TItem>;
 
 /** Values of a group from the outermost level, e.g. `['Brazil', 'SP']`. */

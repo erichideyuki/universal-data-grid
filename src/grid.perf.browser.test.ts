@@ -849,6 +849,84 @@ const applyChangesScenario = (rows: number, label: string) => {
   });
 };
 
+/** Estado salvo do cenário de restauração: agrupado em 2 níveis, ordenado e filtrado. */
+const STATE_KEY = 'u-grid-perf-state';
+const savedState = {
+  version: 1,
+  columns: [
+    { name: 'country', groupIndex: 0 },
+    { name: 'category', groupIndex: 1 },
+    { name: 'amount', sortOrder: 'desc', sortIndex: 0 },
+    { name: 'name', width: 220 },
+    { name: 'city', visible: false },
+  ],
+  filterValue: [['status', '<>', 'Archived'], 'and', ['year', '>=', 1970]],
+  groupExpansion: { all: true, levels: [], expanded: [], collapsed: [['Country B'], ['Country C', 'Category 3']] },
+} as const;
+
+const stateScenario = (rows: number, label: string) => {
+  it(`${label} linhas: restaurar estado salvo (agrupado, ordenado e filtrado) no 1º render, setState, getState`, async () => {
+    let items: object[] | undefined = makeItems(rows);
+    const heapBefore = await heapMiB();
+
+    localStorage.setItem(STATE_KEY, JSON.stringify(savedState));
+    await perf.throttle();
+
+    // 1º render já restaurado do localStorage (o que o usuário espera ao voltar à página).
+    let restoreFirstRenderMs = Infinity;
+    let grid: DataGrid | undefined;
+
+    for (let i = 0; i < REPEATS; i++) {
+      grid?.remove();
+      grid = document.createElement('u-grid');
+      grid.style.display = 'block';
+      grid.style.height = '600px';
+      grid.columns = makeColumns();
+      grid.items = items;
+      grid.stateStorage = 'local';
+      grid.stateStorageKey = STATE_KEY;
+
+      perf.recalibrate();
+      const start = performance.now();
+
+      document.body.append(grid);
+      await updatesDone(grid);
+      grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+      restoreFirstRenderMs = Math.min(restoreFirstRenderMs, perf.weak(performance.now() - start));
+      await painted(grid);
+    }
+
+    const restored = grid!;
+
+    expect(restored.getGrouping().map(c => c.path)).toEqual(['country', 'category']);
+    expect(restored.isGroupExpanded(['Country B'])).toBe(false);
+    expect(restored.shadowRoot!.querySelectorAll('tbody tr[role=row]').length).toBeGreaterThan(5);
+
+    const state = restored.getState();
+    const getState = await interaction('getState', restored, () => void JSON.stringify(restored.getState()), () => undefined);
+    const setState = await interaction('setState', restored, () => restored.setState(state), () => restored.resetState());
+    const scroll = await scrollMetrics(restored, 'restored.');
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+
+    restored.remove();
+    localStorage.removeItem(STATE_KEY);
+    items = undefined;
+
+    const metrics = {
+      restoreFirstRenderMs,
+      ...getState,
+      ...setState,
+      ...scroll,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`state-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -861,4 +939,5 @@ describe('perfil de máquina fraca', () => {
   applyChangesScenario(1_000_000, '1m');
   exportScenario(1_000_000, '1m');
   detailScenario(1_000_000, '1m');
+  stateScenario(1_000_000, '1m');
 });

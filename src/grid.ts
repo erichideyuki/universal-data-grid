@@ -1,7 +1,7 @@
 import { ContextConsumer } from '@lit/context';
 
 import { html, type HTMLTemplateResult, isServer, LitElement, nothing, type PropertyValues } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, state as internalState } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
@@ -13,6 +13,7 @@ import {
   type GridDataChanges,
   type GridDataSource,
   type GridKeyExpr,
+  type GridRowKey,
   type GridLoadOptions,
   type GridLoadResult,
   type GridLoadSummary,
@@ -151,6 +152,7 @@ import {
   getNumberFormat,
   resolveAlignment,
   resolveDataType,
+  toDate,
 } from './row-model/format.js';
 import { buildGroups, groupKeyOf } from './row-model/group.js';
 import { LruCache } from './row-model/lru.js';
@@ -158,6 +160,20 @@ import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
 import { type DataRow, type DetailRow, type GroupFooterRow, type GroupNode, type GroupRow, isLazyItems, type LazyItems, type Row } from './row-model/types.js';
 import { cellValueReader } from './row-model/value.js';
+import {
+  GRID_STATE_VERSION,
+  type GridColumnState,
+  type GridGroupExpansionState,
+  type GridState,
+  type GridStateChangeEventDetail,
+  type GridStateChangeSource,
+  type GridStateGroupPath,
+  type GridStateStorage,
+  groupValueToState,
+  parseGridState,
+} from './state/grid-state.js';
+import { readWebStorage, resolveStorage, type StorageConfig, writeWebStorage } from './state/storage.js';
+import { VersionedMap, VersionedSet } from './state/versioned.js';
 
 import './grid-column.js';
 
@@ -225,6 +241,16 @@ export type {
   GridExportRow,
   GridExportSummaryRow,
 } from './export/types.js';
+export type {
+  GridColumnState,
+  GridGroupExpansionState,
+  GridRowExpansionState,
+  GridState,
+  GridStateChangeEventDetail,
+  GridStateChangeSource,
+  GridStateGroupPath,
+  GridStateStorage,
+} from './state/grid-state.js';
 export { DataGridColumn } from './grid-column.js';
 
 /** @deprecated Use `DataGridColumn`. */
@@ -636,6 +662,47 @@ const MIXED_PATH = 'M200-440v-80h560v80H200Z';
 /** Ações do menu do cabeçalho das colunas (spec 17, A1). */
 type ColumnHeaderMenuAction = 'groupColumn' | 'moveLeft' | 'moveRight' | 'autoSizeColumn' | 'increaseColumnWidth' | 'decreaseColumnWidth';
 
+/** Id da coluna no estado (frente 11): `name`, senão `path`. */
+const columnNameOf = (column: GridColumnDef): string | undefined =>
+  (typeof column.name === 'string' && column.name) || (typeof column.path === 'string' && column.path) || undefined;
+
+/** Chave de linha que cabe no estado (JSON): texto ou número finito. */
+const isStateKey = (key: unknown): key is GridRowKey =>
+  typeof key === 'string' || (typeof key === 'number' && Number.isFinite(key));
+
+/** Cópia da expressão de filtro só com valores JSON (datas em ISO). */
+const jsonFilterCopy = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(jsonFilterCopy)
+    : value instanceof Date ? (Number.isNaN(value.getTime()) ? null : value.toISOString()) : value;
+
+/** Eventos de mudança cujo `source` diz a origem de uma mudança do estado (os de coluna são só do usuário). */
+const STATE_EVENTS = new Set([
+  'u-grid-sort-change',
+  'u-grid-group-change',
+  'u-grid-group-expansion-change',
+  'u-grid-filter-change',
+  'u-grid-column-resize',
+  'u-grid-column-visibility-change',
+  'u-grid-column-fixed-change',
+  'u-grid-column-reorder',
+  'u-grid-selection-change',
+  'u-grid-page-change',
+  'u-grid-row-expansion-change',
+]);
+
+/** Padrão de `stateChangeDelay` (ms). */
+const STATE_CHANGE_DELAY = 500;
+
+/** Valores do hospedeiro no 1º connect: o "inicial" de `setState`/`resetState`. */
+interface InitialHostState {
+  filterValue: GridFilterExpression | null;
+  searchText: string;
+  pageIndex: number;
+  pageSize: number;
+  selectedKeys: readonly unknown[];
+}
+
 /** Linha de dados ou esqueleto (não grupo, rodapé de grupo nem detalhe). */
 const isDataRowLike = (row: Row): row is DataRow => !row.isGroup && !row.isFooter && !row.isDetail;
 
@@ -686,6 +753,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * or a clamp after the rows shrank (`source` of the change that caused it). Not the `pageIndex`/`pageSize` setters.
  * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C writes the selected rows (or the focused cell) to the clipboard. Cancelable.
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
+ * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
+ * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
  *
  * @cssprop --u-grid-background-color - Grid background.
@@ -853,7 +922,7 @@ export class DataGrid extends LitElement {
    * Chaves de linha cuja expansão difere do padrão (`autoExpandRows`). Retém
    * a chave até voltar ao padrão (como `selectedKeys`).
    */
-  readonly #rowExpansion = new Set<unknown>();
+  readonly #rowExpansion = new VersionedSet<unknown>();
   /** Altura medida do detalhe por item (objetos: fraca; primitivos: limitada). */
   readonly #detailSizes = new WeakMap<object, number>();
   readonly #primitiveDetailSizes = new LruCache<unknown, number>(256);
@@ -1120,7 +1189,9 @@ export class DataGrid extends LitElement {
    * filtro). Só guarda o que difere do padrão do nível — o mapa não cresce
    * com grupos que voltaram ao padrão.
    */
-  readonly #expansion = new Map<string, { expanded: boolean; level: number }>();
+  readonly #expansion = new VersionedMap<string, { expanded: boolean; level: number; path: GridGroupPath }>();
+  /** Muda quando os padrões de expansão (`#levelExpansion`, `#allExpansion`) mudam. */
+  #expansionDefaultsVersion = 0;
   /** Padrão por nível vindo de `expandAllGroups(n)`/`collapseAllGroups(n)`. */
   #levelExpansion: (boolean | undefined)[] = [];
   /** Padrão de todos os níveis vindo de `expandAllGroups()`/`collapseAllGroups()`. */
@@ -1149,9 +1220,9 @@ export class DataGrid extends LitElement {
    * As comuns ficam sempre em blocos: fixas no início, livres, fixas no fim.
    */
   /** @internal */
-  @state() _groupColumns: GridColumnDef[] = [];
+  @internalState() _groupColumns: GridColumnDef[] = [];
   /** @internal */
-  @state() _regularColumns: GridColumnDef[] = [];
+  @internalState() _regularColumns: GridColumnDef[] = [];
 
   /**
    * Colunas comuns visíveis, na ordem de exibição (recalculado a cada update).
@@ -1160,9 +1231,9 @@ export class DataGrid extends LitElement {
   _visibleColumns: GridColumnDef[] = [];
 
   // Estado do usuário por coluna — nunca escrito nos objetos do hospedeiro.
-  readonly #userWidths = new Map<GridColumnDef, number>();
-  readonly #userVisible = new Map<GridColumnDef, boolean>();
-  readonly #userFixed = new Map<GridColumnDef, GridColumnFixed>();
+  readonly #userWidths = new VersionedMap<GridColumnDef, number>();
+  readonly #userVisible = new VersionedMap<GridColumnDef, boolean>();
+  readonly #userFixed = new VersionedMap<GridColumnDef, GridColumnFixed>();
   /** Larguras de conteúdo medidas pelo `column-auto-width`. */
   readonly #autoWidths = new Map<GridColumnDef, number>();
   /** Largura renderizada (px) de cada coluna visível, medida após o layout. */
@@ -1570,6 +1641,715 @@ export class DataGrid extends LitElement {
     return content === nothing ? nothing : html`<div class="lang-scope" lang=${this.#textLanguage}>${content}</div>`;
   }
 
+  // ------------------------------------------------- estado e persistência
+
+  #stateStorage: 'local' | 'session' | GridStateStorage | null = null;
+  #stateStorageKey = '';
+
+  /**
+   * Saves and restores the user state (see `getState`): `local` / `session`
+   * (`localStorage` / `sessionStorage`, attribute `state-storage`, needs
+   * `state-storage-key`) or an object with `load()` and `save()` (property
+   * only). Read when the grid connects (and again when this or the key
+   * changes), before the first render of data; while an asynchronous `load()`
+   * runs the grid shows the load panel and no rows. Saved
+   * `state-change-delay` ms after each change, and on disconnect or
+   * `pagehide` when a save is pending. A `setState()` before connecting skips
+   * the read. Unreadable or invalid saved states are ignored with a console
+   * warning.
+   * @default null
+   */
+  @property({ attribute: 'state-storage' })
+  get stateStorage(): 'local' | 'session' | GridStateStorage | null {
+    return this.#stateStorage;
+  }
+
+  set stateStorage(value: 'local' | 'session' | GridStateStorage | null | undefined) {
+    const old = this.#stateStorage;
+    this.#stateStorage = value ?? null;
+    this.#storageChanged();
+    this.requestUpdate('stateStorage', old);
+  }
+
+  /** Key of the state in `localStorage` / `sessionStorage` (required by `state-storage="local|session"`). */
+  @property({ attribute: 'state-storage-key' })
+  get stateStorageKey(): string {
+    return this.#stateStorageKey;
+  }
+
+  set stateStorageKey(value: string | null | undefined) {
+    const old = this.#stateStorageKey;
+    this.#stateStorageKey = value ?? '';
+    this.#storageChanged();
+    this.requestUpdate('stateStorageKey', old);
+  }
+
+  /** Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`. */
+  @property({ type: Number, attribute: 'state-change-delay' }) stateChangeDelay = STATE_CHANGE_DELAY;
+
+  /** Estados a aplicar quando houver colunas (pedidos antes delas: `setState` cedo, storage). */
+  #statesToApply: { state: GridState; partial: boolean; fromStorage: boolean }[] = [];
+  /** Esperando o storage (assíncrono ou hidratação): render sem linhas, conteúdo oculto. */
+  #stateWaiting = false;
+  /** Já houve render com dados: daqui em diante nunca mais espera o storage. */
+  #renderedData = false;
+  /** De onde o estado foi lido por último (não relê ao reconectar). */
+  #loadedFrom: unknown;
+  /** Muda a cada leitura e a cada `setState`: leitura assíncrona velha não vale. */
+  #loadGeneration = 0;
+  /** `setState`/`resetState` antes do 1º connect: dispensa a leitura do storage. */
+  #explicitState = false;
+  #initial: InitialHostState | undefined;
+  /** Identidades/versões de cada parte do estado no último render. */
+  #stateSignature: unknown[] | undefined;
+  /** Origens vistas nos eventos desde o último render. */
+  readonly #recordedSources = new Set<GridStateChangeSource>();
+  /** Origens da rajada em curso. */
+  readonly #burstSources = new Set<GridStateChangeSource>();
+  #stateTimer: ReturnType<typeof setTimeout> | undefined;
+  /** JSON do último estado avisado/restaurado (rajada que volta ao mesmo estado não avisa). */
+  #lastStateJson: string | undefined;
+  #pageHideListening = false;
+  readonly #warnedState = new Set<string>();
+
+  /**
+   * The user state (a new object, JSON serializable): column order, width,
+   * visibility, fixing, grouping and sorting, the filter and the search text,
+   * group expansion, the page, and — with `keyExpr` and string/number keys —
+   * the selection and the expanded detail rows. Never row data. Columns are
+   * identified by `name` (or `path`); columns without either are left out.
+   */
+  getState(): GridState {
+    const state: GridState = { version: GRID_STATE_VERSION };
+    const sortIndex = new Map(this.#sorting.map((spec, index) => [spec.column, index]));
+    const columns: GridColumnState[] = [];
+
+    for (const [name, column] of this.#namedColumns([...this._regularColumns, ...this._groupColumns])) {
+      const sort = sortIndex.get(column);
+      const groupIndex = this._groupColumns.indexOf(column);
+
+      columns.push({
+        name,
+        width: this.#userWidths.get(column) ?? null,
+        visible: this._isColumnVisible(column),
+        fixed: this._fixedOf(column),
+        groupIndex: groupIndex >= 0 ? groupIndex : null,
+        sortOrder: sort === undefined ? null : this.#sorting[sort].order,
+        sortIndex: sort ?? null,
+      });
+    }
+
+    state.columns = columns;
+    state.filterValue = jsonFilterCopy(this.#filtering.filterValue) as GridFilterExpression | null;
+    state.searchText = this.#filtering.searchText;
+    state.groupExpansion = this.#groupExpansionState();
+
+    // Sem `keyExpr` a chave é o próprio item: dado de linha, fica fora.
+    if (this.#keyExpr) {
+      state.selectedKeys = this.#selection.keys.filter(isStateKey);
+
+      const keys = [...this.#rowExpansion].filter(isStateKey);
+      state.rowExpansion = this.autoExpandRows ? { expanded: [], collapsed: keys } : { expanded: keys, collapsed: [] };
+    }
+
+    state.pageIndex = this.#pageIndex;
+    state.pageSize = this.#effectivePageSize;
+
+    return state;
+  }
+
+  /**
+   * Applies a state (from `getState`, your storage or built by hand). It is
+   * validated first: an invalid state is ignored with a console warning; an
+   * older version is migrated, an unknown one ignored. Without `partial`,
+   * every top-level key missing from `state` goes back to the initial value
+   * (the column definitions and the properties the host set before the grid
+   * connected); with `partial: true` only the keys present change. A
+   * `columns` list sets the whole layout: columns missing from it go back to
+   * their definition, at the end in definition order; unknown names are
+   * ignored. Fires none of the per-feature events (like the setters), only
+   * `u-grid-state-change`. Never moves the focus nor announces anything: when
+   * a user gesture triggers it, announce the result yourself.
+   */
+  setState(state: GridState, options: { partial?: boolean } = {}): void {
+    const parsed = parseGridState(state);
+
+    if ('error' in parsed) {
+      console.warn(`<u-grid>: setState ignored: ${parsed.error}.`);
+      return;
+    }
+
+    this.#explicitStateChange();
+    this.#requestState(parsed.state, options.partial === true, false);
+  }
+
+  /** Puts the state back to the initial one (`setState` with an empty state, without `partial`). */
+  resetState(): void {
+    this.#explicitStateChange();
+    this.#requestState({ version: GRID_STATE_VERSION }, false, false);
+  }
+
+  /** `setState`/`resetState`: vence uma leitura em curso (e, antes de conectar, a leitura). */
+  #explicitStateChange(): void {
+    this.#captureInitial();
+    this.#loadGeneration++;
+
+    if (!this.isConnected && !this.hasUpdated) {
+      this.#explicitState = true;
+    }
+
+    if (this.#stateWaiting) {
+      this.#stateWaiting = false;
+      this.requestUpdate();
+    }
+  }
+
+  #captureInitial(): void {
+    this.#initial ??= {
+      filterValue: this.#filtering.filterValue,
+      searchText: this.#filtering.searchText,
+      pageIndex: this.#pageIndex,
+      pageSize: this.pageSize,
+      selectedKeys: this.#selection.keys,
+    };
+  }
+
+  #warnState(message: string): void {
+    if (!this.#warnedState.has(message)) {
+      this.#warnedState.add(message);
+      console.warn(`<u-grid>: ${message}`);
+    }
+  }
+
+  /** Colunas com id no estado, uma por id (a 1ª vence); avisa as sem id e as repetidas. */
+  #namedColumns(columns: readonly GridColumnDef[]): Map<string, GridColumnDef> {
+    const named = new Map<string, GridColumnDef>();
+
+    for (const column of columns) {
+      const name = columnNameOf(column);
+
+      if (!name) {
+        this.#warnState(`a column without "name" or "path" (${JSON.stringify(column.label ?? '')}) is left out of the state.`);
+      } else if (named.has(name)) {
+        this.#warnState(`column name "${name}" is repeated; only the first column with it is in the state.`);
+      } else {
+        named.set(name, column);
+      }
+    }
+
+    return named;
+  }
+
+  #groupExpansionState(): GridGroupExpansionState {
+    const columns = this._groupColumns;
+    const expanded: GridStateGroupPath[] = [];
+    const collapsed: GridStateGroupPath[] = [];
+
+    for (const [key, entry] of this.#expansion) {
+      // Entradas de outro agrupamento (o mapa as guarda) não valem agora.
+      if (entry.path.length > columns.length || groupKeyOf(entry.path, columns) !== key) {
+        continue;
+      }
+
+      const path = entry.path.map(groupValueToState);
+
+      if (path.every(value => value !== undefined)) {
+        (entry.expanded ? expanded : collapsed).push(path);
+      }
+    }
+
+    return {
+      all: this.#allExpansion ?? null,
+      levels: Array.from(this.#levelExpansion, level => level ?? null),
+      expanded,
+      collapsed,
+    };
+  }
+
+  /** Aplica já (havendo colunas) ou guarda para o próximo `willUpdate`. */
+  #requestState(state: GridState, partial: boolean, fromStorage: boolean): void {
+    if (this.columns.length) {
+      this.#applyState(state, partial, fromStorage);
+    } else {
+      this.#statesToApply.push({ state, partial, fromStorage });
+      this.requestUpdate();
+    }
+  }
+
+  #applyPendingStates(): void {
+    if (!this.#statesToApply.length || !this.columns.length) {
+      return;
+    }
+
+    const pending = this.#statesToApply;
+    this.#statesToApply = [];
+    pending.forEach(({ state, partial, fromStorage }) => this.#applyState(state, partial, fromStorage));
+  }
+
+  /** Aplica um estado JÁ VALIDADO. Sem eventos por recurso, sem foco, sem anúncio. */
+  #applyState(state: GridState, partial: boolean, fromStorage: boolean): void {
+    this.#captureInitial();
+    const initial = this.#initial!;
+    const reset = !partial;
+
+    if (state.columns) {
+      this.#restoreColumns(state.columns);
+    } else if (reset) {
+      this.#resetColumns();
+    }
+
+    if (state.filterValue !== undefined || state.searchText !== undefined || reset) {
+      const filterValue = state.filterValue !== undefined ? state.filterValue : reset ? initial.filterValue : this.#filtering.filterValue;
+      const searchText = state.searchText ?? (reset ? initial.searchText : this.#filtering.searchText);
+
+      // Debounce pendente da busca/linha de filtro reaplicaria o texto velho.
+      this.#filterRow.discardDrafts();
+      this.#search.discardDraft();
+      this.#filtering.set(filterValue, searchText);
+    }
+
+    // A contagem que um gesto anterior esperava não é anunciada (o estado não é gesto).
+    this.#announceFilter = false;
+
+    if (state.groupExpansion || reset) {
+      this.#restoreGroupExpansion(state.groupExpansion);
+    }
+
+    if (state.selectedKeys || reset) {
+      const keys = state.selectedKeys ?? initial.selectedKeys;
+      this.#selection.replace(this.#selectionMode === 'single' ? keys.slice(-1) : keys);
+    }
+
+    if (state.rowExpansion || reset) {
+      this.#rowExpansion.clear();
+
+      for (const key of (this.autoExpandRows ? state.rowExpansion?.collapsed : state.rowExpansion?.expanded) ?? []) {
+        this.#rowExpansion.add(key);
+      }
+
+      this.#rowsDirty = true;
+    }
+
+    const pageSize = state.pageSize ?? (reset ? initial.pageSize : undefined);
+
+    // Só tamanhos oferecidos pelo pager (ou o do hospedeiro): o storage não escolhe 100 mil.
+    if (pageSize !== undefined && (pageSize === initial.pageSize || this.pageSizeOptions.includes(pageSize))) {
+      this.pageSize = pageSize;
+    }
+
+    const pageIndex = state.pageIndex ?? (reset ? initial.pageIndex : undefined);
+
+    if (pageIndex !== undefined) {
+      this.pageIndex = pageIndex;
+    }
+
+    this.#closeHiddenPopovers();
+    this.#rowsDirty = true;
+    this.#layoutDirty = true;
+    this.requestUpdate();
+
+    if (fromStorage) {
+      // Restaurado: avisa ("pronto") na rajada, sem gravar de volta.
+      this.#burstSources.add('storage');
+      this.#stateSignature = undefined;
+      this.#scheduleStateChange();
+    }
+  }
+
+  /** Colunas como na definição (grid novo): sem ordem, larguras, visibilidade, fixação nem ordenação do usuário. */
+  #resetColumns(): void {
+    this.#userWidths.clear();
+    this.#userVisible.clear();
+    this.#userFixed.clear();
+    this.#autoWidths.clear();
+    this._regularColumns = [];
+    this._groupColumns = [];
+    this.#sorting = [];
+    this.#sortDirty = true;
+    this.#layoutDirty = true;
+    this.#syncColumns();
+  }
+
+  #restoreColumns(list: readonly GridColumnState[]): void {
+    const definitions = this.columns;
+    const named = this.#namedColumns(definitions);
+    const entries = new Map<GridColumnDef, GridColumnState>();
+
+    for (const entry of list) {
+      const column = named.get(entry.name);
+
+      // Coluna que não existe mais: ignorada.
+      if (column && !entries.has(column)) {
+        entries.set(column, entry);
+      }
+    }
+
+    // As da lista na ordem dela; as outras voltam à definição, no fim.
+    const ordered = [...entries.keys(), ...definitions.filter(column => !entries.has(column))];
+
+    const pick = <K extends keyof GridColumnState>(column: GridColumnDef, key: K, fallback: GridColumnState[K]): GridColumnState[K] => {
+      const entry = entries.get(column);
+      return entry?.[key] !== undefined ? entry[key] : fallback;
+    };
+
+    const groupIndexOf = (column: GridColumnDef): number | null => {
+      const index = pick(column, 'groupIndex', column.groupIndex ?? null);
+      return typeof index === 'number' && Number.isInteger(index) && index >= 0 ? index : null;
+    };
+
+    this.#userWidths.clear();
+    this.#userVisible.clear();
+    this.#userFixed.clear();
+    this.#autoWidths.clear();
+
+    for (const [column, entry] of entries) {
+      if (typeof entry.width === 'number') {
+        this.#userWidths.set(column, Math.round(entry.width));
+      }
+
+      if (entry.visible !== undefined && entry.visible !== (column.visible !== false)) {
+        this.#userVisible.set(column, entry.visible);
+      }
+
+      if (entry.fixed !== undefined && entry.fixed !== normalizeFixed(column.fixed)) {
+        this.#userFixed.set(column, entry.fixed);
+      }
+    }
+
+    const regular = ordered.filter(column => groupIndexOf(column) === null);
+    const group = ordered
+      .map((column, position) => ({ column, position, index: groupIndexOf(column) }))
+      .filter((entry): entry is { column: GridColumnDef; position: number; index: number } => entry.index !== null)
+      .sort((a, b) => a.index - b.index || a.position - b.position)
+      .map(entry => entry.column);
+
+    // Nenhuma coluna comum visível: volta a visibilidade à definição.
+    if (regular.length && !regular.some(column => this._isColumnVisible(column))) {
+      regular.forEach(column => this.#userVisible.delete(column));
+    }
+
+    this.#sorting = ordered
+      .map((column, position) => ({
+        column,
+        position,
+        order: pick(column, 'sortOrder', column.sortOrder ?? null),
+        index: pick(column, 'sortIndex', column.sortIndex ?? null),
+      }))
+      .filter((entry): entry is typeof entry & { order: GridSortOrder } => entry.order === 'asc' || entry.order === 'desc')
+      .sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity) || a.position - b.position)
+      .map(({ column, order }) => ({ column, order }));
+    this.#sortDirty = true;
+    this.#autoWidthDirty = true;
+    this.#layoutDirty = true;
+    this.#setColumnState(regular, group);
+  }
+
+  #restoreGroupExpansion(state: GridGroupExpansionState | undefined): void {
+    this.#resetExpansion();
+
+    if (!state) {
+      return;
+    }
+
+    this.#allExpansion = state.all ?? undefined;
+    this.#levelExpansion = state.levels.map(level => level ?? undefined);
+
+    const columns = this._groupColumns;
+
+    const add = (path: GridStateGroupPath, expanded: boolean): void => {
+      if (path.length > columns.length) {
+        return;
+      }
+
+      const values = Object.freeze(path.map((value, level) => this.#groupValueFromState(value, columns[level])));
+      const key = groupKeyOf(values, columns);
+      const level = path.length - 1;
+
+      if (key !== undefined && expanded !== this.#defaultExpanded(level)) {
+        this.#expansion.set(key, { expanded, level, path: values });
+      }
+    };
+
+    state.expanded.forEach(path => add(path, true));
+    state.collapsed.forEach(path => add(path, false));
+  }
+
+  /** Datas viajam como texto ISO: volta a `Date` nas colunas de data (sem faixa). */
+  #groupValueFromState(value: unknown, column: GridColumnDef): unknown {
+    if (typeof value !== 'string' || column.groupValueGetter) {
+      return value;
+    }
+
+    const dataType = this.#dataTypeOf(column);
+    return dataType === 'date' || dataType === 'datetime' ? toDate(value) ?? value : value;
+  }
+
+  /** Popover/menu de uma coluna que saiu de vista fecha (o foco volta à célula ativa pela guarda da spec 17). */
+  #closeHiddenPopovers(): void {
+    const visible = new Set(this._regularColumns.filter(column => this._isColumnVisible(column)));
+    this.#headerFilterPopover.closeIfRemoved(visible);
+
+    const menuColumn = this.#filterRow.menuColumn;
+
+    if (menuColumn && !visible.has(menuColumn)) {
+      this.#filterRow.closeMenu();
+    }
+  }
+
+  // --------------------------------------------------- leitura e gravação
+
+  get #storageConfig(): StorageConfig | undefined {
+    return resolveStorage(this.#stateStorage, this.#stateStorageKey, message => this.#warnState(message));
+  }
+
+  /** Esperando o estado: no cliente, a leitura assíncrona/hidratação; no servidor, sempre que há storage. */
+  get #waitingForState(): boolean {
+    return this.#stateWaiting || (isServer && !this.#renderedData && !this.#explicitState && !!this.#storageConfig);
+  }
+
+  /** Mudou `stateStorage`/`stateStorageKey`: relê (já conectado) e acerta o `pagehide`. */
+  #storageChanged(): void {
+    if (this.isConnected && this.hasUpdated) {
+      this.#startStateLoad();
+    }
+
+    this.#syncPageHide();
+  }
+
+  /** Lê o storage, uma vez por origem. Síncrono: aplica antes do render; assíncrono: espera sem linhas. */
+  #startStateLoad(): void {
+    const config = this.#storageConfig;
+
+    if (!config) {
+      this.#loadedFrom = undefined;
+      return;
+    }
+
+    const from = config.kind === 'custom' ? config.storage : `${config.kind}:${config.key}`;
+
+    if (from === this.#loadedFrom) {
+      return;
+    }
+
+    this.#loadedFrom = from;
+    const generation = ++this.#loadGeneration;
+
+    if (config.kind !== 'custom') {
+      const read = readWebStorage(config.kind, config.key);
+
+      if ('error' in read) {
+        this.#warnState(`${read.error}; the initial state is used.`);
+      } else {
+        this.#restoreLoaded(read.value);
+      }
+
+      return;
+    }
+
+    let result: unknown;
+
+    try {
+      result = config.storage.load();
+    } catch (error) {
+      this.#warnState(`stateStorage.load() failed (${String(error)}); the initial state is used.`);
+      return;
+    }
+
+    if (!result || typeof (result as PromiseLike<unknown>).then !== 'function') {
+      this.#restoreLoaded(result);
+      return;
+    }
+
+    // Antes do 1º render de dados: sem linhas até chegar (nada pisca).
+    if (!this.#renderedData) {
+      this.#stateWaiting = true;
+      this.requestUpdate();
+    }
+
+    void Promise.resolve(result as PromiseLike<unknown>).then(
+      value => {
+        if (generation === this.#loadGeneration) {
+          this.#restoreLoaded(value);
+        }
+      },
+      (error: unknown) => {
+        if (generation === this.#loadGeneration) {
+          this.#warnState(`stateStorage.load() rejected (${String(error)}); the initial state is used.`);
+        }
+      },
+    )
+      .finally(() => {
+        if (generation === this.#loadGeneration && this.#stateWaiting) {
+          this.#stateWaiting = false;
+          this.requestUpdate();
+        }
+      });
+  }
+
+  /** O que o storage devolveu: `null` = nada guardado; o resto passa pela validação. */
+  #restoreLoaded(value: unknown): void {
+    if (value === null || value === undefined) {
+      return;
+    }
+
+    const parsed = parseGridState(value);
+
+    if ('error' in parsed) {
+      this.#warnState(`the saved state is ignored: ${parsed.error}.`);
+      return;
+    }
+
+    this.#requestState(parsed.state, false, true);
+  }
+
+  /** Depois de cada render: alguma parte do estado mudou? Agenda o aviso/gravação da rajada. */
+  #trackStateChange(): void {
+    if (!this.isConnected || this.#waitingForState || this.#statesToApply.length) {
+      return;
+    }
+
+    const signature = [
+      this._regularColumns,
+      this._groupColumns,
+      this.#sorting,
+      this.#userWidths.version,
+      this.#userVisible.version,
+      this.#userFixed.version,
+      this.#filtering.filterValue,
+      this.#filtering.searchText,
+      this.#expansion.version,
+      this.#expansionDefaultsVersion,
+      this.#rowExpansion.version,
+      this.autoExpandRows,
+      this.#pageIndex,
+      this.#effectivePageSize,
+      this.#selection.version,
+      this.#keyExpr,
+    ];
+    const previous = this.#stateSignature;
+    this.#stateSignature = signature;
+
+    if (!previous) {
+      this.#recordedSources.clear();
+      this.#lastStateJson ??= JSON.stringify(this.getState());
+      return;
+    }
+
+    if (signature.every((part, index) => part === previous[index])) {
+      this.#recordedSources.clear();
+      return;
+    }
+
+    if (this.#recordedSources.size) {
+      this.#recordedSources.forEach(source => this.#burstSources.add(source));
+    } else {
+      this.#burstSources.add('api');
+    }
+
+    this.#recordedSources.clear();
+    this.#scheduleStateChange();
+  }
+
+  #scheduleStateChange(): void {
+    // Desconectado nada fica agendado (spec 14); o que estava pendente saiu no disconnect.
+    if (!this.isConnected) {
+      return;
+    }
+
+    const delay = Number(this.stateChangeDelay);
+
+    clearTimeout(this.#stateTimer);
+    this.#stateTimer = setTimeout(() => this.#flushStateChange(), Number.isFinite(delay) && delay >= 0 ? delay : STATE_CHANGE_DELAY);
+  }
+
+  /** Fim da rajada: avisa (se o estado mudou de fato) e grava (se não foi só a restauração). */
+  #flushStateChange(): void {
+    clearTimeout(this.#stateTimer);
+    this.#stateTimer = undefined;
+
+    const sources = [...this.#burstSources];
+    this.#burstSources.clear();
+
+    const state = this.getState();
+    const json = JSON.stringify(state);
+    const restored = sources.includes('storage');
+
+    if (json === this.#lastStateJson && !restored) {
+      return;
+    }
+
+    this.#lastStateJson = json;
+    this.dispatchEvent(new CustomEvent('u-grid-state-change', this.#eventInit<GridStateChangeEventDetail>({ state, sources })));
+
+    if (sources.some(source => source !== 'storage')) {
+      this.#saveState(json);
+    }
+  }
+
+  #saveState(json: string): void {
+    const config = this.#storageConfig;
+
+    if (!config) {
+      return;
+    }
+
+    if (config.kind !== 'custom') {
+      const error = writeWebStorage(config.kind, config.key, json);
+
+      if (error) {
+        this.#warnState(`${error}; the state was not saved.`);
+      }
+
+      return;
+    }
+
+    const failed = (error: unknown): void => this.#warnState(`stateStorage.save() failed (${String(error)}).`);
+
+    try {
+      // Cópia própria: quem ouviu o evento pode ter mexido no objeto dele.
+      const result: unknown = config.storage.save(JSON.parse(json) as GridState);
+
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        Promise.resolve(result).catch(failed);
+      }
+    } catch (error) {
+      failed(error);
+    }
+  }
+
+  /** Grava a rajada pendente antes de a página sair (bfcache, aba fechada). */
+  readonly #onPageHide = (): void => {
+    if (this.#stateTimer !== undefined) {
+      this.#flushStateChange();
+    }
+  };
+
+  #syncPageHide(): void {
+    const listen = !isServer && !!this.isConnected && !!this.#storageConfig;
+
+    if (listen === this.#pageHideListening) {
+      return;
+    }
+
+    this.#pageHideListening = listen;
+
+    if (listen) {
+      window.addEventListener('pagehide', this.#onPageHide);
+    } else {
+      window.removeEventListener('pagehide', this.#onPageHide);
+    }
+  }
+
+  /** Os eventos de mudança dizem a origem (`source`) da rajada do estado. */
+  override dispatchEvent(event: Event): boolean {
+    if (STATE_EVENTS.has(event.type)) {
+      const source = (event as CustomEvent<{ source?: unknown } | null>).detail?.source;
+      this.#recordedSources.add(source === 'api' ? 'api' : 'user');
+    }
+
+    return super.dispatchEvent(event);
+  }
+
   // ------------------------------------------------------- refs/controllers
 
   /** @internal */
@@ -1665,6 +2445,11 @@ export class DataGrid extends LitElement {
       primitiveDetailSizes: this.#primitiveDetailSizes.size,
       observedDetails: this.#observedDetails.size,
       hostLabelObservers: this.#hostLabel.observers,
+      // Estado (frente 11): temporizador da rajada, `pagehide`, estados à espera de colunas.
+      stateTimers: this.#stateTimer === undefined ? 0 : 1,
+      pageHideListeners: this.#pageHideListening ? 1 : 0,
+      pendingStates: this.#statesToApply.length,
+      warnedState: this.#warnedState.size,
     };
   }
 
@@ -1686,6 +2471,9 @@ export class DataGrid extends LitElement {
   }
 
   override connectedCallback() {
+    // Shadow root declarativo antes do 1º update: hidratação do SSR.
+    const hydrating = !this.hasUpdated && !!this.shadowRoot;
+
     super.connectedCallback();
     this.#readDeclarativeColumns();
     this.#unobserveDocumentLanguage = observeDocumentLanguage(() => this.requestUpdate());
@@ -1693,6 +2481,21 @@ export class DataGrid extends LitElement {
     this.#dragAndDropDirty = true;
     this.#layoutDirty = true;
     this.#observeScrollContainer();
+
+    // Estado (frente 11): o "inicial" é o que o hospedeiro deu antes de conectar.
+    this.#captureInitial();
+
+    if (!this.#explicitState) {
+      if (hydrating && this.#storageConfig) {
+        // O servidor renderizou "carregando estado": o render da hidratação
+        // tem de casar com ele; a leitura vem depois do 1º update.
+        this.#stateWaiting = true;
+      } else {
+        this.#startStateLoad();
+      }
+    }
+
+    this.#syncPageHide();
   }
 
   override disconnectedCallback() {
@@ -1725,6 +2528,13 @@ export class DataGrid extends LitElement {
     this.#loader.dispose();
     this.#queryKey = undefined;
     this.#pendingQuery = undefined;
+
+    // Rajada do estado pendente: avisa e grava agora (spec 14: nenhum timer fica).
+    if (this.#stateTimer !== undefined) {
+      this.#flushStateChange();
+    }
+
+    this.#syncPageHide();
   }
 
   override willUpdate(changed: PropertyValues<this>) {
@@ -1732,6 +2542,8 @@ export class DataGrid extends LitElement {
     if (isServer) {
       this.#hostLabel.update();
     }
+    // Estado pedido antes de haver colunas (`setState` cedo, storage).
+    this.#applyPendingStates();
 
     // \`:focus-within\` cobre também o conteúdo do renderer (light DOM projetado por slot).
     // (No SSR não há \`matches\` nem foco.)
@@ -1818,6 +2630,13 @@ export class DataGrid extends LitElement {
   override firstUpdated() {
     this._scrollContainerRef.value?.addEventListener('scroll', this.#updateScrollShadows, { passive: true });
     this.#observeScrollContainer();
+
+    // Hidratado: agora lê o storage (o 1º render casou com o do servidor).
+    if (this.#stateWaiting && this.#loadedFrom === undefined) {
+      this.#stateWaiting = false;
+      this.#startStateLoad();
+      this.requestUpdate();
+    }
   }
 
   override updated(changed: PropertyValues<this>) {
@@ -1903,6 +2722,8 @@ export class DataGrid extends LitElement {
     }
 
     this.#afterRenderLoad();
+    this.#announceStateLoading();
+    this.#trackStateChange();
 
     if (
       this.#dragAndDropDirty
@@ -2251,7 +3072,7 @@ export class DataGrid extends LitElement {
     if (expanded === this.#defaultExpanded(level)) {
       this.#expansion.delete(key);
     } else {
-      this.#expansion.set(key, { expanded, level });
+      this.#expansion.set(key, { expanded, level, path: groupPath });
     }
 
     this.#rowsDirty = true;
@@ -2288,6 +3109,8 @@ export class DataGrid extends LitElement {
     };
 
     visit(this.#groups);
+
+    this.#expansionDefaultsVersion++;
 
     if (groupIndex === undefined) {
       this.#expansion.clear();
@@ -3511,6 +4334,7 @@ export class DataGrid extends LitElement {
     this.#expansion.get(key)?.expanded ?? this.#defaultExpanded(level);
 
   #resetExpansion(): void {
+    this.#expansionDefaultsVersion++;
     this.#expansion.clear();
     this.#levelExpansion = [];
     this.#allExpansion = undefined;
@@ -3522,7 +4346,7 @@ export class DataGrid extends LitElement {
     const columns = this.columns;
 
     if (typeof columnRef === 'string') {
-      return columns.find(column => column.path === columnRef);
+      return columns.find(column => column.name === columnRef) ?? columns.find(column => column.path === columnRef);
     }
 
     return columnRef && columns.includes(columnRef) ? columnRef : undefined;
@@ -4035,6 +4859,28 @@ export class DataGrid extends LitElement {
     );
   }
 
+  /** Esperando o estado sem fonte de dados: "Carregando…" aos 300 ms, uma vez (com fonte, `#afterRenderLoad` cuida). */
+  #announceStateLoading(): void {
+    if (this.#dataSource) {
+      return;
+    }
+
+    if (!this.#stateWaiting) {
+      clearTimeout(this.#loadingTimer);
+      this.#loadingTimer = undefined;
+      this.#loadingAnnounced = false;
+    } else if (!this.#loadingTimer && !this.#loadingAnnounced && this.isConnected) {
+      this.#loadingTimer = setTimeout(() => {
+        this.#loadingTimer = undefined;
+
+        if (this.#stateWaiting) {
+          this.#loadingAnnounced = true;
+          this.#announce(this.#translation.loading);
+        }
+      }, LOADING_ANNOUNCE_DELAY);
+    }
+  }
+
   /** Depois do render: pede a consulta nova ou os blocos que o render marcou. */
   #afterRenderLoad(): void {
     if (!this.#dataSource || !this.isConnected) {
@@ -4048,8 +4894,9 @@ export class DataGrid extends LitElement {
       this.#loader.reset(pending.query, pending.hintRow);
     }
 
-    // "Carregando…" pela região viva, só se a carga passar de 300 ms.
-    if (!this.#isLoading) {
+    // "Carregando…" pela região viva, só se a carga passar de 300 ms. Esperar
+    // o estado e a 1ª consulta contam como uma carga só (um anúncio).
+    if (!this.#isLoading && !this.#stateWaiting) {
       clearTimeout(this.#loadingTimer);
       this.#loadingTimer = undefined;
       this.#loadingAnnounced = false;
@@ -4057,7 +4904,7 @@ export class DataGrid extends LitElement {
       this.#loadingTimer = setTimeout(() => {
         this.#loadingTimer = undefined;
 
-        if (this.#isLoading) {
+        if (this.#isLoading || this.#stateWaiting) {
           this.#loadingAnnounced = true;
           this.#announce(this.#translation.loading);
         }
@@ -5590,8 +6437,15 @@ export class DataGrid extends LitElement {
   // ----------------------------------------------------------------- render
 
   override render() {
+    // Esperando o estado (storage assíncrono, SSR/hidratação com storage):
+    // sem linhas (nem o cálculo delas), conteúdo oculto, painel de carga.
+    const waiting = this.#waitingForState;
 
-    this.#ensureRows();
+    if (!waiting) {
+      this.#renderedData = true;
+      this.#ensureRows();
+    }
+
     this.#hasWrap = this._visibleColumns.some(column => column.wrap);
 
     const rows = this.#rows;
@@ -5631,7 +6485,7 @@ export class DataGrid extends LitElement {
 
     // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
     return html`
-      <div class="layout">
+      <div class=${waiting ? 'layout state-loading' : 'layout'}>
       <div
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}>
@@ -5641,10 +6495,10 @@ export class DataGrid extends LitElement {
             class=${fit ? 'grid-table fit' : 'grid-table'}
             role=${this._groupColumns.length ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
-            aria-rowcount="${this.#unknownRowCount ? -1 : this.#allRows.length + headerRows + footerRows}"
+            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#allRows.length + headerRows + footerRows}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' ? 'true' : undefined)}
-            aria-busy=${ifDefined(this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
+            aria-busy=${ifDefined(waiting || this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
@@ -5940,8 +6794,8 @@ export class DataGrid extends LitElement {
   #renderBody(window: VirtualWindow, headerRows: number, layout: ColumnLayout[]) {
 
     if (!this.#rows.length) {
-      // Carregando pela 1ª vez: o painel fala; "sem dados" só depois da resposta.
-      if (this.#dataSource && !this.#loader.current) {
+      // Carregando pela 1ª vez (ou esperando o estado): o painel fala; "sem dados" só depois da resposta.
+      if (this.#waitingForState || (this.#dataSource && !this.#loader.current)) {
         return nothing;
       }
 
@@ -6018,15 +6872,17 @@ export class DataGrid extends LitElement {
 
   /** Painel de carregamento (consulta inteira) e barra de erro com "tentar de novo". */
   #renderLoadState() {
-    if (!this.#dataSource) {
+    const waiting = this.#waitingForState;
+
+    if (!this.#dataSource && !waiting) {
       return nothing;
     }
 
     const translation = this.#translation;
-    const failure = this.#loader.error;
+    const failure = this.#dataSource ? this.#loader.error : undefined;
 
     return html`
-      ${this.#isLoading
+      ${waiting || this.#isLoading
         ? html`<div class="load-panel" part="load-panel" aria-hidden="true">
           <span class="load-spinner" aria-hidden="true"></span><span>${translation.loading}</span>
         </div>`
@@ -7008,6 +7864,7 @@ declare global {
   }
 
   interface HTMLElementEventMap {
+    'u-grid-state-change': CustomEvent<GridStateChangeEventDetail>;
     'u-grid-sorting': CustomEvent<GridSortEventDetail>;
     'u-grid-sort-change': CustomEvent<GridSortEventDetail>;
     'u-grid-column-resize': CustomEvent<GridColumnResizeEventDetail>;

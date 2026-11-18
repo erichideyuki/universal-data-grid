@@ -102,6 +102,13 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   @property() path = '';
 
   /**
+   * Stable id of the column in the grid state (`getState`, `stateStorage`)
+   * and in string column references (`summary` items look it up before
+   * `path`). Default: `path`.
+   */
+  @property() name = '';
+
+  /**
    * Builds the cell content (property only): a Lit `TemplateResult`
    * (recommended), a string (text) or an `HTMLElement` (placed in the grid's
    * light DOM). `null`, `undefined` and Lit's `nothing` render an empty cell.

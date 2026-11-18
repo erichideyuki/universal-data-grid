@@ -836,6 +836,98 @@
               "attribute": "language"
             },
             {
+              "kind": "field",
+              "name": "stateStorage",
+              "type": {
+                "text": "'local' | 'session' | GridStateStorage | null"
+              },
+              "description": "Saves and restores the user state (see `getState`): `local` / `session`\n(`localStorage` / `sessionStorage`, attribute `state-storage`, needs\n`state-storage-key`) or an object with `load()` and `save()` (property\nonly). Read when the grid connects (and again when this or the key\nchanges), before the first render of data; while an asynchronous `load()`\nruns the grid shows the load panel and no rows. Saved\n`state-change-delay` ms after each change, and on disconnect or\n`pagehide` when a save is pending. A `setState()` before connecting skips\nthe read. Unreadable or invalid saved states are ignored with a console\nwarning.",
+              "default": "null",
+              "attribute": "state-storage"
+            },
+            {
+              "kind": "field",
+              "name": "stateStorageKey",
+              "type": {
+                "text": "string"
+              },
+              "description": "Key of the state in `localStorage` / `sessionStorage` (required by `state-storage=\"local|session\"`).",
+              "attribute": "state-storage-key"
+            },
+            {
+              "kind": "field",
+              "name": "stateChangeDelay",
+              "default": "500",
+              "description": "Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`.",
+              "attribute": "state-change-delay",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "getState",
+              "return": {
+                "type": {
+                  "text": "GridState"
+                }
+              },
+              "description": "The user state (a new object, JSON serializable): column order, width,\nvisibility, fixing, grouping and sorting, the filter and the search text,\ngroup expansion, the page, and — with `keyExpr` and string/number keys —\nthe selection and the expanded detail rows. Never row data. Columns are\nidentified by `name` (or `path`); columns without either are left out."
+            },
+            {
+              "kind": "method",
+              "name": "setState",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "state",
+                  "type": {
+                    "text": "GridState"
+                  }
+                },
+                {
+                  "name": "options",
+                  "default": "{}",
+                  "type": {
+                    "text": "{ partial?: boolean }"
+                  }
+                }
+              ],
+              "description": "Applies a state (from `getState`, your storage or built by hand). It is\nvalidated first: an invalid state is ignored with a console warning; an\nolder version is migrated, an unknown one ignored. Without `partial`,\nevery top-level key missing from `state` goes back to the initial value\n(the column definitions and the properties the host set before the grid\nconnected); with `partial: true` only the keys present change. A\n`columns` list sets the whole layout: columns missing from it go back to\ntheir definition, at the end in definition order; unknown names are\nignored. Fires none of the per-feature events (like the setters), only\n`u-grid-state-change`. Never moves the focus nor announces anything: when\na user gesture triggers it, announce the result yourself."
+            },
+            {
+              "kind": "method",
+              "name": "resetState",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Puts the state back to the initial one (`setState` with an empty state, without `partial`)."
+            },
+            {
+              "kind": "method",
+              "name": "dispatchEvent",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "Event"
+                  }
+                }
+              ],
+              "description": "Os eventos de mudança dizem a origem (`source`) da rajada do estado."
+            },
+            {
               "kind": "method",
               "name": "sortColumn",
               "return": {
@@ -1494,6 +1586,13 @@
           ],
           "events": [
             {
+              "name": "u-grid-state-change",
+              "type": {
+                "text": "CustomEvent<GridStateChangeEventDetail>"
+              },
+              "description": "`state-change-delay` ms after the last change of the user state (`getState`): user gesture, method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back)."
+            },
+            {
               "name": "u-grid-page-change",
               "type": {
                 "text": "CustomEvent<GridPageChangeEventDetail>"
@@ -1914,6 +2013,29 @@
               },
               "description": "Language used to resolve the built-in translations. When not set on the\ncomponent it is resolved, in order, from the Lit context, the document\n(`<html lang>` / content-language meta) and finally the browser.",
               "fieldName": "language"
+            },
+            {
+              "name": "state-storage",
+              "type": {
+                "text": "'local' | 'session' | GridStateStorage | null"
+              },
+              "description": "Saves and restores the user state (see `getState`): `local` / `session`\n(`localStorage` / `sessionStorage`, attribute `state-storage`, needs\n`state-storage-key`) or an object with `load()` and `save()` (property\nonly). Read when the grid connects (and again when this or the key\nchanges), before the first render of data; while an asynchronous `load()`\nruns the grid shows the load panel and no rows. Saved\n`state-change-delay` ms after each change, and on disconnect or\n`pagehide` when a save is pending. A `setState()` before connecting skips\nthe read. Unreadable or invalid saved states are ignored with a console\nwarning.",
+              "default": "null",
+              "fieldName": "stateStorage"
+            },
+            {
+              "name": "state-storage-key",
+              "type": {
+                "text": "string"
+              },
+              "description": "Key of the state in `localStorage` / `sessionStorage` (required by `state-storage=\"local|session\"`).",
+              "fieldName": "stateStorageKey"
+            },
+            {
+              "name": "state-change-delay",
+              "default": "STATE_CHANGE_DELAY",
+              "description": "Delay (ms) after the last change of the state before `u-grid-state-change` fires and the state is saved. Default `500`.",
+              "fieldName": "stateChangeDelay"
             },
             {
               "name": "rowheight",
@@ -2340,6 +2462,16 @@
             },
             {
               "kind": "field",
+              "name": "name",
+              "type": {
+                "text": "string"
+              },
+              "default": "''",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`.",
+              "attribute": "name"
+            },
+            {
+              "kind": "field",
               "name": "renderer",
               "type": {
                 "text": "GridCellRenderer | null"
@@ -2635,6 +2767,15 @@
               "default": "''",
               "description": "Dot path of the cell value in the row item (`\"address.city\"`).",
               "fieldName": "path"
+            },
+            {
+              "name": "name",
+              "type": {
+                "text": "string"
+              },
+              "default": "''",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`.",
+              "fieldName": "name"
             },
             {
               "name": "type",

@@ -158,5 +158,15 @@
     "replaceItemsMs": 956.1,
     "domNodes": 619,
     "gridHeapMiB": 14.3
+  },
+  "state-1m": {
+    "restoreFirstRenderMs": 1033.8,
+    "getStateMs": 0,
+    "setStateMs": 504.8,
+    "restored.scrollP95Ms": 11.4,
+    "restored.scrollWorstMs": 13.2,
+    "restored.jumpP95Ms": 32.5,
+    "restored.jumpWorstMs": 33.2,
+    "gridHeapMiB": 10.4
   }
 }
