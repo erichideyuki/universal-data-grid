@@ -23,7 +23,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Filtering](#filtering) (filter row, search panel, header filter)
 - [Grouping](#grouping)
 - [Summaries](#summaries) (totals and group summaries)
-- [Selection & keyboard](#selection--keyboard) (row selection, keyboard navigation, accessibility)
+- [Selection & keyboard](#selection--keyboard) (row selection, cell ranges, keyboard navigation, accessibility)
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
@@ -64,8 +64,10 @@ React, Vue, Svelte — or with no framework at all.
 - **Column reordering** — drag column headers to reorder them, or drag them in/out of the grouping
   area (or use the keyboard: `Alt+Shift+←/→`, `Ctrl+G`).
 - **Selection & keyboard** — single or multiple row selection by key, with checkboxes and "select
-  all"; full keyboard navigation (WAI-ARIA APG grid pattern) that survives virtualization; complete
-  grid ARIA, checked with `axe-core`.
+  all"; spreadsheet-like cell ranges (drag, Shift+click, Shift+arrows, several ranges with Ctrl,
+  across fixed columns, bands and millions of virtualized rows) with copy, paste into editable
+  cells and a count/sum/average bar; full keyboard navigation (WAI-ARIA APG grid pattern) that
+  survives virtualization; complete grid ARIA, checked with `axe-core`.
 - **Data sources & paging** — row keys (`keyExpr`), a `dataSource` whose server can filter, sort,
   group, summarize and page (only the visible blocks load: millions of rows with skeleton rows), an
   accessible pager, infinite scrolling, a load panel, an error bar with "Retry", and incremental
@@ -776,6 +778,69 @@ grid.selectedKeys = [item2];                     // set without firing an event
 `{ selectedKeys, previous, added, removed, source: 'user' | 'api' }`. Switching
 `selection-mode` from `multiple` to `single` keeps only the last key (and fires with `source: 'api'`).
 
+### Cell ranges
+
+```html
+<u-grid cell-selection-mode="multiple" show-cell-range-summary></u-grid>
+```
+
+- **`cell-selection-mode`** — `none` (default), `single` (one rectangular range at a time — not one
+  cell) or `multiple` (several ranges).
+- **Mouse / pen** — drag over data cells to select a rectangle (the grid scrolls when the pointer
+  reaches an edge, also through virtualized rows and columns); `Shift`+click extends the active range
+  from its anchor; `Ctrl`/`⌘`+click and `Ctrl`/`⌘`+drag add a range (`multiple`). A plain click or
+  an arrow key clears the ranges. Touch scrolls (no drag selection).
+- **Keyboard** — `Shift`+arrows, `Ctrl`+`Shift`+arrows (to the edge), `Shift`+`Home`/`End`,
+  `Ctrl`+`Shift`+`Home`/`End`, `Shift`+`PageUp`/`PageDown` extend the active range; `Ctrl`+`A`
+  selects every data cell; `Shift`+`F8` (Mac: `Fn`+`Shift`+`F8`) turns "add to selection" on and
+  off: arrows move without clearing and the next `Shift`+arrow starts another range (`Esc`,
+  `Shift`+`F8` again or leaving the grid turns it off; "Adding to selection" is shown below the
+  grid). `Shift`+`↓` then `Shift`+`↑` leaves a single cell, the way to add a one-cell range.
+- **Focus** — the active cell is always the corner that moves (the anchor stays), so screen
+  readers read the new cell and its "selected" state; `Enter`/`F2` edit that cell. After `Ctrl`+`A`
+  the active cell does not move, and the next `Shift`+arrow starts a new range from it.
+- **What is selected** — data cells only: group, detail, footer and totals rows and the checkbox,
+  detail toggle and row buttons columns are never part of a range (a range over a group row
+  skips it). Fixed columns, the middle columns and bands form one flat order, as on screen. A
+  range is a rectangle of indices: selecting a million rows × 300 columns costs nothing per cell,
+  and only the rendered cells get `aria-selected="true"` and `::part(cell selected)`.
+- **Cleared** when the rows or columns change: sorting, filtering, grouping, expanding/collapsing,
+  paging, a new `dataSource`, adding/removing a row, moving/hiding/fixing a column, or new `items`
+  with another number of rows (the same number — e.g. the `items` of `u-grid-save` — keeps them).
+  Scrolling keeps them.
+- **With row selection on too** (`selection-mode`), clicks, drags, `Shift`/`Ctrl` and `Ctrl`+`A` on
+  data cells are for cells and never select rows; rows are selected with the checkbox column (its
+  clicks, `Shift`+`↑`/`↓` and `Ctrl`+`A` work as before) and with `Space`/`Shift`+`Space` on any
+  cell. Use `show-checkboxes` in that case (the grid warns once in the console without it).
+- **Copy** — `Ctrl`/`⌘`+`C` copies the ranges (else the selected rows, else the cell); see
+  [Clipboard](#clipboard-ctrlc). **Paste** — `Ctrl`/`⌘`+`V` with `clipboard-mode="copy-paste"`.
+- **Summary** — `show-cell-range-summary` shows a bar below the grid with the count of non-empty
+  cells and, when there are numbers, their sum and average (by value, not text), formatted in the
+  grid's language. It updates 500 ms after the selection stops changing and is a polite status
+  region.
+
+```ts
+grid.selectCellRange({ startRowIndex: 0, endRowIndex: 9, startColumn: 'name', endColumn: 'amount' });
+grid.selectCellRange({ startRowIndex: 20, endRowIndex: 20, startColumn: 'amount', endColumn: 'amount' }, { append: true });
+grid.getCellRanges();                 // [{ startRowIndex, endRowIndex, startColumn, endColumn }, …] (frozen)
+grid.clearCellRanges();
+await grid.getCellRangeSummary();     // { count, numericCount, sum, avg, complete }
+grid.getRowIndex(rowKey);             // index of a data row in the displayed body (-1 if not shown)
+grid.getRowKey(rowIndex);             // key of the data row at an index (undefined for group rows…)
+```
+
+Row indices are positions in the displayed body (the current page with `paging`), counting group,
+detail and footer rows; the header, the filter row and pinned rows do not count. `start*` is the
+anchor and `end*` the corner that moves (it may come first). `getCellRangeSummary` reads the ranges at
+the call and computes in slices (millions of cells do not freeze the page); it rejects only through
+`signal` (with its `reason`, an `AbortError` by default); with a remote data
+source, rows not loaded yet are left out and `complete` is `false`.
+
+`u-grid-cell-range-change` (`{ ranges, previous, source }`) fires after every change: a gesture (a
+drag fires once, on release), a method, or the grid clearing the ranges because rows or columns
+changed — then `source` is the cause: `user` for a gesture (sorting by clicking a header), `api` for
+methods and for setters (`items`, `columns`, `dataSource`, `cell-selection-mode`…).
+
 ### Keyboard navigation
 
 The table is a single `Tab` stop (roving `tabindex`, as in the WAI-ARIA APG "Data Grid" pattern):
@@ -792,9 +857,12 @@ column chooser button are separate stops in the bar above.
 | `Tab` / `Shift`+`Tab` inside a cell | Cycle through the interactive content of that cell. |
 | `Esc` | Back from the content to the cell. |
 | `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
-| `Shift`+`↑`/`↓`, `Shift`+`Space` | Extend the selection (`multiple`). |
-| `Ctrl`+`A` | Select all (`multiple`). |
-| `Ctrl`+`C` / `⌘`+`C` | Copy the selected rows, or the focused data cell (announced). See [Clipboard](#clipboard-ctrlc). |
+| `Shift`+`↑`/`↓`, `Shift`+`Space` | Extend the selection (`multiple`). With `cell-selection-mode`, `Shift`+arrows on data cells extend the cell range instead (on the checkbox column they still extend the rows). |
+| `Ctrl`+`Shift`+arrows, `Shift`+`Home`/`End`, `Ctrl`+`Shift`+`Home`/`End`, `Shift`+`PageUp`/`PageDown` | Extend the cell range to the edge, the row's first/last column, the first/last cell, one page (`cell-selection-mode`). See [Cell ranges](#cell-ranges). |
+| `Ctrl`+`A` | Select all (`multiple`). With `cell-selection-mode`, every data cell (on the checkbox column: every row). |
+| `Shift`+`F8` | "Add to selection" on/off (`cell-selection-mode="multiple"`): arrows move without clearing, the next `Shift`+arrow starts another range; `Esc` turns it off. |
+| `Ctrl`+`C` / `⌘`+`C` | Copy the cell ranges, else the selected rows, else the focused data cell (announced). See [Clipboard](#clipboard-ctrlc). |
+| `Ctrl`+`V` / `⌘`+`V` | Paste into editable cells (`clipboard-mode="copy-paste"`). |
 | `→` / `←` on a group row | Expand / collapse (`←` on a collapsed group goes to its parent group); `Enter` toggles. |
 | `Enter` / `Space` on a header | Sort (`Shift` adds the column), as with the mouse. |
 | `Alt`+`←`/`→` on a header | Resize the column. |
@@ -865,7 +933,8 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 
 - `role="grid"` (`role="treegrid"` while grouped), with `aria-rowcount`/`aria-colcount` for the whole
   data set (not just the rendered rows), the real `aria-rowindex`/`aria-colindex` of every cell,
-  `aria-multiselectable` in `multiple` mode, `aria-selected` on data rows, `aria-expanded` on group
+  `aria-multiselectable` in `multiple` mode or with cell ranges, `aria-selected` on data rows (row
+  selection) and `aria-selected="true"` on the rendered data cells of a cell range, `aria-expanded` on group
   rows and, while grouped, `aria-level` on every row (data rows and group footers one level below
   their group). `aria-busy` is set while a large data set is filtered in slices.
 - Checkboxes are `role="checkbox"` with `aria-checked` (`mixed` in "select all").
@@ -887,6 +956,11 @@ reach it. "Select all" selects the rows that pass the filter and the search.
   reader: the sort priority (only the first sorted column has `aria-sort`, as ARIA asks), pinned and
   filtered. A filtered column's funnel shows a dot, not only a color.
 - Selected rows show a bar at the start (`--u-grid-selected-row-indicator-*`), not only a tint.
+- Cell ranges show an outline around each range besides the tint (`--u-grid-cell-range-border-*`,
+  `Highlight` in forced colors); the active cell inside a range keeps its focus ring, separated from
+  the outline by a light band. The size of the range is announced 500 ms after the selection stops
+  changing ("Selected cells: 6. Rows: 3, columns: 2"), only the last one; nothing when it is cleared.
+  Dragging has a keyboard alternative (`Shift`+arrows, `Shift`+`F8`) and `Shift`+click.
 - The browser tests run `axe-core` with zero violations and automated keyboard scripts. The audit is
   in `.specs/17-accessibility.md`.
 
@@ -1275,6 +1349,14 @@ formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `she
 
 ### Clipboard (Ctrl+C)
 
+With [cell ranges](#cell-ranges) selected and the focus on a data cell, **Ctrl+C** copies the ranges,
+stacked vertically in the order they were made (as text and HTML, with the same formula protection
+below); `detail.ranges` lists them, `items` are their distinct rows and `columns` the union of their
+columns, both in the displayed order. Up to 200,000 cells (the copy event is synchronous): above that,
+or with rows of a remote source not loaded yet, nothing is copied and the reason is announced — use
+[`getExportData`](#export-data-excel-pdf-anything) for more. On the checkbox column, Ctrl+C copies the
+selected rows. Without ranges:
+
 With the focus on a cell, **Ctrl+C** (⌘C, or Copy in the browser menu) copies the selected rows in
 the current order — or, without a selection (or when no selected row passes the filter), the
 focused data cell — as tab separated text (`text/plain`) and an HTML table (`text/html`, escaped;
@@ -1288,7 +1370,7 @@ selected with the mouse inside the grid, and copies from the filter row, the sea
 editable control inside a cell, are left to the browser.
 
 `clipboard-mode="none"` turns it off. The cancelable `u-grid-copying` event fires before the grid
-writes; `detail` is `{ items, columns, text, html, clipboardData, source }` (`source` is `'api'`
+writes; `detail` is `{ items, columns, ranges, text, html, clipboardData, source }` (`source` is `'api'`
 from [`copySelection()`](#copy-by-api)). After `preventDefault()` the
 grid writes nothing and announces nothing — write your own content in `clipboardData`
 (synchronously) and announce the copy in your own live region:
@@ -1302,6 +1384,34 @@ grid.addEventListener('u-grid-copying', event => {
 
 The exact markup of `detail.html` may gain attributes in minor versions — don't compare it as a
 fixed string.
+
+### Paste (Ctrl+V)
+
+With `clipboard-mode="copy-paste"`, editing on (`allow-editing`) and the focus on a data cell,
+**Ctrl+V** pastes tab separated text (what spreadsheets and the grid's own copy write) into the
+editable cells: from the top left of the active [cell range](#cell-ranges), or of the active cell.
+A single value fills the whole range; a range that is an exact multiple of the pasted block repeats
+it; otherwise the block is pasted from the corner and cut at the grid's edges (no rows are added).
+Read-only cells, rows marked for removal and rows not loaded are skipped (announced). Values are
+converted by the column's type in the grid's language (formatted numbers, currencies, `%`, dates)
+and the `'` the copy puts before formulas is removed. They go through [editing](#editing): validated
+by the rules, pending in `batch` mode, saved at once (one `u-grid-saving`) in `cell` and `row`
+modes — invalid ones stay pending and marked. Up to 200,000 cells. Paste in an open editor is the
+editor's.
+
+The cancelable `u-grid-pasting` event fires before anything changes; `detail` is
+`{ text, values, range, clipboardData }`. `values` (one array of strings per row) belongs to the
+grid: change the strings to transform what is pasted. `range` is the area that will be written; it
+is not recomputed, so edited `values` are tiled into it. After
+`preventDefault()` the grid changes nothing and the native paste goes on:
+
+```js
+grid.addEventListener('u-grid-pasting', event => {
+  for (const row of event.detail.values) {
+    row.forEach((text, i) => row[i] = text.trim());
+  }
+});
+```
 
 ---
 
@@ -1970,6 +2080,20 @@ interface GridI18n {
   rowsSelectedAnnouncement: string; // after a bulk selection: "Selected rows: {count}"
   rowsCopiedAnnouncement: string;   // after Ctrl+C: "Copied rows: {count}"
   cellCopiedAnnouncement: string;   // after Ctrl+C on a cell: "Cell copied"
+  cellRangeSelectedAnnouncement: string;  // "Selected cells: {cells}. Rows: {rows}, columns: {columns}"
+  cellRangesSelectedAnnouncement: string; // "Selected ranges: {count}. Cells: {cells}"
+  addToSelectionOnAnnouncement: string;   // Shift+F8 on: "Adding to selection. Shift+F8 or Esc stops."
+  addToSelectionOffAnnouncement: string;  // "Stopped adding to selection"
+  addingToSelection: string;        // visible text while Shift+F8 is on: "Adding to selection"
+  cellsCopiedAnnouncement: string;  // "Copied cells: {count}"
+  cellsPastedAnnouncement: string;  // "Pasted cells: {count}"
+  cellsSkippedAnnouncement: string; // appended when cells were skipped: "Skipped: {count}"
+  copyLimitExceededAnnouncement: string;  // "Too many cells to copy: {count}. Limit: {max}"
+  pasteLimitExceededAnnouncement: string; // "Too many cells to paste: {count}. Limit: {max}"
+  rowsNotLoadedAnnouncement: string; // copy refused: rows of a remote source not loaded yet
+  cellRangeSummaryLabel: string;    // name of the summary bar: "Selection summary"
+  extendSelectionToCell: string;    // cell context menu: "Extend selection to this cell"
+  addCellToSelection: string;       // cell context menu: "Add cell to selection"
   columnMovedAnnouncement: string;  // "{column} moved to position {position} of {count}"
   groupedAnnouncement: string;      // "Grouped by {column}"
   ungroupedAnnouncement: string;    // "Ungrouped {column}"
@@ -2028,8 +2152,8 @@ interface GridI18n {
 }
 ```
 
-`{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}` and
-`{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
+`{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}`,
+`{cells}`, `{rows}`, `{columns}`, `{max}` and `{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
 `sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` and `groupPanelMenu` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
@@ -2090,7 +2214,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `pageIndex`        | `page-index`          | `number`  | `0`     | Current page (0-based, clamped). Setting it fires no event. |
 | `pageSizeOptions`  | `page-size-options`   | `readonly number[]` | `[10, 20, 50, 100]` | Page sizes of the pager (attribute: `"10, 20, 50"`; empty hides the selector). |
 | `scrollMode`       | `scroll-mode`         | `'virtual' \| 'infinite'` | `'virtual'` | Infinite scrolling for a remote source. |
-| `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'none'` | `'copy'` | Ctrl+C copies the selected rows or the focused cell. See [Export & clipboard](#export--clipboard). |
+| `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'copy-paste' \| 'none'` | `'copy'` | Ctrl+C copies the cell ranges, the selected rows or the focused cell; `copy-paste` also pastes with Ctrl+V. See [Export & clipboard](#export--clipboard). |
+| `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. See [Cell ranges](#cell-ranges). |
+| `showCellRangeSummary` | `show-cell-range-summary` | `boolean` | `false` | Bar with the count, sum and average of the selected cells. |
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
@@ -2180,6 +2306,8 @@ tint derive from it.
 | `--u-grid-invalid-cell-color` | error token | Border and message accent of cells with a validation error. |
 | `--u-grid-added-row-background-color` | primary token at 6% | Background of new, unsaved rows. |
 | `--u-grid-removed-row-opacity` | `0.7` | Opacity of rows marked for removal (their text is also struck through). |
+| `--u-grid-selected-cell-background-color` | primary token at 14% | Background of cells in a cell range. |
+| `--u-grid-cell-range-border-color` / `--u-grid-cell-range-border-width` | primary token / `2px` | Outline around each cell range (keep 3:1 contrast with the background; `Highlight` in forced colors). |
 
 ```css
 u-grid {
@@ -2200,7 +2328,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `row` | Every body row (`<tr>`; not the header nor the totals footer). |
 | `group-row` | Group header rows. |
 | `odd` / `even` | Data rows, by parity (the first data row is `odd`; useful with striping). |
-| `selected` | Selected data rows. |
+| `selected` | Selected data rows (with `row`) and data cells in a cell range (with `cell`): use `row selected` / `cell selected`. |
 | `cell` | Data cells (`<td>`). |
 | `selection-cell` | Cells and header of the checkbox column. |
 | `selection-checkbox` | The selection checkboxes (rows and "select all"). |
@@ -2253,6 +2381,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `command-cell` / `command-button` | Cells and header of the row buttons column / the row buttons (edit, save, cancel, delete, restore). |
 | `add-row-button`, `save-button`, `discard-button` | The toolbar buttons of editing. |
 | `remove-dialog` | The delete confirmation dialog. |
+| `cell-range-summary` | The bar below the grid with the cell range summary and the "Adding to selection" text. |
 
 ```css
 u-grid::part(group-row) { font-weight: 600; }
@@ -2371,7 +2500,11 @@ CSS property and part for IDEs and tooling.
 | `refresh()` | Reload the data source (or recompute local data); resolves when done. |
 | `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
 | `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
-| `focusCell(rowKey, column?)` | Scroll to a cell and focus it; `false` if the row or column is not shown (groups are not expanded). |
+| `focusCell(rowKey, column?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded). |
+| `selectCellRange(range, { append })` | Select a range of data cells (`append`: add it, `multiple` only); `false` (nothing changes) when the mode is `none`, a column is not a visible data column, a row is not a data row of the displayed body, or the range is a single cell without `append` and another range. See [Cell ranges](#cell-ranges). |
+| `getCellRanges()` / `clearCellRanges()` | The cell ranges (copies, frozen) / clear them. |
+| `getCellRangeSummary({ signal })` | `Promise<GridCellRangeSummary>`: count, sum and average of the selected cells. |
+| `getRowIndex(rowKey)` / `getRowKey(rowIndex)` | Index of a data row in the displayed body / key of the data row at an index. |
 | `focus(options?)` | Focus the active cell. |
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
 | `exportCsv(options?)` | `Promise<Blob>`: CSV of what the user sees. |
@@ -2381,7 +2514,7 @@ CSS property and part for IDEs and tooling.
 | `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
 | `setState(state, { partial })` | Validate and apply a state; without `partial`, missing keys go back to the initial value. |
 | `resetState()` | Put the state back to the initial one (column definitions and the properties set before connecting). |
-| `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row) / a row (`row` mode only). See [Editing](#editing). |
+| `editCell(rowKey, column)` / `editRow(rowKey)` | Open a cell editor (row mode: the row; `column`: definition, `name` or `path`) / a row (`row` mode only). See [Editing](#editing). |
 | `addRow(data?)` | Add a row at the top of the visible rows; returns its provisional key (`null` when not added). |
 | `removeRow(rowKey)` / `restoreRow(rowKey)` | Delete a row (saved at once; `batch`: marked) / restore a marked row. |
 | `saveChanges()` / `discardChanges()` | Save every pending change (`Promise<boolean>`) / drop them. |
@@ -2404,12 +2537,14 @@ All bubble and are `composed`.
 | `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed. |
-| `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`; not the `focusedRowKey` setter) | The active cell changed. |
+| `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`, `selectCellRange`; not the `focusedRowKey` setter) | The active cell changed. |
 | `u-grid-loading` | `GridLoadingEventDetail` (`{ options }`) | — (every load: scroll, sort, filter, `refresh()`…) | Before each `dataSource.load` call. Cancelable (the call is skipped). |
 | `u-grid-load` | `GridLoadEventDetail` (`{ options, result }`) | — (every load) | A `load` call resolved (aborted calls fire nothing). |
 | `u-grid-load-error` | `GridLoadErrorEventDetail` (`{ options, error }`) | — (every load) | A `load` call rejected; the error bar is shown. |
 | `u-grid-page-change` | `GridPageChangeEventDetail` | corrections only (not the setters) | The page or page size changed (pager, `PageUp`/`PageDown`, new filter, clamp). |
-| `u-grid-copying` | `GridCopyEventDetail` | `copySelection()` | Before Ctrl+C, the row menu "Copy" items or `copySelection()` write to the clipboard. Cancelable. |
+| `u-grid-copying` | `GridCopyEventDetail` | `copySelection()` | Before Ctrl+C, the menu "Copy" items or `copySelection()` write to the clipboard. Cancelable. |
+| `u-grid-pasting` | `GridPasteEventDetail` | no | Before Ctrl+V (or the cell menu "Paste") pastes into editable cells. Cancelable. |
+| `u-grid-cell-range-change` | `GridCellRangeChangeEventDetail` | yes (also when the grid clears the ranges) | The cell ranges changed (a drag fires once, on release). |
 | `u-grid-context-menu-opening` | `GridContextMenuOpeningEventDetail` | `openContextMenu()` | Before a context menu opens; change `menuItems` in place. Cancelable. |
 | `u-grid-exporting` | `GridExportingEventDetail` (`{ format, selectedOnly }`) | no (UI only) | Before an export from the toolbar or the row menu. Cancelable. |
 | `u-grid-export` | `GridExportEventDetail` | no (UI only) | That export finished. |
@@ -2513,8 +2648,14 @@ import {
   type GridExportDataRow,
   type GridExportGroupRow,
   type GridExportSummaryRow,
-  type GridClipboardMode,   // 'copy' | 'none'
-  type GridCopyEventDetail, // { items, columns, text, html, clipboardData, source }
+  type GridClipboardMode,   // 'copy' | 'copy-paste' | 'none'
+  type GridCopyEventDetail, // { items, columns, ranges, text, html, clipboardData, source }
+  type GridPasteEventDetail, // { text, values, range, clipboardData }
+  type GridCellSelectionMode, // 'none' | 'single' | 'multiple'
+  type GridCellRange,       // { startRowIndex, endRowIndex, startColumn, endColumn } (frozen)
+  type GridCellRangeInit,   // the same with columns as GridColumnRef
+  type GridCellRangeSummary, // { count, numericCount, sum, avg, complete }
+  type GridCellRangeChangeEventDetail, // { ranges, previous, source }
   GRID_DEFAULT_TOOLBAR_ITEMS, // the automatic toolbar, in order
   type GridToolbarItemName, // 'groupPanel' | 'searchPanel' | 'columnChooserButton' | 'exportButton' | 'addRowButton' | 'saveButton' | 'discardButton'
   type GridToolbarItem,     // GridBuiltInToolbarItem | GridHostToolbarItem

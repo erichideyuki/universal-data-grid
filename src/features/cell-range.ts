@@ -45,29 +45,29 @@ export interface GridCellRangeInit<TItem = any> {
 /** Result of `getCellRangeSummary`. */
 export interface GridCellRangeSummary {
   /** Non-empty selected cells (each cell once, even under overlapping ranges). */
-  count: number;
+  readonly count: number;
   /** Selected cells with a numeric value. */
-  numericCount: number;
+  readonly numericCount: number;
   /** Sum of the numeric values; `null` without numbers. */
-  sum: number | null;
+  readonly sum: number | null;
   /** Average of the numeric values; `null` without numbers. */
-  avg: number | null;
+  readonly avg: number | null;
   /** `false` when rows not loaded yet (remote data source) were left out. */
-  complete: boolean;
+  readonly complete: boolean;
 }
 
 /** `detail` of `u-grid-cell-range-change`. */
 export interface GridCellRangeChangeEventDetail<TItem = any> {
   /** Ranges after the change, in creation order (the last one is the active range). */
-  ranges: readonly GridCellRange<TItem>[];
+  readonly ranges: readonly GridCellRange<TItem>[];
   /** Ranges before the change. */
-  previous: readonly GridCellRange<TItem>[];
+  readonly previous: readonly GridCellRange<TItem>[];
   /**
    * `user` (gesture, or a gesture that cleared the ranges — sorting by the
    * header…) or `api` (methods and setters such as `items`, `columns`,
    * `cellSelectionMode`).
    */
-  source: GridChangeSource;
+  readonly source: GridChangeSource;
 }
 
 /** `detail` of `u-grid-pasting` (user only: Ctrl/Cmd+V). */
@@ -77,7 +77,8 @@ export interface GridPasteEventDetail<TItem = any> {
   /**
    * The parsed cells, one array per row, before tiling. Owned by the grid:
    * change the strings in place (or rows' length) to transform what is
-   * pasted; reassigning `values` is ignored.
+   * pasted; reassigning `values` is ignored. `range` is not recomputed:
+   * edited values are tiled into it.
    */
   readonly values: string[][];
   /** Area that will be written (after tiling and clipping at the grid edges). */
@@ -108,6 +109,7 @@ export const summarizeRange = async (
   valueOf: (item: unknown, column: GridColumnDef) => unknown,
   signal?: AbortSignal,
 ): Promise<GridCellRangeSummary> => {
+  signal?.throwIfAborted();
   const slicer = createSlicer();
   let count = 0;
   let numericCount = 0;
@@ -127,11 +129,18 @@ export const summarizeRange = async (
       }
     }
 
-    for (let row = band.top; row <= band.bottom; row++) {
-      const pause = slicer.tick();
+    // Uma unidade de trabalho a cada ~8 células: com 300 colunas o relógio é
+    // lido a cada poucas linhas (fatias curtas), com 3 colunas a cada 256.
+    const weight = Math.max(1, Math.ceil(columns.length / 8));
 
-      if (pause) {
-        await pause;
+    for (let row = band.top; row <= band.bottom; row++) {
+      for (let unit = 0; unit < weight; unit++) {
+        const pause = slicer.tick();
+
+        if (pause) {
+          await pause;
+          signal?.throwIfAborted();
+        }
       }
 
       signal?.throwIfAborted();

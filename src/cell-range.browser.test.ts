@@ -6,6 +6,7 @@
  */
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import { commands } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type {
@@ -17,7 +18,19 @@ import type {
 } from './grid.js';
 import { cleanup, createGrid, dataRows, settle } from './test/fixture.js';
 
-afterEach(cleanup);
+declare module 'vitest/browser' {
+  interface BrowserCommands {
+    emulateMedia: (options: {
+      forcedColors?: 'active' | 'none' | null;
+      reducedMotion?: 'reduce' | 'no-preference' | null;
+    }) => Promise<void>;
+  }
+}
+
+afterEach(async () => {
+  cleanup();
+  await commands.emulateMedia({ forcedColors: null });
+});
 
 interface Person {
   name: string;
@@ -303,7 +316,7 @@ describe('copiar e colar', () => {
     const copied = copyFrom(cell(grid, 3, 0));
 
     expect(copied.prevented).toBe(true);
-    expect(copied.text).toBe(`Duda\tBH\r\n'=1+1\tNatal\r\n30`);
+    expect(copied.text).toBe('Duda\tBH\r\n\'=1+1\tNatal\r\n30');
     expect(copied.html).toContain('mso-number-format');
     expect(detail?.ranges.length).toBe(2);
     expect(detail?.items).toEqual([grid.items[0], grid.items[3], grid.items[4]]);
@@ -508,5 +521,36 @@ describe('acessibilidade', () => {
     expect(active.matches(':focus-visible')).toBe(true);
     expect(style.boxShadow).toContain('255, 255, 255');
     expect(getComputedStyle(active, '::before').insetBlockStart).toBe('4px');
+  });
+
+  it('forced-colors: contorno Highlight (HighlightText na linha selecionada), anel CanvasText', async () => {
+    const grid = await create(g => {
+      g.selectionMode = 'multiple';
+      g.showCheckboxes = true;
+    });
+    grid.selectRows([grid.items[0]]);
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 1, startColumn: 'name', endColumn: 'city' });
+    await settle(grid);
+    await commands.emulateMedia({ forcedColors: 'active' });
+
+    const probe = document.createElement('span');
+    document.body.append(probe);
+
+    const systemColor = (color: string): string => {
+      probe.style.color = color;
+      return getComputedStyle(probe).color;
+    };
+
+    const plain = getComputedStyle(cell(grid, 1, 0), '::before');
+    const selectedRow = getComputedStyle(cell(grid, 0, 0), '::before');
+
+    expect(plain.borderTopStyle === 'none' ? plain.borderBottomColor : plain.borderInlineStartColor).toBe(systemColor('Highlight'));
+    expect(selectedRow.borderInlineStartColor).toBe(systemColor('HighlightText'));
+
+    cell(grid, 1, 1).focus();
+    await press(grid, 'ArrowUp', { shiftKey: true });
+    const active = focused(grid)!;
+    expect(getComputedStyle(active).outlineColor).toBe(systemColor('CanvasText'));
+    probe.remove();
   });
 });

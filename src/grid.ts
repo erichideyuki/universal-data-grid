@@ -1380,12 +1380,16 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridLoadErrorEventDetail>} u-grid-load-error - A `dataSource.load` call rejected (not fired for aborted calls); the grid shows the error bar with "Retry".
  * @fires {CustomEvent<GridPageChangeEventDetail>} u-grid-page-change - The page or page size changed: pager, PageUp/PageDown, a filter gesture (back to the first page)
  * or a clamp after the rows shrank (`source` of the change that caused it). Not the `pageIndex`/`pageSize` setters.
- * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C, the row menu Copy items or `copySelection()` write the selected rows (or the focused cell)
+ * @fires {CustomEvent<GridCopyEventDetail>} u-grid-copying - Before Ctrl/Cmd+C, the menu Copy items or `copySelection()` write the cell ranges, the selected rows (or the focused cell)
  * to the clipboard (`source: 'user' | 'api'`). Cancelable.
+ * @fires {CustomEvent<GridCellRangeChangeEventDetail>} u-grid-cell-range-change - The cell ranges changed: user gesture (once, on release, for a drag), `selectCellRange`/`clearCellRanges`,
+ * or the grid cleared them because rows or columns changed (`source` of the cause: a gesture, or `api` for methods and setters such as `items`, `columns`, `cellSelectionMode`).
+ * @fires {CustomEvent<GridPasteEventDetail>} u-grid-pasting - Before Ctrl/Cmd+V pastes into editable cells (`clipboard-mode="copy-paste"`; user only).
+ * Cancelable: nothing changes and the native paste goes on.
  * @fires {CustomEvent<GridRowExpansionChangeEventDetail>} u-grid-row-expansion-change - A detail row was expanded or collapsed (toggle, keyboard, `expandRow`/`collapseRow`; not `autoExpandRows`).
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
- * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell` (not the `focusedRowKey` setter nor a relocation).
+ * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter nor a relocation).
  * @fires {CustomEvent<GridEditStartingEventDetail>} u-grid-edit-starting - Before a cell editor (or a row, `editMode="row"`) opens (user or API). Cancelable.
  * @fires {CustomEvent<GridRowAddingEventDetail>} u-grid-row-adding - Before a new row is added (Add row button or `addRow`): set its initial values in `detail.data`. Cancelable.
  * @fires {CustomEvent<GridRowRemovingEventDetail>} u-grid-row-removing - Before a row is deleted or marked for removal (Delete button, before the confirmation, or `removeRow`). Cancelable.
@@ -1466,12 +1470,15 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-menu-background-color - Background of the menus (context menus, "More actions", export). Default: surface-container token.
  * @cssprop --u-grid-menu-shape - Corner radius of the menus. Default `4px`.
  * @cssprop --u-grid-removed-row-opacity - Opacity of rows marked for removal (their text is also struck through). Default `0.7`.
+ * @cssprop --u-grid-selected-cell-background-color - Background of cells in a cell range. Default: primary color at 14%.
+ * @cssprop --u-grid-cell-range-border-color - Outline around each cell range (not shown by color alone). Default: primary color (`Highlight` in forced colors).
+ * @cssprop --u-grid-cell-range-border-width - Thickness of that outline. Default `2px`.
  *
  * @csspart row - Every body row (`<tr>`; not the header nor the totals footer).
  * @csspart group-row - Group header rows.
  * @csspart odd - Data rows in odd positions (the first data row is `odd`).
  * @csspart even - Data rows in even positions.
- * @csspart selected - Selected data rows (with `row`).
+ * @csspart selected - Selected data rows (with `row`) and data cells in a cell range (with `cell`): use `row selected` or `cell selected`.
  * @csspart cell - Data cells (`<td>`).
  * @csspart selection-cell - Cells and header of the selection checkbox column.
  * @csspart selection-checkbox - The selection checkboxes (rows and "select all").
@@ -1526,6 +1533,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart removed - Rows marked for removal (with `row`, `editMode="batch"`).
  * @csspart cell-editor - The built-in cell editors (`<input>`).
  * @csspart validation-message - The validation error shown below an invalid cell.
+ * @csspart cell-range-summary - The bar below the grid with the count, sum and average of the selected cells (`show-cell-range-summary`) and the "Adding to selection" text (Shift+F8).
  * @csspart command-cell - Cells and header of the row buttons column (edit, delete).
  * @csspart command-button - The row buttons (edit, save, cancel, delete, restore).
  * @csspart add-row-button - The toolbar "Add row" button.
@@ -4374,7 +4382,7 @@ export class DataGrid extends LitElement {
    * first render it only sets the active cell (the focus moves when it is
    * rendered) and fires no event.
    */
-  focusCell(rowKey: unknown, column?: GridColumnRef): boolean {
+  focusCell(rowKey: unknown, column?: GridColumnRef | null): boolean {
     this.#ensureRows();
 
     const row = this.#rowIndexOfKey(rowKey);
@@ -4384,10 +4392,10 @@ export class DataGrid extends LitElement {
     }
 
     const navColumns = this.#currentNavColumns();
-    const target = column === undefined ? undefined : this.#leafColumn(column);
-    const col = target ? navColumns.indexOf(target) : column === undefined ? navColumns.indexOf(this._visibleColumns[0]) : -1;
+    const target = column === undefined || column === null ? undefined : this.#leafColumn(column);
+    const col = target ? navColumns.indexOf(target) : column === undefined || column === null ? navColumns.indexOf(this._visibleColumns[0]) : -1;
 
-    if (column !== undefined && col < 0) {
+    if (column !== undefined && column !== null && col < 0) {
       return false;
     }
 
@@ -7205,7 +7213,8 @@ export class DataGrid extends LitElement {
     const corners: CellCorners = { anchorRow: startRowIndex, anchorCol, endRow: endRowIndex, endCol };
     const append = !!options.append && mode === 'multiple';
 
-    if (isSingleCell(corners) && !append) {
+    // Um 1×1 só existe ao lado de outro intervalo.
+    if (isSingleCell(corners) && !(append && this.#ranges.length)) {
       return false;
     }
 
@@ -7224,7 +7233,8 @@ export class DataGrid extends LitElement {
   /**
    * Count, sum and average of the selected cells (each cell once), computed
    * in slices so that millions of cells do not block the page. It reads the
-   * ranges at the call; rejects with `AbortError` only through `signal`.
+   * ranges at the call; rejects only through `signal`, with its `reason`
+   * (an `AbortError` by default).
    * Rows not loaded yet (remote data source) are left out (`complete: false`).
    */
   getCellRangeSummary(options: { signal?: AbortSignal } = {}): Promise<GridCellRangeSummary> {
@@ -14593,6 +14603,8 @@ declare global {
     'u-grid-selection-change': CustomEvent<GridSelectionChangeEventDetail>;
     'u-grid-focus-change': CustomEvent<GridFocusChangeEventDetail>;
     'u-grid-copying': CustomEvent<GridCopyEventDetail>;
+    'u-grid-cell-range-change': CustomEvent<GridCellRangeChangeEventDetail>;
+    'u-grid-pasting': CustomEvent<GridPasteEventDetail>;
     'u-grid-loading': CustomEvent<GridLoadingEventDetail>;
     'u-grid-load': CustomEvent<GridLoadEventDetail>;
     'u-grid-load-error': CustomEvent<GridLoadErrorEventDetail>;

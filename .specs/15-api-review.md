@@ -126,6 +126,15 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
 - #33: `u-grid-loading` (08) e `u-grid-row-validating` (09) marcados
   canceláveis pela regra do gerúndio. Na spec 09, `u-grid-editing-start` é cancelável, então pela regra
   virou `u-grid-edit-starting` (não `u-grid-edit-start`).
+- Frente 19: `u-grid-cell-range-change` também dispara quando o grid limpa
+  os intervalos porque linhas/colunas mudaram — inclusive por setter
+  (`items`, `columns`, `dataSource`, `cellSelectionMode`), com `source:
+  'api'` — exceção registrada a "setter não dispara", como o ajuste de
+  página da 08: sem ele, a barra/estado do hospedeiro ficaria velho.
+  `u-grid-pasting` não tem `source` (só gesto, como `u-grid-copying`).
+  Métodos novos (ou alargados) que recebem coluna aceitam `GridColumnRef`
+  (`selectCellRange`, `focusCell`, `editCell`). Part de estado é adjetivo
+  junto do elemento (`cell selected`, espelho de `row selected`).
 
 ## Inventário (antes da revisão)
 

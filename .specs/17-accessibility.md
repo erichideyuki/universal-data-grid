@@ -143,6 +143,15 @@ numa célula do corpo e o alcance do `colspan` da banda, também com
 conta as espaçadoras); 🔎 VoiceOver: se ficar mudo no alcance, criar
 `bandColumnCount` na descrição da banda.
 
+Frente 19 (intervalo de células): 🔎 conferir se NVDA/JAWS leem
+"selecionado" ao entrar numa célula de um intervalo e o anúncio do tamanho
+depois da pausa; "linha selecionada + intervalo" (linha com
+`aria-selected="true"` e células do intervalo); Shift+F8 → setas →
+Shift+seta → Esc. Hoje só `aria-selected="true"` vai nas células (o
+`false` não é emitido, como no AG Grid) para não dizer "não selecionado" a
+cada seta; se o leitor não ler o "selecionado" sem o `false` nas vizinhas,
+reavaliar.
+
 ## Proposta A1–A14 (aprovada pelo usuário em 2026-11-18: "Approve all")
 
 Nomes e desenho concretos, revisados pelo `webcomponent-api-reviewer` e

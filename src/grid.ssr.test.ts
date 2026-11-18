@@ -322,6 +322,18 @@ describe('SSR com bandas e virtualização de colunas (frente 13)', () => {
     expect(wideOutput).not.toContain('Col100');
     expect(wideOutput).toContain('column-spacer');
   });
+
+  it('intervalo de células: modo, barra de resumo e aria-multiselectable no servidor (pt e ar/RTL)', async () => {
+    const flat: GridColumnDef[] = [{ path: 'country', label: 'Country' }, { path: 'year', label: 'Year' }];
+    const output = await renderToString(html`
+      <u-grid language="pt" cell-selection-mode="multiple" show-cell-range-summary .columns=${flat} .items=${items}></u-grid>
+      <u-grid language="ar" dir="rtl" cell-selection-mode="single" clipboard-mode="copy-paste" .columns=${flat} .items=${items}></u-grid>`);
+
+    expect(output).toMatch(/<table[^>]*aria-multiselectable="true"/);
+    expect(output).toContain('cell-range-mode');
+    expect(output).toMatch(/class="cell-range-summary" role="status"[^>]*aria-label="Resumo da seleção"/);
+    expect(output).not.toContain('aria-selected="true"');
+  });
 });
 
 describe('SSR da barra (frente 18)', () => {

@@ -1190,6 +1190,100 @@ const wideScenario = (rows: number, label: string, bandSize: number) => {
   });
 };
 
+/**
+ * Frente 19: intervalo de células em 1 milhão × 300 colunas (virtualização
+ * nos dois eixos). Selecionar é O(1) (retângulos); copiar vai até o limite
+ * de células (o `copy` nativo é síncrono) e recusa acima; o resumo corre em
+ * fatias.
+ */
+const CRLF = String.fromCharCode(13, 10);
+
+const cellRangeScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 300 colunas: Ctrl+A, Shift+setas, Ctrl+Shift+End, copiar o maior intervalo, resumo em fatias`, async () => {
+    let items: object[] | undefined = makeIdItems(rows);
+
+    await perf.throttle();
+    const { grid } = await bestFirstRender(items, makeWideColumns(300));
+    grid.cellSelectionMode = 'multiple';
+    await painted(grid);
+    grid.focusCell(items[0], grid.columns[0]);
+    await painted(grid);
+
+    const restart = () => {
+      grid.clearCellRanges();
+      grid.focusCell(items![0], grid.columns[0]);
+    };
+
+    const selectAll = await interaction('selectAllCells', grid, () => press(grid, 'a', { ctrlKey: true }), restart);
+    const allCells = grid.getCellRanges()[0];
+    const extend = await interaction('extendRange', grid, () => press(grid, 'ArrowRight', { shiftKey: true }), restart);
+    const extendEnd = await interaction('extendRangeToEnd', grid, () => press(grid, 'End', { ctrlKey: true, shiftKey: true }), restart);
+    const endCorner = grid.getCellRanges()[0];
+    const focusedRow = (grid.shadowRoot!.activeElement as HTMLElement).closest('tr')!.getAttribute('aria-rowindex');
+
+    // O maior intervalo copiável: 666 linhas × 300 colunas (199 800 células, abaixo do limite de 200 mil).
+    restart();
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 665, startColumn: grid.columns[0], endColumn: grid.columns[299] });
+    await painted(grid);
+
+    let copied = '';
+    const copy = await interaction('copyRange', grid, () => {
+      const clipboardData = new DataTransfer();
+      const cell = grid.shadowRoot!.activeElement as HTMLElement;
+      cell.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+      copied = clipboardData.getData('text/plain');
+    }, () => undefined);
+
+    // Acima do limite: recusa sem montar nada.
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: rows - 1, startColumn: grid.columns[0], endColumn: grid.columns[299] });
+    await painted(grid);
+
+    let refusedText = 'x';
+    const refused = await interaction('copyRefused', grid, () => {
+      const clipboardData = new DataTransfer();
+      const cell = grid.shadowRoot!.activeElement as HTMLElement;
+      cell.dispatchEvent(new ClipboardEvent('copy', { clipboardData, bubbles: true, composed: true, cancelable: true }));
+      refusedText = clipboardData.getData('text/plain');
+    }, () => undefined);
+
+    // Resumo de 10 mil linhas × 300 colunas (3 milhões de células) em fatias.
+    grid.selectCellRange({ startRowIndex: 0, endRowIndex: 9_999, startColumn: grid.columns[0], endColumn: grid.columns[299] });
+    await painted(grid);
+
+    let count = 0;
+    const summary = await bestSlices(async () => {
+      count = (await grid.getCellRangeSummary()).count;
+    });
+
+    await perf.unthrottle();
+    await painted(grid);
+    const nodes = domNodes(grid);
+
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      ...selectAll,
+      ...extend,
+      ...extendEnd,
+      ...copy,
+      ...refused,
+      rangeSummarySliceMs: summary.sliceMs,
+      rangeSummaryTotalMs: summary.totalMs,
+      domNodes: nodes,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`cell-range-${label}`, metrics));
+    expect(allCells).toMatchObject({ startRowIndex: 0, endRowIndex: rows - 1 });
+    expect(endCorner).toMatchObject({ endRowIndex: rows - 1 });
+    expect(focusedRow, 'Ctrl+Shift+End leva o foco à última linha').toBe(String(rows + 1));
+    expect(copied.split(CRLF)).toHaveLength(666);
+    expect(refusedText).toBe('');
+    expect(count).toBe(3_000_000);
+    expect(summary.slices, 'o resumo cede a vez').toBeGreaterThan(3);
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -1207,4 +1301,5 @@ describe('perfil de máquina fraca', () => {
   menusScenario(1_000_000, '1m');
   wideScenario(1_000_000, '1m', 0);
   wideScenario(1_000_000, '1m', 10);
+  cellRangeScenario(1_000_000, '1m');
 });

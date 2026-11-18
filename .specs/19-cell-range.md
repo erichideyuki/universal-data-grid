@@ -257,3 +257,50 @@ AG Grid 36.3 (Enterprise, exemplo "Cell Selection › Range Selection",
   na célula ativa; intervalo maior que o bloco repete se couber exato,
   senão cola só o bloco no início; intervalo atravessa fixas sem lacunas
   ("achatar" o grid).
+
+## Decisões da implementação
+- Intervalo = cantos (linha do corpo × índice navegável) em `#ranges`; o
+  render pergunta, só para as células renderizadas, `cellRangeEdges`
+  (O(intervalos)). Contagem de linhas de dados de uma faixa por
+  `Rows.dataRowsBefore` (prefixo por segmento + busca binária no bloco;
+  nada por linha), também em `RowPage` e `RowsWithAdded`.
+- Limpeza: assinatura das linhas/colunas a que os índices se referem
+  (colunas visíveis, colunas à frente, agrupamento, ordenação, filtro,
+  busca, expansões, página, `dataSource`, linhas novas e, sem fonte remota,
+  o comprimento) conferida a cada render; a origem é a do último evento do
+  grid no ciclo (gesto vence método; os eventos de coluna, só de gesto,
+  contam como `user`). Fonte remota: a lista cresce ao rolar (rolagem
+  infinita), então o comprimento não entra; intervalo além do fim sai.
+- Só `aria-selected="true"` nas células (sem o `false`, como o AG Grid):
+  "não selecionado" a cada seta seria excesso. Fica no roteiro manual da 17
+  (🔎).
+- O anúncio do tamanho e o resumo da barra esperam 500 ms (`Debouncer`,
+  liberado no `disconnectedCallback`); outro anúncio do grid cancela o do
+  tamanho. A barra existe vazia (sem altura) desde o 1º render para a
+  região `role="status"` funcionar.
+- Arrasto: listeners na `<table>` só durante o gesto; a captura do ponteiro
+  só depois de sair da célula de origem (senão o `click` iria para a
+  tabela e a edição por clique/caixa quebraria). O clique que termina um
+  arrasto, e Shift/Ctrl+clique, não editam nem selecionam linha. Células de
+  dados com `user-select: none` no modo de intervalo.
+- Colar: números aceitam o texto formatado (moeda, `%`/100, código da moeda
+  nas pontas; outro símbolo como `=2` segue inválido); datas aceitam ISO e
+  a data numérica do idioma (ordem dia/mês/ano pelo `Intl`, AM/PM);
+  booleano fora de `true/false/1/0/yes/no/✓` e dos textos da tradução é
+  pulado. Linha de dados por linha de dados (grupos não contam).
+- Limite de cópia/colagem: 200 000 células (`MAX_RANGE_CLIPBOARD_CELLS`);
+  HTML na cópia até 100 000 células (`CLIPBOARD_HTML_CELL_LIMIT`).
+- Menu de contexto da célula (2.5.7) é da frente 18: os internos
+  `_extendCellRangeTo(rowIndex, col)` e `_addCellToRanges(rowIndex, col)`
+  (`@internal`) e as chaves `extendSelectionToCell`/`addCellToSelection`
+  ficam prontos para ela (nota na pasta compartilhada).
+
+## Nossa medida (perfil de máquina fraca, spec 16 — cenário `cell-range-1m`)
+1 milhão de linhas × 300 colunas calculadas (virtualização nos dois eixos):
+Ctrl+A ≈ 19 ms; Shift+→ ≈ 8 ms; Ctrl+Shift+End (intervalo de 300 milhões de
+células e rolagem até a última linha) ≈ 50 ms; copiar 199 800 células
+(666 × 300, o maior abaixo do limite) ≈ 450 ms (síncrono: o `copy` nativo só
+aceita `setData` no evento; orçamento de interação de 1 milhão: 1,5 s);
+recusar a cópia de 300 milhões ≈ 6 ms; resumo de 3 milhões de células em
+fatias ≤ 16 ms (total ≈ 105 ms). Linha de base gravada (`=1` e `=max`) no
+commit da frente, só esse cenário.

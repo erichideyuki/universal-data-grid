@@ -21,6 +21,16 @@
     "domNodes": 497,
     "gridHeapMiB": 1.2
   },
+  "cell-range-1m": {
+    "selectAllCellsMs": 18.8,
+    "extendRangeMs": 7.8,
+    "extendRangeToEndMs": 48.8,
+    "copyRangeMs": 499.7,
+    "copyRefusedMs": 6.1,
+    "rangeSummarySliceMs": 30.5,
+    "rangeSummaryTotalMs": 128.4,
+    "domNodes": 423
+  },
   "detail-1m": {
     "firstRenderMs": 18.9,
     "enableDetailMs": 6.5,
