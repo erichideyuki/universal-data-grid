@@ -14163,11 +14163,8 @@ export class DataGrid extends LitElement {
         if (content && 'refused' in content) {
           this.#announce(content.refused);
         } else if (content) {
-          void this.#writeToClipboard(content, 'user').then(written => {
-            if (!written) {
-              this.#announce(this.#translation.copyFailedAnnouncement);
-            }
-          });
+          // A falha é anunciada pelo `#writeToClipboard` (gesto do usuário, frente 18).
+          void this.#writeToClipboard(content, 'user');
         }
 
         break;
