@@ -12,7 +12,6 @@ import type {
   GridEditCancelEventDetail,
   GridEditStartingEventDetail,
   GridRowAddingEventDetail,
-  GridRowValidatingEventDetail,
   GridSaveEventDetail,
   GridSavingEventDetail,
 } from './grid.js';
@@ -285,13 +284,15 @@ describe('edição: validação', () => {
         {
           path: 'name',
           label: 'Name',
-          validationRules: [{
-            type: 'custom',
-            validate: (_ctx, signal) => {
-              signals.push(signal);
-              return new Promise(resolve => resolvers.push(resolve));
+          validationRules: [
+            {
+              type: 'custom',
+              validate: (_ctx, signal) => {
+                signals.push(signal);
+                return new Promise(resolve => resolvers.push(resolve));
+              },
             },
-          }],
+          ],
         },
       ],
       items: people(),
@@ -332,7 +333,7 @@ describe('edição: validação', () => {
     });
     const saving = record(grid, 'u-grid-saving');
     grid.addEventListener('u-grid-row-validating', event => {
-      const detail = (event as CustomEvent<GridRowValidatingEventDetail>).detail;
+      const detail = event.detail;
       detail.setError('Too young', grid.columns[2]);
     });
 
@@ -356,7 +357,7 @@ describe('edição: lote', () => {
     const saved = record<GridSaveEventDetail>(grid, 'u-grid-save');
     let resolve!: () => void;
     grid.addEventListener('u-grid-saving', event => {
-      (event as CustomEvent<GridSavingEventDetail>).detail.waitUntil(new Promise<void>(done => {
+      event.detail.waitUntil(new Promise<void>(done => {
         resolve = done;
       }));
     });
@@ -543,7 +544,7 @@ describe('edição: inserir e excluir', () => {
     });
     const errors = record(grid, 'u-grid-save-error');
     grid.addEventListener('u-grid-saving', event => {
-      (event as CustomEvent<GridSavingEventDetail>).detail.waitUntil(Promise.reject(new Error('Server down')));
+      event.detail.waitUntil(Promise.reject(new Error('Server down')));
     });
 
     await openCell(grid, 1, 'name');
@@ -563,7 +564,7 @@ describe('edição: inserir e excluir', () => {
     });
     let detail: GridSavingEventDetail | undefined;
     grid.addEventListener('u-grid-saving', event => {
-      detail = (event as CustomEvent<GridSavingEventDetail>).detail;
+      detail = event.detail;
     });
 
     await openCell(grid, 1, 'name');
@@ -581,7 +582,7 @@ describe('edição: dados e rolagem', () => {
       columns: columns(),
       configure: g => {
         g.allowEditing = true;
-        g.dataSource = { load: async () => ({ data }) };
+        g.dataSource = { load: () => Promise.resolve({ data }) };
       },
     });
     await settle(grid);

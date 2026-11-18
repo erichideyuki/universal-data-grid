@@ -49,7 +49,7 @@ export class RowsWithAdded implements Rows {
     let high = this.#finals.length;
 
     while (low < high) {
-      const middle = (low + high) >> 1;
+      const middle = Math.floor((low + high) / 2);
 
       if (this.#finals[middle] < index) {
         low = middle + 1;
@@ -71,7 +71,7 @@ export class RowsWithAdded implements Rows {
     let high = this.#added.length;
 
     while (low < high) {
-      const middle = (low + high) >> 1;
+      const middle = Math.floor((low + high) / 2);
 
       if (Math.min(this.#added[middle].position, this.#base.length) <= index) {
         low = middle + 1;

@@ -275,3 +275,27 @@ describe('SSR — fonte de dados e paginação (frente 08)', () => {
     expect(ar).toContain('الصفحة 1 من 3');
   });
 });
+
+describe('SSR — edição (frente 09)', () => {
+  it('renderiza a barra, a coluna de botões e aria-readonly (pt e ar/RTL)', async () => {
+    const flat: GridColumnDef[] = [
+      { path: 'country', label: 'Country' },
+      { path: 'year', label: 'Year', editable: false },
+    ];
+    const pt = await renderToString(html`
+      <u-grid language="pt" key-expr="country" allow-editing allow-adding allow-removing edit-mode="batch"
+        .columns=${flat} .items=${items}></u-grid>`);
+
+    expect(pt).toContain('Adicionar linha');
+    expect(pt).toContain('Salvar alterações');
+    expect(pt).toContain('part="command-cell"');
+    expect(pt).toContain('Excluir');
+    expect(pt).toContain('aria-readonly="true"');
+    expect(pt).toContain('id="edit-desc-modified"');
+
+    const ar = await renderToString(html`
+      <u-grid dir="rtl" language="ar" key-expr="country" allow-editing edit-mode="row" .columns=${flat} .items=${items}></u-grid>`);
+
+    expect(ar).toContain('تعديل');
+  });
+});

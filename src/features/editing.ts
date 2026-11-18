@@ -130,7 +130,7 @@ export const formatEditorNumber = (value: unknown, language: string | undefined)
   const text = String(value);
 
   // Notação exponencial (muito grande/pequeno) fica como está.
-  return decimal === '.' || /e/i.test(text) ? text : text.replace('.', decimal);
+  return decimal === '.' || (/e/i).test(text) ? text : text.replace('.', decimal);
 };
 
 const NBSP = /\s/g;
@@ -152,8 +152,9 @@ export const parseEditorNumber = (text: string, language: string | undefined): n
 
   if (decimal !== '.') {
     if (normalized.includes(decimal)) {
-      normalized = normalized.split(group.replace(NBSP, '') || '\u0000').join('').replace(decimal, '.');
-    } else if (group === '.' && /^-?\d{1,3}(\.\d{3})+$/.test(normalized)) {
+      normalized = normalized.split(group.replace(NBSP, '') || '\u0000').join('')
+        .replace(decimal, '.');
+    } else if (group === '.' && (/^-?\d{1,3}(\.\d{3})+$/).test(normalized)) {
       // "1.234" num idioma de vírgula decimal é milhar.
       normalized = normalized.replace(/\./g, '');
     }
@@ -161,7 +162,7 @@ export const parseEditorNumber = (text: string, language: string | undefined): n
     normalized = normalized.split(group.replace(NBSP, '') || '\u0000').join('');
   }
 
-  const value = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(normalized) ? Number(normalized) : NaN;
+  const value = (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i).test(normalized) ? Number(normalized) : NaN;
 
   return Number.isFinite(value) ? value : new UnparsedValue(text, 'number');
 };
@@ -193,7 +194,7 @@ export const parseEditorDate = (text: string, original: unknown, withTime: boole
     return null;
   }
 
-  const match = /^(\d{4,})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(text);
+  const match = (/^(\d{4,})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/).exec(text);
 
   if (!match) {
     return new UnparsedValue(text, 'date');

@@ -125,11 +125,11 @@ const checkSyncRule = (
 
   switch (rule.type) {
     case 'range': {
-      const number = comparable(value);
-      const below = rule.min !== undefined && rule.min !== null && number < comparable(rule.min);
-      const above = rule.max !== undefined && rule.max !== null && number > comparable(rule.max);
+      const amount = comparable(value);
+      const below = rule.min !== undefined && rule.min !== null && amount < comparable(rule.min);
+      const above = rule.max !== undefined && rule.max !== null && amount > comparable(rule.max);
 
-      if (!below && !above && !Number.isNaN(number)) {
+      if (!below && !above && !Number.isNaN(amount)) {
         return null;
       }
 
@@ -143,6 +143,7 @@ const checkSyncRule = (
 
       return message(rule, template, params);
     }
+
     case 'stringLength': {
       const length = String(value).length;
 
@@ -157,6 +158,7 @@ const checkSyncRule = (
 
       return message(rule, template, params);
     }
+
     case 'pattern':
       return matchesPattern(rule.pattern, String(value)) ? null : message(rule, texts.validationPattern);
     case 'email':

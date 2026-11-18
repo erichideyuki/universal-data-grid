@@ -34,6 +34,15 @@ import { type ClipboardHtmlOptions, clipboardContent, collectRows, writeCsv } fr
 import { cycleWithin, focusFirstWithin, focusTargetsWithin } from './features/cell-content-focus.js';
 import { type GridClipboardMode, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
+  ColumnChooserController,
+  columnChooserIcon,
+  type ColumnChooserItem,
+  renderColumnChooser,
+} from './features/column-chooser.js';
+import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
+import { releaseInteractions } from './features/drag-helper.js';
+import { isRtl } from './features/drop-position.js';
+import {
   copyData,
   createProvisionalKey,
   EditStore,
@@ -50,16 +59,6 @@ import {
   publicChange,
   setValueByPath,
 } from './features/editing.js';
-import { UnparsedValue, validateValue, type ValidationResult } from './features/validation.js';
-import {
-  ColumnChooserController,
-  columnChooserIcon,
-  type ColumnChooserItem,
-  renderColumnChooser,
-} from './features/column-chooser.js';
-import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
-import { releaseInteractions } from './features/drag-helper.js';
-import { isRtl } from './features/drop-position.js';
 import { FilterRowController, renderFilterCell, renderFilterMenu } from './features/filter-row.js';
 import { FilteringController } from './features/filtering.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
@@ -108,6 +107,7 @@ import {
   sortingAfterGesture,
   toggleOrder,
 } from './features/sorting.js';
+import { UnparsedValue, validateValue, type ValidationResult } from './features/validation.js';
 import {
   type GridColumnDataType,
   type GridColumnDef,
@@ -143,12 +143,13 @@ import {
 import { styles } from './grid.styles.js';
 import { renderDataCell } from './render/cell.js';
 import { rendererContent } from './render/content.js';
+import { renderBuiltInEditor } from './render/editors.js';
 import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryText } from './render/footer.js';
 import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
 import { isActivationKey, renderHeaderCell, renderSortIndicator } from './render/header.js';
-import { renderBuiltInEditor } from './render/editors.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
+import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
 import { createComparer } from './row-model/compare.js';
 import { distinctValues, type DistinctValues } from './row-model/distinct.js';
 import {
@@ -163,7 +164,6 @@ import {
   replaceColumnCondition,
   searchExpression,
 } from './row-model/filter.js';
-import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
 import { type BlockDetails, flattenRows, pageBounds, RowList, RowPage, type Rows } from './row-model/flatten.js';
 import { createTextMatcher, foldText } from './row-model/fold.js';
 import {
@@ -2859,6 +2859,12 @@ export class DataGrid extends LitElement {
       pageHideListeners: this.#pageHideListening ? 1 : 0,
       pendingStates: this.#statesToApply.length,
       warnedState: this.#warnedState.size,
+      // Edição (frente 09): mudanças pendentes, linhas novas, validações e o temporizador de "Salvando…".
+      pendingEdits: this.#edits.size,
+      addedRows: this.#added.size,
+      validations: this.#validations.size + this.#validationPromises.size,
+      editTimers: this.#savingTimer === undefined ? 0 : 1,
+      editLightNodes: this.#lightMessage ? 1 : 0,
     };
   }
 
@@ -3820,7 +3826,7 @@ export class DataGrid extends LitElement {
   readonly #added = new Map<unknown, AddedAnchor>();
   #addedSeq = 0;
   /** Item exibido de uma linha nova → chave provisória (o `keyOf` delas). */
-  #addedItemKeys = new WeakMap<object, unknown>();
+  readonly #addedItemKeys = new WeakMap<object, unknown>();
   /** Validações assíncronas em curso, por linha e coluna (corrida: a resposta velha é abortada). */
   readonly #validations = new Map<PendingRow, Map<GridColumnDef, AbortController>>();
   /** Promessas das validações em curso (salvar espera por elas). */
@@ -4092,7 +4098,7 @@ export class DataGrid extends LitElement {
   #commitEditor(): boolean | Promise<boolean> {
     const editor = this.#editor;
 
-    if (!editor || !editor.drafts.size) {
+    if (!editor?.drafts.size) {
       return editor ? !this.#hasErrors(editor.rowKey, editor.wholeRow ? null : editor.column) : true;
     }
 
@@ -4162,7 +4168,7 @@ export class DataGrid extends LitElement {
       }
 
       if (column.valueSetter) {
-        column.valueSetter(pending.data as never, value, pending.item as never);
+        column.valueSetter(pending.data as never, value, pending.item);
       } else if (column.path) {
         setValueByPath(pending.data, column.path, value);
       }
@@ -4621,7 +4627,7 @@ export class DataGrid extends LitElement {
   #restoreRow(rowKey: unknown, source: GridChangeSource): void {
     const pending = this.#edits.get(rowKey);
 
-    if (!pending || pending.type !== 'remove') {
+    if (pending?.type !== 'remove') {
       return;
     }
 
@@ -4758,6 +4764,11 @@ export class DataGrid extends LitElement {
       return false;
     }
 
+    // Desconectado no meio (validação em curso): não salva nem cria temporizador.
+    if (!this.isConnected) {
+      return false;
+    }
+
     const changes = rows.map(publicChange);
     const waits: Promise<unknown>[] = [];
     let dispatching = true;
@@ -4782,7 +4793,7 @@ export class DataGrid extends LitElement {
 
     let replacement: GridDataChanges | undefined;
 
-    if (waits.length) {
+    if (waits.length && this.isConnected) {
       this.#savingTimer = setTimeout(() => {
         this.#savingTimer = undefined;
         this.#savingSlow = true;
@@ -5043,7 +5054,7 @@ export class DataGrid extends LitElement {
 
     const cached = this.#withAdded;
 
-    if (cached && cached.base === base && cached.version === this.#edits.version) {
+    if (cached?.base === base && cached.version === this.#edits.version) {
       return cached.rows;
     }
 
@@ -6567,7 +6578,7 @@ export class DataGrid extends LitElement {
     let page = this.#basePage;
 
     // A mesma página das mesmas linhas: reaproveita (o virtualizador guarda as alturas dela).
-    if (!(page && page.source === all && page.offset === offset && page.length === length)) {
+    if (!(page?.source === all && page.offset === offset && page.length === length)) {
       page = this.#basePage = new RowPage(all, offset, length);
     }
 
@@ -8173,7 +8184,10 @@ export class DataGrid extends LitElement {
     const cell = this.#navCellOf(path);
     const position = cell && this.#positionOf(cell);
 
-    if (!cell || !position || cell.classList.contains('editing') || path[0] !== cell && path.some(node => node instanceof HTMLElement && node !== cell && cell.contains(node) && node.matches(TABBABLE_IN_CELL))) {
+    const onContent = path[0] !== cell
+      && path.some(node => node instanceof HTMLElement && node !== cell && cell?.contains(node) && node.matches(TABBABLE_IN_CELL));
+
+    if (!cell || !position || cell.classList.contains('editing') || onContent) {
       return;
     }
 
@@ -9603,7 +9617,7 @@ export class DataGrid extends LitElement {
 
   /** Editor numa linha fora da janela (presa, invisível): rola até ela antes de agir. */
   #revealEditingRow(event: Event): void {
-    const tr = event.composedPath().find(node => node instanceof HTMLTableRowElement) as HTMLTableRowElement | undefined;
+    const tr = event.composedPath().find((node): node is HTMLTableRowElement => node instanceof HTMLTableRowElement);
 
     if (tr?.classList.contains('pinned')) {
       this.#revealPending = true;

@@ -1,4 +1,4 @@
-import { html, nothing, type TemplateResult } from 'lit';
+import { html, type TemplateResult } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { live } from 'lit/directives/live.js';
 
@@ -51,7 +51,7 @@ export const renderBuiltInEditor = (editor: BuiltInEditor): TemplateResult => {
     type=${type}
     inputmode=${ifDefined(editor.kind === 'number' ? 'decimal' : undefined)}
     autocomplete="off"
-    spellcheck=${editor.kind === 'text' ? nothing : 'false'}
+    spellcheck=${editor.kind === 'text' ? 'true' : 'false'}
     placeholder=${ifDefined(editor.placeholder)}
     aria-label=${editor.label}
     aria-invalid=${editor.invalid ? 'true' : 'false'}

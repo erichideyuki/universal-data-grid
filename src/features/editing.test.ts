@@ -124,7 +124,7 @@ describe('validação', () => {
   it('custom síncrona e assíncrona; resposta abortada vira null', async () => {
     expect(run([{ type: 'custom', validate: () => 'no' }], 1)).toMatchObject({ message: 'no' });
     expect(run([{ type: 'custom', validate: () => false }], 1)).toMatchObject({ message: 'invalid' });
-    await expect(run([{ type: 'custom', validate: async () => true }, { type: 'range', max: 0 }], 1))
+    await expect(run([{ type: 'custom', validate: () => Promise.resolve(true) }, { type: 'range', max: 0 }], 1))
       .resolves.toMatchObject({ message: 'at most 0' });
 
     const controller = new AbortController();
