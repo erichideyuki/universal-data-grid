@@ -44,7 +44,7 @@ AG Grid não tem (responsividade fica por conta do hospedeiro com
    (o próprio grid, não a janela) menos as colunas que nunca saem (fixas,
    recuos de grupo, caixa de seleção, expansão, comandos).
 
-## API (revisada pelos subagentes; aguardando aval do usuário)
+## API (revisada pelos subagentes; aprovada pelo usuário em 2026-11-18)
 
 `<u-grid>`:
 - `autoHideColumns: boolean` ↔ `auto-hide-columns` (padrão `false`,
@@ -106,7 +106,7 @@ i18n (14 idiomas, 4 chaves novas):
 - `adaptiveLabelSeparator` — ": " (entre rótulo e valor; padrão igual ao
   `groupLabelSeparator` de cada idioma).
 
-Mudança de comportamento da 20 (precisa de aval): linhas fixas ganham o
+Mudança de comportamento da 20 (aprovada): linhas fixas ganham o
 botão e a linha de detalhe/adaptativa dentro do próprio `rowgroup` (hoje a
 célula de expansão delas é vazia) — sem isso, os valores ocultos das
 fixas ficam inalcançáveis. Vale também para `detailRenderer`.
@@ -312,6 +312,37 @@ resumos, foco, anúncio), `grid-column-def.ts`, `grid-column.ts`,
 - Desempenho: cenário novo "redimensionar o grid com 1 milhão de linhas"
   (largura alternando entre larguras que escondem/mostram colunas) no
   perfil fraco; sem regressão da linha de base.
+
+## Decisões da implementação
+- `_visibleColumns` passou a ser o que a tabela EXIBE (render, navegação,
+  cabeçalho lógico, bandas — o `colspan` sai das folhas exibidas); o novo
+  `_shownColumns` (visíveis pelo usuário, com as ocultas por espaço) serve à
+  exportação, à cópia de linhas, à busca e ao seletor. Sem
+  `autoHideColumns` os dois são iguais.
+- Cálculo em `features/adaptive.ts` (função pura, teste em Node), chamado no
+  `willUpdate` só quando a largura (o `ResizeObserver` do contêiner, que já
+  existia), as colunas ou o layout mudam. A coluna de expansão só entra na
+  conta quando algo precisa sair (sem `detailRenderer`). Folga de 24 px para
+  uma coluna voltar.
+- Conjunto congelado com editor aberto, menu de contexto/barra, funil aberto
+  ou foco na linha de filtro; o `focusout` pede o recálculo.
+- Linhas adaptativas = linhas de detalhe: o `RowList` já guardava as
+  posições expandidas; `#detailsOf` só desenha com a coluna de expansão à
+  vista (detalhe ou coluna oculta), a expansão continua guardada.
+- Linhas fixas: as seções fixas ganharam linhas de detalhe intercaladas
+  (`#fixedRows` com cache pela versão da expansão) e os índices internos
+  contam as linhas das seções (`#fixedTopCount`/`#fixedBottomCount`); a
+  referência ativa de um detalhe fixo leva `detail: true`. A mesma chave no
+  corpo e numa fixa expande nas duas (a expansão é por chave).
+- Valores da linha adaptativa são alvos de foco do grid
+  (`.focus-target[tabindex=-1]`, reconhecidos pelo `cell-content-focus`);
+  foco perdido num valor (linha recriada ao salvar) volta ao mesmo valor.
+- Resumo de coluna oculta no rodapé de GRUPO não quebra linha (a linha está
+  no virtualizador, altura fixa): só o rodapé de totais quebra.
+- Linha inteira (`rowRenderer`) sem `detailRenderer` não tem botão (não há
+  colunas para mostrar).
+- Desempenho (`responsive-1m`, perfil fraco): estreitar ~13 ms, alargar
+  ~9 ms, rolar com linhas adaptativas abertas no mesmo patamar do detalhe.
 
 ## Critério de pronto
 `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run lint`

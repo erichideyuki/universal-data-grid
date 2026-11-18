@@ -332,6 +332,23 @@ interface na maioria dos casos); exemplo do formato do número (texto i18n
 novo — fica para aval); erro de salvar do modo linha na barra (não junto aos
 botões); mensagem da última linha visível pode ficar sob o rodapé fixo.
 
+## Frente 21 — responsivo (colunas ocultas por falta de espaço)
+
+Desenho revisado pelo `a11y-reviewer` antes do aval (seção
+"Acessibilidade" da spec 21), todos os achados acatados: a linha
+adaptativa é a linha de detalhe (um botão, `aria-expanded`, linha ligada à
+mestre); `aria-colcount`/`aria-colindex` só com as colunas exibidas; todo
+valor é parada do Tab dentro da célula (`aria-labelledby` = `<dt>` + valor;
+separador de lista oculto entre pares); marcas de ordenação/filtro no
+rótulo; erro/alteração de coluna oculta marcados na célula de expansão;
+foco realocado (coluna sai → célula de expansão; volta → célula dela; a
+expansão some → 1ª célula de dados; fora do grid só o `tabindex`);
+conjunto congelado com editor/popover aberto; anúncio único por rajada (1
+s), só com foco dentro, também na descrição do cabeçalho da expansão;
+reflow 400% (última coluna encolhe; fixas param de grudar acima de 50%).
+🔎 Conferir com NVDA/VoiceOver a leitura do `<dl>` dentro da `gridcell` e
+do valor focado.
+
 ## Frente 20 — linhas fixas e linha inteira
 
 Desenho revisado pelo `a11y-reviewer` antes do aval (seção

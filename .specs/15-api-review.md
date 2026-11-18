@@ -135,6 +135,15 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   Métodos novos (ou alargados) que recebem coluna aceitam `GridColumnRef`
   (`selectCellRange`, `focusCell`, `editCell`). Part de estado é adjetivo
   junto do elemento (`cell selected`, espelho de `row selected`).
+- Frente 21: `u-grid-adaptive-columns-change` (`{ columns, previous }`) não
+  tem `source` e dispara também por setter (`autoHideColumns`, `columns`) —
+  exceção registrada: é estado de LAYOUT (a largura do grid), sai depois do
+  render (fora do callback do `ResizeObserver`). O foco realocado porque a
+  coluna saiu dispara `u-grid-focus-change` com `source: 'api'` (como a
+  limpeza de intervalos da 19). Radical `hiding`/`adaptive`:
+  `autoHideColumns` (irmão de `autoExpandRows`; `columnHiding` recusado por
+  ler-se "o usuário pode ocultar"), `hidingPriority`, `getAdaptiveColumns`,
+  parts `adaptive-*` com os adjetivos da célula (`modified`, `invalid`).
 
 ## Inventário (antes da revisão)
 

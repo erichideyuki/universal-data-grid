@@ -89,6 +89,7 @@ Legenda do risco: **V** = vazava (corrigido aqui) · **L** = limitado ·
 | 40 | Frente 13: `<slot>` + `slotchange` de cada `<u-grid-column>` (bandas declarativas) | `grid-column.ts` | OK | Binding do Lit no shadow root da coluna; sai com ela. |
 | 41 | Frente 13: listener `scroll` horizontal (janela de colunas) e caches por render (irmãs, bandas visíveis, cabeçalho lógico) | `grid.ts` | OK | Listener no contêiner do próprio shadow root (sai com ele, como o das sombras); caches seguram só as colunas atuais e são trocados a cada mudança de ordem/árvore/visibilidade. |
 | 42 | Frente 13: células com chave (virtualização de colunas) | `grid.ts`, `render/footer.ts` | OK | `keyedRows` em vez do `repeat` do Lit 3.3, que deixa um comentário por item removido (medido: +120 nós por rolagem horizontal). Testes em `bands.memory.browser.test.ts`. |
+| 46 | Frente 21: responsivo — conjunto de colunas ocultas por falta de espaço, temporizador do anúncio (1 s), foco/editor da linha adaptativa | `grid.ts`, `features/adaptive.ts` | OK | Usa o `ResizeObserver` que o grid já tem no contêiner (solto no `disconnectedCallback`); timer do anúncio limpo no `disconnectedCallback`; guarda só as colunas atuais (sem objeto por linha). Conteúdo `HTMLElement` de renderer na linha adaptativa sai pelo `rendererContent` (slot próprio, `signal` abortado). `_memoryStats.adaptiveTimers`/`adaptiveColumns`. Testes em `responsive.memory.browser.test.ts`. |
 
 ## Medição (`src/test/leak.ts`)
 

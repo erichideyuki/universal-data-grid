@@ -570,7 +570,8 @@ export interface GridPageChangeEventDetail {
 /**
  * Kind of the active cell: column header, data cell, selection checkbox
  * cell, group row, summary row (group footer, totals), detail toggle cell or
- * detail row (master-detail), row buttons column (editing), the cell of a
+ * detail row (master-detail and the values of the columns hidden by
+ * `autoHideColumns`), row buttons column (editing), the cell of a
  * full-width row (`rowRenderer`). May gain members in minor versions.
  */
 export type GridCellType = 'header' | 'data' | 'selection' | 'group' | 'summary' | 'detail-toggle' | 'detail' | 'command' | 'full-width';
@@ -586,7 +587,9 @@ export interface GridFocusChangeEventDetail {
   /**
    * Column of the active cell (in a band header, the band, with `cellType: 'header'`);
    * `null` in the selection, detail toggle and row buttons (`cellType: 'command'`)
-   * columns, in detail rows, in group rows and in full-width cells.
+   * columns, in detail rows, in group rows and in full-width cells. In a
+   * detail row with the values of the columns hidden by `autoHideColumns`,
+   * the column of the focused value (`cellType: 'detail'`).
    */
   column: GridColumnDef | null;
   /** Kind of the active cell. */
@@ -1699,14 +1702,15 @@ export class DataGrid extends LitElement {
    * Builds the detail of a row (master-detail; property only). With it, a
    * toggle column appears at the start and each expanded row is followed by
    * a full-width detail row (variable height). Returning `null` renders an
-   * empty detail row.
+   * empty detail row. With `autoHideColumns`, the values of the hidden
+   * columns come first in the detail row.
    */
   @property({ attribute: false }) detailRenderer: GridDetailRenderer | null = null;
 
   /**
-   * Detail rows start expanded. INITIAL default: afterwards expansion is grid
-   * state (`expandRow`, `collapseRow`); changing it resets that state (no
-   * event).
+   * Detail rows start expanded (also the row details of `autoHideColumns`).
+   * INITIAL default: afterwards expansion is grid state (`expandRow`,
+   * `collapseRow`); changing it resets that state (no event).
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'auto-expand-rows' }) autoExpandRows = false;
 

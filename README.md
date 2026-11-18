@@ -25,7 +25,7 @@ React, Vue, Svelte — or with no framework at all.
 - [Summaries](#summaries) (totals and group summaries)
 - [Selection & keyboard](#selection--keyboard) (row selection, cell ranges, keyboard navigation, accessibility)
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
-- [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization)
+- [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization, responsive columns)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Toolbar & context menus](#toolbar--context-menus) (built-in and custom toolbar items, "More actions", export button, context menus)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers, fixed rows, full-width rows)
@@ -74,6 +74,10 @@ React, Vue, Svelte — or with no framework at all.
   `applyChanges` that keeps selection, focus and expansion.
 - **Column features** — resize by dragging (or with the keyboard), auto-size on double-click, fix
   columns to the start/end while scrolling horizontally, and show/hide columns in a column chooser.
+- **Responsive columns** — columns hide by priority when the grid itself gets narrow (zoom, a
+  side panel, a phone) and their values move to an expandable row below each row, keeping
+  formatting, renderers, editing, the keyboard and screen readers; no horizontal scrolling at 400%
+  zoom.
 - **Multi-level headers & wide grids** — band columns (headers over groups of columns, any depth)
   that move, fix and hide as a block, and column virtualization: hundreds of columns × millions of
   rows scroll smoothly on both axes.
@@ -307,6 +311,8 @@ interface GridColumnDef<TItem = any> {
   resizable?: boolean | null;
   /** Maximum width in pixels for resizing and auto-sizing. */
   maxWidth?: number | null;
+  /** Order in which the column hides when the grid is too narrow (`autoHideColumns`); lowest first. */
+  hidingPriority?: number | null;
   /** Keep the column at the start or end while scrolling horizontally (mirrored in RTL). */
   fixed?: 'start' | 'end' | null;
   /** Initial visibility. Default `true`. */
@@ -1259,6 +1265,73 @@ are `role="presentation"`. Exports, summaries and Ctrl+C use all columns. As wit
 browser's find-in-page only sees the rendered columns. Before measuring (server rendering, first
 render) the grid renders the columns that fit in 1920 px.
 
+### Responsive columns (auto-hide)
+
+With `auto-hide-columns` (`autoHideColumns`), columns that don't fit in the **grid's own width**
+(not the window's: a side panel or a narrow card counts too) leave the table, and their values move
+to the row details — an expandable row below each row, the same one as
+[master-detail](#master-detail):
+
+```html
+<u-grid auto-hide-columns>
+  <u-grid-column path="invoice" width="120">Invoice</u-grid-column>
+  <u-grid-column path="city" width="140" hiding-priority="0">City</u-grid-column>
+  <u-grid-column path="state" width="120" hiding-priority="1">State</u-grid-column>
+  <u-grid-column path="amount" width="120">Amount</u-grid-column>
+</u-grid>
+```
+
+- **Which columns leave:** when any column has a `hidingPriority`, only those hide, the lowest
+  first (ties: the one further right goes first); without any, columns hide from the last one.
+  Fixed columns, grouped columns, checkboxes, the toggle and the row buttons never hide, and at
+  least one column always stays. The grid needs a width per column: the chosen width (user,
+  `width`, auto-size) or `max(minWidth, 150)` px scaled by the grid's `font-size` (text-only zoom).
+  If what is left still doesn't fit, the last column with a width shrinks to the available space.
+  A hidden column comes back only when it fits with a small margin (no flicker when the scrollbar
+  appears).
+- **Row details:** while a column is hidden, the toggle column appears at the start (sticky). An
+  expanded row shows "Label: value" for each hidden column, in column order, with the cell's
+  formatting, `renderer` (`ctx.adaptive` is `true` there), search highlight, sort/filter marks and
+  edit state — then the `detailRenderer` content, if any. `expandRow`/`collapseRow`/`isRowExpanded`
+  and `u-grid-row-expansion-change` work with `autoHideColumns` even without `detailRenderer`; the
+  expansion is kept (and in `getState()`) while every column fits, and rows open again when
+  columns leave. Fixed rows expand too.
+- **Layout only:** a hidden column stays visible for everything else — the column chooser (checked,
+  with "In row details" below it), `getState()`, exports, row copies, the search and the filters
+  (its filter keeps applying; its filter-row cell and funnel leave with it). Totals of a hidden
+  column move to the last column of the totals footer with the full text ("Sum of Amount: 47");
+  aligned group summaries join the group row text.
+- **Keyboard:** the toggle cell and the details row work as in master-detail (`Enter`/`Space`
+  toggle, `↓` enters the details row, `↑` leaves). `Enter`/`F2` on it reach the values: every value
+  is a stop for `Tab`/`Shift+Tab` (they cycle) and `Esc` returns to the cell. On a value,
+  `Enter`/`F2` (or a double click) edit it in place, `Shift+F10`/the menu key (or a right click)
+  open the cell menu of that column and `Ctrl+C` copies it.
+- **Editing:** in `cell`/`batch` mode the editor opens in place of the value; `Enter`/`Tab` commit
+  (focus back on the value / the next value) and `Esc` cancels. In `row` mode, editing a row opens
+  its details with editors for the hidden columns (`Tab`: row editors → detail editors →
+  Save/Cancel) and closes them when the edit ends; both fire `u-grid-row-expansion-change`. A
+  hidden column with a change or an error while the details are closed marks the toggle cell
+  (described by the first error); saving with an error there opens the details on its editor.
+  `focusCell`/`editCell` on a hidden column open the details (`source: 'api'`) and go to the value.
+- **Focus:** when the column of the active cell leaves, the focus goes to the toggle cell of the
+  same row (header: the previous column; footers: the last column); when it comes back while a
+  value of it is focused, to its cell; when the toggle column goes away, to the first data cell.
+  Outside the grid only the Tab stop moves. The set does not change while an editor, a header
+  filter or a menu is open (zooming doesn't throw away what you are typing).
+- **Screen readers:** `aria-colcount`/`aria-colindex` count the columns in the table only; a value
+  is named "label value" (`aria-labelledby`) and the details row is labelled by its row. When the
+  set changes and the focus is in the grid, one polite announcement after the resizing settles
+  (1 s): "Columns in row details: City, State" (or the count above three), or "All columns in the
+  table"; the toggle column header keeps the same text as its description. When fixed columns and
+  the toggle would take more than half of the width, fixed columns stop sticking.
+- `getAdaptiveColumns()` returns the hidden columns; `u-grid-adaptive-columns-change`
+  (`{ columns, previous }`, after the render, no `source`) fires when the set changes, also from
+  setters (layout state).
+- **SSR:** the server doesn't know the width: every column is rendered and the client hides them
+  after hydration.
+- Style the details with the `adaptive-fields` (`<dl>`), `adaptive-field`, `adaptive-label`
+  (`<dt>`) and `adaptive-value` (`<dd>`, also `modified`/`invalid`) parts.
+
 ---
 
 ## Export & clipboard
@@ -1589,7 +1662,8 @@ Return the same kind of result on the server and on the client (don't branch on
 
 `renderer(item, ctx)` receives the row item and a context
 (`GridCellRenderContext`: `item`, `value`, `text` — what the native cell would show —, `column`,
-`rowKey`, `grid` and `signal`).
+`rowKey`, `adaptive` — `true` in the row details of a column hidden by `autoHideColumns` —, `grid`
+and `signal`).
 
 ```ts
 import { html } from 'lit';
@@ -1686,8 +1760,9 @@ grid.isRowExpanded(orders[0]);       // false
   that is not in the rows keeps its state — and is retained — until it is collapsed.
 - `u-grid-row-expansion-change` (`{ rowKey, expanded, source }`) fires for the toggle button, the
   keyboard and `expandRow`/`collapseRow`, not for `auto-expand-rows`.
-- Without `detailRenderer`, `expandRow`/`collapseRow` do nothing and `isRowExpanded` is `false`.
-  Returning `null` from it renders an empty detail row.
+- Without `detailRenderer` (and without [`autoHideColumns`](#responsive-columns-auto-hide)),
+  `expandRow`/`collapseRow` do nothing and `isRowExpanded` is `false`. Returning `null` from it
+  renders an empty detail row.
 - **Keyboard:** `Enter`/`Space` on the toggle cell expands or collapses (`Space` does not select
   there; clicking the button keeps the focus on the cell); the detail row is one cell — `↑`/`↓` move into and out of it, `Enter`/`F2` move the focus
   into its content (the first focusable element, or a nested grid) and `Esc` returns to the cell.
@@ -1723,9 +1798,11 @@ grid.fixedBottomItems = [{ name: 'Average', amount: average }];
 ```
 
 - They stay out of sorting, filtering, the search (no highlight), grouping and paging (shown on
-  every page), `getTotalCount()` and the summaries. They are not selectable, editable nor
-  expandable (their checkbox, toggle and buttons cells are empty). To fix an item of `items`, put
-  the same object in `fixedTopItems` — it shows in both places.
+  every page), `getTotalCount()` and the summaries. They are not selectable nor editable (their
+  checkbox and buttons cells are empty); they expand like body rows (detail and
+  [hidden columns](#responsive-columns-auto-hide)), inside their row group, by row key — a key also
+  in the body expands in both places. To fix an item of `items`, put the same object in
+  `fixedTopItems` — it shows in both places.
 - **Keyboard:** they are part of the row sequence — headers, top fixed rows, body, bottom fixed
   rows, totals. `PageUp`/`PageDown` move by the body page and never jump over a block (last body
   row → first bottom fixed row → totals). Moving among fixed rows doesn't scroll the body; a body
@@ -2169,7 +2246,11 @@ interface GridI18n {
   cancel: string;
   filteredAnnouncement: string; // after a user filter: "Rows: {count}"
   selectRow: string;           // row checkbox label: "Select row"
-  rowDetails: string;          // master-detail toggle button and column: "Row details"
+  rowDetails: string;          // row details toggle button and column: "Row details"
+  adaptiveColumnsAnnouncement: string;   // autoHideColumns: "Columns in row details: {columns}"
+  noAdaptiveColumnsAnnouncement: string; // autoHideColumns: "All columns in the table"
+  adaptiveColumnDescription: string;     // column chooser, hidden for lack of space: "In row details"
+  adaptiveLabelSeparator: string;        // between label and value in the row details: ": "
   fixedTopRowsLabel: string;   // row group of fixedTopItems: "Pinned rows at top"
   fixedBottomRowsLabel: string; // row group of fixedBottomItems: "Pinned rows at bottom"
   selectAllRows: string;       // "select all" checkbox label: "Select all rows"
@@ -2317,6 +2398,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
+| `autoHideColumns`  | `auto-hide-columns`   | `boolean` | `false` | Hide columns by `hidingPriority` when the grid is too narrow; their values move to the row details. See [Responsive columns](#responsive-columns-auto-hide). |
 | `fixedTopItems`    | *(property only)*     | `readonly any[]` | `[]` | Rows fixed below the headers. See [Fixed rows](#fixed-pinned-rows). |
 | `fixedBottomItems` | *(property only)*     | `readonly any[]` | `[]` | Rows fixed above the totals footer. |
 | `rowRenderer`      | *(property only)*     | `GridRowRenderer \| null` | `null` | Full-width row content (`false` keeps the columns). See [Full-width rows](#full-width-rows-rowrenderer). |
@@ -2467,6 +2549,10 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `detail-toggle-button` | The expand/collapse button of a master row. |
 | `detail-row` | Detail rows (with `row`). |
 | `detail-cell` | The full-width cell of a detail row. |
+| `adaptive-fields` | The list (`<dl>`) of the values of the columns hidden by `autoHideColumns`, in the detail cell. |
+| `adaptive-field` | A label + value pair. |
+| `adaptive-label` | The label (`<dt>`): band path, column label, sort and filter marks. |
+| `adaptive-value` | The value (`<dd>`; also `modified`/`invalid`). |
 | `fixed-row` | Fixed rows (with `row`, `odd`/`even`, and `fixed-top-row` or `fixed-bottom-row`; never `selected`). |
 | `fixed-top-row` | Rows fixed at the top (with `fixed-row`). |
 | `fixed-bottom-row` | Rows fixed at the bottom (with `fixed-row`). |
@@ -2574,8 +2660,8 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -2603,8 +2689,9 @@ CSS property and part for IDEs and tooling.
 | `clearSelection()` | Deselect every key. |
 | `isRowSelected(key)` | Whether the row of `key` is selected. |
 | `getSelectedItems()` | Selected items that are loaded (all of `items`; the loaded blocks of a remote source), in selection order. |
-| `expandRow(rowKey)` / `collapseRow(rowKey)` | Expand / collapse the detail row of a row (master-detail; nothing without `detailRenderer`). |
+| `expandRow(rowKey)` / `collapseRow(rowKey)` | Expand / collapse the detail row of a row (master-detail, hidden columns; nothing without `detailRenderer` and `autoHideColumns`). |
 | `isRowExpanded(rowKey)` | Whether the detail of a row is (or would be) expanded. |
+| `getAdaptiveColumns()` | Columns hidden now for lack of space (`autoHideColumns`), in column order (a copy). |
 | `refresh()` | Reload the data source (or recompute local data); resolves when done. |
 | `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
 | `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
@@ -2644,7 +2731,8 @@ All bubble and are `composed`.
 | `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column (or a top-level band) in the chooser. |
 | `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop, `Alt+Shift+←/→` or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter) | The selection changed. |
-| `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed. |
+| `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed (also by a row edit or `focusCell`/`editCell` on a hidden column). |
+| `u-grid-adaptive-columns-change` | `GridAdaptiveColumnsChangeEventDetail` (`{ columns, previous }`) | layout (width, columns, `autoHideColumns`) | The columns hidden for lack of space changed (after the render). |
 | `u-grid-focus-change` | `GridFocusChangeEventDetail` | yes (`focusCell`, `selectCellRange`; not the `focusedRowKey` setter) | The active cell changed. |
 | `u-grid-loading` | `GridLoadingEventDetail` (`{ options }`) | — (every load: scroll, sort, filter, `refresh()`…) | Before each `dataSource.load` call. Cancelable (the call is skipped). |
 | `u-grid-load` | `GridLoadEventDetail` (`{ options, result }`) | — (every load) | A `load` call resolved (aborted calls fire nothing). |
@@ -2733,6 +2821,7 @@ import {
   type GridRowFixed,        // 'top' | 'bottom' | null
   type GridNoDataRenderContext, // { filtered, grid, signal }
   type GridRowExpansionChangeEventDetail, // { rowKey, expanded, source }
+  type GridAdaptiveColumnsChangeEventDetail, // { columns, previous }
   type GridRowKey,          // string | number
   type GridKeyExpr,         // string | ((item) => GridRowKey)
   type GridDataSource,      // { load(options, signal): Promise<GridLoadResult> }
