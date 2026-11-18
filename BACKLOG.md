@@ -120,17 +120,17 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Agrupamento | Ordenar grupos, contagem e resumos na linha do grupo | ✅ | ✅ | ✅ |
 | Resumos | Totais (rodapé) e por grupo; agregações próprias | ✅ | ✅ | ✅ |
 | Seleção | Linha única/múltipla, caixa de seleção, selecionar tudo | ✅ | ✅ | ✅ |
-| Seleção | Foco de célula/linha, intervalo de células | ◐ (foco feito; intervalo — fase D) | ◐ | ✅ (intervalo: Enterprise) |
+| Seleção | Foco de célula/linha, intervalo de células | ✅ | ◐ | ✅ (intervalo: Enterprise) |
 | Teclado | Navegação por setas, Home/End, PageUp/Down, Enter/F2 | ✅ | ✅ | ✅ |
 | Edição | Célula, linha, lote, formulário/popup | ◐ (célula, linha e lote; formulário/popup — fase D) | ✅ | ✅ |
 | Edição | Validação, inserir/excluir linha, desfazer | ◐ (validação e inserir/excluir; desfazer — fase D) | ✅ | ✅ |
 | Templates | Célula | ✅ | ✅ | ✅ |
-| Templates | Cabeçalho, linha de grupo, linha inteira, vazio | ◐ (cabeçalho, grupo e vazio; linha inteira — fase D) | ✅ | ✅ |
+| Templates | Cabeçalho, linha de grupo, linha inteira, vazio | ✅ | ✅ | ✅ |
 | Detalhe | Master-detail (linha expansível) | ✅ | ✅ | ✅ (Enterprise) |
 | Hierarquia | Dados em árvore | — (TreeList é outro componente) | ◐ | ✅ (Enterprise) |
 | Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | ✅ | ✅ | ✅ |
 | Exportação | CSV / Excel / PDF / área de transferência | ◐ (CSV, Excel por adaptador, Ctrl+C; PDF pelo hospedeiro) | ✅ | ✅ (Excel: Enterprise) |
-| UI | Barra de ferramentas, menu de contexto, painel de carregamento | ◐ (menu da coluna e painel de carregamento; barra — fase D) | ✅ | ✅ |
+| UI | Barra de ferramentas, menu de contexto, painel de carregamento | ✅ | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | — | ✅ | — |
 | A11y | Padrão grid ARIA completo, leitor de tela | ✅ | ✅ | ✅ |
 | i18n | Textos da interface (14 idiomas) | ✅ | ✅ | ✅ |
@@ -181,16 +181,18 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Exportação | `12-export-clipboard.md` | CSV, área de transferência; Excel por adaptador opcional | feito |
 | Bandas e virtualização de colunas | `13-bands-column-virtualization.md` | cabeçalho multinível, virtualizar colunas | feito |
 
-### Fase D — avançado (escopo decidido quando chegar a vez)
+### Fase D — avançado
 
-| Frente | Inclui | Estado |
-|---|---|---|
-| Barra e menus | barra de ferramentas configurável, menu de contexto, menu da coluna | — |
-| Responsivo | colunas ocultas por prioridade com linha adaptativa | — |
-| Árvore | dados hierárquicos (talvez um `<u-tree-grid>` à parte) | — |
-| Intervalo de células | seleção retangular, copiar/colar intervalo | — |
-| Linhas fixas | linhas fixadas no topo/rodapé | — |
-| Arrastar linhas | reordenar linhas e arrastar entre grids | — |
+| Frente | Spec | Inclui | Estado |
+|---|---|---|---|
+| Barra e menus | `18-toolbar-context-menu.md` | barra de ferramentas configurável, menus de contexto de linha/célula/grupo/cabeçalho num motor só | feito |
+| Intervalo de células | `19-cell-range.md` | seleção retangular, vários intervalos, copiar/colar intervalo, ações no menu da célula | feito |
+| Linhas fixas e linha inteira | `20-pinned-rows-row-template.md` | linhas fixadas no topo/rodapé; `rowRenderer` de largura total | feito |
+| Responsivo | `21-*` | colunas ocultas por prioridade com linha adaptativa | — |
+| Arrastar linhas | `22-*` | reordenar linhas e arrastar entre grids | — |
+| Edição por formulário e desfazer | `23-*` | modos formulário/popup; desfazer/refazer | — |
+| Construtor de filtro | `24-*` | construtor visual e painel de filtro | — |
+| Árvore | `25-*` | dados hierárquicos (talvez um `<u-tree-grid>` à parte) | — |
 
 ### Pendências deixadas pelas frentes
 
