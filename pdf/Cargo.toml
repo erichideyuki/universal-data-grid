@@ -18,8 +18,9 @@ rustybuzz = "0.20.1"
 unicode-bidi = "0.3.18"
 unicode-linebreak = "0.1.5"
 unicode-segmentation = "1.13"
-# deflate dos streams e decodificação de PNG
-miniz_oxide = "0.8"
+# deflate dos streams (porta do zlib-ng: ~30% mais rápida que o miniz_oxide no mesmo nível)
+zlib-rs = { version = "0.5.5", default-features = false, features = ["rust-allocator"] }
+# decodificação de PNG
 png = { version = "0.17", default-features = false }
 
 [profile.release]

@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise -- protocolo binário do motor e cores 0xRRGGBB. */
 /**
  * Protocolo binário JS → motor (o mesmo de `pdf/src/input.rs`): configuração
  * e blocos de linhas, little endian, strings em UTF-8 com o tamanho antes.
@@ -56,11 +57,35 @@ export class Writer {
   }
 
   str(v: string) {
+    const n = v.length;
     // UTF-8 tem no máximo 3 bytes por unidade UTF-16
-    this.#room(4 + v.length * 3);
-    const { written } = encoder.encodeInto(v, this.#buf.subarray(this.#len + 4));
-    this.#view.setUint32(this.#len, written, true);
-    this.#len += 4 + written;
+    this.#room(4 + n * 3);
+    const buf = this.#buf;
+    let p = this.#len + 4;
+    let i = 0;
+
+    // ASCII (o caso comum: números, datas, códigos) byte a byte, sem criar vistas
+    for (; i < n; i++) {
+      const c = v.charCodeAt(i);
+
+      if (c >= 0x80) {
+        break;
+      }
+
+      buf[p++] = c;
+    }
+
+    if (i < n) {
+      p += encoder.encodeInto(i ? v.slice(i) : v, buf.subarray(p)).written;
+    }
+
+    this.#view.setUint32(this.#len, p - this.#len - 4, true);
+    this.#len = p;
+  }
+
+  /** Reescreve um `u32` já escrito (o total de linhas do bloco, conhecido no fim). */
+  setU32(at: number, v: number) {
+    this.#view.setUint32(at, v >>> 0, true);
   }
 
   get length(): number {
@@ -82,20 +107,20 @@ export const parseColor = (color: string | undefined | null): number | undefined
   }
 
   const c = color.trim().toLowerCase();
-  let m = /^#([0-9a-f]{3})$/.exec(c);
+  let m = (/^#([0-9a-f]{3})$/).exec(c);
 
   if (m) {
-    const [r, g, b] = [...m[1]].map(x => parseInt(x + x, 16));
+    const [r, g, b] = [m[1][0], m[1][1], m[1][2]].map(x => parseInt(x + x, 16));
     return (r << 16) | (g << 8) | b;
   }
 
-  m = /^#([0-9a-f]{6})$/.exec(c);
+  m = (/^#([0-9a-f]{6})$/).exec(c);
 
   if (m) {
     return parseInt(m[1], 16);
   }
 
-  m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(c);
+  m = (/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/).exec(c);
 
   if (m) {
     return (Math.min(255, +m[1]) << 16) | (Math.min(255, +m[2]) << 8) | Math.min(255, +m[3]);
@@ -104,7 +129,7 @@ export const parseColor = (color: string | undefined | null): number | undefined
   // nomes e outros formatos: o canvas normaliza (só no navegador)
   if (typeof OffscreenCanvas !== 'undefined' || typeof document !== 'undefined') {
     const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    const ctx = canvas.getContext('2d');
 
     if (ctx) {
       ctx.fillStyle = '#010203';

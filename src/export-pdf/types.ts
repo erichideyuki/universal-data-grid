@@ -1,5 +1,5 @@
-import type { GridColumnAlignment } from '../grid-column-def.js';
 import type { GridExportColumn, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
+import type { GridColumnAlignment } from '../grid-column-def.js';
 
 /** A font for the PDF. Every font is embedded (subset); the order is the fallback order per character. */
 export interface GridPdfFont {
@@ -31,11 +31,17 @@ export type GridPdfOrientation = 'auto' | 'portrait' | 'landscape';
 export interface GridPdfTheme {
   /** Text size in pt. Default 8, minimum 6. */
   fontSize?: number;
+  /** Text color (CSS). Default `#1a1a1a`. */
   color?: string;
+  /** Background of the header row (CSS). Default `#e6e6e6`. */
   headerBackgroundColor?: string;
+  /** Background of group rows (CSS). Default `#f0f0f0`. */
   groupBackgroundColor?: string;
+  /** Background of every other data row when `striped` (CSS). Default `#f7f7f7`. */
   stripedBackgroundColor?: string;
+  /** Background of group footer and totals rows (CSS). Default `#ececec`. */
   summaryBackgroundColor?: string;
+  /** Color of the table rules (CSS). Default `#8a8a8a`. */
   lineColor?: string;
 }
 
@@ -53,9 +59,13 @@ export interface GridPdfCellStyle {
 
 /** An image in a cell, above its text. Sizes in pt. */
 export interface GridPdfImage {
+  /** The PNG or JPEG file (copied). */
   data: Uint8Array;
+  /** Format of `data`. */
   format: 'png' | 'jpeg';
+  /** Width in pt (shrinks to the column). */
   width: number;
+  /** Height in pt. */
   height: number;
   /** Text alternative (required). `''` marks the image as decorative. */
   alt: string;
@@ -63,6 +73,7 @@ export interface GridPdfImage {
 
 /** A link on the cell text (`http:`, `https:` or `mailto:` only). */
 export interface GridPdfLink {
+  /** Target (`http:`, `https:` or `mailto:`; others are ignored with a warning). */
   url: string;
   /** Accessible description of the link target when the cell text alone is not enough. */
   description?: string;
@@ -84,11 +95,15 @@ export interface GridPdfCell<TItem = any> {
   readonly columnIndex: number;
   /** Cell value (in the header, the column label). */
   readonly value: unknown;
+  /** Text drawn in the cell (wraps; never cut). */
   text: string;
   /** Language of the text (BCP 47) when it differs from the document. The grid does not guess languages from scripts. */
   lang?: string;
+  /** Style of the cell (replace the object or change its fields). */
   style: GridPdfCellStyle;
+  /** An image above the text (`alt` required). */
   image?: GridPdfImage;
+  /** Makes the cell text a link (underlined; the PDF annotation is tagged). */
   link?: GridPdfLink;
 }
 
@@ -107,24 +122,30 @@ export interface GridPdfOptions extends Omit<GridExportOptions, 'includeGroups'>
   language?: string;
   /** Default: the direction of the grid. `rtl` mirrors the table. */
   direction?: 'ltr' | 'rtl';
+  /** Default `'auto'`: Letter in the US, Canada, Mexico…, A4 elsewhere (from the language region). */
   paperSize?: GridPdfPaperSize;
+  /** Default `'auto'`: landscape when the columns do not fit in portrait. */
   orientation?: GridPdfOrientation;
   /** Columns that do not fit the page move to a "Label: value" line under each row (rule of `hidingPriority`). Default: `autoHideColumns` of the grid. */
   autoHideColumns?: boolean;
   /** Alternate row backgrounds. Default: `striped` of the grid. */
   striped?: boolean;
+  /** Font size and colors (text colors below 4.5:1 contrast fall back to the default, with a warning). */
   theme?: GridPdfTheme;
   /** "Page X of Y" in the footer. Default `true`. */
   includePageNumbers?: boolean;
   /** Bookmarks for the first-level groups. Default `true` when the rows are grouped. */
   bookmarks?: boolean;
+  /** Changes each cell before it is laid out (style, image, link, language); see {@link GridPdfCell}. */
   customizeCell?: ((cell: GridPdfCell) => void) | null;
   /** Called about every 250 ms and once at the end (never after an abort). */
   onProgress?: ((progress: GridPdfProgress) => void) | null;
   /**
-   * Generate in a Web Worker (default `true` when `Worker` exists), on the
-   * main thread in time slices (`false`), or in the worker a factory returns
-   * (CDN, strict CSP: a Blob URL).
+   * Generate in Web Workers (default `true` when `Worker` exists), on the
+   * main thread in time slices (`false`), or in the workers a factory returns
+   * (CDN, strict CSP: a Blob URL of `worker.js`). The factory is called twice
+   * per export (an engine worker and an assembler that compresses in
+   * parallel) and must return a new `Worker` each time.
    */
   worker?: boolean | (() => Worker);
   /** Where `grid-pdf.wasm` and `worker.js` are. Default: next to this module. */

@@ -1596,9 +1596,10 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridEditCancelEventDetail>} u-grid-edit-cancel - Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`).
  * @fires {CustomEvent<GridContextMenuOpeningEventDetail>} u-grid-context-menu-opening - Before a context menu opens (header, group panel, row, group row: right-click,
  * long press, Shift+F10, the context menu key, the header "⋮" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
- * @fires {CustomEvent<GridExportingEventDetail>} u-grid-exporting - Before an export started from the UI (toolbar, "More actions", row menu). Cancelable: export your own way (e.g. PDF).
+ * @fires {CustomEvent<GridExportingEventDetail>} u-grid-exporting - Before an export started from the UI (toolbar, "More actions", row menu). Cancelable: export your own way (e.g. another format).
  * @fires {CustomEvent<GridExportEventDetail>} u-grid-export - An export started from the UI finished.
- * @fires {CustomEvent<GridExportErrorEventDetail>} u-grid-export-error - An export started from the UI failed (`detail.error`).
+ * @fires {CustomEvent<GridExportErrorEventDetail>} u-grid-export-error - An export started from the UI failed (`detail.error`). Not fired when the export is canceled
+ * (`cancelExport()`, "Cancel export", an exporter rejecting with an `AbortError`).
  *
  * @cssprop --u-grid-background-color - Grid background.
  * @cssprop --u-grid-color - Text color of the grid. Default: on-surface token (`rgb(29, 27, 32)`).
@@ -16712,10 +16713,10 @@ export class DataGrid extends LitElement {
 
       for (const format of this.#missingExporters()) {
         this.#warnedExporters.add(format);
-        const [property, factory, entry] = format === 'xlsx'
+        const [key, factory, entry] = format === 'xlsx'
           ? ['xlsxExporter', 'createXlsxExporter', 'export-xlsx']
           : ['pdfExporter', 'createPdfExporter', 'export-pdf'];
-        console.warn(`<u-grid>: export format "${format}" needs "${property}" (${factory} from "@universal-material/data-grid/${entry}"); its entries are not shown.`);
+        console.warn(`<u-grid>: export format "${format}" needs "${key}" (${factory} from "@universal-material/data-grid/${entry}"); its entries are not shown.`);
       }
     });
   }
@@ -16744,6 +16745,7 @@ export class DataGrid extends LitElement {
 
     const controller = new AbortController();
     this.#exporting = controller;
+    this.#exportStartedAt = performance.now();
     this.#exportProgress = null;
     this.#exportTimer = setTimeout(() => {
       this.#exportTimer = undefined;
@@ -16761,6 +16763,7 @@ export class DataGrid extends LitElement {
             this.requestUpdate();
           }
         };
+
         await this.#exporterOf(format)!(this, { selectedOnly, signal: controller.signal, onProgress });
       }
 
@@ -16802,6 +16805,24 @@ export class DataGrid extends LitElement {
   }
 
   #exporting: AbortController | null = null;
+  /** Início da exportação da interface (o cancelar da interface ignora os primeiros 500 ms). */
+  #exportStartedAt = 0;
+  /**
+   * Com o menu da barra aberto, as entradas ficam na posição em que abriram: se ele abriu com
+   * "Cancelar exportação", a entrada fica (desabilitada) até fechar, mesmo que a exportação acabe.
+   */
+  #menuHasCancel = false;
+
+  /**
+   * "Cancelar exportação" ativado na interface: o mesmo botão (ou a posição do menu) que acabou de
+   * iniciar a exportação não a cancela num clique duplo ou repetição de tecla.
+   */
+  #cancelExportFromUi(): void {
+    if (performance.now() - this.#exportStartedAt >= 500) {
+      this.cancelExport();
+    }
+  }
+
   /** Progresso da exportação da interface (0–100) quando o exportador informa; `null` sem informação. */
   #exportProgress: number | null = null;
 
@@ -17142,7 +17163,7 @@ export class DataGrid extends LitElement {
             }
 
             if (cancels) {
-              this.cancelExport();
+              this.#cancelExportFromUi();
             } else if (single) {
               void this.#runExport(single.format, single.selectedOnly);
             } else if (open) {
@@ -17157,7 +17178,7 @@ export class DataGrid extends LitElement {
               this.#openToolbarMenu('export', event.currentTarget as HTMLElement, event.key === 'ArrowUp');
             }
           }}>${exportIcon}${withText ? html`<span>${cancels ? translation.exportCancel : text}</span>` : nothing}</button>${progress
-            ? html`<span id="u-grid-export-progress" hidden>${progress}</span>`
+            ? html`<span id="u-grid-export-progress" lang=${lang} hidden>${progress}</span>`
             : nothing}`;
       }
 
@@ -17245,29 +17266,32 @@ export class DataGrid extends LitElement {
 
   #openToolbarMenu(kind: 'more' | 'export', button: HTMLElement, last = false): void {
     this.#contextMenu.hide();
+    this.#menuHasCancel = !!this.#exporting;
     this.#toolbarMenu.show({ returnFocus: button, opener: button, focusLast: last, data: { kind } });
   }
 
   /** Entradas do "mais" (recolhidos na ordem da barra; exportar achatado com separador) ou do exportar. */
   #toolbarMenuEntries(kind: 'more' | 'export'): { entry: MenuEntry; run: (opener: HTMLElement | null) => void }[] {
     const exportEntries = () => {
+      // menu aberto: "Cancelar" só se ele abriu com a exportação em curso (as posições não mudam)
+      const withCancel = this.#toolbarMenu.open ? this.#menuHasCancel : !!this.#exporting;
       const options = this.#exportEntries().map((option, index) => ({
         entry: {
           key: option.key,
           label: option.label,
           disabled: option.disabled || !!this.#exporting,
-          separatorBefore: kind === 'more' && index === 0 && !this.#exporting,
+          separatorBefore: kind === 'more' && index === 0 && !withCancel,
           lang: this.#textLanguage,
-        } as MenuEntry,
+        },
         run: () => {
           void this.#runExport(option.format, option.selectedOnly);
         },
       }));
 
-      if (this.#exporting && options.length) {
+      if (withCancel && options.length) {
         options.unshift({
-          entry: { key: 'export:cancel', label: this.#translation.exportCancel, disabled: false, separatorBefore: kind === 'more', lang: this.#textLanguage },
-          run: () => this.cancelExport(),
+          entry: { key: 'export:cancel', label: this.#translation.exportCancel, disabled: !this.#exporting, separatorBefore: kind === 'more', lang: this.#textLanguage },
+          run: () => this.#cancelExportFromUi(),
         });
       }
 

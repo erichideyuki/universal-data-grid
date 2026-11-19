@@ -10,7 +10,7 @@ use crate::images::{self, Image};
 use crate::input::{Align, Cell, Config, Kind, Layout, Row};
 use crate::tags::{self, Tags};
 use crate::text::{self, G, Line, Text};
-use crate::writer::{Writer, literal, num, text_string};
+use crate::writer::{Writer, literal, num, put_cents, put_num, text_string};
 
 const PAD: f64 = 2.0;
 /// Recuo por nível de grupo (pt).
@@ -24,8 +24,6 @@ struct CellLayout {
     /// texto lógico da célula (ActualText) quando houve shaping/bidi ou palavra partida
     actual: Option<String>,
     text: String,
-    bold: bool,
-    italic: bool,
     align: Align,
     color: u32,
     bg: Option<u32>,
@@ -80,6 +78,22 @@ pub struct Doc {
     rows_on_page: u32,
     annots: Vec<u32>,
     pub pages: Vec<u32>,
+    /// estado gráfico corrente do conteúdo da página (evita repetir cor e fonte)
+    gs_fill: Option<u32>,
+    gs_stroke: Option<u32>,
+    gs_font: Option<(u16, u64)>,
+    /// objeto de texto aberto (BT sem ET): as células de uma linha dividem um BT, cada uma com o
+    /// seu BDC/EMC dentro; `text_mc` = profundidade de conteúdo marcado em que o BT abriu
+    in_text: bool,
+    text_mc: u32,
+    mc_depth: u32,
+    /// origem da linha de texto corrente (centésimos de pt), para o `Td` relativo
+    tlm: (i64, i64),
+    /// objetos de atributo (`/A`) compartilhados: TD por coluna (muda com os IDs de cabeçalho), TH de linha
+    td_attr: Vec<Option<u32>>,
+    row_scope: Option<u32>,
+    /// fios das linhas seguidas com as mesmas divisas: desenhados juntos (por cima dos fundos)
+    rules: Option<RuleRun>,
     // documento
     pages_node: u32,
     resources: u32,
@@ -87,6 +101,29 @@ pub struct Doc {
     metadata: u32,
     outline: Vec<(String, u32, f64)>,
     started: bool,
+}
+
+/// Fios adiados: divisas verticais (x) e as horizontais (y) de linhas seguidas da tabela.
+struct RuleRun {
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+}
+
+fn put_rgb(out: &mut Vec<u8>, c: u32) {
+    put_num(out, f64::from((c >> 16) & 255) / 255.0);
+    out.push(b' ');
+    put_num(out, f64::from((c >> 8) & 255) / 255.0);
+    out.push(b' ');
+    put_num(out, f64::from(c & 255) / 255.0);
+}
+
+/// Números separados por espaço, seguidos do operador `op` (`re f`, `m`, `l`…).
+fn put_op(out: &mut Vec<u8>, nums: &[f64], op: &[u8]) {
+    for v in nums {
+        put_num(out, *v);
+        out.push(b' ');
+    }
+    out.extend_from_slice(op);
 }
 
 fn rgb(c: u32) -> String {
@@ -134,6 +171,16 @@ impl Doc {
             rows_on_page: 0,
             annots: Vec::new(),
             pages: Vec::new(),
+            gs_fill: None,
+            gs_stroke: None,
+            gs_font: None,
+            in_text: false,
+            text_mc: 0,
+            mc_depth: 0,
+            tlm: (0, 0),
+            td_attr: Vec::new(),
+            row_scope: None,
+            rules: None,
             pages_node,
             resources,
             total_form,
@@ -235,8 +282,6 @@ impl Doc {
             lines,
             actual,
             text: cell.text.clone(),
-            bold: cell.bold,
-            italic: cell.italic,
             align: cell.align.unwrap_or(align_default),
             color: cell.color.unwrap_or(color),
             bg: cell.bg,
@@ -258,6 +303,13 @@ impl Doc {
         self.page_obj = self.w.alloc();
         self.page_open = true;
         self.content.clear();
+        // espessura única (fios da tabela e sublinhado); cor e fonte conforme o uso
+        self.content.extend_from_slice(b"0.5 w\n");
+        self.gs_fill = None;
+        self.gs_stroke = None;
+        self.gs_font = None;
+        self.in_text = false;
+        self.mc_depth = 0;
         self.annots.clear();
         self.rows_on_page = 0;
         self.y = self.cfg.margin;
@@ -278,7 +330,9 @@ impl Doc {
         if !self.page_open {
             return;
         }
+        self.flush_rules();
         self.page_open = false;
+        self.end_text();
         if self.cfg.page_numbers {
             let n = self.pages.len();
             let label = self.cfg.page_label.replace("{page}", &n.to_string());
@@ -291,13 +345,16 @@ impl Doc {
             let total_w = wtxt + size * 3.0;
             let x = (self.pw - total_w) / 2.0;
             self.content.extend_from_slice(b"/Artifact <</Type /Pagination /Subtype /Footer>> BDC\n");
+            self.mc_depth += 1;
             let color = self.cfg.colors.text;
             self.glyphs(&g, &before, x, base, size, color);
             // o total (Y) é um formulário escrito no fim
             let fy = self.ph - base;
+            self.end_text();
             let _ = write!(self.content_str(), "q 1 0 0 1 {} {} cm /Fm0 Do Q\n", num(x + wtxt), num(fy));
-            self.content.extend_from_slice(b"EMC\n");
+            self.emc();
         }
+        debug_assert!(self.mc_depth == 0 && !self.in_text);
         let key = self.tags.end_page(&mut self.w);
         let contents = self.w.alloc();
         let data = std::mem::take(&mut self.content);
@@ -327,57 +384,154 @@ impl Doc {
         self.ph - y
     }
 
-    fn fill(&mut self, x: f64, y: f64, w: f64, h: f64, color: u32) {
-        let fy = self.fy(y + h);
-        let c = rgb(color);
-        let _ = write!(self.content_str(), "/Artifact <</Type /Layout>> BDC {c} rg {} {} {} {} re f EMC\n", num(x), num(fy), num(w), num(h));
-    }
-
-    fn rule_h(&mut self, x: f64, y: f64, w: f64) {
-        let c = rgb(self.cfg.colors.line);
-        let fy = self.fy(y);
-        let _ = write!(self.content_str(), "/Artifact <</Type /Layout>> BDC {c} RG 0.5 w {} {} m {} {} l S EMC\n", num(x), num(fy), num(x + w), num(fy));
-    }
-
-    fn rule_v(&mut self, x: f64, y: f64, h: f64) {
-        let c = rgb(self.cfg.colors.line);
-        let (a, b) = (self.fy(y), self.fy(y + h));
-        let _ = write!(self.content_str(), "/Artifact <</Type /Layout>> BDC {c} RG 0.5 w {} {} m {} {} l S EMC\n", num(x), num(a), num(x), num(b));
-    }
-
-    fn row_rules(&mut self, y: f64, h: f64, spans: &[(f64, f64)]) {
-        self.rule_h(self.table_x, y, self.table_w);
-        self.rule_h(self.table_x, y + h, self.table_w);
-        for &(x, w) in spans {
-            self.rule_v(x, y, h);
-            self.rule_v(x + w, y, h);
+    fn set_fill(&mut self, color: u32) {
+        if self.gs_fill != Some(color) {
+            put_rgb(&mut self.content, color);
+            self.content.extend_from_slice(b" rg\n");
+            self.gs_fill = Some(color);
         }
     }
 
-    /// Glifos de uma linha (x relativo) em `x0`, na linha de base `base`; registra o uso no ToUnicode.
+    fn set_stroke(&mut self, color: u32) {
+        if self.gs_stroke != Some(color) {
+            put_rgb(&mut self.content, color);
+            self.content.extend_from_slice(b" RG\n");
+            self.gs_stroke = Some(color);
+        }
+    }
+
+    /// Abre o objeto de texto (se não houver um aberto).
+    fn begin_text(&mut self) {
+        if !self.in_text {
+            self.content.extend_from_slice(b"BT\n");
+            self.in_text = true;
+            self.text_mc = self.mc_depth;
+            self.tlm = (0, 0);
+        }
+    }
+
+    /// Fecha o objeto de texto antes de um operador gráfico (caminho, imagem, formulário). Só
+    /// pode ser chamado no nível de conteúdo marcado em que o BT abriu (o aninhamento fica certo).
+    fn end_text(&mut self) {
+        if self.in_text {
+            debug_assert!(self.mc_depth <= self.text_mc, "ET dentro de um BDC aberto depois do BT");
+            self.content.extend_from_slice(b"ET\n");
+            self.in_text = false;
+        }
+    }
+
+    /// Fecha o conteúdo marcado corrente (o BT aberto dentro dele fecha antes).
+    fn emc(&mut self) {
+        if self.in_text && self.text_mc >= self.mc_depth {
+            self.end_text();
+        }
+        self.content.extend_from_slice(b"EMC\n");
+        self.mc_depth = self.mc_depth.saturating_sub(1);
+    }
+
+    fn fill(&mut self, x: f64, y: f64, w: f64, h: f64, color: u32) {
+        self.end_text();
+        let fy = self.fy(y + h);
+        self.content.extend_from_slice(b"/Artifact <</Type /Layout>> BDC\n");
+        self.set_fill(color);
+        put_op(&mut self.content, &[x, fy, w, h], b"re f EMC\n");
+    }
+
+    /// Fios de uma linha da tabela: adiados enquanto as linhas seguintes têm as mesmas divisas
+    /// (a vertical vira um segmento só por trecho; os fundos das linhas ficam por baixo).
+    fn row_rules(&mut self, y: f64, h: f64, spans: &[(f64, f64)]) {
+        let mut xs: Vec<f64> = spans.iter().flat_map(|&(x, w)| [x, x + w]).collect();
+        xs.sort_by(f64::total_cmp);
+        xs.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+        if let Some(run) = self.rules.as_mut() {
+            let same = run.xs.len() == xs.len() && run.xs.iter().zip(&xs).all(|(a, b)| (a - b).abs() < 0.01);
+            if same && run.ys.last().is_some_and(|last| (last - y).abs() < 0.01) {
+                run.ys.push(y + h);
+                return;
+            }
+        }
+        self.flush_rules();
+        self.rules = Some(RuleRun { xs, ys: vec![y, y + h] });
+    }
+
+    /// Desenha os fios adiados (antes de fechar a página ou ao mudar as divisas).
+    fn flush_rules(&mut self) {
+        let Some(run) = self.rules.take() else { return };
+        self.end_text();
+        self.content.extend_from_slice(b"/Artifact <</Type /Layout>> BDC\n");
+        self.set_stroke(self.cfg.colors.line);
+        let (x0, x1) = (self.table_x, self.table_x + self.table_w);
+        for &y in &run.ys {
+            let fy = self.fy(y);
+            put_op(&mut self.content, &[x0, fy], b"m ");
+            put_op(&mut self.content, &[x1, fy], b"l\n");
+        }
+        let (top, bottom) = (self.fy(run.ys[0]), self.fy(*run.ys.last().unwrap_or(&run.ys[0])));
+        for &x in &run.xs {
+            put_op(&mut self.content, &[x, top], b"m ");
+            put_op(&mut self.content, &[x, bottom], b"l\n");
+        }
+        self.content.extend_from_slice(b"S EMC\n");
+    }
+
+    /// Objeto de atributo `/A` do TD da coluna `k` (compartilhado pelas linhas até os IDs mudarem).
+    fn td_attr(&mut self, k: usize) -> u32 {
+        if self.td_attr.len() <= k {
+            self.td_attr.resize(k + 1, None);
+        }
+        if let Some(o) = self.td_attr[k] {
+            return o;
+        }
+        let body = format!("<</O /Table{}>>", self.headers_attr(k));
+        let o = self.w.alloc();
+        self.w.small(o, body.as_bytes());
+        self.td_attr[k] = Some(o);
+        o
+    }
+
+    /// Objeto de atributo `/A` do TH de linha (`/Scope /Row`).
+    fn row_scope(&mut self) -> u32 {
+        if let Some(o) = self.row_scope {
+            return o;
+        }
+        let o = self.w.alloc();
+        self.w.small(o, b"<</O /Table /Scope /Row>>");
+        self.row_scope = Some(o);
+        o
+    }
+
     fn glyphs(&mut self, gs: &[G], text: &str, x0: f64, base: f64, size: f64, color: u32) {
         if gs.is_empty() {
             return;
         }
-        let c = rgb(color);
-        let _ = write!(self.content_str(), "BT {c} rg\n");
-        let mut cur_font = u16::MAX;
+        self.set_fill(color);
+        self.begin_text();
         let mut i = 0;
         while i < gs.len() {
             let g0 = gs[i];
-            if g0.font != cur_font {
-                let res = self.t.fonts[g0.font as usize].res.clone();
-                let _ = write!(self.content_str(), "/{res} {} Tf\n", num(size));
-                cur_font = g0.font;
+            // fonte e tamanho são estado gráfico: valem entre BT/ET até a próxima troca
+            let state = (g0.font, size.to_bits());
+            if self.gs_font != Some(state) {
+                self.content.push(b'/');
+                self.content.extend_from_slice(self.t.fonts[g0.font as usize].res.as_bytes());
+                self.content.push(b' ');
+                put_op(&mut self.content, &[size], b"Tf\n");
+                self.gs_font = Some(state);
             }
             let ty = self.fy(base - f64::from(g0.dy));
-            let _ = write!(self.content_str(), "1 0 0 1 {} {} Tm [", num(x0 + f64::from(g0.x)), num(ty));
+            // `Td` relativo à origem da linha anterior, em centésimos exatos (sem erro acumulado)
+            let (xc, yc) = (((x0 + f64::from(g0.x)) * 100.0).round() as i64, (ty * 100.0).round() as i64);
+            put_cents(&mut self.content, xc - self.tlm.0);
+            self.content.push(b' ');
+            put_cents(&mut self.content, yc - self.tlm.1);
+            self.content.extend_from_slice(b" Td [");
+            self.tlm = (xc, yc);
             let mut bytes = Vec::with_capacity(32);
             let mut pen = f64::from(g0.x);
             let mut j = i;
             while j < gs.len() {
                 let g = gs[j];
-                if g.font != cur_font || (j > i && (g.dy != g0.dy || g.x < gs[j - 1].x)) {
+                if g.font != g0.font || (j > i && (g.dy != g0.dy || g.x < gs[j - 1].x)) {
                     break;
                 }
                 if j > i {
@@ -400,7 +554,6 @@ impl Doc {
             self.content.extend_from_slice(b"] TJ\n");
             i = j;
         }
-        self.content.extend_from_slice(b"ET\n");
     }
 
     /// x da linha de texto conforme o alinhamento (e a direção).
@@ -425,8 +578,9 @@ impl Doc {
         let x = if self.cfg.rtl { self.pw - self.cfg.margin - w } else { self.cfg.margin };
         let base = self.y + size;
         let _ = write!(self.content_str(), "/H1 <</MCID {mcid}>> BDC\n");
+        self.mc_depth += 1;
         self.glyphs(&g, &title, x, base, size, self.cfg.colors.text);
-        self.content.extend_from_slice(b"EMC\n");
+        self.emc();
         self.tags.close(&mut self.w);
         self.y += size * 1.6;
     }
@@ -437,6 +591,7 @@ impl Doc {
         self.table_depth = Some(self.tags.depth());
         self.thead_done = false;
         self.col_ids.clear();
+        self.td_attr.clear();
         if self.page_open {
             self.draw_header(true);
         }
@@ -451,6 +606,7 @@ impl Doc {
         self.tbody_open = false;
         self.tfoot_open = false;
         self.group_ids.clear();
+        self.td_attr.clear();
     }
 
     /// Cabeçalho da tabela: na 1ª vez, `THead` real; nas páginas seguintes, artefato de paginação.
@@ -477,6 +633,7 @@ impl Doc {
                 let id = self.tags.new_id(&mut self.w, th);
                 self.tags.extend(th, &format!(" /ID ({id})"));
                 self.col_ids.push(id);
+                self.td_attr.clear();
                 self.draw_cell(th, "TH", l, c.x, c.w, y, 0, usize::MAX, 0.0);
                 self.tags.close_detached(&mut self.w, th);
             }
@@ -485,16 +642,15 @@ impl Doc {
             self.thead_done = true;
         } else {
             self.content.extend_from_slice(b"/Artifact <</Type /Pagination /Subtype /Header>> BDC\n");
+            self.mc_depth += 1;
             for (c, l) in cols.iter().zip(&layouts) {
                 for (i, line) in l.lines.iter().enumerate() {
                     let base = y + PAD + l.image_h + self.lh() * i as f64 + self.size();
                     let x = self.line_x(c.x, c.w, line.width, l.align, 0.0);
-                    let t = l.text[line.start..line.end].to_owned();
-                    let gs = line.glyphs.clone();
-                    self.glyphs_bold(&gs, &t, x, base, l);
+                    self.glyphs_bold(&line.glyphs, &l.text, x, base, l);
                 }
             }
-            self.content.extend_from_slice(b"EMC\n");
+            self.emc();
         }
         let spans: Vec<(f64, f64)> = cols.iter().map(|c| (c.x, c.w)).collect();
         self.row_rules(y, h, &spans);
@@ -514,8 +670,11 @@ impl Doc {
         let lh = self.lh();
         let to = to.min(l.lines.len());
         if let Some(bg) = l.bg {
-            let h = self.cell_h(l);
-            self.fill(x, y, w, h, bg);
+            // só a célula inteira (a linha alta pinta o fundo de cada pedaço)
+            if from == 0 && to >= l.lines.len() {
+                let h = self.cell_h(l);
+                self.fill(x, y, w, h, bg);
+            }
         }
         // imagem (só no 1º pedaço)
         if from == 0 {
@@ -526,8 +685,9 @@ impl Doc {
                     let ix = if self.cfg.rtl { x + w - PAD - iw } else { x + PAD };
                     let name = im.name.clone();
                     let fy = self.fy(y + PAD + ih);
+                    self.end_text();
                     if alt.is_empty() {
-                        let _ = write!(self.content_str(), "/Artifact BDC q {} 0 0 {} {} {} cm /{name} Do Q EMC\n", num(iw), num(ih), num(ix), num(fy));
+                        let _ = write!(self.content_str(), "/Artifact BMC q {} 0 0 {} {} {} cm /{name} Do Q EMC\n", num(iw), num(ih), num(ix), num(fy));
                     } else {
                         let bbox = format!(" /A <</O /Layout /BBox [{} {} {} {}]>>", num(ix), num(fy), num(ix + iw), num(fy + ih));
                         let fig = self.tags.open_detached(&mut self.w, owner, "Figure", format!("{}{bbox}", tags::alt(alt)));
@@ -561,25 +721,31 @@ impl Doc {
         }
         let mcid = self.tags.mcid_to(self.page_obj, owner_text);
         let mtag = if link.is_some() { "Link" } else if span.is_some() { "Span" } else { tag };
+        if link.is_some() {
+            self.end_text();
+        } else {
+            // BT antes do BDC: as células seguintes da linha continuam no mesmo objeto de texto
+            self.begin_text();
+        }
         let _ = write!(self.content_str(), "/{mtag} <</MCID {mcid}>> BDC\n");
+        self.mc_depth += 1;
         let mut rects = Vec::new();
         for i in from..to {
             let line = &l.lines[i];
             let base = y + PAD + if from == 0 { l.image_h } else { 0.0 } + lh * (i - from) as f64 + size;
             let lx = self.line_x(x, w, line.width, l.align, indent);
-            let t = &l.text;
-            let gs = line.glyphs.clone();
-            let t = t.clone();
-            self.glyphs(&gs, &t, lx, base, size, l.color);
+            self.glyphs(&line.glyphs, &l.text, lx, base, size, l.color);
             if link.is_some() {
                 // sublinhado (o link não depende só da cor)
-                let c = rgb(l.color);
                 let uy = self.fy(base + size * 0.12);
-                let _ = write!(self.content_str(), "{c} RG 0.5 w {} {} m {} {} l S\n", num(lx), num(uy), num(lx + line.width), num(uy));
+                self.end_text();
+                self.set_stroke(l.color);
+                put_op(&mut self.content, &[lx, uy], b"m ");
+                put_op(&mut self.content, &[lx + line.width, uy], b"l S\n");
                 rects.push((lx, self.fy(base + size * 0.25), lx + line.width, self.fy(base - size)));
             }
         }
-        self.content.extend_from_slice(b"EMC\n");
+        self.emc();
         if let Some((lk, url, contents)) = link {
             for r in rects {
                 let annot = self.w.alloc();
@@ -658,6 +824,20 @@ impl Doc {
         self.rows_done += 1;
     }
 
+    /// `/A` próprio (inline) de uma TD numa linha com cabeçalho de linha: coluna, grupos
+    /// `groups` e o TH da linha (com `/Headers` explícito o leitor não soma o `/Scope /Row`).
+    fn headers_with(&self, col: usize, groups: &[String], row_th: &str) -> String {
+        let mut s = String::from(" /A <</O /Table /Headers [");
+        if let Some(id) = self.col_ids.get(col) {
+            let _ = write!(s, "({id}) ");
+        }
+        for g in groups {
+            let _ = write!(s, "({g}) ");
+        }
+        let _ = write!(s, "({row_th})]>>");
+        s
+    }
+
     fn headers_attr(&self, col: usize) -> String {
         let mut s = String::from(" /Headers [");
         if let Some(id) = self.col_ids.get(col) {
@@ -708,21 +888,36 @@ impl Doc {
         self.room(h + ah);
         self.ensure_tbody();
         self.tbody_rows += 1;
+        if self.y + h > self.bottom() {
+            // linha mais alta que a página: quebra entre linhas de texto (nada se perde)
+            let row_header_id = self.tall_row(&cols, &layouts, !adaptive.is_empty());
+            self.stripe += 1;
+            if !adaptive.is_empty() {
+                self.room(ah);
+                self.adaptive_line(&cols, &adaptive, ah, row_header_id);
+            }
+            self.rows_on_page += 1;
+            return;
+        }
         let y = self.y;
         if self.cfg.striped && self.stripe % 2 == 1 {
             self.fill(self.table_x, y, self.table_w, h + ah, self.cfg.colors.stripe);
         }
         self.stripe += 1;
         let tr = self.tags.open(&mut self.w, "TR", String::new());
-        let mut row_header_id = None;
+        let mut row_header_id: Option<String> = None;
         for (k, (c, l)) in cols.iter().zip(&layouts).enumerate() {
-            let (ty, attrs) = if k == 0 && !adaptive.is_empty() {
-                ("TH", " /A <</O /Table /Scope /Row>>".to_owned())
+            let lang = l.lang.as_deref().map(tags::lang).unwrap_or_default();
+            let (ty, cell) = if k == 0 && !adaptive.is_empty() {
+                let attr = self.row_scope();
+                ("TH", self.tags.open_cell(&mut self.w, tr, "TH", attr, lang))
+            } else if let Some(th) = row_header_id.as_deref() {
+                let extra = format!("{}{lang}", self.headers_with(k, &self.group_ids, th));
+                ("TD", self.tags.open_detached(&mut self.w, tr, "TD", extra))
             } else {
-                ("TD", format!(" /A <</O /Table{}>>", self.headers_attr(k)))
+                let attr = self.td_attr(k);
+                ("TD", self.tags.open_cell(&mut self.w, tr, "TD", attr, lang))
             };
-            let extra = format!("{attrs}{}", l.lang.as_deref().map(tags::lang).unwrap_or_default());
-            let cell = self.tags.open_detached(&mut self.w, tr, ty, extra);
             if ty == "TH" {
                 let id = self.tags.new_id(&mut self.w, cell);
                 self.tags.extend(cell, &format!(" /ID ({id})"));
@@ -736,27 +931,103 @@ impl Doc {
         self.row_rules(y, h, &spans);
         self.y += h;
         if !adaptive.is_empty() {
-            let ay = self.y;
-            let tr = self.tags.open(&mut self.w, "TR", String::new());
-            let headers = row_header_id.map(|id| format!(" /Headers [({id})]")).unwrap_or_default();
-            let td = self.tags.open_detached(&mut self.w, tr, "TD", format!(" /A <</O /Table /ColSpan {}{headers}>>", cols.len()));
-            let list = self.tags.open_detached(&mut self.w, td, "L", String::new());
-            let mut yy = ay + PAD;
-            for l in &adaptive {
-                let li = self.tags.open_detached(&mut self.w, list, "LI", String::new());
-                let body = self.tags.open_detached(&mut self.w, li, "LBody", String::new());
-                self.draw_cell(body, "LBody", l, self.table_x, self.table_w, yy - PAD, 0, usize::MAX, INDENT);
-                yy += l.lines.len() as f64 * self.lh();
-                self.tags.close_detached(&mut self.w, body);
-                self.tags.close_detached(&mut self.w, li);
-            }
-            self.tags.close_detached(&mut self.w, list);
-            self.tags.close_detached(&mut self.w, td);
-            self.tags.close(&mut self.w);
-            self.row_rules(ay, ah, &[(self.table_x, self.table_w)]);
-            self.y += ah;
+            self.adaptive_line(&cols, &adaptive, ah, row_header_id);
         }
         self.rows_on_page += 1;
+    }
+
+    /// Linha adaptativa: "Rótulo: valor" das colunas ocultas, numa célula que cobre a linha.
+    fn adaptive_line(&mut self, cols: &[Col], adaptive: &[CellLayout], ah: f64, row_header_id: Option<String>) {
+        let ay = self.y;
+        let tr = self.tags.open(&mut self.w, "TR", String::new());
+        let headers = row_header_id.map(|id| format!(" /Headers [({id})]")).unwrap_or_default();
+        let td = self.tags.open_detached(&mut self.w, tr, "TD", format!(" /A <</O /Table /ColSpan {}{headers}>>", cols.len()));
+        let list = self.tags.open_detached(&mut self.w, td, "L", String::new());
+        let mut yy = ay + PAD;
+        for l in adaptive {
+            let li = self.tags.open_detached(&mut self.w, list, "LI", String::new());
+            let body = self.tags.open_detached(&mut self.w, li, "LBody", String::new());
+            self.draw_cell(body, "LBody", l, self.table_x, self.table_w, yy - PAD, 0, usize::MAX, INDENT);
+            yy += l.lines.len() as f64 * self.lh();
+            self.tags.close_detached(&mut self.w, body);
+            self.tags.close_detached(&mut self.w, li);
+        }
+        self.tags.close_detached(&mut self.w, list);
+        self.tags.close_detached(&mut self.w, td);
+        self.tags.close(&mut self.w);
+        self.row_rules(ay, ah, &[(self.table_x, self.table_w)]);
+        self.y += ah;
+    }
+
+    /// Linha de dados mais alta que a página: as células continuam na página seguinte, linha de
+    /// texto a linha de texto (cada pedaço é um MCID da mesma célula). Devolve o ID do cabeçalho de
+    /// linha (com linha adaptativa).
+    fn tall_row(&mut self, cols: &[Col], layouts: &[CellLayout], row_header: bool) -> Option<String> {
+        let lh = self.lh();
+        let tr = self.tags.open(&mut self.w, "TR", String::new());
+        let mut row_header_id: Option<String> = None;
+        let cells: Vec<(u32, &'static str)> = cols
+            .iter()
+            .zip(layouts)
+            .enumerate()
+            .map(|(k, (_, l))| {
+                let lang = l.lang.as_deref().map(tags::lang).unwrap_or_default();
+                let (ty, cell) = if k == 0 && row_header {
+                    let attr = self.row_scope();
+                    ("TH", self.tags.open_cell(&mut self.w, tr, "TH", attr, lang))
+                } else if let Some(th) = row_header_id.as_deref() {
+                    let extra = format!("{}{lang}", self.headers_with(k, &self.group_ids, th));
+                    ("TD", self.tags.open_detached(&mut self.w, tr, "TD", extra))
+                } else {
+                    let attr = self.td_attr(k);
+                    ("TD", self.tags.open_cell(&mut self.w, tr, "TD", attr, lang))
+                };
+                if ty == "TH" {
+                    let id = self.tags.new_id(&mut self.w, cell);
+                    self.tags.extend(cell, &format!(" /ID ({id})"));
+                    row_header_id = Some(id);
+                }
+                (cell, ty)
+            })
+            .collect();
+        let mut from = vec![0usize; cols.len()];
+        loop {
+            let y = self.y;
+            let avail = self.bottom() - y;
+            let mut chunk_h = lh + 2.0 * PAD;
+            let mut plan = Vec::with_capacity(cols.len());
+            for (k, l) in layouts.iter().enumerate() {
+                let img = if from[k] == 0 { l.image_h } else { 0.0 };
+                let fit = (((avail - 2.0 * PAD - img) / lh).floor().max(1.0)) as usize;
+                let n = if l.text.is_empty() { 0 } else { l.lines.len() };
+                let to = (from[k] + fit).min(n);
+                chunk_h = chunk_h.max(img + (to - from[k].min(to)) as f64 * lh + 2.0 * PAD);
+                plan.push(to);
+            }
+            for (k, (c, l)) in cols.iter().zip(layouts).enumerate() {
+                // fundo do pedaço (o `draw_cell` só pinta o fundo da célula inteira)
+                if let Some(bg) = l.bg {
+                    self.fill(c.x, y, c.w, chunk_h, bg);
+                }
+                self.draw_cell(cells[k].0, cells[k].1, l, c.x, c.w, y, from[k], plan[k], 0.0);
+                from[k] = plan[k];
+            }
+            let spans: Vec<(f64, f64)> = cols.iter().map(|c| (c.x, c.w)).collect();
+            self.row_rules(y, chunk_h, &spans);
+            self.y += chunk_h;
+            self.rows_on_page += 1;
+            let done = layouts.iter().enumerate().all(|(k, l)| l.text.is_empty() || from[k] >= l.lines.len());
+            if done {
+                break;
+            }
+            self.close_page();
+            self.open_page();
+        }
+        for (cell, _) in cells {
+            self.tags.close_detached(&mut self.w, cell);
+        }
+        self.tags.close(&mut self.w);
+        row_header_id
     }
 
     fn group(&mut self, row: Row) {
@@ -789,9 +1060,10 @@ impl Doc {
             let x = if self.cfg.rtl { self.pw - self.cfg.margin - w } else { self.cfg.margin };
             let base = self.y + size;
             let _ = write!(self.content_str(), "/H2 <</MCID {mcid}>> BDC\n");
+            self.mc_depth += 1;
             let color = self.cfg.colors.text;
             self.glyphs(&g, &label, x, base, size, color);
-            self.content.extend_from_slice(b"EMC\n");
+            self.emc();
             self.tags.close(&mut self.w);
             if self.cfg.bookmarks {
                 self.outline.push((label, self.page_obj, self.y));
@@ -842,15 +1114,17 @@ impl Doc {
         self.tags.extend(th, &format!(" /ID ({id})"));
         let keep = level.saturating_sub(usize::from(self.cfg.layout == Layout::Sections));
         self.group_ids.truncate(keep);
+        self.td_attr.clear();
         self.draw_cell(th, "TH", &ll, span_x, span_w, y, 0, usize::MAX, indent);
         self.tags.close_detached(&mut self.w, th);
         for (k, (c, l)) in rest.iter().enumerate() {
-            let attrs = format!(" /A <</O /Table{}>>", self.headers_attr(first_summary + k));
-            let td = self.tags.open_detached(&mut self.w, tr, "TD", attrs);
+            let extra = self.headers_with(first_summary + k, &self.group_ids, &id);
+            let td = self.tags.open_detached(&mut self.w, tr, "TD", extra);
             self.draw_cell(td, "TD", l, c.x, c.w, y, 0, usize::MAX, 0.0);
             self.tags.close_detached(&mut self.w, td);
         }
         self.group_ids.push(id);
+        self.td_attr.clear();
         self.tags.close(&mut self.w);
         let mut spans = vec![(span_x, span_w)];
         spans.extend(rest.iter().map(|(c, _)| (c.x, c.w)));
@@ -873,7 +1147,11 @@ impl Doc {
                 let a = self.cfg.columns[c.index].align;
                 let mut cell = row.cells.get(c.index).map(|c| Cell { text: c.text.clone(), bold: c.bold, italic: c.italic, align: c.align, color: c.color, bg: c.bg, lang: c.lang.clone(), image: None, link: None }).unwrap_or_else(empty_cell);
                 if k == 0 && cell.text.is_empty() && total {
+                    // texto da i18n: no idioma dela quando difere do documento (WCAG 3.1.2)
                     cell.text = self.cfg.total_label.clone();
+                    if self.cfg.ui_lang != self.cfg.lang && !self.cfg.ui_lang.is_empty() {
+                        cell.lang = Some(self.cfg.ui_lang.clone());
+                    }
                 }
                 self.measure(&cell, c.w, a, color, 0.0)
             })
@@ -897,9 +1175,26 @@ impl Doc {
         let y = self.y;
         self.fill(self.table_x, y, self.table_w, h, self.cfg.colors.summary);
         let tr = self.tags.open(&mut self.w, "TR", String::new());
+        // rodapé: os grupos que ele resume (nível da linha = nível do grupo + 1); total: nenhum
+        let groups: Vec<String> = if total {
+            Vec::new()
+        } else {
+            let keep = usize::from(row.level).saturating_sub(usize::from(self.cfg.layout == Layout::Sections));
+            self.group_ids.iter().take(keep).cloned().collect()
+        };
+        let mut th_id = String::new();
         for (k, (c, l)) in cols.iter().zip(&layouts).enumerate() {
-            let (ty, attrs) = if k == 0 { ("TH", " /A <</O /Table /Scope /Row>>".to_owned()) } else { ("TD", format!(" /A <</O /Table{}>>", self.headers_attr(k))) };
-            let cell = self.tags.open_detached(&mut self.w, tr, ty, attrs);
+            let lang = l.lang.as_deref().map(tags::lang).unwrap_or_default();
+            let (ty, cell) = if k == 0 {
+                let attr = self.row_scope();
+                let cell = self.tags.open_cell(&mut self.w, tr, "TH", attr, lang);
+                th_id = self.tags.new_id(&mut self.w, cell);
+                self.tags.extend(cell, &format!(" /ID ({th_id})"));
+                ("TH", cell)
+            } else {
+                let extra = format!("{}{lang}", self.headers_with(k, &groups, &th_id));
+                ("TD", self.tags.open_detached(&mut self.w, tr, "TD", extra))
+            };
             self.draw_cell(cell, ty, l, c.x, c.w, y, 0, usize::MAX, 0.0);
             self.tags.close_detached(&mut self.w, cell);
         }

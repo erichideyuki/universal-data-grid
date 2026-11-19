@@ -8,7 +8,7 @@ import type {
 } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 
-/** Options of `getExportData()`, `exportCsv()`, `downloadCsv()` and the xlsx adapter. */
+/** Options of `getExportData()`, `exportCsv()`, `downloadCsv()` and the xlsx and PDF adapters. */
 export interface GridExportOptions {
   /**
    * Only the selected rows, in the current order and filter (not in the
@@ -29,7 +29,7 @@ export interface GridExportOptions {
    * Default `true`; `selectedOnly: true` leaves them out.
    */
   includeFixedRows?: boolean;
-  /** Aborts the export: the promise rejects with an `AbortError`. */
+  /** Aborts the export: the promise rejects with an `AbortError` (the PDF adapter: with `signal.reason`). */
   signal?: AbortSignal | null;
 }
 

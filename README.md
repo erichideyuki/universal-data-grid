@@ -1581,6 +1581,93 @@ formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `she
 (`'Sheet1'`), `includeHeaders` (`true`), `customize` and, for `downloadXlsx`, `fileName`
 (`'export.xlsx'`).
 
+### PDF (`export-pdf`)
+
+An optional entry point writes an **accessible, tagged PDF** (PDF/UA-1 target: table structure with
+header cells, reading order, language, title, embedded fonts) of what the user sees, in any script
+(Arabic and Hebrew right to left, Devanagari, Thai, CJK…). A WebAssembly engine lays out, shapes and
+writes the file in Web Workers (one lays out the pages while another compresses and writes), so the
+page stays responsive; the `.wasm` (~470 KB gzip) and the worker are only downloaded on the first
+export. The grid bundle does not change.
+
+```js
+import { downloadPdf, exportPdf } from '@universal-material/data-grid/export-pdf';
+
+const fonts = [
+  { source: '/fonts/NotoSans-Regular.ttf' },
+  { source: '/fonts/NotoSans-Bold.ttf', weight: 'bold' },
+  { source: '/fonts/NotoSansArabic-Regular.ttf' },  // fallback per character, in this order
+];
+
+await downloadPdf(grid, { fonts, fileName: 'orders.pdf', title: 'Orders 2026' });
+const blob = await exportPdf(grid, { fonts, layout: 'sections', paperSize: 'letter' });
+```
+
+**Fonts are yours.** Browsers do not let pages read installed font files, and an accessible PDF must
+embed its fonts, so pass TrueType/OpenType files (or collections) covering the characters of your data;
+only the glyphs used are embedded. A character no font covers rejects with
+`GridPdfMissingGlyphError` (`codePoints`), instead of a PDF that would lose it.
+
+What goes in the PDF: the visible columns in their current order, the filter, the sorting, the groups
+and the summaries, like [`getExportData`](#export-data-excel-pdf-anything). Cell templates
+(`renderer`, `rowRenderer`, `detailRenderer`) are not drawn — the PDF holds the cell texts; restyle
+cells or add images and links with `customizeCell`. The header repeats on every page; text wraps in
+its cell (never cut with "…"); a row taller than a page continues on the next one. Columns that do not
+fit the paper follow the [auto-hide rule](#responsive-columns-auto-hide) (`hidingPriority`): they move
+to a "Label: value" line under each row; when none can move, the columns shrink and the text wraps.
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `fonts` | — | Required. `{ source, weight?, style? }[]`: `source` is an `ArrayBuffer`, a `Uint8Array` (copied, never transferred) or a URL. |
+| `layout` | `'table'` | `'table'`: one table, groups as rows. `'sections'`: a heading and a table per first-level group (navigable headings, bookmarks). `'list'`: a flat list, grouped columns first. |
+| `title` | accessible name of the grid, else "Data" | Document title (shown by PDF readers) and heading of page 1. |
+| `language` | language of the grid | Document language (`/Lang`). |
+| `direction` | direction of the grid | `'rtl'` mirrors the table. |
+| `paperSize` | `'auto'` | `'a4' \| 'letter' \| 'legal' \| 'a3'`; `'auto'`: Letter in the US, Canada, Mexico…, A4 elsewhere. |
+| `orientation` | `'auto'` | `'auto'`: landscape when the columns do not fit in portrait. |
+| `autoHideColumns` | the grid's | Hidden columns move to a "Label: value" line instead of shrinking. |
+| `striped` | the grid's | Alternate row backgrounds. |
+| `theme` | — | `{ fontSize (pt, min 6), color, headerBackgroundColor, groupBackgroundColor, stripedBackgroundColor, summaryBackgroundColor, lineColor }`. A text color below 4.5:1 contrast with a background falls back to the default (with a warning). |
+| `includePageNumbers` | `true` | "Page X of Y" in the footer. |
+| `bookmarks` | `true` | Bookmarks for the first-level groups. |
+| `customizeCell` | — | `(cell) => void`, see below. |
+| `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void`, about every 250 ms and once at the end. |
+| `worker` | `true` | `false` generates on the main thread in time slices (Node, strict CSP); a function returns a new `Worker` of `worker.js` (CDN: a Blob URL) and is called twice per export. |
+| `assetsUrl` | next to the module | Where `grid-pdf.wasm` and `worker.js` are served from. |
+| `selectedOnly`, `includeSummaries`, `includeFixedRows`, `signal` | | As in [`getExportData`](#export-data-excel-pdf-anything). |
+| `fileName` | `'export.pdf'` | `downloadPdf()` only. |
+
+`customizeCell(cell)` runs for every header, data, group, group footer and totals cell, synchronously,
+before the cell is laid out. Read `rowType`, `row`, `column`, `columnIndex`, `value`; change:
+
+```js
+customizeCell: cell => {
+  if (cell.rowType === 'data' && cell.column?.column.path === 'status' && cell.value === 'late') {
+    cell.style = { ...cell.style, bold: true, color: '#b00020' };          // contrast checked
+  }
+  if (cell.rowType === 'data' && cell.column?.column.path === 'flag') {
+    cell.image = { data: flags[cell.value], format: 'png', width: 16, height: 11, alt: cell.text };
+  }
+  if (cell.column?.column.path === 'site') {
+    cell.link = { url: cell.text, description: 'Customer website' };      // http(s): and mailto: only
+  }
+  if (cell.column?.column.path === 'name_fa') {
+    cell.lang = 'fa';                                                      // the grid never guesses languages
+  }
+}
+```
+
+`cell.style`: `bold`, `italic`, `color`, `backgroundColor`, `alignment`. An image needs `alt` (`''` marks
+it decorative). Unsupported values are ignored with a console warning.
+
+Options are checked when called (`TypeError`); loading errors reject with the original error; an
+aborted `signal` rejects with its reason. In Node (or a server), pass ready data —
+`exportPdf({ columns, rows }, { fonts, worker: false })` with a `GridExportData` — and fonts as file
+URLs or buffers.
+
+For the toolbar Export button, `createPdfExporter({ fonts, ... })` returns the exporter to assign to
+`grid.pdfExporter` (see [Export button](#export-button)).
+
 ### Clipboard (Ctrl+C)
 
 With [cell ranges](#cell-ranges) selected and the focus on a data cell, **Ctrl+C** copies the ranges,
@@ -1695,23 +1782,30 @@ group chips (mirrored in RTL), `Home`/`End` go to the first/last one. The search
 ### Export button
 
 ```html
-<u-grid export-formats="csv xlsx"></u-grid>
+<u-grid export-formats="csv xlsx pdf"></u-grid>
 ```
 
 ```js
 import ExcelJS from 'exceljs';
 import { createXlsxExporter } from '@universal-material/data-grid/export-xlsx';
+import { createPdfExporter } from '@universal-material/data-grid/export-pdf';
 
 grid.xlsxExporter = createXlsxExporter(ExcelJS, { fileName: 'orders.xlsx' }); // without it, no Excel entry
+grid.pdfExporter = createPdfExporter({ fonts, fileName: 'orders.pdf' });     // without it, no PDF entry
 grid.csvExportOptions = { fileName: 'orders.csv' };
 ```
 
-The Export button lists "Export to CSV", "Export to Excel" and — with `selection-mode` on — "Export
-selected rows to …" (disabled while nothing is selected); with a single entry it is a plain button.
-The cancelable `u-grid-exporting` (`{ format, selectedOnly }`) fires first — cancel it to export your
-own way — then `u-grid-export` or `u-grid-export-error` (`{ format, selectedOnly, error }`). Screen
-readers hear "Exporting…" after a second and the result; removing the grid aborts the export (the
-exporter gets an `AbortSignal`). For other formats (PDF), add your own toolbar item that uses
+The Export button lists "Export to CSV", "Export to Excel", "Export to PDF" and — with
+`selection-mode` on — "Export selected rows to …" (disabled while nothing is selected); with a single
+entry it is a plain button. The cancelable `u-grid-exporting` (`{ format, selectedOnly }`) fires first —
+cancel it to export your own way — then `u-grid-export` or `u-grid-export-error`
+(`{ format, selectedOnly, error }`). While an export runs, the menu gets a first **Cancel export** entry
+(a single-format button becomes Cancel export) and the format entries are disabled; the button
+description reads the progress when the exporter reports it
+("Exporting… 40%", read on focus, not announced). Screen readers hear "Exporting…" after a second and
+the result ("Exported to PDF", "Export canceled"); `cancelExport()` cancels by API, and removing the
+grid aborts the export (the exporter gets an `AbortSignal`; a rejection with an `AbortError` is a
+cancel, not an error). Other formats: add your own toolbar item that uses
 [`getExportData()`](#export-data-excel-pdf-anything). The export methods do not fire these events.
 
 ### Context menus
@@ -2487,13 +2581,15 @@ interface GridI18n {
   // validationStringLengthMin, validationStringLengthMax, validationPattern, validationEmail,
   // validationNumber, validationDate, validationInvalid
   // Toolbar and menus: toolbarLabel, toolbarMoreButtonLabel, exportButtonLabel, exportCsv,
-  // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportingAnnouncement,
-  // exportCompleteAnnouncement ({format}), exportErrorAnnouncement, copyCell, copySelectedRows,
+  // exportXlsx, exportSelectedCsv, exportSelectedXlsx, exportPdf, exportSelectedPdf, exportCancel,
+  // exportingAnnouncement, exportProgress ({percent}), exportCompleteAnnouncement ({format}),
+  // exportCanceledAnnouncement, exportErrorAnnouncement, copyCell, copySelectedRows,
   // copySelectedCells, paste, pasteFailedAnnouncement (cell ranges),
   // rowMenuLabel, groupRowMenuLabel ({value}), sortColumnAscending, sortColumnDescending,
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
   // Tree data: expandNode, collapseNode, addChildRow, childRowsLoadingAnnouncement,
   // childRowsLoadedAnnouncement ({count}), childRowsLoadErrorAnnouncement, nodesExpandedAnnouncement ({count})
+  // PDF export: pdfPageNumber ({page}, {pageCount}), pdfDefaultTitle, pdfTotalRow
   fixColumn: string;           // header menu submenu: "Pin column"
   autoSizeAllColumns: string;  // header menu: "Auto-size all columns"
   openColumnChooser: string;   // header menu: "Choose columns"
@@ -2902,6 +2998,7 @@ CSS property and part for IDEs and tooling.
 | `getExportData(options?)` | `Promise<GridExportData>`: the columns and rows the user sees. See [Export & clipboard](#export--clipboard). |
 | `exportCsv(options?)` | `Promise<Blob>`: CSV of what the user sees. |
 | `downloadCsv(options?)` | Build the CSV and download it (`fileName`, default `export.csv`). |
+| `cancelExport()` | Cancel the export started from the export UI, if any ("Export canceled"; no `u-grid-export-error`). |
 | `copySelection()` | `Promise<boolean>`: copy like Ctrl+C through the Clipboard API (call it within a user gesture). See [Copy by API](#copy-by-api). |
 | `openContextMenu(target, anchor?)` / `closeContextMenu()` | Open the context menu of a row (`{ rowKey, column? }`), a header (`{ column }`) or a group row (`{ groupPath }`) / close it. See [Context menus](#context-menus). |
 | `getState()` | The user state (`GridState`, JSON serializable, no row data). See [State persistence](#state-persistence). |
@@ -2943,7 +3040,7 @@ All bubble and are `composed`.
 | `u-grid-context-menu-opening` | `GridContextMenuOpeningEventDetail` | `openContextMenu()` | Before a context menu opens; change `menuItems` in place. Cancelable. |
 | `u-grid-exporting` | `GridExportingEventDetail` (`{ format, selectedOnly }`) | no (UI only) | Before an export from the toolbar or the row menu. Cancelable. |
 | `u-grid-export` | `GridExportEventDetail` | no (UI only) | That export finished. |
-| `u-grid-export-error` | `GridExportErrorEventDetail` (`+ error`) | no (UI only) | That export failed. |
+| `u-grid-export-error` | `GridExportErrorEventDetail` (`+ error`) | no (UI only) | That export failed (not fired when it is canceled). |
 | `u-grid-state-change` | `GridStateChangeEventDetail` (`{ state, sources }`) | yes (also setters and `setState`) | `state-change-delay` ms after the last change of the state, once per burst, only if it really changed; after a restore from `stateStorage` with `sources: ['storage']`. |
 | `u-grid-edit-starting` | `GridEditStartingEventDetail` | yes | Before an editor (or a row) opens. Cancelable. |
 | `u-grid-row-adding` | `GridRowAddingEventDetail` | yes | Before a row is added (initial values in `data`). Cancelable. |
@@ -3076,8 +3173,9 @@ import {
   type GridToolbarItemActionContext, // { toolbarItem, grid }
   type GridToolbarItemRenderContext, // { toolbarItem, grid, signal }
   type GridToolbarItemRenderer, // (context) => GridRenderResult
-  type GridExportFormat,    // 'csv' | 'xlsx'
-  type GridExporter,        // (grid, { selectedOnly, signal }) => Promise<void>
+  type GridExportFormat,    // 'csv' | 'xlsx' | 'pdf'
+  type GridExporter,        // (grid, { selectedOnly, signal, onProgress? }) => Promise<void>
+  type GridExportProgress,  // { rowCount, totalCount, pageCount }
   type GridExportingEventDetail, // { format, selectedOnly }
   type GridExportEventDetail,    // { format, selectedOnly }
   type GridExportErrorEventDetail, // { format, selectedOnly, error }
@@ -3130,6 +3228,26 @@ import {
   type WorkbookOf,         // WorkbookOf<typeof ExcelJS>: the real workbook type (for `customize`)
   type WorksheetOf,        // WorksheetOf<typeof ExcelJS>: the real worksheet type
 } from '@universal-material/data-grid/export-xlsx';
+
+import {
+  exportPdf,               // (grid | GridExportData, GridPdfOptions) => Promise<Blob>
+  downloadPdf,             // (grid | GridExportData, GridPdfDownloadOptions) => Promise<void>
+  createPdfExporter,       // (GridPdfExporterOptions) => GridExporter — for grid.pdfExporter
+  GridPdfMissingGlyphError, // Error with codePoints: no font covers them
+  type GridPdfOptions,     // GridExportOptions (no includeGroups) + { fonts, layout?, title?, language?, direction?, paperSize?, orientation?, autoHideColumns?, striped?, theme?, includePageNumbers?, bookmarks?, customizeCell?, onProgress?, worker?, assetsUrl? }
+  type GridPdfDownloadOptions, // + { fileName? }
+  type GridPdfExporterOptions, // GridPdfDownloadOptions without selectedOnly and signal
+  type GridPdfFont,        // { source: ArrayBuffer | Uint8Array | string | URL; weight?; style? }
+  type GridPdfLayout,      // 'table' | 'sections' | 'list'
+  type GridPdfPaperSize,   // 'auto' | 'a4' | 'letter' | 'legal' | 'a3'
+  type GridPdfOrientation, // 'auto' | 'portrait' | 'landscape'
+  type GridPdfTheme,
+  type GridPdfCell,        // customizeCell argument
+  type GridPdfCellStyle,   // { bold?, italic?, color?, backgroundColor?, alignment? }
+  type GridPdfImage,       // { data, format: 'png' | 'jpeg', width, height, alt } (pt)
+  type GridPdfLink,        // { url, description? }
+  type GridPdfProgress,    // = GridExportProgress
+} from '@universal-material/data-grid/export-pdf';
 ```
 
 ### Deprecated names

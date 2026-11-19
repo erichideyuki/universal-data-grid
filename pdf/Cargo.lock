@@ -67,20 +67,20 @@ checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.9.1",
- "zlib-rs",
+ "zlib-rs 0.6.8",
 ]
 
 [[package]]
 name = "grid-pdf"
 version = "0.1.0"
 dependencies = [
- "miniz_oxide 0.8.9",
  "png",
  "rustybuzz",
  "unicode-bidi",
  "unicode-linebreak",
  "unicode-segmentation",
  "uo-fonts",
+ "zlib-rs 0.5.5",
 ]
 
 [[package]]
@@ -237,6 +237,12 @@ source = "git+https://github.com/erichideyuki/universal-office?rev=62b381d74238f
 dependencies = [
  "ryu-js",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zlib-rs"

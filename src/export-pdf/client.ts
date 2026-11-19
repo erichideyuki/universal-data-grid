@@ -15,15 +15,16 @@ export interface Client {
   addFont(bytes: Uint8Array, bold: boolean, italic: boolean): Promise<void>;
   begin(config: Uint8Array): Promise<void>;
   addImage(bytes: Uint8Array, format: number, width: number, height: number): Promise<number>;
-  /** Entrega um bloco de linhas e espera o layout dele (`last`: fecha a entrada). */
+  /** Entrega um bloco de linhas (passa a ser do cliente) e espera o layout dele (`last`: fecha a entrada). */
   rows(data: Uint8Array, last: boolean): Promise<RowsResult>;
   finish(): Promise<Uint8Array[]>;
   dispose(): void;
 }
 
 /** Pedido ao worker. */
-export type Request =
-  | { id: number; op: 'init'; wasmUrl: string }
+export type WorkerRequest =
+  | { id: number; op: 'init'; module: WebAssembly.Module; role: 'engine' | 'assembler'; deferred: boolean }
+  | { id: number; op: 'segments'; data: ArrayBuffer[] }
   | { id: number; op: 'font'; bytes: ArrayBuffer; bold: boolean; italic: boolean }
   | { id: number; op: 'begin'; config: ArrayBuffer }
   | { id: number; op: 'image'; bytes: ArrayBuffer; format: number; width: number; height: number }
@@ -31,10 +32,10 @@ export type Request =
   | { id: number; op: 'finish' };
 
 /** Pedido sem o `id` (cada variante). */
-type RequestBody = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id'> }[Request['op']];
+type RequestBody = { [K in WorkerRequest['op']]: Omit<Extract<WorkerRequest, { op: K }>, 'id'> }[WorkerRequest['op']];
 
 /** Resposta do worker. */
-export type Response =
+export type WorkerResponse =
   | { id: number; ok: true; value?: number; chunks?: ArrayBuffer[]; pages?: number; done?: boolean }
   | { id: number; ok: false; code: number; message: string };
 
@@ -47,10 +48,13 @@ export const localClient = async (wasmUrl: string): Promise<Client> => {
     (await WebAssembly.instantiate(await compileEngine(wasmUrl), {})).exports as unknown as ConstructorParameters<typeof Engine>[0],
   );
 
+  // erro síncrono do motor vira promessa rejeitada
+  const run = <T>(f: () => T): Promise<T> => new Promise<T>(resolve => resolve(f()));
+
   return {
-    addFont: async (bytes, bold, italic) => engine.addFont(bytes, bold, italic),
-    begin: async config => engine.begin(config),
-    addImage: async (bytes, format, width, height) => engine.addImage(bytes, format, width, height),
+    addFont: (bytes, bold, italic) => run(() => engine.addFont(bytes, bold, italic)),
+    begin: config => run(() => engine.begin(config)),
+    addImage: (bytes, format, width, height) => run(() => engine.addImage(bytes, format, width, height)),
     rows: async (data, last) => {
       engine.pushRows(data);
 
@@ -79,21 +83,21 @@ export const localClient = async (wasmUrl: string): Promise<Client> => {
 
       return { chunks, pages: engine.pageCount, done };
     },
-    finish: async () => {
+    finish: () => run(() => {
       engine.finish();
       return engine.takeChunks();
-    },
+    }),
     dispose: () => engine.dispose(),
   };
 };
 
 /** Cópia do conteúdo num `ArrayBuffer` próprio (pode ser transferido sem esvaziar o do hospedeiro). */
-const own = (bytes: Uint8Array): ArrayBuffer => bytes.slice().buffer as ArrayBuffer;
+const own = (bytes: Uint8Array): ArrayBuffer => bytes.slice().buffer;
 
-/** No Web Worker. Encerrar (`dispose`) rejeita o pedido pendente com `AbortError`. */
-export const workerClient = async (worker: Worker, wasmUrl: string): Promise<Client> => {
+/** Canal de pedidos a um worker: cada pedido com `id`, resposta casada pelo `id`. */
+const channel = (worker: Worker) => {
   let next = 0;
-  const pending = new Map<number, { resolve: (r: Response & { ok: true }) => void; reject: (e: unknown) => void }>();
+  const pending = new Map<number, { resolve: (r: WorkerResponse & { ok: true }) => void; reject: (e: unknown) => void }>();
 
   const fail = (error: unknown) => {
     for (const p of pending.values()) {
@@ -103,7 +107,7 @@ export const workerClient = async (worker: Worker, wasmUrl: string): Promise<Cli
     pending.clear();
   };
 
-  worker.onmessage = (event: MessageEvent<Response>) => {
+  worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
     const r = event.data;
     const p = pending.get(r.id);
 
@@ -119,41 +123,98 @@ export const workerClient = async (worker: Worker, wasmUrl: string): Promise<Cli
       p.reject(new EngineError(r.code, r.message));
     }
   };
+
   worker.onerror = event => {
     event.preventDefault();
     fail(new Error(`PDF worker failed: ${event.message || 'unknown error'}`));
   };
 
-  const call = (request: RequestBody, transfer: Transferable[] = []): Promise<Response & { ok: true }> => new Promise((resolve, reject) => {
+  const call = (request: RequestBody, transfer: Transferable[] = []): Promise<WorkerResponse & { ok: true }> => new Promise((resolve, reject) => {
     const id = ++next;
     pending.set(id, { resolve, reject });
     worker.postMessage({ ...request, id }, transfer);
   });
 
-  await call({ op: 'init', wasmUrl });
+  return { call, fail };
+};
+
+/** Montagens em voo antes de o motor esperar (limita os segmentos crus na fila do montador). */
+const ASSEMBLER_INFLIGHT = 2;
+
+/**
+ * Em Web Workers: o motor faz o layout e entrega segmentos crus; o montador
+ * (segundo worker) comprime e escreve o arquivo, em paralelo com o layout das
+ * próximas linhas. Encerrar (`dispose`) rejeita o pedido pendente com
+ * `AbortError`.
+ */
+export const workerClient = async (worker: Worker, assemblerWorker: Worker, wasmUrl: string): Promise<Client> => {
+  const engine = channel(worker);
+  const asm = channel(assemblerWorker);
+  // o módulo compilado uma vez na thread principal (o código e a otimização ficam entre exportações)
+  const module = await compileEngine(wasmUrl);
+  await Promise.all([
+    engine.call({ op: 'init', module, role: 'engine', deferred: true }),
+    asm.call({ op: 'init', module, role: 'assembler', deferred: false }),
+  ]);
+
+  // blocos do arquivo na ordem em que o montador os devolve; montagens em voo, na ordem
+  const ready: Uint8Array[] = [];
+  const inflight: Promise<unknown>[] = [];
+  let done = false;
+
+  const assemble = (segments: ArrayBuffer[]) => {
+    const p = asm.call({ op: 'segments', data: segments }, segments).then(r => {
+      ready.push(...(r.chunks ?? []).map(c => new Uint8Array(c)));
+      done ||= !!r.done;
+    });
+    // falha tratada no próximo `await` dela (sem "unhandled rejection")
+    p.catch(() => undefined);
+    inflight.push(p);
+  };
+
+  const drain = async (keep: number) => {
+    while (inflight.length > keep) {
+      await inflight.shift();
+    }
+  };
 
   return {
     addFont: async (bytes, bold, italic) => {
       const buffer = own(bytes);
-      await call({ op: 'font', bytes: buffer, bold, italic }, [buffer]);
+      await engine.call({ op: 'font', bytes: buffer, bold, italic }, [buffer]);
     },
     begin: async config => {
       const buffer = own(config);
-      await call({ op: 'begin', config: buffer }, [buffer]);
+      await engine.call({ op: 'begin', config: buffer }, [buffer]);
     },
     addImage: async (bytes, format, width, height) => {
       const buffer = own(bytes);
-      return (await call({ op: 'image', bytes: buffer, format, width, height }, [buffer])).value ?? 0;
+      return (await engine.call({ op: 'image', bytes: buffer, format, width, height }, [buffer])).value ?? 0;
     },
     rows: async (data, last) => {
-      const buffer = own(data);
-      const r = await call({ op: 'rows', data: buffer, last }, [buffer]);
-      return { chunks: (r.chunks ?? []).map(c => new Uint8Array(c)), pages: r.pages ?? 0, done: !!r.done };
+      // o bloco é do cliente a partir daqui: transfere sem copiar quando ocupa o buffer inteiro
+      const buffer = data.byteOffset === 0 && data.byteLength === data.buffer.byteLength ? data.buffer as ArrayBuffer : own(data);
+      const r = await engine.call({ op: 'rows', data: buffer, last }, [buffer]);
+      assemble(r.chunks ?? []);
+      await drain(ASSEMBLER_INFLIGHT);
+      return { chunks: ready.splice(0), pages: r.pages ?? 0, done: !!r.done };
     },
-    finish: async () => ((await call({ op: 'finish' })).chunks ?? []).map(c => new Uint8Array(c)),
+    finish: async () => {
+      assemble((await engine.call({ op: 'finish' })).chunks ?? []);
+      await drain(0);
+
+      if (!done) {
+        throw new Error('PDF assembler did not finish the file');
+      }
+
+      return ready.splice(0);
+    },
     dispose: () => {
       worker.terminate();
-      fail(new DOMException('The PDF export was aborted.', 'AbortError'));
+      assemblerWorker.terminate();
+      const abort = new DOMException('The PDF export was aborted.', 'AbortError');
+      engine.fail(abort);
+      asm.fail(abort);
     },
   };
 };

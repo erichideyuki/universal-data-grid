@@ -1089,7 +1089,7 @@
               "type": {
                 "text": "readonly GridExportFormat[]"
               },
-              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx\"`). `xlsx` needs\n`xlsxExporter`. Default `[]` (no export UI; the export methods always work).",
+              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx pdf\"`). `xlsx` needs\n`xlsxExporter` and `pdf` needs `pdfExporter`. Default `[]` (no export\nUI; the export methods always work).",
               "attribute": "export-formats"
             },
             {
@@ -1100,6 +1100,15 @@
               },
               "default": "null",
               "description": "Builds and downloads the Excel file of the export UI (property only):\n`createXlsxExporter(ExcelJS, options)` from\n`@universal-material/data-grid/export-xlsx`. Without it the `xlsx`\nentries are not shown."
+            },
+            {
+              "kind": "field",
+              "name": "pdfExporter",
+              "type": {
+                "text": "GridExporter | null"
+              },
+              "default": "null",
+              "description": "Builds and downloads the PDF file of the export UI (property only):\n`createPdfExporter({ fonts })` from\n`@universal-material/data-grid/export-pdf`. Without it the `pdf`\nentries are not shown."
             },
             {
               "kind": "field",
@@ -2486,6 +2495,16 @@
             },
             {
               "kind": "method",
+              "name": "cancelExport",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Cancels the export started from the export UI (toolbar, row menu), if\nany: the exporter gets an aborted `signal`; no `u-grid-export-error`; the\ngrid announces \"Export canceled\"."
+            },
+            {
+              "kind": "method",
               "name": "copySelection",
               "return": {
                 "type": {
@@ -2718,7 +2737,7 @@
               "type": {
                 "text": "CustomEvent<GridExportingEventDetail>"
               },
-              "description": "Before an export started from the UI (toolbar, \"More actions\", row menu). Cancelable: export your own way (e.g. PDF)."
+              "description": "Before an export started from the UI (toolbar, \"More actions\", row menu). Cancelable: export your own way (e.g. another format)."
             },
             {
               "name": "u-grid-export",
@@ -2732,7 +2751,7 @@
               "type": {
                 "text": "CustomEvent<GridExportErrorEventDetail>"
               },
-              "description": "An export started from the UI failed (`detail.error`)."
+              "description": "An export started from the UI failed (`detail.error`). Not fired when the export is canceled (`cancelExport()`, \"Cancel export\", an exporter rejecting with an `AbortError`)."
             },
             {
               "name": "u-grid-context-menu-opening",
@@ -3081,7 +3100,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx\"`). `xlsx` needs\n`xlsxExporter`. Default `[]` (no export UI; the export methods always work).",
+              "description": "Formats of the export UI: the toolbar export button and the \"Export\nselected rows\" items of the row menu. Attribute: words separated by\nspaces or commas (`export-formats=\"csv xlsx pdf\"`). `xlsx` needs\n`xlsxExporter` and `pdf` needs `pdfExporter`. Default `[]` (no export\nUI; the export methods always work).",
               "fieldName": "exportFormats"
             },
             {

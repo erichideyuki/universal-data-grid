@@ -1,30 +1,58 @@
 /**
- * Web Worker da exportação PDF: recebe fontes, configuração, imagens e blocos
- * de linhas; devolve os blocos do arquivo assim que ficam prontos.
+ * Web Worker da exportação PDF, em um de dois papéis: o motor (fontes,
+ * configuração, imagens e blocos de linhas → segmentos do arquivo) ou o
+ * montador (segmentos → blocos do arquivo comprimido).
  */
-import type { Request, Response } from './client.js';
-import { compileEngine, Engine, EngineError } from './engine.js';
+import type { WorkerRequest, WorkerResponse } from './client.js';
+import { Assembler, Engine, EngineError, type Exports } from './engine.js';
 
 interface WorkerScope {
-  onmessage: ((event: MessageEvent<Request>) => void) | null;
-  postMessage(message: Response, transfer?: Transferable[]): void;
+  onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage(message: WorkerResponse, transfer?: Transferable[]): void;
 }
 
-const scope = globalThis as unknown as WorkerScope;
+const scope = self as unknown as WorkerScope;
 let engine: Engine | null = null;
+let assembler: Assembler | null = null;
 
-const reply = (message: Response, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
+const reply = (message: WorkerResponse, transfer: Transferable[] = []) => scope.postMessage(message, transfer);
 
-const chunks = (e: Engine): ArrayBuffer[] => e.takeChunks().map(c => c.buffer as ArrayBuffer);
+const chunks = (e: Engine | Assembler): ArrayBuffer[] => e.takeChunks().map(c => c.buffer as ArrayBuffer);
 
-scope.onmessage = async (event: MessageEvent<Request>) => {
+scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const r = event.data;
 
   try {
     switch (r.op) {
       case 'init': {
-        engine = new Engine((await WebAssembly.instantiate(await compileEngine(r.wasmUrl), {})).exports as unknown as ConstructorParameters<typeof Engine>[0]);
+        const exports = (await WebAssembly.instantiate(r.module, {})).exports as unknown as Exports;
+
+        if (r.role === 'assembler') {
+          assembler = new Assembler(exports);
+        } else {
+          engine = new Engine(exports, r.deferred);
+        }
+
         reply({ id: r.id, ok: true });
+        break;
+      }
+
+      case 'segments': {
+        const a = assembler!;
+        let done = false;
+
+        for (const data of r.data) {
+          done = a.push(new Uint8Array(data));
+        }
+
+        const out = chunks(a);
+        reply({ id: r.id, ok: true, chunks: out, done }, out);
+
+        if (done) {
+          a.dispose();
+          assembler = null;
+        }
+
         break;
       }
 

@@ -43,7 +43,12 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new() -> Engine {
-        Engine { w: Some(writer::Writer::new(1 << 20)), fonts: Vec::new(), doc: None, out: VecDeque::new(), error: String::new() }
+        Self::with_mode(false)
+    }
+
+    /// `deferred`: a saída são segmentos crus para um `writer::Assembler` (ver `writer`).
+    pub fn with_mode(deferred: bool) -> Engine {
+        Engine { w: Some(writer::Writer::with_mode(1 << 20, deferred)), fonts: Vec::new(), doc: None, out: VecDeque::new(), error: String::new() }
     }
 
     fn fail(&mut self, code: i32, msg: impl Into<String>) -> i32 {

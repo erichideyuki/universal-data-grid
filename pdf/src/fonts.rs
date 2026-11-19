@@ -23,6 +23,10 @@ pub struct Font {
     pub res: String,
     /// glifo → texto de origem (ToUnicode); só os usados
     pub used: BTreeMap<u16, String>,
+    /// glifos já registrados (bit por gid): evita a busca no `used` a cada glifo desenhado
+    seen: Box<[u64; 1024]>,
+    /// `/W` por gid (-1 = ainda não lido)
+    widths: Box<[i32]>,
     cff: bool,
     ps_name: String,
 }
@@ -56,7 +60,7 @@ impl Font {
             .and_then(|n| n.to_string())
             .unwrap_or_else(|| format!("Font{index}"));
         let upem = f64::from(face.metrics().units_per_em.max(16));
-        Ok(Font { rb, face, bytes, upem, bold, italic, obj: w.alloc(), res: format!("F{index}"), used: BTreeMap::new(), cff, ps_name })
+        Ok(Font { rb, face, bytes, upem, bold, italic, obj: w.alloc(), res: format!("F{index}"), used: BTreeMap::new(), seen: Box::new([0; 1024]), widths: vec![-1; 0x10000].into_boxed_slice(), cff, ps_name })
     }
 
     pub fn has(&self, cp: u32) -> bool {
@@ -65,6 +69,11 @@ impl Font {
 
     /// Registra o uso de um glifo com o texto de origem (o 1º texto vence).
     pub fn use_glyph(&mut self, gid: u16, text: &str) {
+        let (word, bit) = (usize::from(gid >> 6), 1u64 << (gid & 63));
+        if self.seen[word] & bit != 0 {
+            return;
+        }
+        self.seen[word] |= bit;
         if !self.used.contains_key(&gid) {
             let t = if text.is_empty() { "\u{FFFD}" } else { text };
             self.used.insert(gid, t.to_owned());
@@ -72,7 +81,17 @@ impl Font {
     }
 
     /// Largura do glifo em milésimos do em (a do `/W`).
-    pub fn width1000(&self, gid: u16) -> i64 {
+    pub fn width1000(&mut self, gid: u16) -> i64 {
+        let cached = self.widths[usize::from(gid)];
+        if cached >= 0 {
+            return i64::from(cached);
+        }
+        let w = self.raw_width(gid);
+        self.widths[usize::from(gid)] = w as i32;
+        w
+    }
+
+    fn raw_width(&self, gid: u16) -> i64 {
         (f64::from(self.face.advance_width(u32::from(gid))) * 1000.0 / self.upem).round() as i64
     }
 
@@ -122,13 +141,13 @@ impl Font {
         let mut prev: Option<u16> = None;
         for &g in self.used.keys() {
             if prev.is_some_and(|p| p + 1 == g) {
-                run.push(self.width1000(g));
+                run.push(self.raw_width(g));
             } else {
                 if !run.is_empty() {
                     let _ = write!(widths, "{run_start} [{}] ", run.iter().map(i64::to_string).collect::<Vec<_>>().join(" "));
                 }
                 run.clear();
-                run.push(self.width1000(g));
+                run.push(self.raw_width(g));
                 run_start = g;
             }
             prev = Some(g);
@@ -142,7 +161,7 @@ impl Font {
         let c = format!(
             "<</Type /Font /Subtype /{cid_type} /BaseFont {} /CIDSystemInfo <</Registry (Adobe) /Ordering (Identity) /Supplement 0>> /FontDescriptor {desc} 0 R /DW {} /W {widths}{map}>>",
             name(&base),
-            self.width1000(0)
+            self.raw_width(0)
         );
         w.small(cid, c.as_bytes());
         let tu = w.alloc();

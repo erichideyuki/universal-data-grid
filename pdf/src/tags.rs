@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use crate::writer::{Writer, text_string};
+use crate::writer::{Writer, put_u32, text_string};
 
 #[derive(Clone, Copy)]
 pub enum Kid {
@@ -18,6 +18,8 @@ struct Open {
     ty: &'static str,
     parent: u32,
     kids: Vec<Kid>,
+    /// objeto de atributo (`/A n 0 R`), 0 = nenhum
+    attr: u32,
     /// entradas extras do dicionário (`/A`, `/ID`, `/Alt`, `/ActualText`, `/Lang`, `/T`)
     extra: String,
 }
@@ -66,7 +68,7 @@ impl Tags {
         if let Some(p) = self.stack.last_mut() {
             p.kids.push(Kid::Elem(obj));
         }
-        self.stack.push(Open { obj, ty, parent, kids: Vec::new(), extra });
+        self.stack.push(Open { obj, ty, parent, kids: Vec::new(), attr: 0, extra });
         self.elements += 1;
         obj
     }
@@ -81,9 +83,14 @@ impl Tags {
 
     /// Abre um elemento fora da pilha, filho de `parent` (aberto na pilha ou fora dela).
     pub fn open_detached(&mut self, w: &mut Writer, parent: u32, ty: &'static str, extra: String) -> u32 {
+        self.open_cell(w, parent, ty, 0, extra)
+    }
+
+    /// `open_detached` com o objeto de atributo compartilhado `attr` (`/A attr 0 R`; 0 = nenhum).
+    pub fn open_cell(&mut self, w: &mut Writer, parent: u32, ty: &'static str, attr: u32, extra: String) -> u32 {
         let obj = w.alloc();
         self.push_kid(parent, Kid::Elem(obj));
-        self.detached.insert(obj, Open { obj, ty, parent, kids: Vec::new(), extra });
+        self.detached.insert(obj, Open { obj, ty, parent, kids: Vec::new(), attr, extra });
         self.elements += 1;
         obj
     }
@@ -126,68 +133,62 @@ impl Tags {
     }
 
     fn write(w: &mut Writer, o: Open) {
-        let mut s = String::with_capacity(64 + o.kids.len() * 8 + o.extra.len());
-        let _ = write!(s, "<</Type /StructElem /S /{} /P {} 0 R", o.ty, o.parent);
+        let mut s: Vec<u8> = Vec::with_capacity(48 + o.kids.len() * 8 + o.extra.len());
+        s.extend_from_slice(b"<</S /");
+        s.extend_from_slice(o.ty.as_bytes());
+        s.extend_from_slice(b" /P ");
+        put_u32(&mut s, o.parent);
+        s.extend_from_slice(b" 0 R");
         // /Pg = página do 1º MCID; MCIDs de outra página viram MCR
         let pg = o.kids.iter().find_map(|k| if let Kid::Mcid { page, .. } = k { Some(*page) } else { None });
         if let Some(p) = pg {
-            let _ = write!(s, " /Pg {p} 0 R");
+            s.extend_from_slice(b" /Pg ");
+            put_u32(&mut s, p);
+            s.extend_from_slice(b" 0 R");
         }
-        if !o.kids.is_empty() {
-            s.push_str(" /K [");
-            for k in &o.kids {
-                match *k {
-                    Kid::Mcid { page, mcid } if Some(page) == pg => {
-                        let _ = write!(s, "{mcid} ");
-                    }
-                    Kid::Mcid { page, mcid } => {
-                        let _ = write!(s, "<</Type /MCR /Pg {page} 0 R /MCID {mcid}>> ");
-                    }
-                    Kid::Elem(e) => {
-                        let _ = write!(s, "{e} 0 R ");
-                    }
-                    Kid::Objr { page, annot } => {
-                        let _ = write!(s, "<</Type /OBJR /Pg {page} 0 R /Obj {annot} 0 R>> ");
+        match o.kids.as_slice() {
+            [] => {}
+            // um MCID só (a célula comum): inteiro, sem array
+            [Kid::Mcid { page, mcid }] if Some(*page) == pg => {
+                s.extend_from_slice(b" /K ");
+                put_u32(&mut s, *mcid);
+            }
+            kids => {
+                s.extend_from_slice(b" /K [");
+                for k in kids {
+                    match *k {
+                        Kid::Mcid { page, mcid } if Some(page) == pg => {
+                            put_u32(&mut s, mcid);
+                            s.push(b' ');
+                        }
+                        Kid::Mcid { page, mcid } => {
+                            let _ = write!(Buf(&mut s), "<</Type /MCR /Pg {page} 0 R /MCID {mcid}>> ");
+                        }
+                        Kid::Elem(e) => {
+                            put_u32(&mut s, e);
+                            s.extend_from_slice(b" 0 R ");
+                        }
+                        Kid::Objr { page, annot } => {
+                            let _ = write!(Buf(&mut s), "<</Type /OBJR /Pg {page} 0 R /Obj {annot} 0 R>> ");
+                        }
                     }
                 }
+                s.pop();
+                s.push(b']');
             }
-            s.pop();
-            s.push(']');
         }
-        s.push_str(&o.extra);
-        s.push_str(">>");
-        w.small(o.obj, s.as_bytes());
+        if o.attr != 0 {
+            s.extend_from_slice(b" /A ");
+            put_u32(&mut s, o.attr);
+            s.extend_from_slice(b" 0 R");
+        }
+        s.extend_from_slice(o.extra.as_bytes());
+        s.extend_from_slice(b">>");
+        w.small(o.obj, &s);
     }
 
     pub fn depth(&self) -> usize {
         self.stack.len()
-    }
-
-    pub fn top(&self) -> Option<u32> {
-        self.stack.last().map(|o| o.obj)
-    }
-
-    /// Novo MCID da página corrente, dono = topo. Devolve o MCID.
-    pub fn mcid(&mut self, page: u32) -> u32 {
-        let owner = self.stack.last().map_or(self.root, |o| o.obj);
-        let mcid = self.page_owners.len() as u32;
-        self.page_owners.push(owner);
-        if let Some(o) = self.stack.last_mut() {
-            o.kids.push(Kid::Mcid { page, mcid });
-        }
-        mcid
-    }
-
-    /// Anotação (link) ligada ao topo: devolve a chave `/StructParent` da anotação.
-    pub fn objr(&mut self, w: &mut Writer, page: u32, annot: u32) -> u32 {
-        let owner = self.stack.last().map_or(self.root, |o| o.obj);
-        if let Some(o) = self.stack.last_mut() {
-            o.kids.push(Kid::Objr { page, annot });
-        }
-        let key = self.next_key;
-        self.next_key += 1;
-        self.pt_push(w, key, owner);
-        key
     }
 
     /// Fecha a página: o array dono-por-MCID vira um objeto e entra na ParentTree. Devolve a chave
@@ -259,6 +260,21 @@ impl Tags {
         self.id_pending.clear();
     }
 
+    /// Um nível de nós intermediários de árvore de números/nomes: até `LEAF` filhos por nó, com
+    /// `/Limits` (chaves de string entre parênteses quando `quote` = "()").
+    fn nodes(w: &mut Writer, kids: Vec<(String, String, u32)>, quote: &str) -> Vec<(String, String, u32)> {
+        let (open, close) = if quote.is_empty() { ("", "") } else { ("(", ")") };
+        kids.chunks(LEAF)
+            .map(|group| {
+                let node = w.alloc();
+                let refs: Vec<String> = group.iter().map(|(_, _, o)| format!("{o} 0 R")).collect();
+                let (first, last) = (group[0].0.clone(), group[group.len() - 1].1.clone());
+                w.small(node, format!("<</Kids [{}] /Limits [{open}{first}{close} {open}{last}{close}]>>", refs.join(" ")).as_bytes());
+                (first, last, node)
+            })
+            .collect()
+    }
+
     /// Fecha tudo e escreve a StructTreeRoot. `kids` = os elementos de 1º nível já abertos/fechados.
     pub fn finish(&mut self, w: &mut Writer, doc: u32) {
         while !self.stack.is_empty() {
@@ -267,12 +283,20 @@ impl Tags {
         self.pt_flush(w);
         self.id_flush(w);
         let pt = w.alloc();
-        let kids: Vec<String> = self.pt_leaves.iter().map(|(_, _, o)| format!("{o} 0 R")).collect();
+        let mut level: Vec<(String, String, u32)> = self.pt_leaves.iter().map(|(a, b, o)| (a.to_string(), b.to_string(), *o)).collect();
+        while level.len() > LEAF {
+            level = Self::nodes(w, level, "");
+        }
+        let kids: Vec<String> = level.iter().map(|(_, _, o)| format!("{o} 0 R")).collect();
         w.small(pt, format!("<</Kids [{}]>>", kids.join(" ")).as_bytes());
         let mut root = format!("<</Type /StructTreeRoot /K [{doc} 0 R] /ParentTree {pt} 0 R /ParentTreeNextKey {}", self.next_key);
         if !self.id_leaves.is_empty() {
             let idt = w.alloc();
-            let kids: Vec<String> = self.id_leaves.iter().map(|(_, _, o)| format!("{o} 0 R")).collect();
+            let mut level = std::mem::take(&mut self.id_leaves);
+            while level.len() > LEAF {
+                level = Self::nodes(w, level, "()");
+            }
+            let kids: Vec<String> = level.iter().map(|(_, _, o)| format!("{o} 0 R")).collect();
             w.small(idt, format!("<</Kids [{}]>>", kids.join(" ")).as_bytes());
             let _ = write!(root, " /IDTree {idt} 0 R");
         }
@@ -282,6 +306,16 @@ impl Tags {
 }
 
 /// `/ActualText` (texto lógico) para o dicionário de um elemento.
+/// `write!` num `Vec<u8>`.
+struct Buf<'a>(&'a mut Vec<u8>);
+
+impl std::fmt::Write for Buf<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+}
+
 pub fn actual_text(s: &str) -> String {
     format!(" /ActualText {}", text_string(s))
 }

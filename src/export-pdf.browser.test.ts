@@ -3,10 +3,13 @@
  * O PDF gerado é lido de volta com pdf.js: texto, árvore de estrutura,
  * idioma, título; e a interface (barra, cancelar, progresso).
  */
+import axe from 'axe-core';
 import * as pdfjs from 'pdfjs-dist';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 
 import { createPdfExporter, exportPdf, type GridPdfFont, GridPdfMissingGlyphError } from './export-pdf/index.js';
+import type { GridExporter } from './export/types.js';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
@@ -72,6 +75,7 @@ interface Read {
 const read = async (blob: Blob): Promise<Read> => {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
   const roles: Record<string, number> = {};
+
   const walk = (node: { role?: string; children?: unknown[] } | null) => {
     if (!node) {
       return;
@@ -83,14 +87,15 @@ const read = async (blob: Blob): Promise<Read> => {
 
     (node.children ?? []).forEach(child => walk(child as { role?: string; children?: unknown[] }));
   };
+
   let text = '';
 
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
-    text += `${(await page.getTextContent()).items.map(item => ('str' in item ? item.str : '')).join(' ')}\n`;
+    text += `${(await page.getTextContent()).items.map(item => 'str' in item ? item.str : '').join(' ')}\n`;
 
     if (i === 1) {
-      walk((await page.getStructTree()) as never);
+      walk(await page.getStructTree());
     }
   }
 
@@ -109,11 +114,11 @@ describe('exportPdf', () => {
 
     const pdf = await read(blob);
     expect(pdf.marked).toBe(true);
-    expect(pdf.info['Title']).toBe('Sales');
-    expect(pdf.info['Language']).toBe('en');
-    expect(pdf.roles['Table']).toBe(1);
-    expect(pdf.roles['TH']).toBeGreaterThanOrEqual(4);
-    expect(pdf.roles['TD']).toBeGreaterThanOrEqual(12);
+    expect(pdf.info.Title).toBe('Sales');
+    expect(pdf.info.Language).toBe('en');
+    expect(pdf.roles.Table).toBe(1);
+    expect(pdf.roles.TH).toBeGreaterThanOrEqual(4);
+    expect(pdf.roles.TD).toBeGreaterThanOrEqual(12);
     expect(pdf.text).toContain('Sales');
     expect(pdf.text).toContain('Amount');
     expect(pdf.text).toContain('1,200.50');
@@ -122,7 +127,7 @@ describe('exportPdf', () => {
   it('na thread principal (`worker: false`) dá o mesmo resultado', async () => {
     const grid = await create();
     const pdf = await read(await exportPdf(grid, { fonts: FONTS, worker: false }));
-    expect(pdf.roles['Table']).toBe(1);
+    expect(pdf.roles.Table).toBe(1);
     expect(pdf.text).toContain('Caio');
   });
 
@@ -162,11 +167,12 @@ describe('exportPdf', () => {
 
     const pdf = await read(await exportPdf(grid, { fonts: FONTS, worker }));
     expect(pdf.text).toContain('Brazil');
-    expect(pdf.roles['TFoot'] ?? 0).toBeLessThanOrEqual(1);
+    expect(pdf.roles.TFoot ?? 0).toBeLessThanOrEqual(1);
   });
 
   it('customizeCell muda texto e estilo; contraste ruim cai no padrão com aviso', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {
+    });
     const grid = await create();
     const pdf = await read(await exportPdf(grid, {
       fonts: FONTS,
@@ -189,9 +195,11 @@ describe('interface (barra de exportação)', () => {
     const download = vi.fn();
     const grid = await create(g => {
       g.exportFormats = ['pdf'];
-      g.pdfExporter = async (target, { onProgress }) => {
+
+      g.pdfExporter = (target, { onProgress }) => {
         onProgress?.({ rowCount: 1, totalCount: 2, pageCount: 1 });
         download(target);
+        return Promise.resolve();
       };
     });
     await settle(grid);
@@ -205,10 +213,10 @@ describe('interface (barra de exportação)', () => {
   it('cancelExport cancela sem u-grid-export-error', async () => {
     const errors = vi.fn();
     let started!: () => void;
-    const begun = new Promise<void>(resolve => (started = resolve));
+    const begun = new Promise<void>(resolve => started = resolve);
     const grid = await create(g => {
       g.exportFormats = ['pdf'];
-      g.pdfExporter = (_, { signal }) => new Promise((_, reject) => {
+      g.pdfExporter = (_target, { signal }) => new Promise((_resolve, reject) => {
         started();
         signal.addEventListener('abort', () => reject(signal.reason));
       });
@@ -224,5 +232,109 @@ describe('interface (barra de exportação)', () => {
     grid.cancelExport();
     await vi.waitFor(() => expect(button.getAttribute('aria-label')).toBe('Export to PDF'));
     expect(errors).not.toHaveBeenCalled();
+  });
+
+  /** Exportador que só termina quando o teste manda (`finish`) ou cancela. */
+  const pending = () => {
+    let finish!: () => void;
+    let started!: () => void;
+    const begun = new Promise<void>(resolve => started = resolve);
+    const exporter = vi.fn((_target: DataGrid, { signal, onProgress }: Parameters<GridExporter>[1]) => new Promise<void>((resolve, reject) => {
+      finish = resolve;
+      onProgress?.({ rowCount: 40, totalCount: 100, pageCount: 2 });
+      started();
+      signal.addEventListener('abort', () => reject(signal.reason));
+    }));
+    return { exporter, begun, finish: () => finish() };
+  };
+
+  const shadow = (grid: DataGrid) => grid.shadowRoot!;
+  const live = (grid: DataGrid) => shadow(grid).querySelector<HTMLElement>('[role=status]')!;
+  const items = (grid: DataGrid) => [...shadow(grid).querySelectorAll<HTMLElement>('[role=menu] [role=menuitem]')];
+
+  it('teclado: Enter exporta, o foco fica no botão (agora "Cancel export", progresso na descrição), Enter cancela', async () => {
+    const { exporter, begun } = pending();
+    const grid = await create(g => {
+      g.exportFormats = ['pdf'];
+      g.pdfExporter = exporter;
+    });
+    await settle(grid);
+    const button = shadow(grid).querySelector<HTMLButtonElement>('.export-button')!;
+    button.focus();
+    await userEvent.keyboard('{Enter}');
+    await begun;
+    await settle(grid);
+
+    expect(shadow(grid).activeElement).toBe(button);
+    expect(button.getAttribute('aria-label')).toBe('Cancel export');
+    const described = shadow(grid).getElementById(button.getAttribute('aria-describedby')!)!;
+    expect(described.textContent).toBe('Exporting… 40%');
+    expect(described.getAttribute('lang')).toBe('en');
+
+    // clique duplo / repetição de tecla logo depois de começar não cancela
+    await userEvent.keyboard('{Enter}');
+    await settle(grid);
+    expect(button.getAttribute('aria-label')).toBe('Cancel export');
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await userEvent.keyboard('{Enter}');
+    await vi.waitFor(() => expect(live(grid).textContent.trim()).toBe('Export canceled'));
+    expect(shadow(grid).activeElement).toBe(button);
+    expect(button.getAttribute('aria-label')).toBe('Export to PDF');
+  });
+
+  it('menu: "Cancel export" no topo; acabar com o menu aberto não muda as posições (desabilita)', async () => {
+    const { exporter, begun, finish } = pending();
+    const grid = await create(g => {
+      g.exportFormats = ['csv', 'pdf'];
+      g.pdfExporter = exporter;
+    });
+    await settle(grid);
+    const button = shadow(grid).querySelector<HTMLButtonElement>('.export-button')!;
+    button.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    items(grid).find(item => item.textContent.includes('PDF'))!.click();
+    await begun;
+    await settle(grid);
+
+    button.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    expect(items(grid).map(item => item.textContent.trim())).toEqual(['Cancel export', 'Export to CSV', 'Export to PDF']);
+    expect(shadow(grid).activeElement).toBe(items(grid)[0]);
+    expect((await axe.run(grid as unknown as Element)).violations.map(v => v.id)).toEqual([]);
+
+    finish();
+    await vi.waitFor(() => expect(live(grid).textContent.trim()).toBe('Exported to PDF'));
+    await settle(grid);
+    expect(items(grid).map(item => item.textContent.trim())).toEqual(['Cancel export', 'Export to CSV', 'Export to PDF']);
+    expect(items(grid)[0].getAttribute('aria-disabled')).toBe('true');
+    expect(items(grid)[1].getAttribute('aria-disabled')).toBe('false');
+    expect(shadow(grid).activeElement).toBe(items(grid)[0]);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(grid);
+    expect(shadow(grid).activeElement).toBe(button);
+    button.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    expect(items(grid).map(item => item.textContent.trim())).toEqual(['Export to CSV', 'Export to PDF']);
+  });
+
+  it('axe sem violações com a exportação em curso, em RTL (ar)', async () => {
+    const { exporter, begun } = pending();
+    const grid = await create(g => {
+      g.language = 'ar';
+      g.setAttribute('dir', 'rtl');
+      g.exportFormats = ['pdf'];
+      g.pdfExporter = exporter;
+    });
+    await settle(grid);
+    shadow(grid).querySelector<HTMLButtonElement>('.export-button')!.click();
+    await begun;
+    await settle(grid);
+    expect((await axe.run(grid as unknown as Element)).violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+    grid.cancelExport();
   });
 });

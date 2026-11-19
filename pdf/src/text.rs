@@ -349,12 +349,6 @@ impl Text {
         self.buf = Some(gb.clear());
         glyphs
     }
-
-    /// Largura de um texto simples (sem quebra), para rótulos e rodapés.
-    pub fn width(&mut self, text: &str, size: f64, bold: bool) -> f64 {
-        let mut v = Vec::new();
-        self.shape_line(text, size, bold, false, false, &mut v)
-    }
 }
 
 /// Uma linha quebrada: faixa de bytes do texto, glifos (ordem visual, x relativo) e largura.
@@ -453,4 +447,63 @@ pub fn wrap(t: &mut Text, text: &str, size: f64, bold: bool, italic: bool, rtl: 
         })
         .collect();
     (lines, split)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::writer::Writer;
+
+    fn text() -> Text {
+        let dir = format!("{}/../src/test/fonts", env!("CARGO_MANIFEST_DIR"));
+        let mut w = Writer::new(4096);
+        let load = |i: usize, name: &str, bold: bool, w: &mut Writer| Font::load(i, std::fs::read(format!("{dir}/{name}")).unwrap(), bold, false, w).unwrap();
+        let fonts = vec![
+            load(0, "NotoSans-Regular.subset.ttf", false, &mut w),
+            load(1, "NotoSans-Bold.subset.ttf", true, &mut w),
+            load(2, "NotoSansArabic-Regular.subset.ttf", false, &mut w),
+        ];
+        Text::new(fonts)
+    }
+
+    #[test]
+    fn a_mesma_palavra_em_estilos_diferentes_usa_fontes_diferentes() {
+        let mut t = text();
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        t.shape_line("Total", 8.0, false, false, false, &mut a);
+        t.shape_line("Total", 8.0, true, false, false, &mut b);
+        assert!(a.iter().all(|g| g.font == 0));
+        assert!(b.iter().all(|g| g.font == 1));
+        // de novo (do cache): continua separado
+        let (mut c, mut d) = (Vec::new(), Vec::new());
+        t.shape_line("Total", 8.0, false, false, false, &mut c);
+        t.shape_line("Total", 8.0, true, false, false, &mut d);
+        assert_eq!(c.iter().map(|g| g.font).collect::<Vec<_>>(), a.iter().map(|g| g.font).collect::<Vec<_>>());
+        assert_eq!(d.iter().map(|g| g.font).collect::<Vec<_>>(), b.iter().map(|g| g.font).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn arabe_e_moldado_em_ordem_visual_e_numeros_ficam_ltr() {
+        let mut t = text();
+        let mut g = Vec::new();
+        t.shape_line("رقم 123", 8.0, false, false, false, &mut g);
+        // ordem visual: "123" (LTR) vem à esquerda da palavra árabe
+        let digits: Vec<f32> = g.iter().filter(|x| x.font == 0 || (x.cluster as usize) >= "رقم ".len()).map(|x| x.x).collect();
+        let arabic: Vec<f32> = g.iter().filter(|x| (x.cluster as usize) < "رقم".len()).map(|x| x.x).collect();
+        assert!(digits.iter().cloned().fold(f32::MAX, f32::min) < arabic.iter().cloned().fold(f32::MAX, f32::min));
+        assert!(t.missing.is_empty());
+    }
+
+    #[test]
+    fn quebra_por_palavra_e_por_grafema_na_palavra_longa() {
+        let mut t = text();
+        let (lines, split) = wrap(&mut t, "alpha beta gamma delta", 8.0, false, false, false, 40.0);
+        assert!(lines.len() >= 2);
+        assert!(!split);
+        let (lines, split) = wrap(&mut t, "Supercalifragilisticexpialidocious", 8.0, false, false, false, 30.0);
+        assert!(lines.len() >= 3);
+        assert!(split);
+        let joined: String = lines.iter().map(|l| &"Supercalifragilisticexpialidocious"[l.start..l.end]).collect();
+        assert_eq!(joined, "Supercalifragilisticexpialidocious");
+    }
 }

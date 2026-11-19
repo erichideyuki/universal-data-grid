@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise -- bits de estilo das células no protocolo do motor. */
 /**
  * Exportação em PDF (frente 26): `@universal-material/data-grid/export-pdf`.
  *
@@ -9,11 +10,11 @@
 import { downloadBlob } from '../export/download.js';
 import { createSlicer } from '../export/slice.js';
 import type { GridExportColumn, GridExportData, GridExporter, GridExportRow } from '../export/types.js';
-import type { DataGrid } from '../grid.js';
 import { type GridI18n, resolveGridTranslation } from '../grid-i18n.js';
+import type { DataGrid } from '../grid.js';
 import { LruCache } from '../row-model/lru.js';
 import { type Client, localClient, workerClient } from './client.js';
-import { EngineCode, EngineError } from './engine.js';
+import { EngineCode, EngineError, readFileUrl } from './engine.js';
 import { contrast, parseColor, Writer } from './serialize.js';
 import type {
   GridPdfCell,
@@ -48,7 +49,9 @@ export class GridPdfMissingGlyphError extends Error {
   readonly codePoints: readonly number[];
 
   constructor(codePoints: readonly number[]) {
-    const list = codePoints.slice(0, 12).map(cp => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`).join(', ');
+    const list = codePoints.slice(0, 12).map(cp => `U+${cp.toString(16).toUpperCase()
+      .padStart(4, '0')}`)
+      .join(', ');
     super(`No font covers ${codePoints.length} character(s): ${list}${codePoints.length > 12 ? ', …' : ''}. Add a font for them to "fonts".`);
     this.name = 'GridPdfMissingGlyphError';
     this.codePoints = Object.freeze([...codePoints]);
@@ -110,6 +113,12 @@ const loadFont = (font: GridPdfFont, signal: AbortSignal | null | undefined): Pr
   if (!bytes) {
     bytes = (async () => {
       if (typeof source === 'string' || source instanceof URL) {
+        const href = String(source);
+
+        if (href.startsWith('file:')) {
+          return readFileUrl(href);
+        }
+
         const response = await fetch(source, { signal: signal ?? undefined });
 
         if (!response.ok) {
@@ -252,6 +261,7 @@ interface Theme {
 /** Tema com contraste: a cor reprovada volta ao padrão (com aviso). */
 const themeOf = (options: GridPdfOptions): Theme => {
   const t = options.theme ?? {};
+
   const pick = (name: keyof typeof THEME): number => {
     const value = t[name];
 
@@ -268,10 +278,11 @@ const themeOf = (options: GridPdfOptions): Theme => {
 
     return parsed;
   };
+
   let color = pick('color');
 
   if (contrast(color, WHITE) < MIN_CONTRAST) {
-    warnOnce(`theme-color:${color}`, `theme.color has a contrast below 4.5:1 with the page; the default was used.`);
+    warnOnce(`theme-color:${color}`, 'theme.color has a contrast below 4.5:1 with the page; the default was used.');
     color = THEME.color;
   }
 
@@ -320,19 +331,22 @@ const configOf = (ctx: Context, options: GridPdfOptions, theme: Theme): Uint8Arr
     | (ctx.striped ? 4 : 0)
     | (ctx.autoHide ? 8 : 0)
     | (anyPriority ? 16 : 0));
+
   for (const c of [theme.color, theme.header, theme.group, theme.stripe, theme.summary, theme.line]) {
     w.u32(c);
   }
+
   w.str(ctx.translation.pdfPageNumber);
   w.str(ctx.translation.adaptiveLabelSeparator);
   w.str(ctx.translation.pdfTotalRow);
   w.u16(ctx.columns.length);
+
   for (const c of ctx.columns) {
     const px = c.width ?? Math.max(Number(c.column.minWidth) || 0, DEFAULT_COLUMN_PX);
     w.str(c.label);
     w.f32(px * scale);
     w.u8(ALIGN[c.alignment as keyof typeof ALIGN] ?? 0);
-    w.i32(Number.isFinite(c.column.hidingPriority) ? Math.trunc(c.column.hidingPriority as number) : -2147483648);
+    w.i32(Number.isFinite(c.column.hidingPriority) ? Math.trunc(c.column.hidingPriority!) : -2147483648);
     w.u8(c.column.fixed ? 1 : 0);
   }
 
@@ -344,19 +358,34 @@ const configOf = (ctx: Context, options: GridPdfOptions, theme: Theme): Uint8Arr
 interface Pending {
   images: Map<Uint8Array, number>;
   client: Client;
+  /** O motor numera as imagens na ordem de chegada: o id é conhecido sem esperar. */
+  nextImage: number;
+  /** Registros de imagem em voo (os erros aparecem no próximo bloco). */
+  registering: Promise<number>[];
 }
 
 const rowBackground = (rowType: GridPdfCell['rowType'], theme: Theme): number[] =>
   rowType === 'header' ? [theme.header] : rowType === 'group' ? [theme.group] : rowType === 'data' ? [WHITE, theme.stripe] : [theme.summary];
 
-/** Aplica `customizeCell` e escreve a célula. */
-const writeCell = async (
+/** Célula sem `customizeCell` (o caso comum): só texto e negrito. */
+const writePlain = (w: Writer, text: string, bold: boolean): void => {
+  w.u16(bold ? 1 : 0);
+  w.str(text);
+};
+
+/** Aplica `customizeCell` e escreve a célula (síncrono: a imagem nova é registrada sem esperar). */
+const writeCell = (
   w: Writer,
   pending: Pending,
   theme: Theme,
   options: GridPdfOptions,
   base: Omit<GridPdfCell, 'text' | 'style'> & { text: string; style: GridPdfCellStyle },
-): Promise<void> => {
+): void => {
+  if (!options.customizeCell) {
+    writePlain(w, base.text, !!base.style.bold);
+    return;
+  }
+
   const cell: GridPdfCell = { ...base, style: { ...base.style } };
   options.customizeCell?.(cell);
   const text = typeof cell.text === 'string' ? cell.text : String(cell.text ?? '');
@@ -392,7 +421,11 @@ const writeCell = async (
       let id = pending.images.get(img.data);
 
       if (id === undefined) {
-        id = await pending.client.addImage(img.data, img.format === 'jpeg' ? 1 : 0, Math.max(1, img.width || 0), Math.max(1, img.height || 0));
+        // as mensagens ao motor são em ordem: a imagem chega antes do bloco que a usa
+        id = pending.nextImage++;
+        const registering = pending.client.addImage(img.data, img.format === 'jpeg' ? 1 : 0, Math.max(1, img.width || 0), Math.max(1, img.height || 0));
+        registering.catch(() => undefined);
+        pending.registering.push(registering);
         pending.images.set(img.data, id);
       }
 
@@ -407,7 +440,7 @@ const writeCell = async (
     const url = String(cell.link.url ?? '').trim();
     const description = String(cell.link.description ?? '');
 
-    if (!/^(https?:|mailto:)/i.test(url)) {
+    if (!(/^(https?:|mailto:)/i).test(url)) {
       warnOnce(`link:${url.slice(0, 20)}`, `link "${url.slice(0, 40)}" was ignored (only http:, https: and mailto:).`);
     } else if (!text && !alt && !description) {
       warnOnce('link-text', 'a link without text, alt or description was ignored.');
@@ -460,24 +493,33 @@ const clientOf = async (options: GridPdfOptions): Promise<Client> => {
   const wasm = options.assetsUrl ? new URL('grid-pdf.wasm', options.assetsUrl).href : new URL('./grid-pdf.wasm', import.meta.url).href;
   const factory = options.worker;
 
-  if (typeof factory === 'function') {
-    return workerClient(factory(), wasm);
-  }
-
-  if (factory === false || typeof Worker === 'undefined') {
+  if (factory === false || (typeof factory !== 'function' && typeof Worker === 'undefined')) {
     return localClient(wasm);
   }
 
-  const worker = options.assetsUrl
-    ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
-    : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  // dois workers: o motor (layout) e o montador (deflate e escrita), em paralelo
+  const create = typeof factory === 'function'
+    ? factory
+    : () => options.assetsUrl
+      ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
+      : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  const engine = create();
+  let assembler: Worker | undefined;
 
-  return workerClient(worker, wasm);
+  try {
+    assembler = create();
+    return await workerClient(engine, assembler, wasm);
+  } catch (error) {
+    engine.terminate();
+    assembler?.terminate();
+    throw error;
+  }
 };
 
 const rethrow = (error: unknown): never => {
   if (error instanceof EngineError && error.code === EngineCode.MissingGlyph) {
-    throw new GridPdfMissingGlyphError(error.message.split(',').filter(Boolean).map(hex => parseInt(hex, 16)));
+    throw new GridPdfMissingGlyphError(error.message.split(',').filter(Boolean)
+      .map(hex => parseInt(hex, 16)));
   }
 
   throw error;
@@ -500,10 +542,18 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
   const client = await clientOf(options);
   const onAbort = () => client.dispose();
   signal?.addEventListener('abort', onAbort, { once: true });
-  const parts: Uint8Array[] = [];
+  const parts: Blob[] = [];
+
+  const keep = (chunks: Uint8Array[]) => {
+    for (const chunk of chunks) {
+      parts.push(new Blob([chunk as BlobPart]));
+    }
+  };
+
   let pageCount = 0;
   let rowCount = 0;
   let lastProgress = 0;
+
   const progress = (force = false) => {
     const now = performance.now();
 
@@ -525,31 +575,54 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
     }
 
     await client.begin(configOf(ctx, options, theme));
-    const pending: Pending = { images: new Map(), client };
+    const pending: Pending = { images: new Map(), client, nextImage: 0, registering: [] };
     const w = new Writer();
     let count = 0;
+    // Um bloco em voo: o worker faz o layout de um enquanto a thread principal serializa o próximo.
+    let inflight: Promise<void> | null = null;
+    // o bloco começa pelo total de linhas, preenchido no envio
+    w.u32(0);
+
     const flush = async (last: boolean) => {
-      const head = new Writer();
-      head.u32(count);
-      const body = w.take();
-      const data = new Uint8Array(4 + body.length);
-      data.set(head.take());
-      data.set(body, 4);
+      w.setU32(0, count);
+      const data = w.take();
+      w.u32(0);
       count = 0;
-      const r = await client.rows(data, last);
-      parts.push(...r.chunks);
-      pageCount = r.pages;
+
+      if (pending.registering.length) {
+        const registering = pending.registering;
+        pending.registering = [];
+        await Promise.all(registering);
+      }
+
+      if (inflight) {
+        await inflight;
+      }
+
       signal?.throwIfAborted();
-      progress();
+      inflight = client.rows(data, last).then(r => {
+        keep(r.chunks);
+        pageCount = r.pages;
+        progress();
+      });
+      // Falha do bloco em voo: tratada aqui e relançada no próximo `await` (sem "unhandled rejection").
+      inflight.catch(() => undefined);
+
+      if (last) {
+        await inflight;
+        inflight = null;
+      }
     };
 
     // cabeçalho
     w.u8(4);
     w.u8(0);
     w.u16(ctx.columns.length);
+
     for (const [i, column] of ctx.columns.entries()) {
-      await writeCell(w, pending, theme, options, { rowType: 'header', row: null, column, columnIndex: i, value: column.label, text: column.label, style: { bold: true } });
+      writeCell(w, pending, theme, options, { rowType: 'header', row: null, column, columnIndex: i, value: column.label, text: column.label, style: { bold: true } });
     }
+
     count++;
 
     const groupText: string[] = [];
@@ -558,7 +631,7 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
 
     while (!next.done) {
       const row = next.value;
-      const kind = KIND[row.rowType as keyof typeof KIND];
+      const kind = KIND[row.rowType];
 
       if (kind === undefined) {
         warnOnce(`row:${String(row.rowType)}`, `rows of type "${String(row.rowType)}" are not supported and were left out.`);
@@ -573,11 +646,22 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
         groupText[row.level] = row.text;
         groupText.length = row.level + 1;
         w.u16(1 + ctx.columns.length);
-        await writeCell(w, pending, theme, options, { rowType: 'group', row, column: null, columnIndex: -1, value: row.value, text: row.label, style: { bold: true } });
+        writeCell(w, pending, theme, options, { rowType: 'group', row, column: null, columnIndex: -1, value: row.value, text: row.label, style: { bold: true } });
 
         for (const [i, column] of ctx.columns.entries()) {
-          await writeCell(w, pending, theme, options, { rowType: 'group', row, column, columnIndex: i, value: row.summaries[i], text: row.texts[i] ?? '', style: {} });
+          writeCell(w, pending, theme, options, { rowType: 'group', row, column, columnIndex: i, value: row.summaries[i], text: row.texts[i] ?? '', style: {} });
         }
+      } else if (row.rowType === 'data' && !options.customizeCell) {
+        // caminho rápido (o caso comum): só os textos, sem objetos por célula
+        const texts = row.texts;
+        const n = ctx.columns.length;
+        w.u16(n);
+
+        for (let i = 0; i < n; i++) {
+          writePlain(w, texts[i] ?? '', false);
+        }
+
+        rowCount++;
       } else {
         const total = row.rowType === 'total';
         w.u16(ctx.columns.length);
@@ -591,7 +675,7 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
           }
 
           const value = row.rowType === 'data' ? row.values[i] : row.summaries[i];
-          await writeCell(w, pending, theme, options, { rowType: row.rowType, row, column, columnIndex: i, value, text, style: { bold: total } });
+          writeCell(w, pending, theme, options, { rowType: row.rowType, row, column, columnIndex: i, value, text, style: { bold: total } });
         }
 
         if (row.rowType === 'data') {
@@ -616,7 +700,7 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
     }
 
     await flush(true);
-    parts.push(...await client.finish());
+    keep(await client.finish());
     signal?.throwIfAborted();
     progress(true);
   } catch (error) {
@@ -633,7 +717,7 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
 
   client.dispose();
 
-  return new Blob(parts as BlobPart[], { type: 'application/pdf' });
+  return new Blob(parts, { type: 'application/pdf' });
 };
 
 /** Builds the PDF (`exportPdf`) and downloads it as `fileName` (default `export.pdf`). */

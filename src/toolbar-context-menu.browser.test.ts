@@ -181,9 +181,9 @@ describe('barra: avisos e validação', () => {
     expect(messages.filter(text => text.includes('"exportButton" is not shown'))).toHaveLength(1);
     expect(messages.filter(text => text.includes('"columnChooserButton" is not shown'))).toHaveLength(1);
 
-    grid.exportFormats = ['CSV', 'pdf'] as never;
+    grid.exportFormats = ['CSV', 'docx'] as never;
     expect(grid.exportFormats).toEqual(['csv']);
-    expect(warn.mock.calls.flat().join(' ')).toMatch(/unknown export format\(s\) ignored: pdf/);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/unknown export format\(s\) ignored: docx/);
   });
 });
 
@@ -323,11 +323,11 @@ describe('exportar pela interface', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const exporter = vi.fn(() => Promise.reject(new Error('boom')));
     const grid = await create(g => {
-      g.setAttribute('export-formats', 'csv, xlsx pdf');
+      g.setAttribute('export-formats', 'csv, xlsx docx');
     });
 
     expect(grid.exportFormats).toEqual(['csv', 'xlsx']);
-    expect(warn.mock.calls.flat().join(' ')).toMatch(/pdf/);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/docx/);
     // Só CSV (sem exportador): botão direto.
     const button = root(grid).querySelector<HTMLElement>('.export-button')!;
     expect(button.hasAttribute('aria-haspopup')).toBe(false);
@@ -365,7 +365,8 @@ describe('exportar pela interface', () => {
     grid.addEventListener('u-grid-export-error', errors);
     root(grid).querySelector<HTMLElement>('.export-button')!.click();
     await settle(grid);
-    expect(root(grid).querySelector('.export-button')!.getAttribute('aria-disabled')).toBe('true');
+    // em curso, o botão vira "Cancelar exportação" (frente 26)
+    expect(root(grid).querySelector('.export-button')!.getAttribute('aria-label')).toBe('Cancel export');
     grid.remove();
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(received!.aborted).toBe(true);

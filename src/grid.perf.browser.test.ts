@@ -12,6 +12,7 @@ import { html } from 'lit';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { exportPdf, type GridPdfFont } from './export-pdf/index.js';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid, GridDataSource, GridLoadOptions } from './grid.js';
 import { cleanup } from './test/fixture.js';
@@ -141,6 +142,12 @@ const BUDGET = {
   exportSliceMs: 50,
   /** Exportação inteira: 20 ms por mil linhas (1 milhão × 8 colunas: 20 s na máquina fraca). */
   exportTotalMs: (rows: number) => Math.max(2000, rows * 20 / 1000),
+  /**
+   * PDF (frente 26): layout, shaping e escrita num Web Worker; a thread
+   * principal só lê e serializa em fatias. Total: 40 ms por mil linhas
+   * (1 milhão: 40 s na máquina fraca, com progresso e cancelar).
+   */
+  pdfTotalMs: (rows: number) => Math.max(4000, rows * 40 / 1000),
 };
 
 const checkBudgets = (rows: number, metrics: Record<string, number>, regressions: string[]) => {
@@ -165,6 +172,8 @@ const checkBudgets = (rows: number, metrics: Record<string, number>, regressions
       check(name, value, BUDGET.jumpP95Ms);
     } else if (name.endsWith('SliceMs')) {
       check(name, value, BUDGET.exportSliceMs);
+    } else if (name === 'pdfTotalMs') {
+      check(name, value, BUDGET.pdfTotalMs(rows));
     } else if (name.endsWith('TotalMs')) {
       check(name, value, BUDGET.exportTotalMs(rows));
     } else if (name === 'sortUniqueMs') {
@@ -667,6 +676,93 @@ const exportScenario = (rows: number, label: string) => {
     // Sem a coluna agrupada (vira linha de grupo), com as linhas de grupo e os totais.
     expect(groupedSize).toBeGreaterThan(rows * 25);
     expect(copied.split('\r\n')).toHaveLength(10_000);
+  });
+};
+
+/** Fontes de teste do PDF (Noto, OFL). */
+const PDF_FONTS: GridPdfFont[] = [
+  { source: new URL('./test/fonts/NotoSans-Regular.subset.ttf', import.meta.url).href },
+  { source: new URL('./test/fonts/NotoSans-Bold.subset.ttf', import.meta.url).href, weight: 'bold' },
+];
+
+interface PostTaskScheduler {
+  postTask: (task: () => void, options: { priority: 'user-blocking'; delay: number }) => Promise<void>;
+}
+
+/**
+ * Maior bloqueio da thread principal durante `work`, como o sentiria uma
+ * entrada do usuário: uma sonda de prioridade `user-blocking` (a de um
+ * clique ou tecla; passa à frente das continuações do `scheduler.yield()`)
+ * agendada a cada 1 ms mede quanto esperou além do prazo. A espera pelo
+ * worker não conta (a página responde nela), diferente do `measureSlices`.
+ */
+const measureBlocking = async (work: () => Promise<unknown>): Promise<{ sliceMs: number; totalMs: number }> => {
+  const scheduler = (window as unknown as { scheduler: PostTaskScheduler }).scheduler;
+  let worst = 0;
+  let running = true;
+
+  const probe = () => {
+    const due = performance.now() + 1;
+    void scheduler.postTask(() => {
+      worst = Math.max(worst, performance.now() - due);
+
+      if (running) {
+        probe();
+      }
+    }, { priority: 'user-blocking', delay: 1 });
+  };
+
+  perf.recalibrate();
+  const start = performance.now();
+  probe();
+
+  try {
+    await work();
+  } finally {
+    running = false;
+  }
+
+  const end = performance.now();
+
+  return { sliceMs: perf.weak(worst), totalMs: perf.weak(end - start) };
+};
+
+/** Frente 26: exportar PDF (worker) de 100 mil e 1 milhão de linhas, plano e agrupado com totais. */
+const pdfScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 8 colunas: exportar PDF (worker), plano e agrupado com totais`, async () => {
+    let items: object[] | undefined = makeLeanItems(rows);
+
+    await perf.throttle();
+    const { grid } = await bestFirstRender(items, makeLeanColumns());
+    grid.language = 'en';
+    await painted(grid);
+
+    const worker = () => new Worker(new URL('./export-pdf/worker.ts', import.meta.url), { type: 'module' });
+    let size = 0;
+    const { best: flat } = await bestOfQuiet(() => measureBlocking(async () => {
+      size = (await exportPdf(grid, { fonts: PDF_FONTS, worker })).size;
+    }), { repeats: rows > 200_000 ? 1 : 3 });
+
+    grid.summary = { total: [{ column: 'quantity', type: 'sum' }] };
+    grid.groupColumn(byLabel(grid, 'Country'));
+    await painted(grid);
+
+    const { best: grouped } = await bestOfQuiet(() => measureBlocking(async () => {
+      await exportPdf(grid, { fonts: PDF_FONTS, worker });
+    }), { repeats: rows > 200_000 ? 1 : 3, warmUp: 0 });
+
+    await perf.unthrottle();
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      pdfSliceMs: flat.sliceMs,
+      pdfTotalMs: flat.totalMs,
+      pdfGroupedSliceMs: grouped.sliceMs,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`pdf-${label}`, metrics));
+    expect(size).toBeGreaterThan(rows * 20);
   });
 };
 
@@ -1528,6 +1624,8 @@ describe('perfil de máquina fraca', () => {
   remoteScenario(5_000_000, '5m');
   applyChangesScenario(1_000_000, '1m');
   exportScenario(1_000_000, '1m');
+  pdfScenario(100_000, '100k');
+  pdfScenario(1_000_000, '1m');
   detailScenario(1_000_000, '1m');
   fixedRowsScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');

@@ -3,10 +3,12 @@
 
 use std::cell::RefCell;
 
+use crate::writer::Assembler;
 use crate::{Engine, code};
 
 thread_local! {
     static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
+    static ASSEMBLER: RefCell<Option<Assembler>> = const { RefCell::new(None) };
     static OUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -30,10 +32,11 @@ pub extern "C" fn alloc(len: usize) -> *mut u8 {
     p
 }
 
-/// Começa uma exportação nova (descarta a anterior).
+/// Começa uma exportação nova (descarta a anterior). `deferred` ≠ 0: a saída são segmentos para
+/// um montador (`asm_*`, noutra instância).
 #[unsafe(no_mangle)]
-pub extern "C" fn create() {
-    ENGINE.with(|e| *e.borrow_mut() = Some(Engine::new()));
+pub extern "C" fn create(deferred: u32) {
+    ENGINE.with(|e| *e.borrow_mut() = Some(Engine::with_mode(deferred != 0)));
     OUT.with(|o| *o.borrow_mut() = Vec::new());
 }
 
@@ -91,10 +94,37 @@ pub extern "C" fn finish() -> i32 {
     with(Engine::finish, code::STATE)
 }
 
-/// Tira o próximo bloco pronto do PDF; devolve o tamanho (0 = nenhum). Leia em `out_ptr`.
+/// Montador: começa um arquivo novo.
+#[unsafe(no_mangle)]
+pub extern "C" fn asm_create() {
+    ASSEMBLER.with(|a| *a.borrow_mut() = Some(Assembler::new()));
+    OUT.with(|o| *o.borrow_mut() = Vec::new());
+}
+
+/// Montador: consome um bloco de segmentos. 1 = fim do documento, 0 = segue, negativo = erro
+/// (mensagem em `error`).
+#[unsafe(no_mangle)]
+pub extern "C" fn asm_push(ptr: *mut u8, len: usize) -> i32 {
+    let bytes = take(ptr, len);
+    ASSEMBLER.with(|a| match a.borrow_mut().as_mut() {
+        None => code::STATE,
+        Some(asm) => match asm.push(&bytes) {
+            Ok(done) => i32::from(done),
+            Err(e) => {
+                OUT.with(|o| *o.borrow_mut() = e.into_bytes());
+                code::INVALID
+            }
+        },
+    })
+}
+
+/// Tira o próximo bloco pronto do PDF (do motor ou do montador); devolve o tamanho (0 = nenhum).
+/// Leia em `out_ptr`.
 #[unsafe(no_mangle)]
 pub extern "C" fn take_chunk() -> usize {
-    let c = with(|e| e.out.pop_front(), None).unwrap_or_default();
+    let c = with(|e| e.out.pop_front(), None)
+        .or_else(|| ASSEMBLER.with(|a| a.borrow_mut().as_mut().and_then(Assembler::take)))
+        .unwrap_or_default();
     OUT.with(|o| {
         *o.borrow_mut() = c;
         o.borrow().len()
@@ -120,5 +150,6 @@ pub extern "C" fn error() -> usize {
 #[unsafe(no_mangle)]
 pub extern "C" fn dispose() {
     ENGINE.with(|e| *e.borrow_mut() = None);
+    ASSEMBLER.with(|a| *a.borrow_mut() = None);
     OUT.with(|o| *o.borrow_mut() = Vec::new());
 }

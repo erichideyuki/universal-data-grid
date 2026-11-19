@@ -178,6 +178,16 @@
     "headerMenuOpenMs": 4.4,
     "toolbarMoreOpenMs": 4.2
   },
+  "pdf-100k": {
+    "pdfSliceMs": 36.2,
+    "pdfTotalMs": 2658,
+    "pdfGroupedSliceMs": 35.8
+  },
+  "pdf-1m": {
+    "pdfSliceMs": 39.9,
+    "pdfTotalMs": 28503.6,
+    "pdfGroupedSliceMs": 42.1
+  },
   "remote-5m": {
     "firstRenderMs": 5.8,
     "scrollP95Ms": 3.7,

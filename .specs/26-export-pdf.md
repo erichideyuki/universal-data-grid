@@ -305,6 +305,80 @@ nova; `npm audit --omit=dev` zerado; revisores na entrega.
 - Quebra de linha por dicionário em tailandês/lao/khmer: na 1ª versão só
   espaço e limite de grafema (o segmentador por dicionário do ICU4X custa
   ~centenas de KB no `.wasm`; medir antes de incluir).
+- "Cancelar exportação" também no menu da linha (hoje: botão/menu da barra e
+  `cancelExport()`).
+- Roteiro manual NVDA + Acrobat e JAWS no PDF de referência; abrir e ler o
+  PDF de 100 mil linhas (árvore com milhões de elementos) e documentar o
+  limite prático.
+- Fonte padrão empacotada (pedido do usuário: "depois a gente vê as fontes").
+
+## Implementação (2026-11-19)
+
+- **Motor** (`pdf/`, Rust → `src/export-pdf/grid-pdf.wasm`, ~1,24 MB /
+  ~470 KB gzip, sem imports): `writer.rs` (objetos fora de ordem direto ao
+  arquivo, object streams de 200 objetos, xref em stream, blocos de 1 MiB,
+  deflate nível 2 do `zlib-rs`; no worker, modo adiado: o motor entrega
+  segmentos crus e o `Assembler` — outra instância do mesmo `.wasm`, num
+  segundo worker — comprime e escreve, em paralelo com o layout), `fonts.rs` (TTF/OTF/TTC pelo `uo-fonts`, subset
+  TrueType, CFF inteiro em `FontFile3/OpenType`, `/W`, `ToUnicode` com o
+  texto de origem de cada glifo), `text.rs` (reserva por caractere e por
+  estilo — regular, negrito, itálico, negrito itálico —, bidi, shaping por
+  palavra com cache de chave fonte+direção+texto, quebra UAX #14 + grafema),
+  `tags.rs` (árvore em fluxo: elemento escrito ao fechar; células fora da
+  pilha para a linha que atravessa páginas; `ParentTree` e `IDTree` em
+  folhas de 128), `doc.rs` (papel/orientação/auto-hide/espremer, passo
+  único, cabeçalho real na 1ª página e artefato nas outras, `TBody` a cada
+  2.000 linhas e por grupo de 1º nível, `TFoot` nos totais, `/A` das
+  células como objeto compartilhado por coluna, fios adiados por trecho
+  (um caminho só, por cima dos fundos), um `BT` por linha com o `BDC/EMC`
+  de cada célula dentro e estado gráfico (cor, fonte) sem repetição, linha
+  adaptativa `L/LI/LBody`, `Figure` com `Alt` e `BBox`, `Link` com `OBJR`,
+  sublinhado e uma anotação por linha, "Página X de Y" com o total num
+  Form XObject escrito no fim, marcadores, XMP com `pdfuaid:part 1`).
+- **JS** (`src/export-pdf/`): `index.ts` (API, contexto do grid, tema e
+  contraste, `customizeCell` e validações, blocos de 2.000 linhas com um
+  bloco em voo — o worker faz o layout de um enquanto a thread principal
+  serializa o próximo), `client.ts` (dois workers — motor e montador, com
+  até 2 montagens em voo — ou a thread principal em fatias de 8 ms),
+  `worker.ts`, `engine.ts`, `serialize.ts` (ASCII byte a byte, sem
+  `TextEncoder` por célula). Fontes copiadas, em `LruCache` de 8; módulo
+  compilado uma vez na thread principal e enviado aos workers.
+- **Grid**: `_exportStream` (`@internal`, iterador do instantâneo),
+  `_exportTranslation`, `_exportLanguages`, `_exportName`; formato `pdf`,
+  `pdfExporter`, `cancelExport()`, botão/menu "Cancelar exportação",
+  progresso no `aria-describedby` do botão, `exportSelectedPdf` no menu da
+  linha, aviso de exportador ausente por formato, `AbortError` = cancelado.
+- Desempenho (perfil fraco, `pdf-100k` / `pdf-1m`, plano; melhor de 3):
+  primeira versão 17,6 s / 100,9 s (fatia 305 ms) → 2,5 s / 25,4 s (fatia
+  34 ms). O que pesou: conteúdo verboso (18 artefatos de fio por linha, cor
+  e fonte repetidas por célula, `/A` inline por TD) e o deflate (~metade do
+  motor no wasm), agora em paralelo no montador. Bancada nativa:
+  `cargo run --release --example bench -- out.pdf 100000` (dados do perf).
+- Testes: Rust (`npm run test:pdf-engine`, 11: inclui o arquivo montado
+  igual ao direto e o aninhamento BT/ET × BDC/EMC com links e imagens), navegador
+  (`export-pdf.browser.test.ts`, PDF lido de volta com pdf.js), vazamento
+  (`export-pdf.memory.browser.test.ts`: grid coletado, workers encerrados),
+  Node (`export-pdf.node.test.ts`), perf (`pdf-100k`, `pdf-1m`). Fontes de
+  teste: subconjuntos Noto (OFL) em `src/test/fonts/`.
+
+### Revisão na entrega (2026-11-19)
+- API: só documentação (JSDoc de `worker` — fábrica chamada 2× —, dos
+  campos de `GridPdfTheme`/`GridPdfImage`/`GridPdfCell`/`GridPdfOptions`,
+  de `GridExportOptions`, `u-grid-export-error` não dispara ao cancelar,
+  README). Aplicado.
+- A11y, aplicado: `/Artifact BMC` na imagem decorativa (era `BDC` sem
+  propriedades); `/Headers` do rodapé só com os grupos que ele resume e do
+  total sem grupos; TD das linhas com TH de linha (grupo, rodapé, total,
+  linha adaptativa) com o ID desse TH nos `/Headers` (`/A` próprio, só
+  nessas linhas); `ParentTree`/`IDTree` com nós intermediários de 128;
+  menu aberto não muda as posições (com o menu aberto, "Cancelar
+  exportação" fica, desabilitada, até fechar); o cancelar da interface
+  ignora os primeiros 500 ms (clique duplo, repetição de tecla); `lang` no
+  texto do progresso; testes de teclado, menu, RTL e axe; testes Rust de
+  operandos de BDC/BMC e de `/Headers` → `/ID`.
+- Pendente (muda o visual, pede aval): no modo só ícone, trocar o ícone do
+  botão por "parar" enquanto ele cancela. Checagens de `Tabs`, `OBJR` e
+  `ParentTree`↔MCID no PDF lido de volta: com o veraPDF.
 
 ### Achados dos revisores recusados
 - Chave `exportErrorFontAnnouncement` (a11y): a causa vai no

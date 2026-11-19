@@ -152,7 +152,8 @@ type GridContextMenuItemName =
 - `u-grid-exporting` (cancelável) `GridExportingEventDetail { format,
   selectedOnly }` → `u-grid-export` (mesmo detail) ou `u-grid-export-error`
   (`+ error`). Só pela interface (barra, "mais", menu da linha); os métodos
-  `exportCsv`/`downloadCsv` não disparam. Outro formato (PDF) = item
+  `exportCsv`/`downloadCsv` não disparam. PDF: formato `pdf` com
+  `pdfExporter` (frente 26, `createPdfExporter`); outros formatos = item
   próprio do hospedeiro com `getExportData`.
 - `u-grid-copying` (existente): `clipboardData` segue `DataTransfer`. Em
   `copySelection()`/menu o grid passa um `DataTransfer` próprio; não
@@ -189,8 +190,10 @@ Mantidas: `column-header-menu-button`, `add-row-button`, `save-button`,
   entram achatadas com o nome completo, depois de um separador.
 - **Exportar**: botão de menu com "Exportar para CSV", "Exportar para
   Excel" e, com seleção ligada, "… selecionadas" (`aria-disabled` sem
-  seleção); uma entrada só = botão direto. Ocupado: `aria-disabled`,
-  ativá-lo relê "Exportando…"; vale também no "mais" e no menu da linha.
+  seleção); uma entrada só = botão direto. Ocupado: as entradas de exportar
+  ficam `aria-disabled` e ativá-las relê "Exportando…" (também no "mais" e
+  no menu da linha); desde a frente 26 o botão direto vira "Cancelar
+  exportação" e o menu ganha essa entrada no topo (`cancelExport()`).
   Desconectar aborta (`signal`).
 - **Menu de contexto — embutidos por alvo** (só os que se aplicam):
   - `header` (`columnHeaderMenu`): ordenar crescente/decrescente/limpar
