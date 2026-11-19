@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'Responsive columns',
+  intro: 'With `auto-hide-columns`, columns that don\'t fit in the **grid\'s own width** leave the table and their values move to an expandable row under each row — the adaptive row. `hidingPriority` decides which columns go first. The hidden columns are still part of everything else: chooser, filters, export and state.',
+  readme: '#responsive-columns-auto-hide',
+  examples: ['auto-hide', 'adaptive-detail'],
+} satisfies DocPage;

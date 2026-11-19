@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "paths": {
+      "@universal-material/data-grid": ["../src/grid.ts"],
+      "@universal-material/data-grid/export-xlsx": ["../src/export-xlsx/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["./vite.config.ts"]
+}

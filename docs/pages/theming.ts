@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'Theming',
+  intro: 'The grid is styled with `--u-grid-*` CSS custom properties, set on the grid or any ancestor, and falls back to the `@universal-material` design tokens (`--u-color-*`) when they are present. For anything the properties do not cover, style its `::part`s.',
+  readme: '#theming',
+  examples: ['custom-properties', 'presets', 'parts'],
+} satisfies DocPage;

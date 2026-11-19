@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'Internationalization',
+  intro: 'Every built-in text of the grid comes in **14 languages**, and numbers, dates and currencies are formatted with `Intl` in the grid\'s language. Set `language` per grid (or a default with `setGridLanguage`), override any string with `setGridTranslation`, and put `dir="rtl"` on the grid or an ancestor for right-to-left layouts. Column labels are yours and are never translated.',
+  readme: '#internationalization-i18n',
+  examples: ['languages', 'formatting', 'custom-translations'],
+} satisfies DocPage;

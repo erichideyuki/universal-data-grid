@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'Summaries',
+  intro: 'Set `summary` (a property) with `total` items for a footer fixed at the bottom and `group` items for every group — built-in aggregates (`sum`, `min`, `max`, `avg`, `count`) or your own function, with your own label and format. They follow the filter and the grouping.',
+  readme: '#summaries',
+  examples: ['totals', 'group-summaries', 'custom'],
+} satisfies DocPage;

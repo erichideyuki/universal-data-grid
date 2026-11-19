@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'Data sources & paging',
+  intro: 'Give the grid a `dataSource` instead of `items` and it asks for exactly what it needs: with `remoteOperations` the server sorts, filters, groups, summarizes and pages, and the grid only loads the blocks in view. The "server" in these examples is a fake one with a delay — open the logs to see each `GridLoadOptions` it receives.',
+  readme: '#data-sources-keys--paging',
+  examples: ['remote-operations', 'paging', 'infinite-scrolling', 'errors'],
+} satisfies DocPage;

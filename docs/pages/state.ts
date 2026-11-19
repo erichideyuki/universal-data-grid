@@ -1,0 +1,8 @@
+import type { DocPage } from '../site/types.js';
+
+export default {
+  title: 'State persistence',
+  intro: 'The grid keeps the user\'s choices — column order, width, visibility and pinning, grouping, sorting, filter and search, expanded groups, paging and (with `keyExpr`) the selection — and can save them automatically to `localStorage`, `sessionStorage` or your own storage, or hand them to you as a JSON-serializable object.',
+  readme: '#state-persistence',
+  examples: ['local-storage', 'saved-views', 'state-change'],
+} satisfies DocPage;

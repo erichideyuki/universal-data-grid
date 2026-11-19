@@ -14,6 +14,9 @@ reordenação por arrasto (`interactjs`), i18n por Lit context e SSR
   `90-audit.md` é a auditoria de bugs e segurança.
 - **README.md**: vitrine pública e referência da API, em inglês. API nova
   entra lá na mesma entrega.
+- **Site de documentação**: `docs/` (`npm run docs:dev`), um exemplo ao vivo
+  por recurso; regras em `docs/README.md`. Recurso novo ganha exemplo lá na
+  mesma entrega.
 
 ## Convenções
 

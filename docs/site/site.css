@@ -1,0 +1,523 @@
+/* Site de documentação do <u-grid>. As cores vêm dos tokens --u-color-*
+   (docs/index.css, com light-dark()), os mesmos que o grid lê. */
+
+:root {
+  --site-surface: var(--u-color-surface, light-dark(#fdfbff, #121318));
+  --site-surface-2: var(--u-color-surface-container-low, light-dark(#f6f3f9, #1a1b21));
+  --site-surface-3: var(--u-color-surface-container, light-dark(#efedf4, #1f1f25));
+  --site-on-surface: var(--u-color-on-surface, light-dark(#1b1b21, #e4e1e9));
+  --site-muted: var(--u-color-on-surface-variant, light-dark(#45464f, #c6c6d0));
+  --site-outline: var(--u-color-outline-variant, light-dark(#c6c6d0, #45464f));
+  --site-primary: var(--u-color-primary, light-dark(#0057cc, #b0c6ff));
+  --site-on-primary: var(--u-color-on-primary, light-dark(#fff, #002c6f));
+  --site-primary-container: var(--u-color-primary-container, light-dark(#d9e2ff, #00419d));
+  --site-code-bg: light-dark(#f4f5f8, #16171c);
+  --site-topbar-height: 56px;
+  --site-sidebar-width: 260px;
+}
+
+html {
+  background: var(--site-surface);
+  color: var(--site-on-surface);
+  scroll-padding-top: calc(var(--site-topbar-height) + 16px);
+}
+
+body {
+  display: block;
+  place-items: normal;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--site-surface);
+  color: var(--site-on-surface);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+a {
+  color: var(--site-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--site-primary);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  font-size: 0.875em;
+  background: var(--site-code-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: var(--site-primary);
+  color: var(--site-on-primary);
+  border-radius: 8px;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+/* ------------------------------------------------------------- topo */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--site-topbar-height);
+  padding-inline: 16px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--site-surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--site-outline);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 1.1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--site-primary);
+  color: var(--site-on-primary);
+  font-weight: 700;
+}
+
+.brand-sub {
+  color: var(--site-muted);
+  font-size: 0.85rem;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.top-link {
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.top-link:hover {
+  background: var(--site-surface-3);
+}
+
+.icon-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--site-surface-3);
+}
+
+.menu-button {
+  display: none;
+}
+
+/* ------------------------------------------------------------- layout */
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--site-sidebar-width) minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: var(--site-topbar-height);
+  height: calc(100vh - var(--site-topbar-height));
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 16px 12px 32px;
+  border-inline-end: 1px solid var(--site-outline);
+  background: var(--site-surface);
+}
+
+.nav-filter {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--site-outline);
+  border-radius: 8px;
+  background: var(--site-surface-2);
+  color: inherit;
+  font: inherit;
+}
+
+.nav-section h2 {
+  margin: 16px 12px 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--site-muted);
+}
+
+.nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav a {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.925rem;
+}
+
+.nav a:hover {
+  background: var(--site-surface-3);
+}
+
+.nav a[aria-current='page'] {
+  background: var(--site-primary-container);
+  font-weight: 600;
+}
+
+.content {
+  min-width: 0;
+  max-width: 1180px;
+  box-sizing: border-box;
+  padding: 32px 40px 80px;
+  outline: none;
+}
+
+/* ------------------------------------------------------------- página */
+
+.eyebrow {
+  margin: 0;
+  color: var(--site-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.page-header h1 {
+  margin: 4px 0 8px;
+  font-size: 2.2rem;
+  line-height: 1.2;
+}
+
+.intro {
+  margin: 0;
+  max-width: 75ch;
+  font-size: 1.05rem;
+  color: var(--site-muted);
+}
+
+.readme-link {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+}
+
+.toc {
+  margin: 24px 0 8px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--site-surface-2);
+}
+
+.toc h2 {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--site-muted);
+}
+
+.toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.example {
+  margin-top: 40px;
+}
+
+.example h2 {
+  margin: 0 0 4px;
+  font-size: 1.35rem;
+}
+
+.example h2 .anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.example h2 .anchor:hover::after {
+  content: ' #';
+  color: var(--site-muted);
+}
+
+.description {
+  margin: 0 0 12px;
+  max-width: 80ch;
+  color: var(--site-muted);
+}
+
+.demo {
+  display: flow-root;
+  padding: 16px;
+  border: 1px solid var(--site-outline);
+  border-radius: 16px 16px 0 0;
+  background: var(--site-surface-2);
+  min-height: 120px;
+}
+
+.demo u-grid {
+  border-radius: 8px;
+}
+
+.example-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 16px;
+  border: 1px solid var(--site-outline);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+}
+
+.code-host:not([hidden]) + * {
+  margin-top: 0;
+}
+
+.code-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--site-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.source-link {
+  font-size: 0.85rem;
+  color: var(--site-muted);
+}
+
+.code-wrap {
+  position: relative;
+  margin-top: 8px;
+}
+
+.code {
+  margin: 0;
+  max-height: 560px;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--site-code-bg);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.code code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.copy-button {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--site-outline);
+  border-radius: 8px;
+  background: var(--site-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.tok-comment { color: light-dark(#6a737d, #8b949e); font-style: italic; }
+.tok-string { color: light-dark(#0a7a3d, #7ee2a8); }
+.tok-number { color: light-dark(#b45309, #f9b26b); }
+.tok-keyword { color: light-dark(#a3159b, #e39bff); }
+.tok-call { color: light-dark(#0b5cad, #8cc4ff); }
+.tok-type { color: light-dark(#8a4b00, #ffd68a); }
+
+.error {
+  color: var(--u-color-error, #b3261e);
+}
+
+.missing {
+  padding: 16px;
+  border: 1px dashed var(--u-color-error, #b3261e);
+  border-radius: 12px;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 1px solid var(--site-outline);
+}
+
+.pager a {
+  display: grid;
+  padding: 12px 16px;
+  border: 1px solid var(--site-outline);
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.pager a small {
+  color: var(--site-muted);
+  font-weight: 400;
+}
+
+.pager .next {
+  text-align: end;
+}
+
+/* ------------------------------------------------------------- controles das demos (docs/examples/shared/controls.ts) */
+
+.demo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.demo-controls button,
+.demo-controls select,
+.demo-controls input:not([type='checkbox']):not([type='range']) {
+  padding: 6px 12px;
+  border: 1px solid var(--site-outline);
+  border-radius: 8px;
+  background: var(--site-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.demo-controls button {
+  cursor: pointer;
+}
+
+.demo-controls button:hover {
+  background: var(--site-surface-3);
+}
+
+.demo-controls button.primary {
+  background: var(--site-primary);
+  border-color: var(--site-primary);
+  color: var(--site-on-primary);
+}
+
+.demo-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+
+.demo-stat {
+  font-size: 0.875rem;
+  color: var(--site-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.demo-log {
+  margin: 12px 0 0;
+  height: 112px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--site-code-bg);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* ------------------------------------------------------------- estreito */
+
+@media (max-width: 900px) {
+  .menu-button {
+    display: inline-block;
+  }
+
+  .brand-sub,
+  .top-link {
+    display: none;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: fixed;
+    inset-inline-start: 0;
+    top: var(--site-topbar-height);
+    z-index: 40;
+    width: min(300px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  }
+
+  :dir(rtl) .sidebar {
+    transform: translateX(100%);
+  }
+
+  .nav-open .sidebar {
+    transform: none;
+  }
+
+  .content {
+    padding: 24px 16px 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
