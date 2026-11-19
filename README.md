@@ -1318,7 +1318,8 @@ column out), modeled on AG Grid's:
   every listed column, unchecked hides them (the last visible column stays);
 - one labelled checkbox per column to show/hide it (bands are tri-state, with their columns nested);
 - a drag handle per column to **reorder** it by dragging, and `Alt+Shift+↑/↓` on a checkbox for the
-  same with the keyboard (announced; the focus stays on the checkbox). Both fire
+  same with the keyboard (announced, also when the move is refused — e.g. past a pinned column; the
+  focus stays on the checkbox). Both fire
   `u-grid-column-reorder` and stay inside the column's band and fixed block.
 
 Pinning is not in the chooser any more: use **Pin column ▸** in the column header menu.
@@ -1770,7 +1771,7 @@ opened; `closeContextMenu()` closes it.
 `→`/`Enter`/`Space` open the submenu on its first item and `←`/`Esc` close it back to "Pin column"
 (the arrows swap in RTL); `Tab` closes both. In the header menu, the focus follows the column after
 "Move left/right", goes to the column chooser after "Choose columns" and back to the header after
-the other items; pinning and "Auto-size all columns" are announced. When a "Copy" item
+the other items; pinning, "Auto-size all columns" and "Reset columns" are announced. When a "Copy" item
 cannot write to the clipboard (permission denied), screen readers hear "Could not copy to the clipboard." On a cell,
 `Shift+F10`/the menu key opens the row menu only when the focus is on the cell itself (inside an
 editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
@@ -2501,6 +2502,8 @@ interface GridI18n {
   columnFixedEndAnnouncement: string;   // "{column} pinned to end"
   columnUnfixedAnnouncement: string;    // "{column} unpinned"
   allColumnsAutoSizedAnnouncement: string; // "All columns auto-sized"
+  columnMoveRefusedAnnouncement: string;   // chooser, Alt+Shift+↑/↓ refused: "{column} can't move past {target}"
+  columnsResetAnnouncement: string;        // after "Reset columns" in the header menu: "Columns reset"
 }
 ```
 

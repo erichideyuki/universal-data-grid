@@ -616,6 +616,8 @@ describe('ações do menu do cabeçalho', () => {
     expect(Math.round(headerCell(grid, 'Name').getBoundingClientRect().width)).toBe(120);
     expect(stateChange.mock.calls[0][0].detail.sources).toEqual(['user']);
     expect(focused(grid)).toBe(headerCell(grid, 'City'));
+    // Pelo menu é anunciado; pela API (acima) não.
+    expect(liveRegion(grid).textContent).toBe('Columns reset');
   });
 });
 
@@ -706,6 +708,27 @@ describe('seletor de colunas como o do AG Grid', () => {
     // No limite não move.
     await key(grid, chooserBox(grid, 'Name'), 'ArrowUp', { altKey: true, shiftKey: true });
     expect(reorder).toHaveBeenCalledTimes(2);
+  });
+
+  it('Alt+Shift+↑ recusado (coluna livre contra fixa): nada muda, anuncia o porquê, o foco fica', async () => {
+    const grid = await create(g => g.columnChooser = true, [
+      { path: 'id', label: 'Id', fixed: 'start' },
+      { path: 'name', label: 'Name' },
+      { path: 'city', label: 'City' },
+    ]);
+    const reorder = vi.fn();
+    grid.addEventListener('u-grid-column-reorder', reorder);
+    grid.openColumnChooser();
+    await settle(grid);
+
+    const box = chooserBox(grid, 'Name');
+    box.focus();
+    await key(grid, box, 'ArrowUp', { altKey: true, shiftKey: true });
+
+    expect(chooserLabels(grid)).toEqual(['Id', 'Name', 'City']);
+    expect(reorder).not.toHaveBeenCalled();
+    expect(liveRegion(grid).textContent).toBe('Name can\'t move past Id');
+    expect(focused(grid)).toBe(chooserBox(grid, 'Name'));
   });
 
   it('alça de arrasto: aria-hidden, fora do foco; arrastar Name para depois de Age reordena', async () => {

@@ -447,7 +447,9 @@ e "Referência medida" na spec 18; aqui o que é de acessibilidade:
   item pai), o contraste do placeholder da busca do seletor (cor variante,
   ≥ 4,5:1) e o indicador de soltar do seletor em forced-colors (borda
   `Highlight`). Aceito e registrado: na coluna alinhada ao fim o F2 segue
-  o DOM (funil → ⋮ → alça), não a ordem visual espelhada. Pendentes, por
-  pedirem chave nova na i18n (aval do usuário): anunciar o movimento
-  recusado no seletor (Alt+Shift+↑/↓ contra outro bloco) e anunciar
-  "Reset columns".
+  o DOM (funil → ⋮ → alça), não a ordem visual espelhada. Aprovados pelo
+  usuário depois ("Yes, add both") e implementados com teste: o
+  movimento recusado no seletor (Alt+Shift+↑/↓ contra outro bloco ou
+  banda) anuncia `columnMoveRefusedAnnouncement` ("{column} can't move
+  past {target}"); "Reset columns" pelo menu anuncia
+  `columnsResetAnnouncement` (a API `resetColumns()` continua muda).

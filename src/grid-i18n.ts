@@ -411,6 +411,10 @@ export interface GridI18n {
   columnUnfixedAnnouncement: string;
   /** Screen reader announcement after "Auto-size all columns" in the column header menu. */
   allColumnsAutoSizedAnnouncement: string;
+  /** Column chooser announcement when `Alt+Shift+↑/↓` cannot move a column past its neighbor (pinned and unpinned columns, or another band). `{column}`, `{target}`. */
+  columnMoveRefusedAnnouncement: string;
+  /** Screen reader announcement after "Reset columns" in the column header menu. */
+  columnsResetAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -697,6 +701,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} pinned to end',
     columnUnfixedAnnouncement: '{column} unpinned',
     allColumnsAutoSizedAnnouncement: 'All columns auto-sized',
+    columnMoveRefusedAnnouncement: '{column} can\'t move past {target}',
+    columnsResetAnnouncement: 'Columns reset',
   },
   es: {
     noData: 'Sin datos',
@@ -902,6 +908,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} fijada al final',
     columnUnfixedAnnouncement: '{column} desfijada',
     allColumnsAutoSizedAnnouncement: 'Ancho de todas las columnas ajustado',
+    columnMoveRefusedAnnouncement: '{column} no puede pasar de {target}',
+    columnsResetAnnouncement: 'Columnas restablecidas',
   },
   pt: {
     noData: 'Sem dados',
@@ -1107,6 +1115,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} fixada no fim',
     columnUnfixedAnnouncement: '{column} desafixada',
     allColumnsAutoSizedAnnouncement: 'Largura de todas as colunas ajustada',
+    columnMoveRefusedAnnouncement: '{column} não pode passar de {target}',
+    columnsResetAnnouncement: 'Colunas redefinidas',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1312,6 +1322,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} épinglée à la fin',
     columnUnfixedAnnouncement: '{column} désépinglée',
     allColumnsAutoSizedAnnouncement: 'Largeur de toutes les colonnes ajustée',
+    columnMoveRefusedAnnouncement: '{column} ne peut pas dépasser {target}',
+    columnsResetAnnouncement: 'Colonnes réinitialisées',
   },
   de: {
     noData: 'Keine Daten',
@@ -1517,6 +1529,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} am Ende fixiert',
     columnUnfixedAnnouncement: 'Fixierung von {column} aufgehoben',
     allColumnsAutoSizedAnnouncement: 'Breite aller Spalten angepasst',
+    columnMoveRefusedAnnouncement: '{column} kann nicht an {target} vorbei verschoben werden',
+    columnsResetAnnouncement: 'Spalten zurückgesetzt',
   },
   it: {
     noData: 'Nessun dato',
@@ -1722,6 +1736,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} bloccata alla fine',
     columnUnfixedAnnouncement: '{column} sbloccata',
     allColumnsAutoSizedAnnouncement: 'Larghezza di tutte le colonne adattata',
+    columnMoveRefusedAnnouncement: '{column} non può superare {target}',
+    columnsResetAnnouncement: 'Colonne ripristinate',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1927,6 +1943,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} vastgezet aan het einde',
     columnUnfixedAnnouncement: '{column} losgemaakt',
     allColumnsAutoSizedAnnouncement: 'Breedte van alle kolommen aangepast',
+    columnMoveRefusedAnnouncement: '{column} kan niet voorbij {target}',
+    columnsResetAnnouncement: 'Kolommen hersteld',
   },
   ru: {
     noData: 'Нет данных',
@@ -2132,6 +2150,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: 'Столбец {column} закреплён в конце',
     columnUnfixedAnnouncement: 'Столбец {column} откреплён',
     allColumnsAutoSizedAnnouncement: 'Ширина всех столбцов подогнана',
+    columnMoveRefusedAnnouncement: 'Столбец {column} нельзя переместить за {target}',
+    columnsResetAnnouncement: 'Столбцы сброшены',
   },
   pl: {
     noData: 'Brak danych',
@@ -2337,6 +2357,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} przypięto na końcu',
     columnUnfixedAnnouncement: '{column} odpięto',
     allColumnsAutoSizedAnnouncement: 'Dopasowano szerokość wszystkich kolumn',
+    columnMoveRefusedAnnouncement: '{column} nie może przejść za {target}',
+    columnsResetAnnouncement: 'Przywrócono kolumny',
   },
   tr: {
     noData: 'Veri yok',
@@ -2542,6 +2564,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} sona sabitlendi',
     columnUnfixedAnnouncement: '{column} sabitlemesi kaldırıldı',
     allColumnsAutoSizedAnnouncement: 'Tüm sütunların genişliği sığdırıldı',
+    columnMoveRefusedAnnouncement: '{column}, {target} sütununu geçemez',
+    columnsResetAnnouncement: 'Sütunlar sıfırlandı',
   },
   ja: {
     noData: 'データがありません',
@@ -2747,6 +2771,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column} を末尾に固定しました',
     columnUnfixedAnnouncement: '{column} の固定を解除しました',
     allColumnsAutoSizedAnnouncement: 'すべての列の幅を調整しました',
+    columnMoveRefusedAnnouncement: '{column} は {target} を越えて移動できません',
+    columnsResetAnnouncement: '列をリセットしました',
   },
   ko: {
     noData: '데이터 없음',
@@ -2952,6 +2978,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '{column}을(를) 끝 부분에 고정했습니다',
     columnUnfixedAnnouncement: '{column} 고정을 해제했습니다',
     allColumnsAutoSizedAnnouncement: '모든 열 너비를 조정했습니다',
+    columnMoveRefusedAnnouncement: '{column}은(는) {target}을(를) 지나 이동할 수 없습니다',
+    columnsResetAnnouncement: '열을 초기화했습니다',
   },
   zh: {
     noData: '无数据',
@@ -3157,6 +3185,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: '已将 {column} 固定到末尾',
     columnUnfixedAnnouncement: '已取消固定 {column}',
     allColumnsAutoSizedAnnouncement: '已自动调整所有列宽',
+    columnMoveRefusedAnnouncement: '{column} 无法移过 {target}',
+    columnsResetAnnouncement: '已重置列',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -3362,6 +3392,8 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     columnFixedEndAnnouncement: 'تم تثبيت {column} في النهاية',
     columnUnfixedAnnouncement: 'تم إلغاء تثبيت {column}',
     allColumnsAutoSizedAnnouncement: 'تمت ملاءمة عرض كل الأعمدة',
+    columnMoveRefusedAnnouncement: 'لا يمكن نقل {column} إلى ما بعد {target}',
+    columnsResetAnnouncement: 'تمت إعادة تعيين الأعمدة',
   },
 });
 

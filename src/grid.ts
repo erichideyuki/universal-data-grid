@@ -18344,6 +18344,7 @@ export class DataGrid extends LitElement {
         // Gesto do usuário: a rajada do estado sai com `source: 'user'`.
         this.#recordedSources.add('user');
         this.#resetColumnLayout();
+        this.#announce(this.#translation.columnsResetAnnouncement);
         this.#focusPending = true;
         break;
       case 'increaseColumnWidth':
@@ -18841,7 +18842,7 @@ export class DataGrid extends LitElement {
         // Ocultar todas deixa a última visível (nunca some tudo).
         columns.forEach(column => this._userSetVisible(column, visible));
       },
-      onMove: (column, target, after) => this.#chooserMove(column, target, after),
+      onMove: (column, target, after, keyboard) => this.#chooserMove(column, target, after, keyboard),
       onDragStart: (event, column) => chooser.startDrag(event, column, (targetId, after) => {
         const target = [...tree.parentOf.keys()].find(candidate => String(columnIdOf(candidate)) === targetId);
 
@@ -18860,8 +18861,17 @@ export class DataGrid extends LitElement {
    * Dispara `u-grid-column-reorder` (como no cabeçalho) e anuncia a posição
    * entre as irmãs listadas; o foco fica na caixa (o `repeat` move o item).
    */
-  #chooserMove(column: GridColumnDef, target: GridColumnDef, after: boolean): boolean {
-    if (column === target || !this._canDropColumn(column, target)) {
+  #chooserMove(column: GridColumnDef, target: GridColumnDef, after: boolean, keyboard = false): boolean {
+    if (column === target) {
+      return false;
+    }
+
+    if (!this._canDropColumn(column, target)) {
+      // Recusado (fixa × livre, outra banda): pelo teclado, diz por que nada mudou (WCAG 4.1.3).
+      if (keyboard) {
+        this.#announce(formatMessage(this.#translation.columnMoveRefusedAnnouncement, { column: column.label ?? '', target: target.label ?? '' }));
+      }
+
       return false;
     }
 
