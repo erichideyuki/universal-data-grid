@@ -41,6 +41,7 @@ import type {
   GridExportFormat,
   GridExportingEventDetail,
   GridExportOptions,
+  GridExportProgress,
 } from './export/types.js';
 import { type ClipboardBlock, type ClipboardHtmlOptions, clipboardBlocks, clipboardContent, collectRows, writeCsv } from './export/write.js';
 import { type AdaptiveColumnInput, adaptiveHiddenIndexes, hidingPriorityOf } from './features/adaptive.js';
@@ -401,6 +402,7 @@ export type {
   GridExportingEventDetail,
   GridExportEventDetail,
   GridExportErrorEventDetail,
+  GridExportProgress,
 } from './export/types.js';
 export type {
   GridContextMenuContext,
@@ -764,6 +766,15 @@ interface CopyContent {
   detail: Omit<GridCopyEventDetail, 'clipboardData' | 'source'>;
   announcement: string;
 }
+
+/** Formatos da exportação pela interface (spec 12, 18 e 26). */
+const EXPORT_FORMATS: readonly GridExportFormat[] = ['csv', 'xlsx', 'pdf'];
+
+/** Nome do formato no anúncio de fim ("Exported to {format}"). */
+const EXPORT_FORMAT_NAMES: Record<GridExportFormat, string> = { csv: 'CSV', xlsx: 'Excel', pdf: 'PDF' };
+
+/** Item do menu da linha que exporta as selecionadas em cada formato. */
+const EXPORT_SELECTED_ITEMS = { csv: 'exportSelectedCsv', xlsx: 'exportSelectedXlsx', pdf: 'exportSelectedPdf' } as const;
 
 /** Largura (px) de cada coluna de recuo de grupo; igual ao `--_group-column-width`. */
 const GROUP_COLUMN_WIDTH = 32;
@@ -3622,8 +3633,9 @@ export class DataGrid extends LitElement {
   /**
    * Formats of the export UI: the toolbar export button and the "Export
    * selected rows" items of the row menu. Attribute: words separated by
-   * spaces or commas (`export-formats="csv xlsx"`). `xlsx` needs
-   * `xlsxExporter`. Default `[]` (no export UI; the export methods always work).
+   * spaces or commas (`export-formats="csv xlsx pdf"`). `xlsx` needs
+   * `xlsxExporter` and `pdf` needs `pdfExporter`. Default `[]` (no export
+   * UI; the export methods always work).
    */
   @property({ attribute: 'export-formats', converter: exportFormatsAttribute })
   get exportFormats(): readonly GridExportFormat[] {
@@ -3632,13 +3644,13 @@ export class DataGrid extends LitElement {
 
   set exportFormats(value: readonly GridExportFormat[] | null | undefined) {
     const tokens = Array.isArray(value) ? value.map(token => typeof token === 'string' ? token.toLowerCase() : String(token)) : [];
-    const unknown = tokens.filter(token => token !== 'csv' && token !== 'xlsx');
+    const unknown = tokens.filter(token => !EXPORT_FORMATS.includes(token as GridExportFormat));
 
     if (unknown.length) {
       console.warn(`<u-grid>: unknown export format(s) ignored: ${unknown.join(', ')}.`);
     }
 
-    this.#exportFormats = Object.freeze([...new Set(tokens.filter((token): token is GridExportFormat => token === 'csv' || token === 'xlsx'))]);
+    this.#exportFormats = Object.freeze([...new Set(tokens.filter((token): token is GridExportFormat => EXPORT_FORMATS.includes(token as GridExportFormat)))]);
   }
 
   #exportFormats: readonly GridExportFormat[] = Object.freeze([]);
@@ -3650,6 +3662,14 @@ export class DataGrid extends LitElement {
    * entries are not shown.
    */
   @property({ attribute: false }) xlsxExporter: GridExporter | null = null;
+
+  /**
+   * Builds and downloads the PDF file of the export UI (property only):
+   * `createPdfExporter({ fonts })` from
+   * `@universal-material/data-grid/export-pdf`. Without it the `pdf`
+   * entries are not shown.
+   */
+  @property({ attribute: false }) pdfExporter: GridExporter | null = null;
 
   /** Options of the CSV file of the export UI (property only): `fileName`, `separator`, `includeGroups`… */
   @property({ attribute: false }) csvExportOptions: Omit<GridCsvDownloadOptions, 'selectedOnly' | 'signal'> | null = null;
@@ -8226,6 +8246,36 @@ export class DataGrid extends LitElement {
   /** Builds the CSV (`exportCsv`) and downloads it as `fileName` (default `export.csv`). */
   async downloadCsv(options: GridCsvDownloadOptions = {}): Promise<void> {
     downloadBlob(await this.exportCsv(options), options.fileName || 'export.csv');
+  }
+
+  /**
+   * @internal Leitura em blocos para a exportação PDF (spec 26): as colunas e um
+   * iterador das linhas do instantâneo (sem montar todas as linhas de uma vez),
+   * com a contagem de itens de dados para o progresso.
+   */
+  _exportStream(options: GridExportOptions): { columns: GridExportData['columns']; rows: Iterator<GridExportData['rows'][number]>; totalCount: number } {
+    const source = this.#exportSource(options);
+
+    return {
+      columns: source.columns.map(column => column.info),
+      rows: exportRows(source),
+      totalCount: source.items.length + (source.fixedTop?.length ?? 0) + (source.fixedBottom?.length ?? 0),
+    };
+  }
+
+  /** @internal Textos da i18n no idioma efetivo (exportação PDF). */
+  get _exportTranslation(): GridI18n {
+    return this.#translation;
+  }
+
+  /** @internal Idioma efetivo (o do conteúdo) e o dos textos da i18n (exportação PDF). */
+  get _exportLanguages(): { content: string | undefined; text: string } {
+    return { content: this.#effectiveLanguage, text: this.#textLanguage };
+  }
+
+  /** @internal Nome acessível do grid (`aria-label`/`aria-labelledby`), para o título do PDF. */
+  get _exportName(): string {
+    return this.#hostLabel.name;
   }
 
   /** Instantâneo do que o usuário vê, para os escritores de `src/export/`. */
@@ -16605,17 +16655,21 @@ export class DataGrid extends LitElement {
     const entries: { key: string; label: string; format: GridExportFormat; selectedOnly: boolean; disabled: boolean }[] = [];
 
     for (const format of this.#exportFormats) {
-      if (format === 'xlsx' && typeof this.xlsxExporter !== 'function') {
+      if (format !== 'csv' && typeof this.#exporterOf(format) !== 'function') {
         continue;
       }
 
-      const csv = format === 'csv';
-      entries.push({ key: `export:${format}:all`, label: csv ? translation.exportCsv : translation.exportXlsx, format, selectedOnly: false, disabled: false });
+      const labels = {
+        csv: [translation.exportCsv, translation.exportSelectedCsv],
+        xlsx: [translation.exportXlsx, translation.exportSelectedXlsx],
+        pdf: [translation.exportPdf, translation.exportSelectedPdf],
+      }[format];
+      entries.push({ key: `export:${format}:all`, label: labels[0], format, selectedOnly: false, disabled: false });
 
       if (selection) {
         entries.push({
           key: `export:${format}:selected`,
-          label: csv ? translation.exportSelectedCsv : translation.exportSelectedXlsx,
+          label: labels[1],
           format,
           selectedOnly: true,
           disabled: this.#selection.size === 0,
@@ -16626,32 +16680,52 @@ export class DataGrid extends LitElement {
     return entries;
   }
 
-  #warnedXlsxExporter = false;
+  /** Exportador da interface de um formato com adaptador (`xlsx`, `pdf`). */
+  #exporterOf(format: GridExportFormat): GridExporter | null {
+    return format === 'xlsx' ? this.xlsxExporter : format === 'pdf' ? this.pdfExporter : null;
+  }
+
+  readonly #warnedExporters = new Set<GridExportFormat>();
   #xlsxCheckFrame: number | undefined;
 
+  /** Formatos com adaptador que estão em `exportFormats` sem o exportador. */
+  #missingExporters(): GridExportFormat[] {
+    return this.#exportFormats.filter(format => format !== 'csv' && !this.#warnedExporters.has(format) && typeof this.#exporterOf(format) !== 'function');
+  }
+
   /**
-   * `xlsx` sem `xlsxExporter`: avisa uma vez, um quadro depois do render (o
-   * exportador costuma chegar depois do 1º render: `useEffect`, `ngAfterViewInit`).
+   * Formato sem exportador (`xlsx` sem `xlsxExporter`, `pdf` sem `pdfExporter`):
+   * avisa uma vez por formato, um quadro depois do render (o exportador costuma
+   * chegar depois do 1º render: `useEffect`, `ngAfterViewInit`).
    */
   #checkXlsxExporter(): void {
-    if (this.#warnedXlsxExporter || this.#xlsxCheckFrame !== undefined || !this.#exportFormats.includes('xlsx') || typeof this.xlsxExporter === 'function') {
+    if (this.#xlsxCheckFrame !== undefined || !this.#missingExporters().length) {
       return;
     }
 
     this.#xlsxCheckFrame = requestAnimationFrame(() => {
       this.#xlsxCheckFrame = undefined;
 
-      if (this.isConnected && !this.#warnedXlsxExporter && this.#exportFormats.includes('xlsx') && typeof this.xlsxExporter !== 'function') {
-        this.#warnedXlsxExporter = true;
-        console.warn('<u-grid>: export format "xlsx" needs "xlsxExporter" (createXlsxExporter from "@universal-material/data-grid/export-xlsx"); its entries are not shown.');
+      if (!this.isConnected) {
+        return;
+      }
+
+      for (const format of this.#missingExporters()) {
+        this.#warnedExporters.add(format);
+        const [property, factory, entry] = format === 'xlsx'
+          ? ['xlsxExporter', 'createXlsxExporter', 'export-xlsx']
+          : ['pdfExporter', 'createPdfExporter', 'export-pdf'];
+        console.warn(`<u-grid>: export format "${format}" needs "${property}" (${factory} from "@universal-material/data-grid/${entry}"); its entries are not shown.`);
       }
     });
   }
 
   /**
    * Exportação pela interface: `u-grid-exporting` (cancelável) →
-   * `downloadCsv`/`xlsxExporter` → `u-grid-export` ou `u-grid-export-error`.
-   * "Exportando…" só depois de 1 s; desconectar aborta.
+   * `downloadCsv`/`xlsxExporter`/`pdfExporter` → `u-grid-export` ou
+   * `u-grid-export-error`. "Exportando…" só depois de 1 s; desconectar aborta;
+   * cancelar (`cancelExport`, item "Cancelar exportação" ou `AbortError` do
+   * exportador) não é erro: anúncio próprio, sem `u-grid-export-error`.
    */
   async #runExport(format: GridExportFormat, selectedOnly: boolean): Promise<void> {
     const translation = this.#translation;
@@ -16670,6 +16744,7 @@ export class DataGrid extends LitElement {
 
     const controller = new AbortController();
     this.#exporting = controller;
+    this.#exportProgress = null;
     this.#exportTimer = setTimeout(() => {
       this.#exportTimer = undefined;
       this.#announce(translation.exportingAnnouncement);
@@ -16680,15 +16755,27 @@ export class DataGrid extends LitElement {
       if (format === 'csv') {
         await this.downloadCsv({ ...this.csvExportOptions, selectedOnly, signal: controller.signal });
       } else {
-        await this.xlsxExporter!(this, { selectedOnly, signal: controller.signal });
+        const onProgress = (progress: GridExportProgress) => {
+          if (this.#exporting === controller && progress.totalCount > 0) {
+            this.#exportProgress = Math.min(100, Math.floor(progress.rowCount * 100 / progress.totalCount));
+            this.requestUpdate();
+          }
+        };
+        await this.#exporterOf(format)!(this, { selectedOnly, signal: controller.signal, onProgress });
       }
 
       controller.signal.throwIfAborted();
       this.dispatchEvent(new CustomEvent('u-grid-export', this.#eventInit<GridExportEventDetail>({ format, selectedOnly })));
-      this.#announce(formatMessage(this.#translation.exportCompleteAnnouncement, { format: format === 'csv' ? 'CSV' : 'Excel' }));
+      this.#announce(formatMessage(this.#translation.exportCompleteAnnouncement, { format: EXPORT_FORMAT_NAMES[format] }));
     } catch (error) {
-      // Desconectado no meio: nada a avisar.
-      if (!controller.signal.aborted) {
+      const canceled = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError') || (error instanceof DOMException && error.name === 'AbortError');
+
+      if (canceled) {
+        // Desconectado no meio: nada a avisar; cancelado pelo usuário ou pelo hospedeiro: anúncio próprio.
+        if (this.isConnected) {
+          this.#announce(this.#translation.exportCanceledAnnouncement);
+        }
+      } else {
         console.error('<u-grid>: the export failed.', error);
         this.dispatchEvent(new CustomEvent('u-grid-export-error', this.#eventInit<GridExportErrorEventDetail>({ format, selectedOnly, error })));
         this.#announce(this.#translation.exportErrorAnnouncement);
@@ -16699,12 +16786,24 @@ export class DataGrid extends LitElement {
 
       if (this.#exporting === controller) {
         this.#exporting = null;
+        this.#exportProgress = null;
         this.requestUpdate();
       }
     }
   }
 
+  /**
+   * Cancels the export started from the export UI (toolbar, row menu), if
+   * any: the exporter gets an aborted `signal`; no `u-grid-export-error`; the
+   * grid announces "Export canceled".
+   */
+  cancelExport(): void {
+    this.#exporting?.abort(new DOMException('The export was canceled.', 'AbortError'));
+  }
+
   #exporting: AbortController | null = null;
+  /** Progresso da exportação da interface (0–100) quando o exportador informa; `null` sem informação. */
+  #exportProgress: number | null = null;
 
   /** Item desabilitado ativado durante a exportação: relê "Exportando…" (marca alternada). */
   #announceExportBusy(): void {
@@ -17013,6 +17112,12 @@ export class DataGrid extends LitElement {
         const withText = entry.item.showText === 'always';
         const busy = !!this.#exporting;
         const open = this.#toolbarMenu.open && this.#toolbarMenu.data?.kind === 'export';
+        // Ocupado com um formato só: o botão vira "Cancelar exportação"; com menu, o menu ganha o item.
+        const cancels = busy && !!single;
+        const label = cancels ? translation.exportCancel : single ? single.label : text;
+        const progress = busy && this.#exportProgress !== null
+          ? formatMessage(translation.exportProgress, { percent: getNumberFormat(this.#textLanguage, { maximumFractionDigits: 0 }).format(this.#exportProgress) })
+          : '';
 
         return html`<button
           class="export-button toolbar-button ${withText ? '' : 'icon-only'}"
@@ -17023,11 +17128,12 @@ export class DataGrid extends LitElement {
           data-toolbar-key=${common.key}
           tabindex=${common.tabindex}
           lang=${lang}
-          aria-label=${ifDefined(withText ? undefined : single ? single.label : text)}
-          title=${ifDefined(withText ? undefined : single ? single.label : text)}
+          aria-label=${ifDefined(withText && !cancels ? undefined : label)}
+          title=${ifDefined(withText && !cancels ? undefined : label)}
           aria-haspopup=${ifDefined(single ? undefined : 'menu')}
           aria-expanded=${ifDefined(single ? undefined : open ? 'true' : 'false')}
-          aria-disabled=${disabled || busy ? 'true' : 'false'}
+          aria-disabled=${disabled ? 'true' : 'false'}
+          aria-describedby=${ifDefined(progress ? 'u-grid-export-progress' : undefined)}
           @click=${(event: MouseEvent) => {
             const button = event.currentTarget as HTMLElement;
 
@@ -17035,8 +17141,8 @@ export class DataGrid extends LitElement {
               return;
             }
 
-            if (busy) {
-              this.#announce(translation.exportingAnnouncement);
+            if (cancels) {
+              this.cancelExport();
             } else if (single) {
               void this.#runExport(single.format, single.selectedOnly);
             } else if (open) {
@@ -17046,11 +17152,13 @@ export class DataGrid extends LitElement {
             }
           }}
           @keydown=${(event: KeyboardEvent) => {
-            if (!single && !busy && !disabled && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            if (!single && !disabled && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
               event.preventDefault();
               this.#openToolbarMenu('export', event.currentTarget as HTMLElement, event.key === 'ArrowUp');
             }
-          }}>${exportIcon}${withText ? html`<span>${text}</span>` : nothing}</button>`;
+          }}>${exportIcon}${withText ? html`<span>${cancels ? translation.exportCancel : text}</span>` : nothing}</button>${progress
+            ? html`<span id="u-grid-export-progress" hidden>${progress}</span>`
+            : nothing}`;
       }
 
       case 'addRowButton': {
@@ -17142,18 +17250,29 @@ export class DataGrid extends LitElement {
 
   /** Entradas do "mais" (recolhidos na ordem da barra; exportar achatado com separador) ou do exportar. */
   #toolbarMenuEntries(kind: 'more' | 'export'): { entry: MenuEntry; run: (opener: HTMLElement | null) => void }[] {
-    const exportEntries = () => this.#exportEntries().map((option, index) => ({
-      entry: {
-        key: option.key,
-        label: option.label,
-        disabled: option.disabled || !!this.#exporting,
-        separatorBefore: kind === 'more' && index === 0,
-        lang: this.#textLanguage,
-      },
-      run: () => {
-        void this.#runExport(option.format, option.selectedOnly);
-      },
-    }));
+    const exportEntries = () => {
+      const options = this.#exportEntries().map((option, index) => ({
+        entry: {
+          key: option.key,
+          label: option.label,
+          disabled: option.disabled || !!this.#exporting,
+          separatorBefore: kind === 'more' && index === 0 && !this.#exporting,
+          lang: this.#textLanguage,
+        } as MenuEntry,
+        run: () => {
+          void this.#runExport(option.format, option.selectedOnly);
+        },
+      }));
+
+      if (this.#exporting && options.length) {
+        options.unshift({
+          entry: { key: 'export:cancel', label: this.#translation.exportCancel, disabled: false, separatorBefore: kind === 'more', lang: this.#textLanguage },
+          run: () => this.cancelExport(),
+        });
+      }
+
+      return options;
+    };
 
     if (kind === 'export') {
       return exportEntries();
@@ -17984,7 +18103,7 @@ export class DataGrid extends LitElement {
 
       for (const option of this.#exportEntries()) {
         if (option.selectedOnly) {
-          items.push({ name: option.format === 'csv' ? 'exportSelectedCsv' : 'exportSelectedXlsx', text: option.label, disabled: !!this.#exporting });
+          items.push({ name: EXPORT_SELECTED_ITEMS[option.format], text: option.label, disabled: !!this.#exporting });
         }
       }
 
@@ -18235,8 +18354,9 @@ export class DataGrid extends LitElement {
 
       case 'exportSelectedCsv':
       case 'exportSelectedXlsx':
+      case 'exportSelectedPdf':
         menu.hideAndFocus();
-        void this.#runExport(name === 'exportSelectedCsv' ? 'csv' : 'xlsx', true);
+        void this.#runExport(name === 'exportSelectedCsv' ? 'csv' : name === 'exportSelectedXlsx' ? 'xlsx' : 'pdf', true);
         break;
       case 'editRow':
         // O foco vai ao editor.

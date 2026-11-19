@@ -102,11 +102,11 @@ export const numberListAttribute = (defaultValue: readonly number[]) => ({
   },
 });
 
-const EXPORT_FORMAT_TOKENS = new Set(['csv', 'xlsx']);
+const EXPORT_FORMAT_TOKENS = new Set(['csv', 'xlsx', 'pdf']);
 
 /**
- * Formatos da exportação pela interface (`export-formats="csv xlsx"`, frente
- * 18): palavras separadas por espaço ou vírgula; desconhecida avisa e é
+ * Formatos da exportação pela interface (`export-formats="csv xlsx pdf"`, frentes
+ * 18 e 26): palavras separadas por espaço ou vírgula; desconhecida avisa e é
  * ignorada; repetidas contam uma vez. Só lê (não reflete); sem atributo =
  * lista vazia. Exceção registrada à regra "array = `attribute: false`".
  */

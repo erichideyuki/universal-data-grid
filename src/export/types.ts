@@ -138,16 +138,29 @@ export interface GridExportData<TItem = any> {
 }
 
 /** Formats offered by the export UI (`exportFormats`). May gain members in minor versions. */
-export type GridExportFormat = 'csv' | 'xlsx';
+export type GridExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** Progress of an export (`onProgress`): data rows done, data rows in total, pages so far (PDF). */
+export interface GridExportProgress {
+  readonly rowCount: number;
+  readonly totalCount: number;
+  readonly pageCount: number;
+}
 
 /**
- * An export run by the grid UI (`xlsxExporter`): build and download the file
- * of what the user sees. Reject to report an error; honor `signal` (aborted
- * when the grid disconnects).
+ * An export run by the grid UI (`xlsxExporter`, `pdfExporter`): build and
+ * download the file of what the user sees. Reject to report an error; honor
+ * `signal` (aborted when the grid disconnects or the user cancels: reject with
+ * an `AbortError`, which the grid reports as canceled, not as an error); call
+ * `onProgress` to show the progress in the export button.
  */
 export type GridExporter = (
   grid: DataGrid,
-  options: { readonly selectedOnly: boolean; readonly signal: AbortSignal },
+  options: {
+    readonly selectedOnly: boolean;
+    readonly signal: AbortSignal;
+    readonly onProgress?: (progress: GridExportProgress) => void;
+  },
 ) => Promise<void>;
 
 /** `detail` of `u-grid-exporting` and `u-grid-export`. */

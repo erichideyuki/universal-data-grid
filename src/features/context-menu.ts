@@ -45,6 +45,7 @@ export type GridContextMenuItemName =
   | 'addCellToSelection'
   | 'exportSelectedCsv'
   | 'exportSelectedXlsx'
+  | 'exportSelectedPdf'
   | 'editRow'
   | 'editCell'
   | 'removeRow'
@@ -163,6 +164,7 @@ export const CONTEXT_MENU_ITEMS_BY_TARGET: Readonly<Record<GridContextMenuTarget
     'copySelectedRows',
     'exportSelectedCsv',
     'exportSelectedXlsx',
+    'exportSelectedPdf',
     'editRow',
     'editCell',
     'removeRow',

@@ -37,6 +37,10 @@
       "types": "./dist/export-xlsx/index.d.ts",
       "default": "./dist/export-xlsx/index.js"
     },
+    "./export-pdf": {
+      "types": "./dist/export-pdf/index.d.ts",
+      "default": "./dist/export-pdf/index.js"
+    },
     "./grid.min.js": "./dist/grid.min.js",
     "./custom-elements.json": "./custom-elements.json",
     "./package.json": "./package.json"
@@ -69,7 +73,9 @@
     "docs:build": "vite build --config docs/vite.config.ts",
     "docs:preview": "vite preview --config docs/vite.config.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p src",
+    "build": "npm run clean && tsc -p src && node -e \"require('fs').copyFileSync('src/export-pdf/grid-pdf.wasm','dist/export-pdf/grid-pdf.wasm')\"",
+    "build:pdf": "cargo build --manifest-path pdf/Cargo.toml --release --lib --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('pdf/target/wasm32-unknown-unknown/release/grid_pdf.wasm','src/export-pdf/grid-pdf.wasm')\"",
+    "test:pdf-engine": "cargo test --manifest-path pdf/Cargo.toml --release",
     "bundle": "rollup -c",
     "bundle:browser": "esbuild src/grid.ts --bundle --format=esm --minify --outfile=dist/grid.min.js",
     "typecheck": "tsc --noEmit -p src && tsc --noEmit -p tsconfig.json && tsc --noEmit -p docs",
@@ -121,6 +127,7 @@
     "eslint-plugin-unused-imports": "^4.3.0",
     "express": "^5.3.0",
     "lit-analyzer": "^2.0.3",
+    "pdfjs-dist": "^5.7.284",
     "playwright": "^1.65.1",
     "prettier": "^3.7.4",
     "prettier-plugin-organize-attributes": "^1.0.0",
