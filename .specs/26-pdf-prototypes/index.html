@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Frente 26 — protótipos do PDF</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 24px auto; max-width: 1200px; padding: 0 16px; color: #111; }
+  h1 { margin-top: 0; }
+  section { border-top: 1px solid #ccc; padding: 12px 0 24px; }
+  .pages { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .pages figure { margin: 0; }
+  .pages img { width: 460px; border: 1px solid #999; box-shadow: 0 1px 4px #0003; }
+  figcaption { font-size: 13px; color: #444; }
+  table { border-collapse: collapse; font-size: 14px; }
+  th, td { border: 1px solid #bbb; padding: 4px 8px; text-align: start; vertical-align: top; }
+  code { background: #f3f3f3; padding: 0 3px; }
+</style>
+</head>
+<body>
+<h1>Frente 26 — protótipos da visão de impressão (PDF)</h1>
+<p>Cada protótipo é o HTML que o grid montaria; o PDF ao lado foi gerado pelo Chromium a partir dele (o mesmo motor do “Salvar como PDF”), com marcação. Mesmos 64 pedidos, filtro, grupos País → Cidade e resumo de soma. Abra o HTML ou o PDF pelos links.</p>
+
+<section>
+  <h2>A — Tabela única, grupos como linhas (como o grid mostra)</h2>
+  <p>Título + linha de informação (linhas, filtro, data). Uma tabela; cabeçalho repetido em cada página; grupo = linha de título da faixa (<code>th scope="rowgroup"</code>) com recuo por nível; rodapé do grupo; total no fim; “Página X de Y” no rodapé e título no topo a partir da página 2. Mais próximo do DevExtreme e do que se vê na tela.</p>
+  <p><a href="A-en.html">HTML (en)</a> · <a href="A-en.pdf">PDF (en)</a> · <a href="A-ar.html">HTML (árabe, RTL)</a> · <a href="A-ar.pdf">PDF (árabe, RTL)</a></p>
+  <div class="pages">
+    <figure><img src="A-en-p1.png" alt="Protótipo A, página 1, inglês"><figcaption>en, página 1</figcaption></figure>
+    <figure><img src="A-ar-p2.png" alt="Protótipo A, página 2, árabe"><figcaption>ar (RTL), página 2</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>B — Uma seção por grupo do 1º nível</h2>
+  <p>Cada país vira um título (<code>h2</code>) com a própria tabela: o leitor de tela navega por títulos e o PDF ganha marcadores (índice lateral). Subgrupos como linhas; total do país e total geral. Repete o cabeçalho por seção.</p>
+  <p><a href="B-en.html">HTML</a> · <a href="B-en.pdf">PDF</a></p>
+  <div class="pages">
+    <figure><img src="B-en-p1.png" alt="Protótipo B, página 1"><figcaption>página 1</figcaption></figure>
+    <figure><img src="B-en-p2.png" alt="Protótipo B, página 2"><figcaption>página 2</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>C — Lista plana, paisagem</h2>
+  <p>Sem linhas de grupo (<code>includeGroups: false</code>): as colunas agrupadas vêm primeiro, todas as colunas, listras alternadas, paisagem. Para listas longas e conferência.</p>
+  <p><a href="C-en.html">HTML</a> · <a href="C-en.pdf">PDF</a></p>
+  <div class="pages">
+    <figure><img src="C-en-p1.png" alt="Protótipo C, página 1"><figcaption>página 1</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>Marcação medida nos PDFs</h2>
+  <table>
+    <thead><tr><th scope="col">PDF</th><th scope="col">Marcado</th><th scope="col">Estrutura</th><th scope="col">Idioma</th><th scope="col">Título exibido</th><th scope="col">Fontes embutidas</th></tr></thead>
+    <tbody>
+      <tr><td>A (en/ar)</td><td>sim</td><td>H1, P, Table, TR, TH, TD</td><td>en / ar</td><td>sim</td><td>sim</td></tr>
+      <tr><td>B</td><td>sim</td><td>H1, P, H2 ×3, Table ×4, TR, TH, TD</td><td>en</td><td>sim</td><td>sim</td></tr>
+      <tr><td>C</td><td>sim</td><td>H1, P, Table, TR, TH, TD</td><td>en</td><td>sim</td><td>sim</td></tr>
+      <tr><td>DevExtreme 26.1.6 (jsPDF)</td><td>não</td><td>nenhuma</td><td>nenhum</td><td>não</td><td>não (Helvetica padrão)</td></tr>
+    </tbody>
+  </table>
+  <p>Verificado com pdf.js + pdf-lib (árvore de estrutura, catálogo, fontes). O veraPDF não rodou: o instalador foi bloqueado pela permissão do ambiente.</p>
+</section>
+
+<section>
+  <h2 id="outros">Como os outros grids exportam PDF</h2>
+  <p><a href="devextreme.pdf">PDF do DevExtreme</a> · <a href="https://www.ag-grid.com/javascript-data-grid/printing/">AG Grid: Printing</a> · <a href="https://mui.com/x/react-data-grid/export/#print-export">MUI X: Print export</a></p>
+  <table>
+    <thead><tr><th scope="col">Grid</th><th scope="col">Como</th><th scope="col">Acessibilidade do PDF</th></tr></thead>
+    <tbody>
+      <tr><td>DevExtreme 26.1 (medido)</td><td><code>pdfExporter.exportDataGrid({ jsPDFDocument, component })</code>: o hospedeiro injeta o jsPDF; tabela com bordas, grupo em linha mesclada (“State: Arkansas (Count: 1)”), resumos, cabeçalho repetido. Árabe/CJK só com fonte que o hospedeiro adiciona.</td><td>Sem marcação, sem idioma, sem título, fontes não embutidas.</td></tr>
+      <tr><td>AG Grid 36 (docs)</td><td>Sem PDF. “Print layout” (<code>domLayout: 'print'</code>) + impressão do navegador; os docs mandam usar CSV/Excel para muitos dados.</td><td>A do navegador, sobre a grade em <code>div</code>s.</td></tr>
+      <tr><td>MUI X Data Grid (docs)</td><td>“Print export”: copia a grade para um <code>iframe</code> e abre a impressão (<code>hideToolbar</code>, <code>hideFooter</code>, <code>pageStyle</code>, <code>fields</code>).</td><td>A do navegador, sobre a grade em <code>div</code>s (não medido).</td></tr>
+    </tbody>
+  </table>
+  <figure><img src="devextreme-p1.png" alt="PDF exportado pelo DevExtreme, página 1" style="width:600px;border:1px solid #999"><figcaption>DevExtreme, PDF gerado pela demo “Export to PDF” com grupo por State e contagem.</figcaption></figure>
+</section>
+
+<section>
+  <h2 id="rust-scripts">Protótipo Rust — árabe, hebraico, devanágari, tailandês, CJK, coreano, misturados</h2>
+  <p>Shaping com rustybuzz (porta do HarfBuzz) e bidi UAX #9 (unicode-bidi), por trecho de mesma fonte e script; fonte de reserva por caractere. Árabe com letras ligadas, harakat, lam-alef e números; hebraico; conjuntos do devanágari; tailandês; CJK e coreano; LTR/RTL misturados na mesma célula. Parágrafo LTR (grid em português/inglês); grid RTL ainda não testado. Texto copiado do PDF ainda sai em ordem visual e sem os conjuntos completos: resolvido com <code>/ActualText</code> por célula junto da marcação.</p>
+  <p><a href="rust-scripts.pdf">PDF (nativo)</a> · <a href="wasm-scripts.pdf">PDF (WASM no Chromium)</a></p>
+  <figure><img src="rust-scripts.png" alt="Tabela com textos em vários scripts" style="width:900px;border:1px solid #999"></figure>
+</section>
+
+<section>
+  <h2 id="rust-1m">Protótipo Rust (uo-pdf) — 1 milhão de linhas</h2>
+  <p>Gerado pelo protótipo otimizado (nativo, 20 s; em WASM no Chromium, 38 s): 19.616 páginas A4, 63 MB. Grupo a cada 50 linhas, total na última página, cabeçalho repetido, “Page X of Y”. Fontes: Noto Sans (latim), Noto Sans Arabic e MS Gothic (CJK) por reserva. Limitações do protótipo: árabe sem letras ligadas nem bidi (o rótulo de grupo com árabe sai invertido), sem árvore de estrutura.</p>
+  <p>PDF de 63 MB fora do repositório (gerado pelo protótipo).</p>
+  <div class="pages">
+    <figure><img src="rust-1m-p1.png" alt="Página 1 de 19.616"><figcaption>página 1</figcaption></figure>
+    <figure><img src="rust-1m-p2.png" alt="Página 2 de 19.616"><figcaption>página 2 (grupo com árabe: rótulo invertido)</figcaption></figure>
+    <figure><img src="rust-1m-p9808.png" alt="Página 9.808 de 19.616"><figcaption>página 9.808</figcaption></figure>
+    <figure><img src="rust-1m-p19616.png" alt="Página 19.616 de 19.616"><figcaption>última página, com o total</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2 id="largas">Grade larga (18 colunas, 60 linhas, A4)</h2>
+  <p>Mesmos dados nos três grids e em duas versões nossas. PDFs extraídos em 2026-11-18: DevExtreme 26.1.6 pela demo (jsPDF, padrão retrato); AG Grid Community atual com <code>domLayout: 'print'</code> e MUI X 8 com <code>exportDataAsPrint()</code>, os dois impressos pelo Chromium (como o “Salvar como PDF”).</p>
+  <table>
+    <thead><tr><th scope="col">PDF</th><th scope="col">O que acontece com as 18 colunas</th><th scope="col">Marcação</th></tr></thead>
+    <tbody>
+      <tr><td><a href="wide-devextreme.pdf">DevExtreme</a></td><td>Espreme todas na largura da página: TODO texto cortado com “…” (“O…”, “C…”) — também no texto do PDF. Dado perdido.</td><td>nenhuma</td></tr>
+      <tr><td><a href="wide-aggrid.pdf">AG Grid</a></td><td>Só 6 colunas saem; as outras 12 ficam fora da página.</td><td>Table, 6 TH (do navegador)</td></tr>
+      <tr><td><a href="wide-mui.pdf">MUI X</a></td><td>Só 9 colunas saem (a 9ª cortada); as outras ficam fora da página.</td><td>Table, 9 TH (do navegador)</td></tr>
+      <tr><td><a href="wide-ours-W1.pdf">Nosso W1</a> (<a href="wide-ours-W1.html">HTML</a>)</td><td>Paisagem, fonte 6,5 pt, texto quebra na célula: as 18 colunas inteiras numa página.</td><td>Table, 18 TH, TD</td></tr>
+      <tr><td><a href="wide-ours-W2.pdf">Nosso W2</a> (<a href="wide-ours-W2.html">HTML</a>)</td><td>Colunas em blocos (1–10, depois 11–18), fonte 8 pt, “Order ID” repetido como cabeçalho de linha em cada bloco; título por bloco.</td><td>Table, TH de coluna e de linha, H2</td></tr>
+    </tbody>
+  </table>
+  <div class="pages">
+    <figure><img src="wide-devextreme-p1.png" alt="DevExtreme, grade larga, página 1"><figcaption>DevExtreme</figcaption></figure>
+    <figure><img src="wide-aggrid-p1.png" alt="AG Grid, grade larga, página 1"><figcaption>AG Grid</figcaption></figure>
+    <figure><img src="wide-mui-p1.png" alt="MUI X, grade larga, página 1"><figcaption>MUI X</figcaption></figure>
+    <figure><img src="wide-ours-W1-p1.png" alt="Nosso W1, grade larga, página 1"><figcaption>Nosso W1</figcaption></figure>
+    <figure><img src="wide-ours-W2-p1.png" alt="Nosso W2, grade larga, página 1"><figcaption>Nosso W2</figcaption></figure>
+  </div>
+</section>
+</body>
+</html>
