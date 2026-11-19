@@ -593,15 +593,26 @@ describe('A9 — a barra reflui a 320 px', () => {
   });
 });
 
-describe('A3 — alvo da alça de redimensionar', () => {
-  it('tem 24 px e não cobre o rótulo do cabeçalho', async () => {
+describe('A3 — alça de redimensionar (como a referência: invisível, só o cursor)', () => {
+  // Alvo menor que 24 px pela exceção "equivalente" da WCAG 2.5.8: o menu do
+  // cabeçalho (autoajustar, alargar/estreitar) e Alt+←/→ fazem o mesmo.
+  it('fica sobre o padding do fim, sem cobrir o rótulo nem reservar espaço', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.columnResizing = true });
     const th = headerCell(grid, 'Name');
-    const handle = th.querySelector<HTMLElement>('.resize-handle')!.getBoundingClientRect();
+    const handle = th.querySelector<HTMLElement>('.resize-handle')!;
     const content = th.querySelector<HTMLElement>('.header-content')!.getBoundingClientRect();
+    const td = cellOf(grid, 'Ana');
 
-    expect(handle.width).toBeGreaterThanOrEqual(24);
-    expect(content.right).toBeLessThanOrEqual(handle.left + 0.5);
+    expect(getComputedStyle(handle).cursor).toBe('col-resize');
+    expect(content.right).toBeLessThanOrEqual(handle.getBoundingClientRect().left + 0.5);
+    expect(getComputedStyle(th).paddingInlineEnd).toBe(getComputedStyle(td).paddingInlineEnd);
+    expect(getComputedStyle(handle, '::after').content).toBe('none');
+
+    // O equivalente existe no menu do cabeçalho.
+    th.focus();
+    await press(grid, 'F10', { shiftKey: true });
+    const items = [...root(grid).querySelectorAll('[role^=menuitem]')].map(item => item.textContent.trim());
+    expect(items.some(text => (/auto-?size/i).test(text))).toBe(true);
   });
 });
 

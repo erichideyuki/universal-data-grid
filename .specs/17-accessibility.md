@@ -77,7 +77,7 @@ corrigir · 📌 pendente sem mudança de API (fora deste lote).
 |---|---|---|---|---|---|---|
 | A1 | Arrasto sem alternativa de ponteiro único (reordenar, agrupar, nível do chip, redimensionar) | 2.5.7 | teclado não atende 2.5.7 | menu da coluna (clique direito/Shift+F10/botão): "Agrupar", "Mover ←/→", "Ajustar largura"; menu do painel com "Mover ←/→" | sim | ALTA |
 | A2 | Seleção só por cor | 1.4.1, 1.4.11 | linha selecionada 1,19:1 da comum, quase igual ao hover | barra de 3 px no início da linha selecionada (primário, 6,4:1); token `--u-grid-selected-row-indicator-color` | sim | ALTA |
-| A3 | Alça de redimensionar | 2.5.8, 1.4.11 | alvo de 8 px colado ao alvo de ordenação; barra 2,3:1 | padrão `--u-grid-resize-handle-width: 24px` (barra visual segue 2 px) e barra opaca no hover/foco | sim | MÉDIA |
+| A3 | Alça de redimensionar (revisto no fim: "A3 revisto") | 2.5.8, 1.4.11 | alvo de 8 px colado ao alvo de ordenação; barra 2,3:1 | padrão `--u-grid-resize-handle-width: 24px` (barra visual segue 2 px) e barra opaca no hover/foco | sim | MÉDIA |
 | A4 | Cor do texto não definida | 1.4.3 | página escura sem tema → texto claro sobre o fundo branco do grid | `:host { color: var(--u-grid-color, var(--u-color-on-surface, rgb(29,27,32))) }` | sim | MÉDIA |
 | A5 | Coluna filtrada só pela cor do funil | 1.4.1, 1.3.1 | mesmo ícone e mesmo nome com/sem filtro | funil preenchido quando ativo + i18n `columnFiltered` em `aria-describedby` | sim | MÉDIA |
 | A6 | Anúncios que faltam | 4.1.3 | prioridade da multi-ordenação; nível do chip; desagrupar/expandir tudo pelo menu; redimensionar por teclado | chaves novas: `sortedPriorityAnnouncement`, `groupLevelAnnouncement`, `ungroupedAllAnnouncement`, `groupsExpandedAnnouncement`, `groupsCollapsedAnnouncement`, `columnResizedAnnouncement` | sim | MÉDIA |
@@ -453,3 +453,26 @@ e "Referência medida" na spec 18; aqui o que é de acessibilidade:
   banda) anuncia `columnMoveRefusedAnnouncement` ("{column} can't move
   past {target}"); "Reset columns" pelo menu anuncia
   `columnsResetAnnouncement` (a API `resetColumns()` continua muda).
+
+## A3 revisto — alça de redimensionar como a referência (2026-11-19)
+
+Decisão do usuário: o alvo de 24 px reservado no fim do cabeçalho
+desalinhava o texto dos cabeçalhos alinhados ao fim com o conteúdo (8 px)
+e a barra no hover não existe na referência. Medido no DevExtreme: padding
+do cabeçalho = padding da célula; no hover só o cursor muda (`col-resize`);
+no arrasto aparece o separador de colunas (3 px, cor primária) na borda
+nova, do cabeçalho ao fim das linhas, e a coluna muda ao vivo.
+
+Agora: alça invisível de 8 px (`--u-grid-resize-handle-width`) sobre o
+padding do fim, sem reservar espaço; no arrasto, o mesmo separador do
+mover coluna (`--u-grid-resize-handle-color`, padrão a cor do indicador de
+soltar), em `Highlight` no forced-colors. A 2.5.8 vale pela exceção
+"equivalente": o menu do cabeçalho tem autoajustar e alargar/estreitar, e
+Alt+←/→ no cabeçalho redimensiona. A alça segue `separator` com
+`aria-valuenow`, alcançável por F2, com contorno de foco. A largura é
+limitada ao padding do fim (não cobre o "⋮" de 24 px). Limite aceito:
+com `column-header-menu="false"` (ou sem os itens de largura no menu) o
+equivalente de ponteiro some — o hospedeiro que desligar o menu precisa
+oferecer outro (anotado no README). Testes:
+`accessibility.browser.test.ts` (A3) e `grid.columns.browser.test.ts`
+("redimensionar": alinhamento e separador em LTR/RTL).

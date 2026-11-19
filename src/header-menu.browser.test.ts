@@ -183,16 +183,18 @@ describe('layout do cabeçalho pelo alinhamento lógico', () => {
     { path: 'age', label: 'Age', alignment: 'end', sortOrder: 'desc', sortIndex: 1, width: 220 },
   ]);
 
-  it('LTR: início [texto][seta] … [funil][⋮]; fim [⋮][funil] … [seta][texto]; nada sobre a alça de 24px', async () => {
+  it('LTR: início [texto][seta] … [funil][⋮]; fim [⋮][funil] … [seta][texto]; nada sobre a alça (que fica no padding do fim)', async () => {
     const grid = await setup('ltr');
     const start = positions(grid, 'Name');
 
     expect(start.sort.left).toBeGreaterThanOrEqual(start.text.right - 1);
     expect(start.filter.left).toBeGreaterThan(start.sort.right + 20);
     expect(start.menu.left).toBeGreaterThanOrEqual(start.filter.right - 1);
-    // ⋮ na ponta do fim, antes da alça de redimensionar.
-    expect(start.menu.right).toBeLessThanOrEqual(start.cell.right - 24 + 0.5);
-    expect(start.menu.right).toBeGreaterThan(start.cell.right - 24 - 4);
+    // ⋮ na ponta do fim, no limite do padding (16px); a alça fica só sobre o padding.
+    const handle = headerCell(grid, 'Name').querySelector('.resize-handle')!.getBoundingClientRect();
+    expect(start.menu.right).toBeLessThanOrEqual(start.cell.right - 16 + 0.5);
+    expect(start.menu.right).toBeGreaterThan(start.cell.right - 16 - 4);
+    expect(handle.left).toBeGreaterThanOrEqual(start.menu.right - 0.5);
     expect(Math.round(start.menu.width)).toBe(24);
     expect(Math.round(start.filter.width)).toBe(24);
 
@@ -209,7 +211,7 @@ describe('layout do cabeçalho pelo alinhamento lógico', () => {
 
     expect(start.sort.right).toBeLessThanOrEqual(start.text.left + 1);
     expect(start.menu.right).toBeLessThanOrEqual(start.filter.left + 1);
-    expect(start.menu.left).toBeGreaterThanOrEqual(start.cell.left + 24 - 0.5);
+    expect(start.menu.left).toBeGreaterThanOrEqual(start.cell.left + 16 - 0.5);
 
     const end = positions(grid, 'Age');
     expect(end.menu.left).toBeGreaterThanOrEqual(end.filter.right - 1);

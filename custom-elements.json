@@ -197,7 +197,7 @@
               "name": "--u-grid-drop-indicator-width"
             },
             {
-              "description": "Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on. Default `24px` (WCAG 2.5.8).",
+              "description": "Invisible resize hit area at the end of each header cell (over the end padding, capped to it; the cursor changes on hover). Default `8px`.",
               "name": "--u-grid-resize-handle-width"
             },
             {
@@ -205,7 +205,7 @@
               "name": "--u-grid-column-header-menu-button-size"
             },
             {
-              "description": "Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.",
+              "description": "Color of the separator shown at the column edge while dragging to resize. Default: `--u-grid-drop-indicator-color`.",
               "name": "--u-grid-resize-handle-color"
             },
             {

@@ -126,6 +126,8 @@ export interface ResizeHost {
   _setUserWidths(widths: ReadonlyMap<GridColumnDef, number>): void;
   _isRtl(): boolean;
   _setResizing(active: boolean): void;
+  /** Separador na borda nova durante o arrasto (`clientX`), ou `null` para esconder. */
+  _showResizeLine(clientX: number | null): void;
   _dispatchColumnResize(detail: GridColumnResizeEventDetail): void;
 }
 
@@ -139,6 +141,8 @@ interface ResizeSession {
   handle: HTMLElement;
   delta: number;
   changed: boolean;
+  /** Borda final da coluna (x da tela) no começo do arrasto. */
+  startEdge: number;
 }
 
 /**
@@ -168,6 +172,8 @@ export class ColumnResizeController {
 
     const handle = event.currentTarget as HTMLElement;
     const { start, next, startNext } = this.#begin(column);
+    const cell = (handle.parentElement ?? handle).getBoundingClientRect();
+    const startEdge = this.#host._isRtl() ? cell.left : cell.right;
 
     this.#session = {
       column,
@@ -179,6 +185,7 @@ export class ColumnResizeController {
       handle,
       delta: 0,
       changed: false,
+      startEdge,
     };
 
     try {
@@ -192,6 +199,7 @@ export class ColumnResizeController {
     handle.addEventListener('pointercancel', this.#pointerUp);
     handle.addEventListener('lostpointercapture', this.#pointerUp);
     this.#host._setResizing(true);
+    this.#host._showResizeLine(startEdge);
   };
 
   /**
@@ -242,7 +250,7 @@ export class ColumnResizeController {
     next: GridColumnDef | undefined,
     startNext: WidthBounds | undefined,
     commit: boolean,
-  ): boolean {
+  ): { changed: boolean; width: number } {
     const result = resizeWidths(delta, start, startNext);
     const widths = new Map<GridColumnDef, number>([[column, result.width]]);
 
@@ -263,7 +271,7 @@ export class ColumnResizeController {
       });
     }
 
-    return changed;
+    return { changed, width: result.width };
   }
 
   readonly #pointerMove = (event: PointerEvent): void => {
@@ -274,7 +282,10 @@ export class ColumnResizeController {
     }
 
     session.delta = (event.clientX - session.startX) * (this.#host._isRtl() ? -1 : 1);
-    session.changed = this.#apply(session.column, session.start, session.delta, session.next, session.startNext, false);
+    const { changed, width } = this.#apply(session.column, session.start, session.delta, session.next, session.startNext, false);
+    session.changed = changed;
+    // A borda nova pela largura aplicada (já com os limites), sem esperar o render.
+    this.#host._showResizeLine(session.startEdge + (width - session.start.width) * (this.#host._isRtl() ? -1 : 1));
   };
 
   readonly #pointerUp = (event: PointerEvent): void => {
@@ -317,6 +328,7 @@ export class ColumnResizeController {
       handle.releasePointerCapture(pointerId);
     }
 
+    this.#host._showResizeLine(null);
     this.#host._setResizing(false);
   }
 }

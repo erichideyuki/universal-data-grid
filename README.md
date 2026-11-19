@@ -1082,8 +1082,12 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 > Behavior changes in this version: right-click on a header opens the grid menu when it has
 > actions for the column (cancel the `contextmenu` event in the capture phase to keep your own — also on the group panel);
 > the grid sets its own text color (`--u-grid-color`) — on dark pages set it together with
-> `--u-grid-background-color`; the resize hit area is 24px and reserved at the end of resizable
-> headers; `dragToGroup`/`autoSize` texts mention the keyboard (update your overrides);
+> `--u-grid-background-color`; the resize hit area is invisible (8px over the header's end
+> padding, only the cursor changes) and dragging shows the column separator at the new edge —
+> header text lines up with the cells again; `--u-grid-resize-handle-color` now colors that drag
+> separator (default `--u-grid-drop-indicator-color`; if you turn off `column-header-menu`, offer
+> your own pointer alternative to the narrow resize handle — the menu's auto-size and
+> wider/narrower items are the WCAG 2.5.8 equivalent); `dragToGroup`/`autoSize` texts mention the keyboard (update your overrides);
 > `--u-grid-toolbar-height` is now a minimum height (the bar wraps);
 > `searchPlaceholder` and `filterOperationLabel` no longer name controls — the
 > names come from `searchPanelLabel` and `filterOperationButtonLabel` (`fixStartLabel`/`fixEndLabel`
@@ -2649,9 +2653,9 @@ tint derive from it.
 | `--u-grid-sort-indicator-size` | `1.125em` | Size of the sort arrow. |
 | `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
-| `--u-grid-resize-handle-width` | `24px` | Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on (WCAG 2.5.8). |
+| `--u-grid-resize-handle-width` | `8px` | Width of the invisible column resize hit area at the end of each header cell (over the cell padding; the cursor changes on hover). Keyboard and the header menu (auto-size, wider/narrower) are the equivalent controls (WCAG 2.5.8). |
 | `--u-grid-column-header-menu-button-size` | `24px` | Size of the header "⋮" menu button and of the header filter button (WCAG 2.5.8). |
-| `--u-grid-resize-handle-color` | `--u-grid-group-toggle-color` | Color of the resize bar shown on hover/focus. |
+| `--u-grid-resize-handle-color` | `--u-grid-drop-indicator-color` | Color of the separator shown at the column edge while dragging to resize. |
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
 | `--u-grid-column-chooser-shape` | `12px` | Column chooser corner radius. |

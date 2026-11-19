@@ -1632,9 +1632,9 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-sort-indicator-size - Size of the sort arrow. Default `1.125em`.
  * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
  * @cssprop --u-grid-drop-indicator-width - Drop indicator thickness. Default `3px`.
- * @cssprop --u-grid-resize-handle-width - Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on. Default `24px` (WCAG 2.5.8).
+ * @cssprop --u-grid-resize-handle-width - Invisible resize hit area at the end of each header cell (over the end padding, capped to it; the cursor changes on hover). Default `8px`.
  * @cssprop --u-grid-column-header-menu-button-size - Size of the "⋮" column header menu button and of the header filter button. Default `24px` (WCAG 2.5.8).
- * @cssprop --u-grid-resize-handle-color - Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.
+ * @cssprop --u-grid-resize-handle-color - Color of the separator shown at the column edge while dragging to resize. Default: `--u-grid-drop-indicator-color`.
  * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
  * @cssprop --u-grid-column-chooser-shape - Column chooser corner radius. Default `12px`.
@@ -11042,6 +11042,23 @@ export class DataGrid extends LitElement {
   /** @internal */
   _setResizing(active: boolean): void {
     this._containerRef.value?.classList.toggle('resizing', active);
+  }
+
+  /** @internal */
+  _showResizeLine(clientX: number | null): void {
+    const container = this._containerRef.value;
+
+    if (!container) {
+      return;
+    }
+
+    if (clientX === null) {
+      container.style.removeProperty('--_resize-line-left');
+      return;
+    }
+
+    // Centrado na borda (a barra tem a largura do indicador de soltar).
+    container.style.setProperty('--_resize-line-left', `${Math.floor(clientX - container.getBoundingClientRect().left - 1)}px`);
   }
 
   /** @internal */

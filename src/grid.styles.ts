@@ -30,7 +30,7 @@ export const styles = css`
     --_row-hover-opacity: var(--u-grid-row-hover-opacity, var(--u-table-hover-opacity, var(--u-state-layer-hover-opacity, 8%)));
     --_group-column-width: 32px;
     --_dir: 1;
-    --_resize-handle-width: var(--u-grid-resize-handle-width, 24px);
+    --_resize-handle-width: var(--u-grid-resize-handle-width, 8px);
     --_fixed-shadow-color: var(--u-grid-fixed-shadow-color, color-mix(in srgb, var(--u-color-shadow, rgb(0, 0, 0)) 22%, transparent));
     --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
     --_selection-column-width: 48px;
@@ -68,7 +68,8 @@ export const styles = css`
     height: 100%;
   }
 
-  .container.drop-target::after {
+  .container.drop-target::after,
+  .container.resizing::after {
     content: "";
     position: absolute;
     top: 0;
@@ -79,8 +80,15 @@ export const styles = css`
     z-index: 20;
   }
 
-  .container:has(.header).drop-target::after {
+  .container:has(.header).drop-target::after,
+  .container:has(.header).resizing::after {
     top: var(--_toolbar-offset, var(--_header-height));
+  }
+
+  /* Arrasto da borda da coluna: o mesmo separador de mover coluna, na borda nova (como a referência). */
+  .container.resizing::after {
+    left: min(var(--_resize-line-left, -100px), 100% - var(--_drop-indicator-width));
+    background-color: var(--u-grid-resize-handle-color, var(--_drop-indicator-color));
   }
 
   .scroll-container {
@@ -691,37 +699,19 @@ export const styles = css`
     top: 0;
     bottom: 0;
     inset-inline-end: 0;
-    width: var(--_resize-handle-width);
+    /* Nunca além do padding do fim: não cobre o "⋮" nem o texto. */
+    width: min(var(--_resize-handle-width), var(--_cell-inline-padding));
     cursor: col-resize;
     touch-action: none;
     z-index: 1;
   }
 
-  /* Alvo de 24px (WCAG 2.5.8, spec 17 A3): o \`th\` reserva o espaço da alça no fim. */
-  .header-column:has(> .resize-handle) {
-    padding-inline-end: max(var(--_cell-inline-padding), var(--_resize-handle-width));
-  }
-
-  /* Barra junto à borda da coluna; opaca no hover/foco (≥ 3:1, WCAG 1.4.11). */
-  .resize-handle::after {
-    content: "";
-    position: absolute;
-    top: 25%;
-    bottom: 25%;
-    inset-inline-end: 1px;
-    width: 2px;
-    border-radius: 1px;
-    background-color: var(--u-grid-resize-handle-color, var(--_toggle-color));
-    opacity: 0;
-    transition: opacity 120ms;
-  }
-
-  .header-column:hover .resize-handle::after,
-  .resize-handle:focus-visible::after,
-  .resizing .resize-handle:active::after {
-    opacity: 1;
-  }
-
+  /*
+   * Como a referência: a alça é invisível (só o cursor muda) e fica sobre o
+   * padding do fim, sem reservar espaço — o texto do cabeçalho alinha com o
+   * das células. Alvo menor que 24px pela exceção "equivalente" da WCAG
+   * 2.5.8 (menu do cabeçalho: autoajustar, alargar/estreitar; Alt+←/→).
+   */
   .resize-handle:focus-visible {
     outline: var(--_focus-ring);
     outline-offset: -2px;
@@ -1883,8 +1873,7 @@ export const styles = css`
 
   @media (prefers-reduced-motion: reduce) {
     .move-container::before,
-    .move-container::after,
-    .resize-handle::after {
+    .move-container::after {
       transition: none;
     }
   }
@@ -1959,7 +1948,7 @@ export const styles = css`
 
     .container.drop-target::after,
     .group-container.drop-target::before,
-    .resize-handle::after {
+    .container.resizing::after {
       forced-color-adjust: none;
       background-color: Highlight;
     }

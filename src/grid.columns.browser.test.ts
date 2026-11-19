@@ -41,6 +41,56 @@ const key = (target: HTMLElement, keyName: string, init: KeyboardEventInit = {})
   target.dispatchEvent(new KeyboardEvent('keydown', { key: keyName, bubbles: true, composed: true, ...init }));
 
 describe('redimensionar', () => {
+  it('cabeçalho alinhado ao fim termina no mesmo pixel do conteúdo (a alça não reserva espaço)', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: 'Amount', width: 160, dataType: 'number' }, { path: 'b', label: 'B', width: 120 }],
+      items: [{ a: 1234, b: 'x' }],
+      configure: g => g.columnResizing = true,
+    });
+    const range = document.createRange();
+
+    const rightOf = (node: Node) => {
+      range.selectNodeContents(node);
+      return Math.round(range.getBoundingClientRect().right);
+    };
+
+    const th = headers(grid)[0];
+    const td = dataRows(grid)[0].querySelector('td[aria-colindex="1"]')!;
+    expect(rightOf(th.querySelector('.header-text')!)).toBe(rightOf(td));
+  });
+
+  for (const dir of ['ltr', 'rtl'] as const) {
+    it(`arrastar mostra o separador na borda nova e some ao soltar (${dir})`, async () => {
+      const grid = await createGrid({ columns: columnsOf(3, 120), items: [rowOf(3)], configure: g => g.columnResizing = true });
+      grid.dir = dir;
+      await settle(grid);
+
+      const container = root(grid).querySelector<HTMLElement>('.container')!;
+      const handle = handles(grid)[0];
+      const rect = handle.getBoundingClientRect();
+      const init = { bubbles: true, composed: true, pointerId: 9, button: 0, isPrimary: true, clientY: rect.top + 2 };
+      const x = rect.left + rect.width / 2;
+      const outward = dir === 'rtl' ? -1 : 1;
+
+      handle.dispatchEvent(new PointerEvent('pointerdown', { ...init, clientX: x }));
+      handle.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: x + 30 * outward }));
+      await settle(grid);
+
+      expect(container.classList.contains('resizing')).toBe(true);
+      const th = headers(grid)[0].getBoundingClientRect();
+      const edge = (dir === 'rtl' ? th.left : th.right) - container.getBoundingClientRect().left;
+      const line = getComputedStyle(container, '::after');
+      expect(Math.abs(parseFloat(line.left) + 1 - edge)).toBeLessThanOrEqual(1.5);
+      expect(line.width).toBe('3px');
+
+      handle.dispatchEvent(new PointerEvent('pointerup', { ...init, clientX: x + 30 * outward }));
+      await settle(grid);
+      expect(container.classList.contains('resizing')).toBe(false);
+      expect(container.style.getPropertyValue('--_resize-line-left')).toBe('');
+      expect(widths(grid)[0]).toBe(150);
+    });
+  }
+
   it('alça com ARIA de separador e aria-valuenow = largura', async () => {
     const grid = await createGrid({ columns: columnsOf(2, 120), items: [rowOf(2)], configure: g => g.columnResizing = true });
 
