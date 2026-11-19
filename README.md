@@ -962,7 +962,7 @@ column chooser button are separate stops in the bar above.
 | `Home` / `End` | First / last cell of the row. |
 | `Ctrl`+`Home` / `Ctrl`+`End` | First cell of the first row / last cell of the last row. |
 | `PageUp` / `PageDown` | One page up / down (the grid scrolls and keeps the focus). With `paging`, the previous / next page (on the first / last page, the first / last row). |
-| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons and resize handle. With editing on, opens the editor of an editable cell — see [Editing](#keyboard-and-screen-readers). |
+| `Enter` / `F2` | Into the interactive content of the cell (e.g. a button from `renderer`); `F2` on a header goes to its buttons ("⋮" menu, filter) and resize handle. With editing on, opens the editor of an editable cell — see [Editing](#keyboard-and-screen-readers). |
 | `Tab` / `Shift`+`Tab` inside a cell | Cycle through the interactive content of that cell. |
 | `Esc` | Back from the content to the cell. |
 | `Space` | Selects (toggles) the row; on the "select all" header, toggles all. |
@@ -978,13 +978,16 @@ column chooser button are separate stops in the bar above.
 | `Alt`+`Shift`+`←`/`→` on a header | Move the column (same as dragging it; mirrored in RTL). |
 | `Ctrl`+`G` on a header | Group by the column (same as dragging it to the group panel). |
 | `Ctrl`+`G` on a group row | Ungroup that row's column (works without the group panel). |
-| `Shift`+`F10` / menu key on a header | Open the column header menu (sort, group, pin, move left/right, auto-size, widen/narrow). |
+| `Shift`+`F10` / menu key on a header | Open the column header menu (sort, pin ▸, auto-size, widen/narrow, move left/right, group, choose/reset columns). |
+| `Enter` / `Space` / `↓` on the header "⋮" button | Open the column header menu on its first item (`↑`: on its last item). `F2` on the header reaches the button. |
+| `→` / `Enter` / `Space` on "Pin column" | Open the submenu on its first item (`←` in RTL); `←` / `Esc` close it and go back to "Pin column" (`→` in RTL); `Tab` closes every menu. |
 | `Shift`+`F10` / menu key on a cell | Open the row menu (built-in items with `row-menu`; the cell range items with `cell-selection-mode`; or yours). |
 | `←`/`→`, `Home`/`End` in the toolbar | Move between the toolbar buttons and the group chips (one `Tab` stop). |
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
 | `Shift`+`F10` / menu key on a group chip | Open the group panel menu (also moves the chip left/right). |
-| `F2` / `Alt`+`↓` on a header | `F2` cycles through the header's own controls (`headerRenderer` content, header filter button, resize handle), then back to the header / `Alt`+`↓` opens the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `F2` / `Alt`+`↓` on a header | `F2` cycles through the header's own controls (`headerRenderer` content, header filter button, "⋮" menu button, resize handle), then back to the header / `Alt`+`↓` opens the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `Alt`+`Shift`+`↑`/`↓` on a column chooser checkbox | Move the column up / down in the chooser (and in the grid); the focus stays on the checkbox. |
 | `↓` on a filter row operation button | Open the operation menu on its first item (`↑`: last item). |
 | In the header filter list | One `Tab` stop: `↑`/`↓`/`Home`/`End` move, `→`/`←` expand/collapse dates or go to the child/parent (mirrored in RTL), `Space` checks, `Enter` applies (also in its search field), a letter goes to the search field. |
 
@@ -1060,8 +1063,9 @@ reach it. "Select all" selects the rows that pass the filter and the search.
   pinned-column edges and active states use system colors. Transitions are off with
   `prefers-reduced-motion: reduce`.
 - Every drag gesture has a keyboard alternative (WCAG 2.1.1) and a single-pointer one (WCAG 2.5.7):
-  the column header menu (right-click, a long press on touch screens, `Shift+F10` or the menu key)
-  groups, moves and resizes columns; the group panel menu moves chips. With
+  the column header menu (the "⋮" button, right-click, a long press on touch screens, `Shift+F10`
+  or the menu key) groups, moves, pins and resizes columns; the column chooser moves columns with
+  `Alt+Shift+↑/↓`; the group panel menu moves chips. With
   `column-header-menu="false"` the host must provide its own alternative.
 - Headers expose `aria-keyshortcuts` and a description with what is not visible to a screen
   reader: the sort priority (only the first sorted column has `aria-sort`, as ARIA asks), pinned and
@@ -1081,9 +1085,9 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 > `--u-grid-background-color`; the resize hit area is 24px and reserved at the end of resizable
 > headers; `dragToGroup`/`autoSize` texts mention the keyboard (update your overrides);
 > `--u-grid-toolbar-height` is now a minimum height (the bar wraps);
-> `fixStart`/`fixEnd`, `searchPlaceholder` and `filterOperationLabel` no longer name controls — the
-> names come from `fixStartLabel`/`fixEndLabel`, `searchPanelLabel` and
-> `filterOperationButtonLabel`; languages added with `setGridTranslation` get the new keys in
+> `searchPlaceholder` and `filterOperationLabel` no longer name controls — the
+> names come from `searchPanelLabel` and `filterOperationButtonLabel` (`fixStartLabel`/`fixEndLabel`
+> are now deprecated and ignored, see [Deprecated names](#deprecated-names)); languages added with `setGridTranslation` get the new keys in
 > English until translated.
 
 
@@ -1265,8 +1269,14 @@ stretched one.
 ```ts
 grid.setColumnWidth(column, 180); // clamped to minWidth/maxWidth
 grid.autoSizeColumn(column);      // fit header + rendered rows
+grid.autoSizeAllColumns();        // the same for every visible column
+grid.resetColumns();              // order, width, visibility and pinning back to the definitions
 grid.addEventListener('u-grid-column-resize', e => console.log(e.detail.column, e.detail.width));
 ```
+
+The column header menu offers the same as the user's alternative: **Auto-size column**, **Auto-size
+all columns** and **Increase / Decrease width** (the keyboard and single-pointer alternative to
+dragging the handle, WCAG 2.5.7), and **Reset columns**.
 
 ### Auto width
 
@@ -1282,6 +1292,11 @@ position in `columns`, a line marks the edge of each fixed block and a shadow ap
 scrolls under it. Reordering by drag and drop stays inside the column's block (start-fixed, regular,
 end-fixed). Give fixed columns a `width` so the scrollable area keeps a predictable size.
 
+The user pins columns from the column header menu: **Pin column ▸** opens a submenu with *Pin to
+start*, *Pin to end* and *Unpin* (radio items, the current side checked). It does not need the
+column chooser; `column-fixing="false"` (`columnFixing = false`) removes it (columns with `fixed`
+stay pinned). A hidden column can be pinned only after it is shown again (as in AG Grid).
+
 ```ts
 grid.columns = [
   { path: 'name', label: 'Name', width: 200, fixed: 'start' },
@@ -1293,11 +1308,23 @@ grid.columns = [
 
 ### Column chooser
 
-`column-chooser` adds a button at the end of the header bar that opens a small popover listing the
-columns (`showInChooser: false` leaves a column out). Each row has a labelled checkbox to show/hide
-the column and two toggle buttons to fix it to the start or the end. `openColumnChooser()` and
-`closeColumnChooser()` open and close it from code (also without the button). While it is open, dragging a column header onto it hides that column. `Esc` or a click
-outside closes it. The last visible column cannot be hidden.
+`column-chooser` adds a button at the end of the header bar (and **Choose columns** to the column
+header menu) that opens a small non-modal dialog listing the columns (`showInChooser: false` leaves a
+column out), modeled on AG Grid's:
+
+- a **search** field (focused on open) filters the list, ignoring case and accents; the number of
+  columns found is announced after a short pause;
+- **Show all columns**, a checkbox that is mixed while some listed columns are hidden: checked shows
+  every listed column, unchecked hides them (the last visible column stays);
+- one labelled checkbox per column to show/hide it (bands are tri-state, with their columns nested);
+- a drag handle per column to **reorder** it by dragging, and `Alt+Shift+↑/↓` on a checkbox for the
+  same with the keyboard (announced; the focus stays on the checkbox). Both fire
+  `u-grid-column-reorder` and stay inside the column's band and fixed block.
+
+Pinning is not in the chooser any more: use **Pin column ▸** in the column header menu.
+`openColumnChooser()` and `closeColumnChooser()` open and close it from code (also without the
+button). While it is open, dragging a column header onto it hides that column. `Esc`, `Tab` out of
+it or a click outside closes it. The last visible column cannot be hidden.
 
 ### Column events
 
@@ -1305,12 +1332,14 @@ outside closes it. The last visible column cannot be hidden.
 | ----- | ------ | ---------- |
 | `u-grid-column-resize` | `{ column, width, previousWidth, nextColumn?, nextColumnWidth? }` | The user finishes a resize (pointer release, keyboard step, auto-size, column header menu). `nextColumn*` only in `next-column` mode. |
 | `u-grid-column-visibility-change` | `{ column, visible }` | The user shows/hides a column (or a band) in the chooser. One event per column whose own visibility changed: a band first, then each column it shows. |
-| `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user fixes/unfixes a column (or a top-level band) in the chooser. |
-| `u-grid-column-reorder` | `{ column, band, index, previousIndex }` | The user moves a column (or a band) by drag and drop, `Alt+Shift+←/→` or the column header menu. Positions are among the column's siblings — the columns of the same `band`, or the top level when `band` is `null` — that are not grouped, hidden ones included. `fromIndex`/`toIndex` are deprecated aliases. |
+| `u-grid-column-fixed-change` | `{ column, fixed, previousFixed }` | The user pins/unpins a column (or a top-level band) from the column header menu. |
+| `u-grid-column-reorder` | `{ column, band, index, previousIndex }` | The user moves a column (or a band) by drag and drop (header or column chooser), `Alt+Shift+←/→` on the header, `Alt+Shift+↑/↓` in the column chooser or the column header menu. Positions are among the column's siblings — the columns of the same `band`, or the top level when `band` is `null` — that are not grouped, hidden ones included. `fromIndex`/`toIndex` are deprecated aliases. |
 
 All events bubble and are `composed`. Unlike sorting and grouping, these column events fire **only
 for user gestures**: changes made through the API (`setColumnWidth`, `moveColumn`, a new `width` or
-`visible` on the definition) do not fire them.
+`visible` on the definition) do not fire them. "Reset columns" (column header menu) and
+`resetColumns()` fire none of them either, only `u-grid-state-change` (`sources: ['user']` from the
+menu).
 
 ### Bands (multi-level headers)
 
@@ -1684,11 +1713,12 @@ exporter gets an `AbortSignal`). For other formats (PDF), add your own toolbar i
 
 Right-click, a long press (touch), `Shift+F10` or the context menu key opens the context menu of a
 column header, the group panel (a chip or its empty area), a data row or a
-group row. Built-in items:
+group row. Column headers also have an always visible "⋮" button that opens their menu
+(`show-column-header-menu-button="false"` hides it). Built-in items:
 
 | Target | Built-in items (only those that apply) | Turned off by |
 | ------ | -------------------------------------- | ------------- |
-| `header` | Sort ascending / descending / Clear sorting, Group by this column, Pin to start / end / Unpin (with `column-chooser`), Move left / right, Auto-size, Increase / Decrease width | `column-header-menu="false"` |
+| `header` | Sort ascending / descending / Clear sorting (when sorted); **Pin column ▸** (`fixColumn`: Pin to start / end / Unpin, `column-fixing`); Auto-size column, Auto-size all columns (`autoSizeAllColumns`), Increase / Decrease width (`column-resizing`); Move left / right; Group by this column; Choose columns (`openColumnChooser`, with `column-chooser`), Reset columns (`resetColumns`) — in AG Grid's order | `column-header-menu="false"` |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
 | `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | shown with `cell-selection-mode` (Paste: also needs `clipboard-mode="copy-paste"`), even without `row-menu`; without cell ranges, Paste only with `row-menu`. To keep the browser menu, remove them in `u-grid-context-menu-opening` |
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details; tree data: Expand / Collapse (`expandNode`/`collapseNode`), Add child row (`addChildRow`, with `allow-adding`) | **off by default**: `row-menu` turns them on |
@@ -1719,8 +1749,12 @@ grid.addEventListener('u-grid-context-menu-opening', event => {
 ```
 
 `detail` is `{ target, cellType, column, item, rowKey, groupPath, grid, menuItems }`; the built-in
-items come as `{ name, disabled, separatorBefore }` (their default state). A menu item
-is `{ name?, id?, text?, disabled?, separatorBefore?, action? }`: with `action` (and `text`) it is
+items come as `{ name, disabled, separatorBefore }` (their default state). The header's
+`fixColumn` ("Pin column") is a submenu: it comes with `items` holding `fixColumnStart`,
+`fixColumnEnd` and `unfixColumn`; reorder or remove them there, or move one to the top level, where
+it is a plain item; your own items (with `action`) may go in it too. Only `fixColumn` has `items`
+(other built-ins inside it, and `items` on other items, are ignored with a warning).
+A menu item is `{ name?, id?, text?, disabled?, separatorBefore?, action?, items? }`: with `action` (and `text`) it is
 yours — the action gets the same context plus `menuItem`, after the menu closed and the focus went
 back to where it was opened (still within the user's gesture); with `name` it is a built-in
 (`GridContextMenuItemName`, `text` optional). A built-in of another target, or one that does not
@@ -1732,7 +1766,11 @@ from your own control (e.g. a "⋯" button in a cell `renderer`), returning `fal
 opened; `closeContextMenu()` closes it.
 
 **Keyboard.** `↑`/`↓` (wrapping), `Home`/`End`, a letter goes to the next item starting with it,
-`Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. When a "Copy" item
+`Enter`/`Space` run the item, `Esc` and `Tab` close it and give the focus back. On "Pin column",
+`→`/`Enter`/`Space` open the submenu on its first item and `←`/`Esc` close it back to "Pin column"
+(the arrows swap in RTL); `Tab` closes both. In the header menu, the focus follows the column after
+"Move left/right", goes to the column chooser after "Choose columns" and back to the header after
+the other items; pinning and "Auto-size all columns" are announced. When a "Copy" item
 cannot write to the clipboard (permission denied), screen readers hear "Could not copy to the clipboard." On a cell,
 `Shift+F10`/the menu key opens the row menu only when the focus is on the cell itself (inside an
 editor or a control of the cell, the browser menu stays). After "Edit" the focus is in the editor;
@@ -2334,9 +2372,9 @@ interface GridI18n {
   columnChooser: string;       // column chooser button and title
   hideColumn: string;          // checkbox hint / drop-to-hide hint in the chooser
   showColumn: string;          // checkbox hint for a hidden column
-  fixStart: string;            // tooltip of the "fix to the start" toggle (its name is fixStartLabel)
-  fixEnd: string;              // tooltip of the "fix to the end" toggle (its name is fixEndLabel)
-  unfix: string;               // hint of a pressed fix toggle
+  fixStart: string;            // "Pin column" submenu: "Pin to start"
+  fixEnd: string;              // "Pin column" submenu: "Pin to end"
+  unfix: string;               // "Pin column" submenu: "Unpin"
   autoSize: string;            // resize handle hint: "Double-click or press Enter to auto-size"
   summarySum: string;          // "Sum"
   summaryMin: string;          // "Min"
@@ -2420,8 +2458,6 @@ interface GridI18n {
   filterOperationButtonLabel: string; // "Filter operation for {column}: {operation}"
   searchPanelLabel: string;         // search panel name: "Search in the grid"
   headerFilterSearchLabel: string;  // header filter search name: "Search values"
-  fixStartLabel: string;            // chooser toggle name: "Pin {column} to start"
-  fixEndLabel: string;              // chooser toggle name: "Pin {column} to end"
   headerFilterTruncated: string;    // "Showing {shown} of {count}"
   headerFilterSearchAnnouncement: string;   // after searching the header filter: "Values: {count}"
   selectAllResults: string;         // header filter "select all" while searching: "Select all results ({count})"
@@ -2453,6 +2489,18 @@ interface GridI18n {
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
   // Tree data: expandNode, collapseNode, addChildRow, childRowsLoadingAnnouncement,
   // childRowsLoadedAnnouncement ({count}), childRowsLoadErrorAnnouncement, nodesExpandedAnnouncement ({count})
+  fixColumn: string;           // header menu submenu: "Pin column"
+  autoSizeAllColumns: string;  // header menu: "Auto-size all columns"
+  openColumnChooser: string;   // header menu: "Choose columns"
+  resetColumns: string;        // header menu: "Reset columns"
+  columnChooserSearchLabel: string;        // chooser search name/placeholder: "Search columns"
+  columnChooserSearchAnnouncement: string; // after searching the chooser: "Columns: {count}"
+  selectAllColumns: string;    // chooser: "Show all columns"
+  reorderColumnLabel: string;  // chooser checkbox description: "Alt+Shift+Up or Down arrow moves the column"
+  columnFixedStartAnnouncement: string; // "{column} pinned to start"
+  columnFixedEndAnnouncement: string;   // "{column} pinned to end"
+  columnUnfixedAnnouncement: string;    // "{column} unpinned"
+  allColumnsAutoSizedAnnouncement: string; // "All columns auto-sized"
 }
 ```
 
@@ -2480,7 +2528,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default (initial default; changing it resets the expansion state). |
 | `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
 | `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Built-in items of the group panel menu (ungroup, move, expand/collapse all). See [Context menus](#context-menus). |
-| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, long press, Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
+| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu ("⋮" button, right-click, long press, Shift+F10): sort, pin ▸, auto-size (this / all), widen/narrow, move, group, choose/reset columns. The single-pointer alternative to dragging (WCAG 2.5.7). |
+| `showColumnHeaderMenuButton` | `show-column-header-menu-button` | `boolean` | `true` | Always visible "⋮" button in the leaf headers with menu items (it takes width in the header; band menus open by right-click, long press, Shift+F10 or the context menu key). `"false"` hides it; the menu still opens by right-click, long press, Shift+F10 and the context menu key. |
+| `columnFixing`     | `column-fixing`       | `boolean` | `true`  | "Pin column ▸" in the column header menu (pin to start/end, unpin). `"false"` removes it; `fixed` columns stay pinned. |
 | `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). With `cell-selection-mode`, the cell menu also opens with the range items. |
 | `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
 | `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
@@ -2498,7 +2548,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `showColumnLines`  | `show-column-lines`   | `boolean` | `false` | Vertical column separators. |
 | `columnResizing`   | `column-resizing`     | `boolean` | `false` | Let the user resize columns. See [Column features](#column-features). |
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
-| `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button. |
+| `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button (and "Choose columns" in the column header menu): search, show all, show/hide, reorder. See [Column chooser](#column-chooser). |
 | `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
 | `columnRenderingMode` | `column-rendering-mode` | `'auto' \| 'virtual' \| 'standard'` | `'auto'` | Column virtualization (`auto`: virtual with more than 50 leaf columns). See [Column virtualization](#column-virtualization). |
 | `showFilterRow`    | `show-filter-row`     | `boolean` | `false` | Show the filter row. See [Filtering](#filtering). |
@@ -2597,6 +2647,7 @@ tint derive from it.
 | `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
 | `--u-grid-resize-handle-width` | `24px` | Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on (WCAG 2.5.8). |
+| `--u-grid-column-header-menu-button-size` | `24px` | Size of the header "⋮" menu button and of the header filter button (WCAG 2.5.8). |
 | `--u-grid-resize-handle-color` | `--u-grid-group-toggle-color` | Color of the resize bar shown on hover/focus. |
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
@@ -2666,7 +2717,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `menu` | Every menu (context menus and toolbar menus), with one of `column-header-menu`, `group-panel-menu`, `row-menu`, `toolbar-menu`. |
 | `menu-item` / `menu-separator` | Menu items / separators. |
 | `group-panel-menu` | The group panel context menu. |
-| `column-header-menu` | The column header context menu. |
+| `column-header-menu` | The column header context menu (and its "Pin column" submenu). |
+| `column-header-menu-button` | The "⋮" button that opens the column header menu. |
 | `row-menu` | The context menu of data and group rows. |
 | `toolbar-menu` | The "More actions" and Export menus. |
 | `filter-row` | The filter row (`<tr>`). |
@@ -2817,6 +2869,8 @@ CSS property and part for IDEs and tooling.
 | `moveColumn(column, targetIndex)` | Reorder a column or a band to `targetIndex` among its siblings (same band or top level; kept inside its band and its fixed/regular block); ungroups a grouped column. |
 | `setColumnWidth(column, px)` | Set a column width, clamped to `minWidth`/`maxWidth` (a band does nothing). |
 | `autoSizeColumn(column)` | Fit a column to its content (header + rendered rows); for a band, each of its visible columns. |
+| `autoSizeAllColumns()` | Fit every visible column to its content (`autoSizeColumn` on each). No events. |
+| `resetColumns()` | Order, width, visibility and pinning back to the column definitions (a partial `setState` of the columns); sorting, filtering and grouping are kept. Fires only `u-grid-state-change`. |
 | `openColumnChooser()` / `closeColumnChooser()` | Open / close the column chooser. |
 | `clearFilter()` | Remove `filterValue` and `searchText` (fires `u-grid-filter-change`, `source: 'api'`). |
 | `getCombinedFilter()` | `filterValue` `and` the search as one expression (copy), or `null`. |
@@ -2865,8 +2919,8 @@ All bubble and are `composed`.
 | `u-grid-filter-change` | `GridFilterEventDetail` | `clearFilter()` only | After the user filtered. Setting `filterValue`/`searchText` does not fire it. |
 | `u-grid-column-resize` | `GridColumnResizeEventDetail` | no | The user finished resizing a column. See [Column events](#column-events). |
 | `u-grid-column-visibility-change` | `GridColumnVisibilityChangeEventDetail` | no | The user showed/hid a column (or a band) in the chooser. |
-| `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column (or a top-level band) in the chooser. |
-| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop, `Alt+Shift+←/→` or the column header menu). |
+| `u-grid-column-fixed-change` | `GridColumnFixedChangeEventDetail` | no | The user fixed/unfixed a column (or a top-level band) from the column header menu ("Pin column"). |
+| `u-grid-column-reorder` | `GridColumnReorderEventDetail` | no | The user moved a column or a band (drag and drop on the header or in the column chooser, `Alt+Shift+←/→` on the header, `Alt+Shift+↑/↓` in the column chooser or the column header menu). |
 | `u-grid-selection-change` | `GridSelectionChangeEventDetail` | yes (not the `selectedKeys` setter; also remote tree children checked under a checked parent) | The selection changed. |
 | `u-grid-row-expansion-change` | `GridRowExpansionChangeEventDetail` | yes (not `auto-expand-rows`) | A detail row was expanded or collapsed (also by a row edit or `focusCell`/`editCell` on a hidden column). |
 | `u-grid-node-expansion-change` | `GridNodeExpansionChangeEventDetail` | yes (not `auto-expand-nodes` nor a new filter) | A tree node was expanded or collapsed (fired when asked; again with `expanded: false` when its children fail to load). |
@@ -3088,6 +3142,7 @@ They will be removed in the next major version.
 | `detail.fromIndex` / `detail.toIndex` of `u-grid-column-reorder` | `previousIndex` / `index` |
 | type `UmDataGridColumn` | `DataGridColumn` |
 | i18n keys `clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix`, `groupPanelMenuLabel` |
+| i18n keys `fixStartLabel`, `fixEndLabel` — an exception: ignored (with the warning), since the chooser has no pin buttons | — (pin from the column header menu) |
 | `--u-grid-header-height` (bar) | `--u-grid-toolbar-height` (the header cells use `--u-grid-header-cell-height`) |
 | `--u-table-header-padding`, `-block-padding`, `-inline-padding` | `--u-grid-toolbar-padding`, `-block-padding`, `-inline-padding` |
 | `--u-table-cell-padding`, `--u-grid-data-cell-padding` | `--u-grid-cell-padding` |
@@ -3115,6 +3170,23 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+**Header menu and column chooser (behavior changes, modeled on AG Grid):**
+
+- **Header layout.** Every header with menu items shows an always visible "⋮" button
+  (`show-column-header-menu-button="false"` hides it). It takes about 28px of the header width, so
+  narrow columns truncate their label sooner. The header content now spans the cell: start/center
+  aligned columns read `[label][sort] … [filter][⋮]`, end aligned (numbers) `[⋮][filter] … [sort][label]`
+  (mirrored in RTL). The header filter button is always fully opaque (it was dimmed at rest).
+- **Pinning moved into a submenu.** `fixColumnStart`, `fixColumnEnd` and `unfixColumn` are now in
+  the `items` of the new `fixColumn` item of `u-grid-context-menu-opening`, not at the top of
+  `menuItems`: code that looks for them there won't find them. Pinning no longer needs
+  `column-chooser` (turn it off with `column-fixing="false"`), and the chooser has no pin buttons.
+- **Header menu items.** New items in AG Grid's order (`autoSizeAllColumns`, `openColumnChooser`,
+  `resetColumns`); "Clear sorting" is listed only when the column is sorted; "Reset columns" is always
+  there, so a right-click on a header opens the grid menu even when no other action applies (use
+  `column-header-menu="false"` or cancel `u-grid-context-menu-opening` to keep the browser menu).
+- **Column chooser.** Focus starts in the new search field; the first checkbox is "Show all columns".
 
 ---
 

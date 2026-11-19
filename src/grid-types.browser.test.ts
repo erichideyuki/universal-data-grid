@@ -111,7 +111,10 @@ describe('alinhamento', () => {
     const grid = await createGrid({ columns: columns(), items, configure: g => g.dir = 'rtl' });
 
     expect([0, 1, 2, 3].map(i => textSide(cell(grid, 0, i)))).toEqual(['right', 'left', 'center', 'right']);
-    expect(textSide(header(grid, 1))).toBe('left');
+    // Cabeçalho: o rótulo (o "⋮" fica na outra ponta, como no AG Grid).
+    const label = header(grid, 1).querySelector('.header-text')!.getBoundingClientRect();
+    const box = header(grid, 1).getBoundingClientRect();
+    expect(label.left - box.left).toBeLessThan(box.right - label.right);
   });
 });
 

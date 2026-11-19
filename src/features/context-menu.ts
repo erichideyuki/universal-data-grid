@@ -21,14 +21,18 @@ export type GridContextMenuItemName =
   | 'sortColumnDescending'
   | 'clearColumnSorting'
   | 'groupColumn'
+  | 'fixColumn'
   | 'fixColumnStart'
   | 'fixColumnEnd'
   | 'unfixColumn'
   | 'moveLeft'
   | 'moveRight'
   | 'autoSizeColumn'
+  | 'autoSizeAllColumns'
   | 'increaseColumnWidth'
   | 'decreaseColumnWidth'
+  | 'openColumnChooser'
+  | 'resetColumns'
   | 'ungroupColumn'
   | 'ungroupAll'
   | 'expandAllGroups'
@@ -57,6 +61,11 @@ export type GridContextMenuItemName =
  * A context menu item. Built-in (`name`): the grid runs it; `text` replaces
  * the translated label. Host (`id`): needs `text` and `action`. An item
  * without a name is skipped with a warning.
+ *
+ * The built-in `fixColumn` ("Pin column") is a submenu: its `items` hold
+ * `fixColumnStart`, `fixColumnEnd` and `unfixColumn` (shown as radio items).
+ * You may reorder or remove them, or move one to the top level, where it is
+ * a plain item.
  */
 export interface GridContextMenuItem<TItem = any> {
   /** Built-in item (see `GridContextMenuItemName`). */
@@ -71,6 +80,13 @@ export interface GridContextMenuItem<TItem = any> {
   separatorBefore?: boolean;
   /** Host action: runs after the menu closed and the focus went back to where the menu was opened. With it, `name` is ignored. */
   action?: (context: GridContextMenuItemActionContext<TItem>) => void;
+  /**
+   * Submenu items. Only the built-in `fixColumn` has them: its pin items
+   * (`fixColumnStart`, `fixColumnEnd`, `unfixColumn`) and host items with
+   * `action`; other built-ins there, and `items` on any other item, are
+   * ignored with a console warning.
+   */
+  items?: GridContextMenuItem<TItem>[];
 }
 
 /** Fields shared by `u-grid-context-menu-opening` and the item actions. */
@@ -107,7 +123,8 @@ export interface GridContextMenuItemActionContext<TItem = any> extends GridConte
 /**
  * `detail` of `u-grid-context-menu-opening`. The built-in items come as
  * `{ name, disabled, separatorBefore }` (their default state; `text` absent =
- * the translation). Change `menuItems` in place,
+ * the translation); `fixColumn` also has `items` (its pin sides; the current
+ * side comes enabled and only closes the menu). Change `menuItems` in place,
  * synchronously in the listener (add, remove, reorder, change `text`,
  * `disabled`, `separatorBefore`): the grid reads the array right after the
  * dispatch; later changes are ignored. Do not keep the reference.
@@ -122,15 +139,19 @@ export const CONTEXT_MENU_ITEMS_BY_TARGET: Readonly<Record<GridContextMenuTarget
     'sortColumnAscending',
     'sortColumnDescending',
     'clearColumnSorting',
-    'groupColumn',
+    'fixColumn',
     'fixColumnStart',
     'fixColumnEnd',
     'unfixColumn',
-    'moveLeft',
-    'moveRight',
     'autoSizeColumn',
+    'autoSizeAllColumns',
     'increaseColumnWidth',
     'decreaseColumnWidth',
+    'moveLeft',
+    'moveRight',
+    'groupColumn',
+    'openColumnChooser',
+    'resetColumns',
   ]),
   'group-panel': new Set<GridContextMenuItemName>(['ungroupColumn', 'moveLeft', 'moveRight', 'ungroupAll', 'expandAllGroups', 'collapseAllGroups']),
   row: new Set<GridContextMenuItemName>([
@@ -154,6 +175,9 @@ export const CONTEXT_MENU_ITEMS_BY_TARGET: Readonly<Record<GridContextMenuTarget
   ]),
   'group-row': new Set<GridContextMenuItemName>(['expandGroup', 'collapseGroup', 'expandAllGroups', 'collapseAllGroups', 'ungroupColumn']),
 };
+
+/** Itens embutidos que só valem dentro do submenu "Fixar coluna" (ou soltos no nível de cima). */
+export const FIX_COLUMN_ITEMS: ReadonlySet<GridContextMenuItemName> = new Set<GridContextMenuItemName>(['fixColumnStart', 'fixColumnEnd', 'unfixColumn']);
 
 /** Espera do toque longo (como o AG Grid no cabeçalho). */
 export const LONG_PRESS_MS = 500;

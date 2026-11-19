@@ -375,7 +375,7 @@ describe('exportar pela interface', () => {
 });
 
 describe('menu de contexto', () => {
-  it('cabeçalho: ordenar, agrupar, fixar, mover, largura; o evento acrescenta e tira; a ação do hospedeiro recebe o contexto', async () => {
+  it('cabeçalho: ordenar, fixar ▸, largura, mover, agrupar, colunas; o evento acrescenta e tira; a ação do hospedeiro recebe o contexto', async () => {
     const action = vi.fn();
     const grid = await create(g => {
       g.columnResizing = true;
@@ -397,18 +397,19 @@ describe('menu de contexto', () => {
     expect(menuTexts(grid)).toEqual([
       'Sort ascending',
       'Sort descending',
-      'Clear sorting',
-      'Group by this column',
-      'Pin to start',
-      'Pin to end',
-      'Unpin',
-      'Move left',
-      'Move right',
+      'Pin column',
+      'Auto-size all columns',
       'Increase width',
       'Decrease width',
+      'Move left',
+      'Move right',
+      'Group by this column',
+      'Choose columns',
+      'Reset columns',
       'Statistics',
     ]);
-    expect(itemNamed(grid, 'Clear sorting').getAttribute('aria-disabled')).toBe('true');
+    // "Limpar ordenação" só com a coluna ordenada (AG Grid).
+    expect(menuTexts(grid)).not.toContain('Clear sorting');
     // Texto do hospedeiro: idioma do conteúdo (o `lang` mais próximo do grid), não o da i18n.
     expect(itemNamed(grid, 'Statistics').getAttribute('lang')).toBe(grid.closest('[lang]')?.getAttribute('lang') ?? '');
     expect(itemNamed(grid, 'Sort ascending').getAttribute('lang')).toBe('en');
@@ -426,7 +427,9 @@ describe('menu de contexto', () => {
     expect(focused(grid)).toBe(headerCell(grid, 'City'));
 
     await contextMenu(grid, headerCell(grid, 'City'));
-    itemNamed(grid, 'Pin to end').click();
+    itemNamed(grid, 'Pin column').click();
+    await settle(grid);
+    [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel-submenu [role=menuitemradio]')].find(item => item.textContent.trim() === 'Pin to end')!.click();
     await settle(grid);
     expect(headerCell(grid, 'City').classList.contains('fixed')).toBe(true);
   });
@@ -819,7 +822,8 @@ describe('roteiro de teclado e foco depois de cada ação', () => {
     first.focus();
     await settle(grid);
     expect(getComputedStyle(first).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-    const disabled = itemNamed(grid, 'Clear sorting');
+    const disabled = itemNamed(grid, 'Move left');
+    expect(disabled.getAttribute('aria-disabled')).toBe('true');
     disabled.focus();
     await settle(grid);
     expect(getComputedStyle(disabled).color).not.toBe(getComputedStyle(first).color);

@@ -8,7 +8,7 @@ import { makeOrders, type Order } from '../shared/data.js';
 
 export const meta = {
   title: 'Context menus',
-  description: 'Right-click (or long-press, `Shift`+`F10`, the menu key) a header, a group chip or a row. Headers have built-in items (sort, group, pin, move, auto-size); rows get theirs with `row-menu` (copy, edit, delete). Before any menu opens, `u-grid-context-menu-opening` lets you change `detail.menuItems` in place — here it adds **Open order** and **Mark as priority** to rows, **Choose columns…** to headers, and removes **Clear sorting**. The "⋯" button in each row calls `openContextMenu()`.',
+  description: 'Click the **⋮** button of a header — or right-click (long-press, `Shift`+`F10`, the menu key) a header, a group chip or a row. Headers have built-in items (sort, a **Pin column ▸** submenu, auto-size, move, group, choose and reset columns); rows get theirs with `row-menu` (copy, edit, delete). Before any menu opens, `u-grid-context-menu-opening` lets you change `detail.menuItems` in place — here it adds **Open order** and **Mark as priority** to rows, adds **Column statistics** to headers, removes **Clear sorting**, and lists the pin submenu (`fixColumn`, whose `items` are the three sides). The "⋯" button in each row calls `openContextMenu()`.',
 };
 
 export default (host: HTMLElement) => {
@@ -46,7 +46,8 @@ export default (host: HTMLElement) => {
 
   grid.addEventListener('u-grid-context-menu-opening', event => {
     const { target, menuItems } = event.detail;
-    log.write(`u-grid-context-menu-opening  target=${target}  built-ins: ${menuItems.map(item => item.name).join(', ') || '(none)'}`);
+    const names = menuItems.map(item => (item.items ? `${item.name} ▸ [${item.items.map(child => child.name).join(', ')}]` : item.name));
+    log.write(`u-grid-context-menu-opening  target=${target}  built-ins: ${names.join(', ') || '(none)'}`);
 
     if (target === 'row') {
       menuItems.push(
@@ -71,11 +72,17 @@ export default (host: HTMLElement) => {
         menuItems.splice(sort, 1);
       }
 
-      menuItems.push({ id: 'columns', text: 'Choose columns…', separatorBefore: true, action: () => grid.openColumnChooser() });
+      menuItems.push({
+        id: 'stats',
+        text: 'Column statistics',
+        separatorBefore: true,
+        action: ({ column }) => log.write(`Column statistics for ${column?.label ?? '?'}`),
+      });
     }
   });
 
   controls(host,
     checkbox('Row menu (row-menu)', true, value => (grid.rowMenu = value)),
-    checkbox('Header menu', true, value => (grid.columnHeaderMenu = value)));
+    checkbox('Header menu', true, value => (grid.columnHeaderMenu = value)),
+    checkbox('⋮ button', true, value => (grid.showColumnHeaderMenuButton = value)));
 };

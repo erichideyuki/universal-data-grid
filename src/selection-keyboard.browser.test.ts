@@ -50,7 +50,11 @@ const press = async (grid: DataGrid, key: string, init: KeyboardEventInit = {}):
 };
 
 /** Texto da célula focada (ou do cabeçalho). */
-const focusedText = (grid: DataGrid): string => focused(grid)?.textContent.trim() ?? '';
+/** Texto da célula focada (no cabeçalho, o rótulo: o nome oculto do "⋮" não conta). */
+const focusedText = (grid: DataGrid): string => {
+  const cell = focused(grid);
+  return (cell?.querySelector(':scope > .header-content > .header-text') ?? cell)?.textContent.trim() ?? '';
+};
 
 /** Primeira célula de dados das linhas com `aria-selected="true"`. */
 const rowKeys = (grid: DataGrid): string[] =>
@@ -80,7 +84,7 @@ describe('roving tabindex e navegação', () => {
     const grid = await createGrid({ columns: columns(), items: people() });
 
     expect(tabStops(grid)).toHaveLength(1);
-    expect(tabStops(grid)[0].textContent.trim()).toBe('Name');
+    expect(tabStops(grid)[0].querySelector('.header-text')!.textContent.trim()).toBe('Name');
     expect(table(grid).getAttribute('role')).toBe('grid');
 
     grid.focus();
@@ -262,7 +266,9 @@ describe('teclado já existente continua', () => {
     expect(root(grid).querySelector('th')!.getBoundingClientRect().width).toBeGreaterThan(before);
     expect(focusedText(grid)).toBe('Name');
 
-    // F2: a alça (o "⋮" saiu na revisão do site; o menu abre com Shift+F10).
+    // F2: o "⋮" do menu, depois a alça.
+    await press(grid, 'F2');
+    expect(focused(grid)!.classList.contains('column-header-menu-button')).toBe(true);
     await press(grid, 'F2');
     expect(focused(grid)!.classList.contains('resize-handle')).toBe(true);
     expect(root(grid).querySelector('.resize-handle')!.getAttribute('tabindex')).toBe('-1');

@@ -19,7 +19,7 @@
     "middle.scrollWorstMs": 19,
     "middle.jumpP95Ms": 26.4,
     "middle.jumpWorstMs": 38.8,
-    "domNodes": 497,
+    "domNodes": 548,
     "gridHeapMiB": 1.2
   },
   "cell-range-1m": {
@@ -30,7 +30,7 @@
     "copyRefusedMs": 6.1,
     "rangeSummarySliceMs": 30.5,
     "rangeSummaryTotalMs": 128.4,
-    "domNodes": 423
+    "domNodes": 468
   },
   "detail-1m": {
     "firstRenderMs": 32.2,
@@ -41,7 +41,7 @@
     "detail.jumpP95Ms": 14.9,
     "detail.jumpWorstMs": 15.5,
     "collapseRowsMs": 9.9,
-    "domNodes": 315
+    "domNodes": 351
   },
   "editing-1m": {
     "editOpenMs": 6.5,
@@ -99,7 +99,7 @@
     "sorted.jumpP95Ms": 38.7,
     "sorted.jumpWorstMs": 48.8,
     "replaceItemsMs": 17.1,
-    "domNodes": 610,
+    "domNodes": 710,
     "gridHeapMiB": 1.7
   },
   "flat-1m": {
@@ -118,7 +118,7 @@
     "sorted.jumpP95Ms": 32.8,
     "sorted.jumpWorstMs": 33.2,
     "replaceItemsMs": 162.1,
-    "domNodes": 585,
+    "domNodes": 685,
     "gridHeapMiB": 8.5
   },
   "grouped-100k": {
@@ -134,7 +134,7 @@
     "regroupMs": 88.3,
     "collapseAllMs": 6.7,
     "replaceItemsMs": 85.8,
-    "domNodes": 619,
+    "domNodes": 711,
     "gridHeapMiB": 2.2
   },
   "grouped-1m": {
@@ -150,7 +150,7 @@
     "regroupMs": 739.4,
     "collapseAllMs": 7.1,
     "replaceItemsMs": 1122.9,
-    "domNodes": 594,
+    "domNodes": 686,
     "gridHeapMiB": 17.8
   },
   "lean-5m": {
@@ -168,12 +168,12 @@
     "grouped.scrollWorstMs": 8.9,
     "grouped.jumpP95Ms": 17.6,
     "grouped.jumpWorstMs": 18.9,
-    "domNodes": 223,
+    "domNodes": 255,
     "gridHeapMiB": 47
   },
   "menus-1m": {
     "firstRenderMs": 37.6,
-    "domNodes": 217,
+    "domNodes": 243,
     "rowMenuOpenMs": 4.2,
     "headerMenuOpenMs": 4.4,
     "toolbarMoreOpenMs": 4.2
@@ -185,7 +185,7 @@
     "jumpP95Ms": 8.3,
     "jumpWorstMs": 9.2,
     "sortRemoteMs": 8.1,
-    "domNodes": 128,
+    "domNodes": 149,
     "gridHeapMiB": 0.6
   },
   "responsive-1m": {
@@ -204,7 +204,7 @@
     "arrowDownMs": 2.3,
     "pageDownMs": 2.1,
     "gridEndMs": 2.4,
-    "domNodes": 259
+    "domNodes": 295
   },
   "state-1m": {
     "restoreFirstRenderMs": 1033.8,
@@ -228,7 +228,7 @@
     "jumpWorstMs": 32.1,
     "collapseAllGroupsMs": 15.6,
     "replaceItemsMs": 956.1,
-    "domNodes": 619,
+    "domNodes": 715,
     "gridHeapMiB": 14.3
   },
   "tree-1m": {
@@ -258,7 +258,7 @@
     "middle.scrollWorstMs": 24.6,
     "middle.jumpP95Ms": 43.4,
     "middle.jumpWorstMs": 43.8,
-    "domNodes": 484,
+    "domNodes": 538,
     "gridHeapMiB": 1.2
   }
 }

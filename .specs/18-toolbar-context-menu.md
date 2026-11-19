@@ -460,3 +460,105 @@ seletor, busca, botão do hospedeiro e um `always` no "mais") e `row-menu`:
 1º render ~34–55 ms, 217 nós; abrir o menu da linha ~4 ms, o do cabeçalho
 ~4–5 ms, o "mais" ~4–5 ms (sem custo por linha). Os outros cenários sem
 regressão (`npm run test:perf` inteiro verde contra a linha de base).
+
+## Menu do cabeçalho e seletor como os do AG Grid (2026-11-19)
+
+Desenho revisado pelo `webcomponent-api-reviewer` e pelo `a11y-reviewer` e
+aprovado pelo usuário, que comparou os seletores no navegador (DevExtreme,
+AG Grid, MUI X) e escolheu o modelo do AG Grid. Motivo: no seletor antigo
+os ícones |← →| (fixar no início/fim) pareciam setas de mover.
+
+### Referência medida (AG Grid, demos públicas)
+
+- Cabeçalho: botão "⋮" sempre visível (sem esperar o hover). Coluna
+  alinhada ao início/centro: `[texto][seta] … [funil][⋮]`, o "⋮" na ponta
+  do fim; alinhada ao fim (números): `[⋮][funil] … [seta][texto]`. O espaço
+  dos ícones fica reservado (nada se desloca no hover); o texto longo corta
+  com reticências sem ficar sob os ícones.
+- Menu da coluna, nesta ordem: ordenar crescente/decrescente (e "limpar"
+  só com a coluna ordenada) | Fixar coluna ▸ (submenu de rádio: sem
+  fixar, esquerda, direita) | auto-ajustar esta / todas | agrupar |
+  escolher colunas, redefinir colunas.
+- Seletor: busca no topo, "(Selecionar tudo)" tri-state, uma caixa por
+  coluna com alça de arrasto para reordenar; fixar não fica no seletor
+  (coluna oculta só fixa depois de mostrada).
+
+### Decisões
+
+- **Botão "⋮"** (`showColumnHeaderMenuButton` ↔
+  `show-column-header-menu-button`, padrão `true`;
+  `::part(column-header-menu-button)`,
+  `--u-grid-column-header-menu-button-size`): só com `columnHeaderMenu` e
+  itens (`#hasColumnMenu`). Fora da ordem de Tab (roving do cabeçalho); F2
+  chega nele (`#headerControls`: conteúdo do `headerRenderer`, funil, "⋮",
+  alça). Enter/Espaço/↓ abrem no 1º item, ↑ no último (`focusLast`);
+  Alt+↓ continua sendo do filtro. Nome: `columnHeaderMenuLabel` com o
+  rótulo da coluna num `span` no idioma do conteúdo, fora do
+  `.header-text` (o nome do `columnheader` não o inclui). O foco volta à
+  célula ao fechar (o "⋮" é controle do F2; o ponto de parada é a célula).
+  Bandas não têm o botão (o rótulo delas é `sticky` no meio da banda); o
+  menu delas abre por clique direito, toque longo e Shift+F10.
+- **Layout**: `.header-content` vira `flex` de largura total na folha;
+  `.header-buttons` (funil + "⋮") com margem automática; `align-end`
+  inverte (`row-reverse`); centro centraliza texto e seta no espaço antes
+  dos botões. O auto-ajuste mede o cabeçalho com a classe `measuring`
+  (conteúdo no tamanho natural); sem ela a sobra entraria na medida.
+- **Itens** na ordem do AG Grid, com os nossos extras: "Aumentar/Diminuir
+  largura" ficam (alternativa de teclado ao arrasto, WCAG 2.5.7) e "Mover
+  à esquerda/direita" também. Novos nomes: `fixColumn` (pai do submenu,
+  i18n `fixColumn` "Pin column"), `autoSizeAllColumns`,
+  `openColumnChooser` (só com `columnChooser`; `aria-haspopup="dialog"`),
+  `resetColumns` (sempre: por isso todo cabeçalho tem menu).
+- **Fixar** saiu do seletor e não depende mais dele: `columnFixing` ↔
+  `column-fixing` (padrão `true`). Filhos do submenu: `fixColumnStart`,
+  `fixColumnEnd`, `unfixColumn` como `menuitemradio` (o lado atual
+  marcado; ativá-lo só fecha) num `role="group"` com o nome do pai.
+  `fixStartLabel`/`fixEndLabel` ficam opcionais e `@deprecated`.
+- **Submenu no motor** (`menu.ts`): painel irmão do menu (`menu` dentro de
+  `menu` não é permitido na árvore ARIA), na camada do topo, ao lado do
+  item pai (lado do fim; sem espaço, do outro). Pai com
+  `aria-haspopup="menu"`, `aria-expanded` e `aria-controls`. →/Enter/
+  Espaço abrem com foco no 1º item; ←/Esc fecham e devolvem o foco ao pai
+  (RTL troca as setas); Tab fecha a cadeia; ↑/↓/Home/End/letra andam
+  dentro do submenu; andar no menu de cima fecha o submenu; o ponteiro
+  sobre o pai abre (sem foco) e sobre outro item fecha. `#items` usa
+  `[role^=menuitem]`.
+- **Evento**: `fixColumn` chega em `u-grid-context-menu-opening` com
+  `items` (os três lados). O hospedeiro pode mexer neles ou levar um ao
+  nível de cima (vira item comum, desabilitado no lado atual). `items` em
+  outro item é ignorado com aviso (fora de escopo).
+- **Foco e anúncios**: mover segue a coluna (`#focusPending` + célula
+  ativa pela coluna) e reusa `columnMovedAnnouncement`; ordenar, fixar,
+  auto-ajustar e redefinir voltam à célula (achada na hora: fixar troca a
+  célula da coluna); "Escolher colunas" abre o seletor ancorado na célula
+  (Esc volta a ela). Fixar anuncia `columnFixedStartAnnouncement`/
+  `columnFixedEndAnnouncement`/`columnUnfixedAnnouncement`; "todas"
+  anuncia `allColumnsAutoSizedAnnouncement` (a de uma coluna continua com
+  a largura, `columnResizedAnnouncement`).
+- **Métodos**: `autoSizeAllColumns()` (todas as visíveis, sem eventos) e
+  `resetColumns()` (ordem, largura, visibilidade e fixação da definição;
+  ordenação, filtro e agrupamento ficam; contrato do `resetState`: só
+  `u-grid-state-change`, origem `api` pela API e `user` pelo menu).
+- **Seletor**: continua `dialog` não modal com `ul` de caixas nativas
+  (não `listbox`). Busca com nome (`columnChooserSearchLabel`, foco
+  inicial) filtra sem acento/caixa (a banda que bate leva as colunas) e
+  anuncia a contagem 500 ms depois (`columnChooserSearchAnnouncement`; o
+  timer sai ao fechar e no `hostDisconnected`). "Mostrar todas"
+  (`selectAllColumns`) nativa com `.indeterminate`, sobre as entradas
+  listadas; desmarcar deixa a última visível. Alça de arrasto por item
+  (`aria-hidden`, fora do foco; ponteiro capturado, listeners na própria
+  alça, soltos ao terminar, ao fechar e no `hostDisconnected`).
+  Alt+Shift+↑/↓ na caixa move entre as irmãs listadas do mesmo bloco e
+  banda, mantém o foco (`#focused`), anuncia (`columnMovedAnnouncement`,
+  posição entre as listadas) e dispara `u-grid-column-reorder` com o mesmo
+  `detail`. `aria-keyshortcuts` na caixa e a dica `reorderColumnLabel` no
+  `aria-describedby`.
+
+### Testes
+
+`src/header-menu.browser.test.ts` (layout LTR/fim/RTL, botão, roteiro
+F2 → ⋮ → Enter → → → Esc → Esc em LTR e RTL, fixar e anunciar, mover com
+foco e anúncio, `columnFixing`, `resetColumns`, `autoSizeAllColumns`,
+seletor com busca/mostrar todas/Alt+Shift+↑↓/alça, axe com o submenu e o
+seletor abertos) e `src/header-menu.memory.browser.test.ts` (submenu
+aberto, busca e arrasto em curso ao remover; uso repetido).

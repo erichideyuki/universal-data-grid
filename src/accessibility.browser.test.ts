@@ -168,20 +168,19 @@ describe('foco não se perde (WCAG 2.4.3)', () => {
     expect(focused(grid)?.matches('td[data-col]')).toBe(true);
   });
 
-  it('seletor de colunas: fixar no início mantém o foco no mesmo botão', async () => {
+  it('seletor de colunas: reordenar (Alt+Shift+↑) mantém o foco na mesma caixa', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.columnChooser = true });
     root(grid).querySelector<HTMLElement>('.column-chooser-button')!.click();
     await settle(grid);
 
-    const pin = root(grid).querySelectorAll<HTMLElement>('.column-chooser-item')[2].querySelector<HTMLElement>('.pin-start')!;
-    pin.focus();
-    pin.click();
-    await settle(grid);
+    const box = root(grid).querySelectorAll<HTMLElement>('.column-chooser-item')[2].querySelector<HTMLInputElement>('input')!;
+    box.focus();
+    await press(grid, 'ArrowUp', { altKey: true, shiftKey: true });
 
-    const active = focused(grid);
-    expect(active?.classList.contains('pin-start')).toBe(true);
-    expect(active?.getAttribute('aria-pressed')).toBe('true');
-    expect(active?.getAttribute('aria-label')).toBe('Pin Age to start');
+    const active = focused(grid) as HTMLInputElement | null;
+    expect(active?.type).toBe('checkbox');
+    expect(active?.closest('li')!.textContent).toContain('Age');
+    expect(active?.closest('li')).toBe(root(grid).querySelectorAll('.column-chooser-item')[1]);
   });
 
   it('seletor de colunas: Tab para fora do painel fecha (não fica aberto atrás do foco)', async () => {
@@ -192,7 +191,7 @@ describe('foco não se perde (WCAG 2.4.3)', () => {
 
     root(grid).querySelector<HTMLElement>('.column-chooser-button')!.click();
     await settle(grid);
-    const controls = root(grid).querySelectorAll<HTMLElement>('.column-chooser button');
+    const controls = root(grid).querySelectorAll<HTMLElement>('.column-chooser input');
     controls[controls.length - 1].focus();
 
     await userEvent.tab();
@@ -249,7 +248,7 @@ describe('teclado', () => {
     expect(root(grid).querySelector('.group')).toBeNull();
   });
 
-  it('F2 percorre funil → alça → célula no cabeçalho (spec 05; sem o "⋮", revisão do site)', async () => {
+  it('F2 percorre funil → "⋮" → alça → célula no cabeçalho (spec 05)', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
       g.headerFilter = true;
       g.columnResizing = true;
@@ -259,6 +258,8 @@ describe('teclado', () => {
 
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('header-filter-button')).toBe(true);
+    await press(grid, 'F2');
+    expect(focused(grid)?.classList.contains('column-header-menu-button')).toBe(true);
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('resize-handle')).toBe(true);
     await press(grid, 'F2');
@@ -629,7 +630,7 @@ describe('A2/A4 — seleção não só por cor; cor do texto própria', () => {
 });
 
 describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () => {
-  const menuItems = (grid: DataGrid) => [...root(grid).querySelectorAll<HTMLElement>('.column-header-menu [role=menuitem]')];
+  const menuItems = (grid: DataGrid) => [...root(grid).querySelectorAll<HTMLElement>('.column-header-menu.context-menu-panel [role=menuitem]')];
   const headerOrder = (grid: DataGrid) => [...root(grid).querySelectorAll('th.header-column .header-text')].map(e => e.textContent);
 
   const openByKey = async (grid: DataGrid, label: string) => {
@@ -642,19 +643,22 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
     await openByKey(grid, 'Name');
 
     const labels = menuItems(grid).map(item => [item.textContent.trim(), item.getAttribute('aria-disabled')]);
-    // Frente 18: ordenar entra no menu do cabeçalho ("limpar" desabilitado sem ordenação).
+    // Ordem do AG Grid ("limpar" só com ordenação; "Fixar coluna ▸" e "Redefinir colunas" sempre).
     expect(labels).toEqual([
       ['Sort ascending', 'false'],
       ['Sort descending', 'false'],
-      ['Clear sorting', 'true'],
-      ['Group by this column', 'false'],
+      ['Pin column', 'false'],
       ['Move left', 'true'],
       ['Move right', 'false'],
+      ['Group by this column', 'false'],
+      ['Reset columns', 'false'],
     ]);
     expect(focused(grid)).toBe(menuItems(grid)[0]);
     expect(root(grid).querySelector('.column-header-menu')!.getAttribute('aria-label')).toBe('Options for Name');
 
     await press(grid, 'End');
+    await press(grid, 'ArrowUp');
+    await press(grid, 'ArrowUp');
     expect(focused(grid)!.textContent.trim()).toBe('Move right');
     focused(grid)!.click();
     await settle(grid);
@@ -698,8 +702,13 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
     expect(focused(grid)).not.toBeNull();
   });
 
-  it('sem ações para a coluna: menu do navegador e sem Shift+F10', async () => {
-    const grid = await createGrid({ columns: [{ path: 'name', label: 'Name', groupable: false, sortable: false }], items: people() });
+  it('sem itens (column-header-menu="false"): menu do navegador e sem Shift+F10', async () => {
+    // "Redefinir colunas" vale para toda coluna (como no AG Grid): só sem o menu embutido fica o do navegador.
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name', groupable: false, sortable: false }],
+      items: people(),
+      configure: g => g.columnHeaderMenu = false,
+    });
     const th = headerCell(grid, 'Name');
     const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
     th.dispatchEvent(event);
@@ -1004,8 +1013,8 @@ describe('A12 — mais de um focável na célula; custom elements', () => {
 });
 
 describe('revisão da implementação (A1–A14)', () => {
-  it('sem funil nem alça, F2 não entra no aria-keyshortcuts (não há para onde ir sem o "⋮")', async () => {
-    const grid = await createGrid({ columns: columns(), items: people() });
+  it('sem funil, alça nem "⋮", F2 não entra no aria-keyshortcuts (não há para onde ir)', async () => {
+    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.showColumnHeaderMenuButton = false });
 
     expect(headerCell(grid, 'Name').getAttribute('aria-keyshortcuts')).toBe(
       'Shift+F10 Control+G Meta+G Alt+Shift+ArrowLeft Alt+Shift+ArrowRight',

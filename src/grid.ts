@@ -60,6 +60,9 @@ import {
 import { type GridClipboardMode, hasTextSelection as hasGridTextSelection, isGridCopy, writeClipboard } from './features/clipboard.js';
 import {
   ColumnChooserController,
+  chooserSearchAnnouncement,
+  countChooserItems,
+  filterChooserItems,
   columnChooserIcon,
   type ColumnChooserItem,
   renderColumnChooser,
@@ -67,6 +70,7 @@ import {
 import { ColumnDragAndDropAdapter } from './features/column-dnd.js';
 import {
   CONTEXT_MENU_ITEMS_BY_TARGET,
+  FIX_COLUMN_ITEMS,
   type GridContextMenuContext,
   type GridContextMenuItem,
   type GridContextMenuItemName,
@@ -1413,6 +1417,12 @@ interface BuiltInMenuItem {
   separatorBefore?: boolean;
   /** Texto oculto depois do rótulo (a coluna de "Desagrupar"). */
   hiddenSuffix?: string;
+  /** Submenu ("Fixar coluna": os três lados). */
+  children?: BuiltInMenuItem[];
+  /** Item de rádio do submenu: o lado atual. */
+  checked?: boolean;
+  /** Abre um diálogo ("Escolher colunas"). */
+  hasPopup?: 'dialog';
 }
 
 /** Menu de contexto aberto: o pedido, os itens (validados) e os embutidos que se aplicam. */
@@ -1540,8 +1550,9 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * Setting `filterValue`/`searchText` does not fire it.
  * @fires {CustomEvent<GridColumnResizeEventDetail>} u-grid-column-resize - The user finished resizing a column (pointer release, keyboard, double-click auto-size or the column header menu).
  * @fires {CustomEvent<GridColumnVisibilityChangeEventDetail>} u-grid-column-visibility-change - The user showed or hid a column (or a band) in the column chooser (one event per own change).
- * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column (or a top-level band) in the column chooser.
- * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column or a band (drag and drop, Alt+Shift+←/→ on the header or the column header menu).
+ * @fires {CustomEvent<GridColumnFixedChangeEventDetail>} u-grid-column-fixed-change - The user fixed or unfixed a column (or a top-level band) from the column header menu ("Pin column").
+ * @fires {CustomEvent<GridColumnReorderEventDetail>} u-grid-column-reorder - The user moved a column or a band (drag and drop on the header or in the column chooser,
+ * Alt+Shift+←/→ on the header, Alt+Shift+↑/↓ in the column chooser, or the column header menu).
  * @fires {CustomEvent<GridSelectionChangeEventDetail>} u-grid-selection-change - The selection changed: user gesture, selection method, `multiple` → `single` (not the `selectedKeys` setter).
  * @fires {CustomEvent<GridLoadingEventDetail>} u-grid-loading - Before each call to `dataSource.load` (`dataSource` only). Cancelable: the call is skipped and the rows shown stay.
  * @fires {CustomEvent<GridLoadEventDetail>} u-grid-load - A `dataSource.load` call resolved (not fired for aborted calls).
@@ -1561,6 +1572,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * width, the columns, their widths or the property itself), after the render. Layout only: no `source`, not cancelable.
  * @fires {CustomEvent<GridStateChangeEventDetail>} u-grid-state-change - `state-change-delay` ms after the last change of the user state (`getState`): user gesture,
  * method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back).
+ * "Reset columns" (column header menu, `sources: ['user']`) and `resetColumns()` fire only this one, no column event.
  * @fires {CustomEvent<GridFocusChangeEventDetail>} u-grid-focus-change - The active cell changed: keyboard, click, `focusCell`, `selectCellRange` (not the `focusedRowKey` setter;
  * a relocation fires only when the active column hides or comes back with `autoHideColumns`, `source: 'api'`).
  * @fires {CustomEvent<GridEditStartingEventDetail>} u-grid-edit-starting - Before a cell editor (or a row, `editMode="row"`) opens (user or API). Cancelable.
@@ -1572,7 +1584,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridSaveErrorEventDetail>} u-grid-save-error - The `waitUntil` promise rejected; the changes stay pending.
  * @fires {CustomEvent<GridEditCancelEventDetail>} u-grid-edit-cancel - Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`).
  * @fires {CustomEvent<GridContextMenuOpeningEventDetail>} u-grid-context-menu-opening - Before a context menu opens (header, group panel, row, group row: right-click,
- * long press, Shift+F10, the context menu key, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
+ * long press, Shift+F10, the context menu key, the header "⋮" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
  * @fires {CustomEvent<GridExportingEventDetail>} u-grid-exporting - Before an export started from the UI (toolbar, "More actions", row menu). Cancelable: export your own way (e.g. PDF).
  * @fires {CustomEvent<GridExportEventDetail>} u-grid-export - An export started from the UI finished.
  * @fires {CustomEvent<GridExportErrorEventDetail>} u-grid-export-error - An export started from the UI failed (`detail.error`).
@@ -1621,6 +1633,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
  * @cssprop --u-grid-drop-indicator-width - Drop indicator thickness. Default `3px`.
  * @cssprop --u-grid-resize-handle-width - Width of the column resize hit area, also reserved at the end of header cells when `column-resizing` is on. Default `24px` (WCAG 2.5.8).
+ * @cssprop --u-grid-column-header-menu-button-size - Size of the "⋮" column header menu button and of the header filter button. Default `24px` (WCAG 2.5.8).
  * @cssprop --u-grid-resize-handle-color - Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.
  * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
@@ -1681,7 +1694,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart row-menu - The context menu of data and group rows.
  * @csspart toolbar-menu - The "More actions" and export menus.
  * @csspart group-panel-menu - The group panel context menu.
- * @csspart column-header-menu - The column header context menu.
+ * @csspart column-header-menu - The column header context menu (and its "Pin column" submenu).
+ * @csspart column-header-menu-button - The "⋮" button that opens the column header menu in leaf headers (`show-column-header-menu-button`).
  * @csspart filter-row - The filter row (`<tr>`) below the column headers.
  * @csspart filter-cell - Cells of the filter row.
  * @csspart filter-editor - Editors of the filter row (inputs, and the value menu button of boolean columns).
@@ -3535,16 +3549,34 @@ export class DataGrid extends LitElement {
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'group-panel-menu' }) groupPanelMenu = true;
 
   /**
-   * Built-in items of the column header context menu (right-click, long
-   * press, Shift+F10 or the context menu key on a header):
-   * sort, group by the column, pin it, move it left/right, auto-size or
-   * widen/narrow it. It is the single-pointer alternative to dragging (WCAG
+   * Built-in items of the column header menu (the "⋮" button, right-click,
+   * long press, Shift+F10 or the context menu key on a header): sort, pin
+   * (a "Pin column" submenu), auto-size this or all columns, widen/narrow,
+   * move left/right, group by the column, open the column chooser and reset
+   * the columns. It is the single-pointer alternative to dragging (WCAG
    * 2.5.7): with `column-header-menu="false"` the host must provide one
    * (it may add items through `u-grid-context-menu-opening`). Only actions
    * that apply to the column are listed; without any, the browser menu is
    * kept. Default `true`.
    */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'column-header-menu' }) columnHeaderMenu = true;
+
+  /**
+   * Shows the "⋮" button that opens the column header menu in every leaf
+   * header with menu items (`column-header-menu`; band menus open by
+   * right-click, long press, Shift+F10 or the context menu key). It is always visible and takes
+   * width in the header. Default `true`; `show-column-header-menu-button="false"`
+   * hides it (the menu still opens by right-click, long press, Shift+F10 and
+   * the context menu key).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-column-header-menu-button' }) showColumnHeaderMenuButton = true;
+
+  /**
+   * Lets the user pin columns to the start or the end ("Pin column" in the
+   * column header menu). Default `true`; `column-fixing="false"` removes the
+   * pin items. Columns pinned by `fixed` stay pinned.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'column-fixing' }) columnFixing = true;
 
   /**
    * Built-in items of the row context menu (right-click, long press,
@@ -3678,7 +3710,12 @@ export class DataGrid extends LitElement {
    */
   @property({ attribute: 'resize-mode' }) resizeMode: GridResizeMode = 'widget';
 
-  /** Shows the column chooser button in the bar above the table. */
+  /**
+   * Shows the column chooser button in the bar above the table (and "Choose
+   * columns" in the column header menu). The chooser shows/hides columns,
+   * filters them by a search box and reorders them by dragging or
+   * Alt+Shift+↑/↓. Pin a column from its header menu.
+   */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'column-chooser' }) columnChooser = false;
 
   /** Columns without `width` take the width of their content (header and rendered rows). */
@@ -4987,6 +5024,8 @@ export class DataGrid extends LitElement {
       columnState: this.#userWidths.size + this.#userVisible.size + this.#userFixed.size
         + this.#autoWidths.size + this.#renderedWidths.size + this.#hostOptions.size,
       chooserDropzones: this.#chooser.dropzones,
+      // Seletor: anúncio da busca pendente e arrasto pela alça em curso.
+      chooserTimers: this.#chooser.timers,
       filterRowState: this.#filterRow.size,
       filterTimers: this.#filterRow.timers + this.#search.timers + this.#headerFilterPopover.timers + (this.#filtering.pending ? 1 : 0),
       announceTimers: this.#resizeAnnouncer.size,
@@ -6068,6 +6107,45 @@ export class DataGrid extends LitElement {
     if (width !== undefined) {
       this.setColumnWidth(column, width);
     }
+  }
+
+  /**
+   * Fits the width of every visible column to its header and rendered cells
+   * (like `autoSizeColumn` on each one).
+   */
+  autoSizeAllColumns(): void {
+    [...this._visibleColumns].forEach(column => this.autoSizeColumn(column));
+  }
+
+  /**
+   * Puts the column layout back to the column definitions: order, width,
+   * visibility and pinning (a partial `setState` of the columns). Sorting,
+   * filtering and grouping are kept. Like `resetState`, it fires only
+   * `u-grid-state-change` (no column event — also for "Reset columns" in
+   * the column header menu, then with `sources: ['user']`), never moves the
+   * focus nor announces anything.
+   */
+  resetColumns(): void {
+    this.#stateInUse = true;
+    this.#explicitStateChange();
+    this.#resetColumnLayout();
+  }
+
+  /** Ordem, larguras, visibilidade e fixação da definição; agrupamento e ordenação ficam. */
+  #resetColumnLayout(): void {
+    this.#settleEditorForState();
+    this.#userWidths.clear();
+    this.#userVisible.clear();
+    this.#userFixed.clear();
+    this.#autoWidths.clear();
+    this.#visibleBands = undefined;
+    this.#autoWidthDirty = true;
+    this.#layoutDirty = true;
+    this.#rowsDirty = true;
+    const group = [...this._groupColumns];
+    this.#setColumnState(this.#columnTree.leaves.filter(column => !group.includes(column)), group);
+    this.#closeHiddenPopovers();
+    this.requestUpdate();
   }
 
   /**
@@ -10999,7 +11077,18 @@ export class DataGrid extends LitElement {
     let width: number | undefined;
 
     cells.forEach(cell => {
+      // Cabeçalho: o conteúdo ocupa a célula toda (botões na ponta); mede com ele no tamanho natural.
+      const header = cell.tagName === 'TH';
+
+      if (header) {
+        cell.classList.add('measuring');
+      }
+
       width = Math.max(width ?? 0, measureContentWidth(cell));
+
+      if (header) {
+        cell.classList.remove('measuring');
+      }
     });
 
     return width;
@@ -14020,13 +14109,13 @@ export class DataGrid extends LitElement {
     this.#onRangePointerDown(event);
   };
 
-  /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, alça. */
+  /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, menu "⋮", alça. */
   #headerControls(cell: HTMLElement): (HTMLElement | SVGElement)[] {
     const label = cell.querySelector<HTMLElement>('.header-text');
 
     return [
       ...label ? focusTargetsWithin(label) : [],
-      ...cell.querySelectorAll<HTMLElement>('.header-filter-button, .resize-handle'),
+      ...cell.querySelectorAll<HTMLElement>('.header-filter-button, .column-header-menu-button, .resize-handle'),
     ];
   }
 
@@ -14079,7 +14168,7 @@ export class DataGrid extends LitElement {
     }
 
     if (event.key === 'F2') {
-      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): o do `headerRenderer`, funil, alça.
+      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): o do `headerRenderer`, funil, menu, alça.
       const target = this.#headerControls(cell)[0];
 
       if (target) {
@@ -14937,6 +15026,7 @@ export class DataGrid extends LitElement {
       filterButton: this.headerFilter && isColumnFilterable(column)
         ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${idSuffix}`)
         : nothing,
+      menuButton: this.#renderColumnMenuButton(column),
       filtered: hasColumnCondition(filterValue, column),
       description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
       keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
@@ -15051,11 +15141,85 @@ export class DataGrid extends LitElement {
       keys.push('Alt+ArrowDown');
     }
 
-    if (funnel || resizable || column.headerRenderer) {
+    if (funnel || resizable || column.headerRenderer || this.#showsColumnMenuButton(column)) {
       keys.push('F2');
     }
 
     return keys.join(' ');
+  }
+
+  #showsColumnMenuButton(column: GridColumnDef): boolean {
+    return this.showColumnHeaderMenuButton && this.#hasColumnMenu(column);
+  }
+
+  /**
+   * Botão "⋮" do menu do cabeçalho (como o AG Grid): o ícone é máscara CSS
+   * (poucos nós por cabeçalho; spec 16). Sempre visível (o espaço
+   * fica reservado, nada se desloca no hover), fora da ordem de Tab (F2 chega
+   * aqui; Esc volta à célula). Nome = o do menu ("Options for {column}"),
+   * com o rótulo da coluna no idioma do conteúdo. Fora do `.header-text`: o
+   * nome do `columnheader` não o inclui.
+   */
+  #renderColumnMenuButton(column: GridColumnDef) {
+    if (!this.#showsColumnMenuButton(column)) {
+      return nothing;
+    }
+
+    const template = this.#translation.columnHeaderMenuLabel;
+    const at = template.indexOf('{column}');
+    const before = at >= 0 ? template.slice(0, at) : template;
+    const after = at >= 0 ? template.slice(at + '{column}'.length) : '';
+    const columnLabel = column.label ?? '';
+    const open = this.#contextMenuOpenFor('header', column);
+
+    const openMenu = (button: HTMLElement, focusLast: boolean) => {
+      this.#openHeaderMenu(column, button.closest('th')!, { opener: button, focusLast }, null);
+    };
+
+    return html`<button
+      class="column-header-menu-button"
+      part="column-header-menu-button"
+      type="button"
+      tabindex="-1"
+      aria-haspopup="menu"
+      aria-expanded=${open ? 'true' : 'false'}
+      title=${formatMessage(template, { column: columnLabel })}
+      @pointerdown=${(event: PointerEvent) => {
+        // Não ordena nem começa a seleção de intervalo pelo cabeçalho.
+        event.stopPropagation();
+      }}
+      @click=${(event: MouseEvent) => {
+        event.stopPropagation();
+
+        // O botão está dentro da alça de arrasto do cabeçalho: o clique que termina um arrasto não abre.
+        if (this.#consumeDrag(event)) {
+          return;
+        }
+
+        if (this.#contextMenuOpenFor('header', column)) {
+          this.#contextMenu.hide(true);
+          return;
+        }
+
+        openMenu(event.currentTarget as HTMLElement, false);
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        // Botão de menu (APG): Enter/Espaço/↓ abrem no primeiro item, ↑ no último. Alt+↓ é do filtro.
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+          return;
+        }
+
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          event.stopPropagation();
+
+          if (!event.repeat) {
+            openMenu(event.currentTarget as HTMLElement, event.key === 'ArrowUp');
+          }
+        }
+      }}><span
+        class="visually-hidden"
+        lang=${this.#textLanguage}>${before}<span lang=${this.#contentLanguage}>${columnLabel}</span>${after}</span></button>`;
   }
 
   #renderResizeHandle({ column, bounds, width }: ColumnLayout) {
@@ -17338,7 +17502,12 @@ export class DataGrid extends LitElement {
   }
 
   /** Menu do cabeçalho (coluna ou banda); o cabeçalho vira a célula ativa (Esc volta a ele). */
-  #openHeaderMenu(column: GridColumnDef, cell: HTMLElement, anchor: { x?: number; y?: number; opener?: HTMLElement | null; returnFocus?: HTMLElement | null }, event: Event | null): boolean {
+  #openHeaderMenu(
+    column: GridColumnDef,
+    cell: HTMLElement,
+    anchor: { x?: number; y?: number; opener?: HTMLElement | null; returnFocus?: HTMLElement | null; focusLast?: boolean },
+    event: Event | null,
+  ): boolean {
     const position = this.#positionOf(cell);
 
     if (position) {
@@ -17347,7 +17516,15 @@ export class DataGrid extends LitElement {
 
     return this.#openContextMenuWith(
       { target: 'header', cellType: 'header', column, item: null, rowKey: null, groupPath: null },
-      { returnFocus: anchor.returnFocus ?? (() => this.#activeCellElement() ?? cell), x: anchor.x, y: anchor.y, opener: anchor.opener, positionTarget: anchor.opener ?? cell },
+      // O foco volta à célula ativa (achada na hora: mover/fixar troca a célula da coluna).
+      {
+        returnFocus: anchor.returnFocus ?? (() => this.#activeCellElement() ?? (cell.isConnected ? cell : null)),
+        x: anchor.x,
+        y: anchor.y,
+        opener: anchor.opener,
+        positionTarget: anchor.opener ?? cell,
+        focusLast: anchor.focusLast,
+      },
       event,
     );
   }
@@ -17422,12 +17599,19 @@ export class DataGrid extends LitElement {
    */
   #openContextMenuWith(
     request: ContextMenuRequest,
-    anchor: { returnFocus: HTMLElement | null | (() => HTMLElement | null); x?: number; y?: number; positionTarget?: HTMLElement | null; opener?: HTMLElement | null },
+    anchor: { returnFocus: HTMLElement | null | (() => HTMLElement | null); x?: number; y?: number; positionTarget?: HTMLElement | null; opener?: HTMLElement | null; focusLast?: boolean },
     event: Event | null,
   ): boolean {
     const builtIns = this.#builtInMenuItems(request);
     // Os embutidos levam o estado padrão (desabilitado, separador); o `text` fica de fora (marca texto do hospedeiro).
-    const menuItems: GridContextMenuItem[] = builtIns.map(({ name, disabled, separatorBefore }) => ({ name, disabled: !!disabled, separatorBefore: !!separatorBefore }));
+    // No submenu de fixar, o lado atual vem marcado, não desabilitado.
+    const toMenuItem = ({ name, disabled, separatorBefore, children, checked }: BuiltInMenuItem): GridContextMenuItem => ({
+      name,
+      disabled: checked === undefined && !!disabled,
+      separatorBefore: !!separatorBefore,
+      ...children ? { items: children.map(toMenuItem) } : {},
+    });
+    const menuItems: GridContextMenuItem[] = builtIns.map(toMenuItem);
     const { groupRow: _groupRow, rowIndex: _rowIndex, ...context } = request;
     const detail: GridContextMenuOpeningEventDetail = { ...context, grid: this, menuItems };
 
@@ -17443,12 +17627,20 @@ export class DataGrid extends LitElement {
 
     event?.preventDefault();
     this.#toolbarMenu.hide();
-    this.#contextMenu.show({ ...anchor, data: { request, items, available: new Map(builtIns.map(item => [item.name, item])) } });
+    const available = new Map<GridContextMenuItemName, BuiltInMenuItem>();
+    builtIns.forEach(item => {
+      available.set(item.name, item);
+      item.children?.forEach(child => available.set(child.name, child));
+    });
+    this.#contextMenu.show({ ...anchor, data: { request, items, available } });
     return true;
   }
 
-  /** Itens do hospedeiro sem nome/ação e embutidos de outro alvo saem (com aviso, uma vez por evento). */
-  #validMenuItems(menuItems: unknown, target: GridContextMenuTarget): GridContextMenuItem[] {
+  /**
+   * Itens do hospedeiro sem nome/ação e embutidos de outro alvo saem (com
+   * aviso, uma vez por evento). Só o embutido `fixColumn` tem submenu (`items`).
+   */
+  #validMenuItems(menuItems: unknown, target: GridContextMenuTarget, nested = false): GridContextMenuItem[] {
     if (!Array.isArray(menuItems)) {
       return [];
     }
@@ -17461,7 +17653,12 @@ export class DataGrid extends LitElement {
         continue;
       }
 
-      const menuItem = item as GridContextMenuItem;
+      const { items: children, ...menuItem } = item as GridContextMenuItem;
+      const submenu = typeof menuItem.action !== 'function' && menuItem.name === 'fixColumn';
+
+      if (children !== undefined && !submenu) {
+        warn(`\`items\` of context menu item "${menuItem.name ?? menuItem.id ?? menuItem.text ?? ''}" ignored (only "fixColumn" has a submenu).`);
+      }
 
       if (typeof menuItem.action === 'function') {
         if (typeof menuItem.text === 'string' && menuItem.text.trim()) {
@@ -17469,8 +17666,10 @@ export class DataGrid extends LitElement {
         } else {
           warn('context menu item without `text` ignored.');
         }
+      } else if (nested && !(typeof menuItem.name === 'string' && FIX_COLUMN_ITEMS.has(menuItem.name))) {
+        warn(`context menu item "${menuItem.name ?? ''}" ignored inside the "fixColumn" submenu (only the pin items and host items go there).`);
       } else if (typeof menuItem.name === 'string' && CONTEXT_MENU_ITEMS_BY_TARGET[target].has(menuItem.name)) {
-        valid.push({ ...menuItem });
+        valid.push(submenu ? { ...menuItem, items: this.#validMenuItems(children ?? [], target, true) } : { ...menuItem });
       } else if (typeof menuItem.name === 'string') {
         warn(`context menu item "${menuItem.name}" does not apply to "${target}" and was ignored.`);
       } else {
@@ -17507,9 +17706,12 @@ export class DataGrid extends LitElement {
   }
 
   /**
-   * Itens do cabeçalho que valem para a coluna (spec 17, A1 + frente 18).
-   * "Mover" e "limpar ordenação" ficam visíveis e `aria-disabled` quando não
-   * agem; o resto some. Lados físicos: em RTL "esquerda" vai para o fim.
+   * Itens do cabeçalho que valem para a coluna (spec 17, A1 + frente 18), na
+   * ordem do AG Grid: ordenar; fixar ▸; auto-ajustar esta/todas e
+   * alargar/estreitar; mover; agrupar; escolher/redefinir colunas. "Mover" e
+   * as setas de ordenar ficam visíveis e `aria-disabled` quando não agem;
+   * "limpar ordenação" só com a coluna ordenada; o resto some. Lados físicos:
+   * em RTL "esquerda" vai para o fim.
    */
   #headerMenuItems(column: GridColumnDef): BuiltInMenuItem[] {
     const translation = this.#translation;
@@ -17517,30 +17719,49 @@ export class DataGrid extends LitElement {
     const band = this._isBand(column);
     const grouped = this._groupColumns.includes(column);
 
+    const section = (entries: BuiltInMenuItem[]) => {
+      if (entries.length) {
+        entries[0].separatorBefore = items.length > 0;
+        items.push(...entries);
+      }
+    };
+
     if (!band && !grouped && this.#canSortByUser(column)) {
       const order = this.#orderOf(column);
-      items.push(
+      section([
         { name: 'sortColumnAscending', text: translation.sortColumnAscending, disabled: order === 'asc' },
         { name: 'sortColumnDescending', text: translation.sortColumnDescending, disabled: order === 'desc' },
-        { name: 'clearColumnSorting', text: translation.clearColumnSorting, disabled: !order },
-      );
+        ...order ? [{ name: 'clearColumnSorting' as const, text: translation.clearColumnSorting }] : [],
+      ]);
     }
 
-    if (!band && !grouped && isColumnGroupable(column)) {
-      items.push({ name: 'groupColumn', text: translation.groupColumn, separatorBefore: items.length > 0 });
-    }
-
-    // Fixar: com o seletor ligado (onde o usuário fixa hoje) e só o nível de cima (a banda leva os filhos).
-    if (this.columnChooser && !grouped && this._isRegularColumn(column) && !this._parentBandOf(column)) {
+    if (this.#canUserFix(column)) {
       const fixed = this._fixedOf(column);
-      const first = items.length;
-      items.push(
-        { name: 'fixColumnStart', text: translation.fixStart, disabled: fixed === 'start' },
-        { name: 'fixColumnEnd', text: translation.fixEnd, disabled: fixed === 'end' },
-        { name: 'unfixColumn', text: translation.unfix, disabled: !fixed },
-      );
-      items[first].separatorBefore = first > 0;
+      section([
+        {
+          name: 'fixColumn',
+          text: translation.fixColumn,
+          children: [
+            { name: 'fixColumnStart', text: translation.fixStart, checked: fixed === 'start', disabled: fixed === 'start' },
+            { name: 'fixColumnEnd', text: translation.fixEnd, checked: fixed === 'end', disabled: fixed === 'end' },
+            { name: 'unfixColumn', text: translation.unfix, checked: !fixed, disabled: !fixed },
+          ],
+        },
+      ]);
     }
+
+    const resizable = !band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column));
+    section([
+      ...resizable ? [{ name: 'autoSizeColumn' as const, text: translation.autoSizeColumn }] : [],
+      ...this._visibleColumns.some(leaf => this.#isResizable(leaf)) ? [{ name: 'autoSizeAllColumns' as const, text: translation.autoSizeAllColumns }] : [],
+      // Alternativa de teclado/ponteiro único ao arrasto da borda (WCAG 2.5.7).
+      ...resizable
+        ? [
+          { name: 'increaseColumnWidth' as const, text: translation.increaseColumnWidth },
+          { name: 'decreaseColumnWidth' as const, text: translation.decreaseColumnWidth },
+        ]
+        : [],
+    ]);
 
     // Irmãs visíveis do mesmo bloco (coluna de banda só se move dentro dela).
     const movable = this.#movableSiblingsOf(column);
@@ -17549,36 +17770,35 @@ export class DataGrid extends LitElement {
     const rtl = this._isRtl() ? -1 : 1;
 
     if (index >= 0 && (canMove(1) || canMove(-1))) {
-      items.push(
-        { name: 'moveLeft', text: translation.moveLeft, disabled: !canMove(-rtl as 1 | -1), separatorBefore: items.length > 0 },
+      section([
+        { name: 'moveLeft', text: translation.moveLeft, disabled: !canMove(-rtl as 1 | -1) },
         { name: 'moveRight', text: translation.moveRight, disabled: !canMove(rtl) },
-      );
+      ]);
     }
 
-    if (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column))) {
-      items.push(
-        { name: 'autoSizeColumn', text: translation.autoSizeColumn, separatorBefore: items.length > 0 },
-        { name: 'increaseColumnWidth', text: translation.increaseColumnWidth },
-        { name: 'decreaseColumnWidth', text: translation.decreaseColumnWidth },
-      );
+    if (!band && !grouped && isColumnGroupable(column)) {
+      section([{ name: 'groupColumn', text: translation.groupColumn }]);
     }
+
+    section([
+      ...this.columnChooser ? [{ name: 'openColumnChooser' as const, text: translation.openColumnChooser, hasPopup: 'dialog' as const }] : [],
+      { name: 'resetColumns', text: translation.resetColumns },
+    ]);
 
     return items;
   }
 
-  /** Há o que pôr no menu (sem medir a direção: roda no render, inclusive no SSR). */
+  /** O usuário fixa esta coluna (só o nível de cima: a banda leva as filhas). */
+  #canUserFix(column: GridColumnDef): boolean {
+    return this.columnFixing && !this._groupColumns.includes(column) && this._isRegularColumn(column) && !this._parentBandOf(column);
+  }
+
+  /**
+   * Há o que pôr no menu (sem medir a direção: roda no render, inclusive no
+   * SSR). "Redefinir colunas" vale sempre, como no AG Grid.
+   */
   #hasColumnMenu(column: GridColumnDef): boolean {
-    if (!this.columnHeaderMenu) {
-      return false;
-    }
-
-    const band = this._isBand(column);
-    const grouped = this._groupColumns.includes(column);
-
-    return (!band && !grouped && (this.#canSortByUser(column) || isColumnGroupable(column)))
-      || (this.columnChooser && !grouped && this._isRegularColumn(column) && !this._parentBandOf(column))
-      || this.#hasMovableNeighbor(column)
-      || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
+    return this.columnHeaderMenu && !this._groupColumns.includes(column);
   }
 
   #groupPanelMenuItems(column: GridColumnDef | null): BuiltInMenuItem[] {
@@ -17824,21 +18044,40 @@ export class DataGrid extends LitElement {
     const textLanguage = this.#textLanguage;
     const contentLanguage = this.#contentLanguage;
 
-    const entries: MenuEntry[] = items.map((item, index) => {
+    const entryOf = (item: GridContextMenuItem, key: string, nested: boolean): MenuEntry | null => {
       const builtIn = typeof item.action !== 'function' && item.name ? available.get(item.name) : undefined;
       const hostText = typeof item.text === 'string' && !!item.text;
+      // "Fixar coluna ▸": os filhos válidos; sem nenhum, o item sai.
+      const children = !nested && builtIn?.name === 'fixColumn'
+        ? (item.items ?? []).map((child, index) => entryOf(child, `${key}.${index}`, true)).filter((entry): entry is MenuEntry => !!entry)
+        : undefined;
+
+      // Submenu vazio, ou embutido que não vale agora sem texto do hospedeiro (ex.: `fixColumn` com `column-fixing="false"`): some.
+      if ((children && !children.length) || (typeof item.action !== 'function' && !builtIn && !hostText)) {
+        return null;
+      }
+
+      // No submenu os lados de fixar são rádio: o atual vem marcado (ativá-lo só fecha).
+      const radio = nested && !!builtIn && FIX_COLUMN_ITEMS.has(builtIn.name);
 
       return {
-        key: String(index),
+        key,
         label: hostText ? item.text! : builtIn?.text ?? '',
         // Embutido que não se aplica nunca age (nem com `disabled: false`).
-        disabled: !!item.disabled || (typeof item.action !== 'function' && (!builtIn || !!builtIn.disabled)),
+        disabled: !!item.disabled || (typeof item.action !== 'function' && (!builtIn || (!radio && !!builtIn.disabled))),
         separatorBefore: item.separatorBefore ?? (builtIn ? builtIn.separatorBefore : false),
         hiddenSuffix: !hostText ? builtIn?.hiddenSuffix : undefined,
         suffixLang: contentLanguage,
         lang: hostText ? contentLanguage : textLanguage,
+        hasPopup: builtIn?.hasPopup,
+        checked: radio ? !!builtIn.checked : undefined,
+        children,
       };
-    });
+    };
+
+    const entries = items
+      .map((item, index) => entryOf(item, String(index), false))
+      .filter((entry): entry is MenuEntry => !!entry);
 
     let label: string;
     let kind: string;
@@ -17872,15 +18111,19 @@ export class DataGrid extends LitElement {
       label,
       labelLang: textLanguage,
       entries,
+      controller: this.#contextMenu,
       onKeyDown: this.#contextMenu.onKeyDown,
-      onAction: key => this.#onContextMenuAction(Number(key)),
+      onAction: key => this.#onContextMenuAction(key),
       onDisabledAction: () => this.#announceExportBusy(),
     });
   }
 
-  #onContextMenuAction(index: number): void {
+  /** `key` = posição do item (`"2"`) ou, no submenu, do pai e do filho (`"2.0"`). */
+  #onContextMenuAction(key: string): void {
     const open = this.#contextMenu.data;
-    const item = open?.items[index];
+    const [index, childIndex] = key.split('.').map(Number);
+    const parent = open?.items[index];
+    const item = childIndex === undefined ? parent : parent?.items?.[childIndex];
 
     if (!open || !item) {
       return;
@@ -17904,6 +18147,9 @@ export class DataGrid extends LitElement {
 
     if (builtIn && !builtIn.disabled && !item.disabled) {
       this.#runBuiltInMenuItem(builtIn.name, open.request);
+    } else if (builtIn?.checked) {
+      // O lado atual (rádio marcado): nada a mudar, só fecha.
+      this.#contextMenu.hide(true);
     }
   }
 
@@ -18070,13 +18316,35 @@ export class DataGrid extends LitElement {
       case 'fixColumnStart':
       case 'fixColumnEnd':
       case 'unfixColumn':
+        // O foco volta à célula da coluna (que muda de lugar).
         menu.hide(true);
-        this._userSetFixed(column, name === 'fixColumnStart' ? 'start' : name === 'fixColumnEnd' ? 'end' : null);
+        this.#menuFixColumn(column, name === 'fixColumnStart' ? 'start' : name === 'fixColumnEnd' ? 'end' : null);
         break;
       case 'autoSizeColumn':
         menu.hide(true);
         this.#userAutoSize(column);
         void this.updateComplete.then(() => this.#announceWidth(column, 0));
+        break;
+      case 'autoSizeAllColumns':
+        menu.hide(true);
+        this._visibleColumns.filter(leaf => this.#isResizable(leaf)).forEach(leaf => this.#userAutoSize(leaf));
+        void this.updateComplete.then(() => this.#announce(this.#translation.allColumnsAutoSizedAnnouncement));
+        break;
+
+      case 'openColumnChooser': {
+        // O seletor abre junto da célula e devolve o foco a ela ao fechar.
+        const cell = this.#activeCellElement();
+        menu.hide();
+        this.#chooser.show(cell);
+        break;
+      }
+
+      case 'resetColumns':
+        menu.hide(true);
+        // Gesto do usuário: a rajada do estado sai com `source: 'user'`.
+        this.#recordedSources.add('user');
+        this.#resetColumnLayout();
+        this.#focusPending = true;
         break;
       case 'increaseColumnWidth':
       case 'decreaseColumnWidth':
@@ -18087,6 +18355,20 @@ export class DataGrid extends LitElement {
       default:
         break;
     }
+  }
+
+  /** "Fixar coluna ▸" do menu do cabeçalho: fixa/solta e anuncia o lado novo. */
+  #menuFixColumn(column: GridColumnDef, fixed: GridColumnFixed): void {
+    const previous = this._fixedOf(column);
+    this._userSetFixed(column, fixed);
+
+    if (this._fixedOf(column) === previous) {
+      return;
+    }
+
+    const translation = this.#translation;
+    const message = fixed === 'start' ? translation.columnFixedStartAnnouncement : fixed === 'end' ? translation.columnFixedEndAnnouncement : translation.columnUnfixedAnnouncement;
+    this.#announce(formatMessage(message, { column: column.label ?? '' }));
   }
 
   #runGroupPanelMenuItem(name: GridContextMenuItemName, column: GridColumnDef | null): void {
@@ -18522,10 +18804,9 @@ export class DataGrid extends LitElement {
       .filter(column => column.showInChooser !== false)
       .map(column => {
         const visible = this._isColumnVisible(column);
-        const fixed = parent ? undefined : this._fixedOf(column);
 
         if (!tree.childrenOf.has(column)) {
-          return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, fixed, adaptive: adaptive.includes(column) };
+          return { column, id: columnIdOf(column), visible, canToggle: !visible || visibleCount > 1, adaptive: adaptive.includes(column) };
         }
 
         // Só as colunas listadas (`showInChooser: false` não conta para o misto).
@@ -18539,7 +18820,6 @@ export class DataGrid extends LitElement {
           indeterminate: visible && shown > 0 && shown < leaves.length,
           // Ocultar a banda não pode esconder a última coluna visível.
           canToggle: !visible || visibleCount > shown,
-          fixed,
           children: itemsOf(column),
           // Banda cujas folhas visíveis estão todas na linha adaptativa (spec 21).
           adaptive: shown > 0 && leaves.every(leaf => !this._isColumnVisible(leaf) || adaptive.includes(leaf)),
@@ -18547,15 +18827,61 @@ export class DataGrid extends LitElement {
       });
 
     const items = itemsOf(null);
+    const chooser = this.#chooser;
 
     return renderColumnChooser({
       items,
       translation: this.#translation,
+      search: chooser.search,
+      onSearch: text => chooser.setSearch(text, () => {
+        this.#announce(chooserSearchAnnouncement(this.#translation, countChooserItems(filterChooserItems(items, text))));
+      }),
       onVisibleChange: (column, visible) => this._userSetVisible(column, visible),
-      onFixedChange: (column, fixed) => this._userSetFixed(column, fixed),
-      onKeyDown: this.#chooser.onKeyDown,
-      onFocusOut: this.#chooser.onFocusOut,
+      onVisibleChangeAll: (columns, visible) => {
+        // Ocultar todas deixa a última visível (nunca some tudo).
+        columns.forEach(column => this._userSetVisible(column, visible));
+      },
+      onMove: (column, target, after) => this.#chooserMove(column, target, after),
+      onDragStart: (event, column) => chooser.startDrag(event, column, (targetId, after) => {
+        const target = [...tree.parentOf.keys()].find(candidate => String(columnIdOf(candidate)) === targetId);
+
+        if (target) {
+          this.#chooserMove(column, target, after);
+        }
+      }),
+      onKeyDown: chooser.onKeyDown,
+      onFocusOut: chooser.onFocusOut,
     });
+  }
+
+  /**
+   * Reordenar pelo seletor (Alt+Shift+↑/↓ ou a alça): `column` antes/depois
+   * da irmã `target`, só no mesmo bloco (fixas/livres) e na mesma banda.
+   * Dispara `u-grid-column-reorder` (como no cabeçalho) e anuncia a posição
+   * entre as irmãs listadas; o foco fica na caixa (o `repeat` move o item).
+   */
+  #chooserMove(column: GridColumnDef, target: GridColumnDef, after: boolean): boolean {
+    if (column === target || !this._canDropColumn(column, target)) {
+      return false;
+    }
+
+    const before = this._siblingIndexOf(column);
+    const targetIndex = this._siblingIndexOf(target) + (after ? 1 : 0);
+    this._userMoveColumn(column, targetIndex);
+
+    if (this._siblingIndexOf(column) === before) {
+      return false;
+    }
+
+    const listed = orderedSiblings(this._regularColumns, this.#columnTree, this._parentBandOf(column) ?? null)
+      .filter(sibling => sibling.showInChooser !== false);
+
+    this.#announce(formatMessage(this.#translation.columnMovedAnnouncement, {
+      column: column.label ?? '',
+      position: String(listed.indexOf(column) + 1),
+      count: String(listed.length),
+    }));
+    return true;
   }
 
   /**

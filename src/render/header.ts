@@ -30,6 +30,8 @@ export interface HeaderCellContext {
   trailing?: TemplateResult | typeof nothing;
   /** Botão do filtro do cabeçalho (funil), depois da seta de ordenação. */
   filterButton?: TemplateResult | typeof nothing;
+  /** Botão "⋮" do menu do cabeçalho, na ponta (depois do funil). */
+  menuButton?: TemplateResult | typeof nothing;
   /** A coluna tem filtro (classe `filtered`). */
   filtered?: boolean;
   /** Descrição do cabeçalho (prioridade da ordenação, fixada, filtrada; spec 17, A14). */
@@ -95,6 +97,13 @@ export const fromInteractiveContent = (event: Event): boolean => {
 /** Enter/Espaço ativam como o clique (com os mesmos modificadores). */
 export const isActivationKey = (event: KeyboardEvent): boolean =>
   event.key === 'Enter' || event.key === ' ';
+
+/**
+ * Layout do cabeçalho (como o AG Grid): início/centro `[texto][seta] …
+ * [funil][⋮]`; fim (números) `[⋮][funil] … [seta][texto]` — o CSS inverte
+ * pela direção lógica (RTL espelha sozinho). Os botões ficam sempre no
+ * lugar (espaço reservado); o texto corta com reticências.
+ */
 
 /**
  * Seta da ordenação. O número da prioridade vem por CSS (`data-sort-index`)
@@ -171,6 +180,7 @@ export const renderHeaderCell = ({
   onKeyDown,
   trailing = nothing,
   filterButton = nothing,
+  menuButton = nothing,
   filtered = false,
   description = '',
   keyShortcuts,
@@ -209,6 +219,9 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}${
+    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${renderSortIndicator(order, sortIndex)}${
+      filterButton === nothing && menuButton === nothing
+        ? nothing
+        : html`<span class="header-buttons">${filterButton}${menuButton}</span>`}</span>${trailing}${
       renderDescription(idSuffix, description)}
   </th>`;

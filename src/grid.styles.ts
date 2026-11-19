@@ -739,13 +739,101 @@ export const styles = css`
     min-width: 1px;
   }
 
-  /* inline: o \`text-align\` do <th> (alinhamento da coluna, RTL) posiciona o conteúdo. */
+  /* inline: o \`text-align\` do <th> (alinhamento da coluna, RTL) posiciona o conteúdo (banda). */
   .header-content {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     max-width: 100%;
     vertical-align: middle;
+  }
+
+  /*
+   * Folha (como o AG Grid): início/centro \`[texto][seta] … [funil][⋮]\`, com o
+   * "⋮" na ponta do fim; fim (números) \`[⋮][funil] … [seta][texto]\`. Direção
+   * lógica: RTL espelha sozinho. Os botões ficam sempre no lugar (espaço
+   * reservado, nada se desloca no hover); o texto corta com reticências.
+   */
+  .header-column > .header-content {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .header-column.align-end > .header-content {
+    flex-direction: row-reverse;
+  }
+
+  /* Auto-ajuste (medição): o conteúdo no tamanho natural, sem a sobra entre o texto e os botões. */
+  .header-column.measuring > .header-content {
+    display: inline-flex;
+    width: max-content;
+    max-width: none;
+  }
+
+  .header-column > .header-content > .header-text {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .header-buttons {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    margin-inline-start: auto;
+  }
+
+  .header-column.align-end .header-buttons {
+    flex-direction: row-reverse;
+    margin-inline: 0 auto;
+  }
+
+  /* Centro: texto e seta no meio do espaço que sobra antes dos botões. */
+  .header-column.align-center > .header-content > .header-text {
+    margin-inline-start: auto;
+  }
+
+  .header-column.align-center > .header-content:not(:has(> .header-buttons)) > :last-child {
+    margin-inline-end: auto;
+  }
+
+  /*
+   * Botão "⋮" do menu do cabeçalho: sempre visível, alvo de 24px (WCAG
+   * 2.5.8), ícone na cor dos controles (≥ 3:1 com o fundo, WCAG 1.4.11).
+   */
+  .column-header-menu-button {
+    all: unset;
+    box-sizing: border-box;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--u-grid-column-header-menu-button-size, 24px);
+    height: var(--u-grid-column-header-menu-button-size, 24px);
+    border-radius: 50%;
+    font-size: 1.125rem;
+    cursor: pointer;
+    color: var(--_toggle-color);
+  }
+
+  /* Três pontos (desenho próprio) em máscara: nenhum nó de SVG por cabeçalho (spec 16). */
+  .column-header-menu-button::before {
+    content: "";
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='5.5' r='2'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3Ccircle cx='12' cy='18.5' r='2'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  .column-header-menu-button:hover,
+  .column-header-menu-button[aria-expanded="true"] {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .column-header-menu-button:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: -2px;
   }
 
   .header-column.sortable,
@@ -988,7 +1076,7 @@ export const styles = css`
   }
 
   .column-chooser-button:focus-visible,
-  .column-chooser-pin:focus-visible,
+  .column-chooser-search:focus-visible,
   .column-chooser-check input:focus-visible {
     outline: var(--_focus-ring);
     outline-offset: 2px;
@@ -1025,28 +1113,81 @@ export const styles = css`
     padding: 0;
   }
 
-  .column-chooser-item {
+  /* Busca (como o AG Grid): limite do campo ≥ 3:1 (WCAG 1.4.11). */
+  .column-chooser-search {
+    box-sizing: border-box;
+    display: block;
+    width: calc(100% - 32px);
+    height: 36px;
+    margin: 0 16px 4px;
+    padding-inline: 12px;
+    border: 1px solid var(--u-color-outline, rgb(121, 116, 126));
+    border-radius: var(--u-shape-corner-extra-small, 4px);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+  }
+
+  .column-chooser-search:focus-visible {
+    outline-offset: -1px;
+  }
+
+  /* "Mostrar todas": a caixa alinhada com as dos itens (depois da alça). */
+  .column-chooser-all {
+    min-height: 40px;
+    padding-inline: 36px 16px;
+    border-block-end: 1px solid var(--_border-color);
+  }
+
+  .column-chooser-row {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     min-height: 40px;
-    padding-inline: 16px 8px;
+    padding-inline: 8px 16px;
+  }
+
+  /* Sem alça (item único na lista): a caixa no mesmo lugar. */
+  .column-chooser-row:not(:has(> .column-chooser-drag-handle)) {
+    padding-inline-start: 36px;
+  }
+
+  /* Alça de arrasto (só ponteiro; o teclado usa Alt+Shift+↑/↓ na caixa). */
+  .column-chooser-drag-handle {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    font-size: 18px;
+    color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .column-chooser-item.dragging {
+    opacity: 0.5;
+  }
+
+  .column-chooser-item.dragging .column-chooser-drag-handle {
+    cursor: grabbing;
+  }
+
+  .column-chooser-item.drop-before > .column-chooser-row {
+    box-shadow: inset 0 2px 0 var(--u-color-primary, rgb(103, 80, 164));
+  }
+
+  .column-chooser-item.drop-after > .column-chooser-row {
+    box-shadow: inset 0 -2px 0 var(--u-color-primary, rgb(103, 80, 164));
   }
 
   /* Banda no seletor (frente 13): as colunas dela numa lista aninhada, recuada. */
-  .column-chooser-band {
-    flex-wrap: wrap;
-  }
-
   .column-chooser-nested {
-    flex-basis: 100%;
     margin: 0;
     padding: 0;
     padding-inline-start: 16px;
-  }
-
-  .column-chooser-nested .column-chooser-item {
-    padding-inline-end: 0;
   }
 
   .column-chooser-check {
@@ -1060,21 +1201,12 @@ export const styles = css`
   }
 
   /* Coluna oculta por falta de espaço (spec 21): a dica numa linha própria, sob o rótulo. */
-  .column-chooser-adaptive {
-    flex-wrap: wrap;
-  }
-
   .column-chooser-hint {
-    order: 1;
-    flex-basis: 100%;
-    padding-inline-start: 30px;
+    display: block;
+    padding-inline-start: 66px;
     padding-block-end: 6px;
     font-size: 0.75rem;
     color: var(--u-color-on-surface-variant, rgb(73, 69, 79));
-  }
-
-  .column-chooser-nested {
-    order: 2;
   }
 
   .column-chooser-check span {
@@ -1089,36 +1221,6 @@ export const styles = css`
     height: 18px;
     margin: 0;
     accent-color: var(--u-color-primary, rgb(103, 80, 164));
-  }
-
-  .column-chooser-pin {
-    all: unset;
-    box-sizing: border-box;
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    font-size: 18px;
-    cursor: pointer;
-    opacity: 0.55;
-  }
-
-  .column-chooser-pin:hover {
-    opacity: 1;
-    background-color: color-mix(in srgb, currentColor 8%, transparent);
-  }
-
-  .column-chooser-pin[aria-pressed="true"] {
-    opacity: 1;
-    color: var(--u-color-primary, rgb(103, 80, 164));
-    background-color: color-mix(in srgb, currentColor 12%, transparent);
-  }
-
-  :host(:dir(rtl)) .column-chooser-pin svg {
-    transform: scaleX(-1);
   }
 
   .column-chooser-drop-hint {
@@ -1310,6 +1412,35 @@ export const styles = css`
     border-block-start: 1px solid var(--_border-color);
   }
 
+  /* Submenu ("Fixar coluna ▸"): seta no fim do item pai, espelhada em RTL. */
+  .menu-item-arrow {
+    flex: none;
+    margin-inline-start: auto;
+    padding-inline-start: 16px;
+  }
+
+  .menu-item-arrow:dir(rtl) {
+    transform: scaleX(-1);
+  }
+
+  .menu-item-parent[aria-expanded="true"] {
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  /* Itens de rádio: a marca do lado atual antes do texto (espaço reservado em todos). */
+  .menu-item-check {
+    flex: none;
+    margin-inline: -4px 8px;
+  }
+
+  /* Nada anima nos menus; um tema que traga transição não a aplica com movimento reduzido. */
+  @media (prefers-reduced-motion: reduce) {
+    .grid-menu,
+    .grid-menu .menu-item {
+      transition: none;
+    }
+  }
+
   /* Toque: alvos maiores nos menus (WCAG 2.5.8 já atende com 40px; 48px é o do Material). */
   @media (pointer: coarse) {
     .menu-item {
@@ -1359,7 +1490,8 @@ export const styles = css`
 
   /* Único rótulo visível do campo: ≥ 4,5:1 sobre o fundo do campo (WCAG 1.4.3, spec 17). */
   .search-input::placeholder,
-  .header-filter-search::placeholder {
+  .header-filter-search::placeholder,
+  .column-chooser-search::placeholder {
     color: var(--_variant-color);
     opacity: 1;
   }
@@ -1521,19 +1653,15 @@ export const styles = css`
     opacity: 0.75;
   }
 
+  /* Mesmo alvo do "⋮" (24px); ícone sem transparência (≥ 3:1 em repouso, WCAG 1.4.11). */
   .header-filter-button {
-    width: 24px;
-    height: 24px;
-    margin-inline-start: 2px;
+    width: var(--u-grid-column-header-menu-button-size, 24px);
+    height: var(--u-grid-column-header-menu-button-size, 24px);
     font-size: 1rem;
-    opacity: 0.6;
   }
 
-  .header-column:hover .header-filter-button,
-  .header-filter-button:focus-visible,
-  .header-filter-button[aria-expanded="true"],
-  .header-filter-button.active {
-    opacity: 1;
+  .header-buttons > .header-filter-button:focus-visible {
+    outline-offset: -2px;
   }
 
   .header-filter-button.active {
@@ -1837,8 +1965,9 @@ export const styles = css`
     }
 
     .header-filter-button.active,
-    .column-chooser-pin[aria-pressed="true"],
     .column-chooser-button[aria-expanded="true"],
+    .column-header-menu-button[aria-expanded="true"],
+    .menu-item-parent[aria-expanded="true"],
     .filter-menu-item[aria-checked="true"] {
       outline: 2px solid Highlight;
       outline-offset: -2px;
@@ -1874,12 +2003,22 @@ export const styles = css`
       border-block-start-color: CanvasText;
     }
 
+    /* Indicador de soltar do seletor (o alto contraste tira o box-shadow). */
+    .column-chooser-item.drop-before > .column-chooser-row {
+      border-block-start: 2px solid Highlight;
+    }
+
+    .column-chooser-item.drop-after > .column-chooser-row {
+      border-block-end: 2px solid Highlight;
+    }
+
     .toolbar-button[aria-expanded="true"] {
       outline: 2px solid Highlight;
       outline-offset: -2px;
     }
 
     .toolbar-more-button::before,
+    .column-header-menu-button::before,
     .filter-value-arrow {
       forced-color-adjust: none;
       background-color: ButtonText;

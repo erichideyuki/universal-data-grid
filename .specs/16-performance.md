@@ -311,3 +311,14 @@ piorar a linha de base além da tolerância nem estourar os orçamentos;
 recurso novo entra com cenário/métrica de perf no
 `src/grid.perf.browser.test.ts` (e a linha de base regravada no mesmo
 commit, com o porquê).
+
+## Linha de base: botão "⋮" do cabeçalho (2026-11-19)
+
+O menu do cabeçalho e o seletor no modelo do AG Grid (spec 18) põem um
+botão "⋮" sempre visível em cada cabeçalho de folha renderizado (botão,
+nome oculto com o rótulo da coluna no idioma do conteúdo e o invólucro
+`.header-buttons`). Custo por cabeçalho VISÍVEL, não por linha: ~4 nós por
+cabeçalho (o ícone é máscara CSS; a 1ª versão com `<svg>` custava ~8).
+Só `domNodes` passou da tolerância (13 cenários, ex. `flat-1m` 585 → 685,
+`menus-1m` 217 → 243); os tempos ficaram dentro da linha de base nas duas
+rodadas. Regravado só o `domNodes` desses cenários, no mesmo commit.

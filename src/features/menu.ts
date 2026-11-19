@@ -1,4 +1,4 @@
-import { html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from 'lit';
+import { html, nothing, type ReactiveController, type ReactiveControllerHost, svg, type TemplateResult } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { map } from 'lit/directives/map.js';
 
@@ -10,6 +10,11 @@ import { map } from 'lit/directives/map.js';
  * roubar o foco (spec 17). Popover manual (camada do topo), posicionado no
  * ponto do clique ou sob o elemento de origem, preso à janela e espelhado em
  * RTL.
+ *
+ * Submenu (um nível, "Fixar coluna ▸"): painel irmão do menu (um `menu` não
+ * fica dentro de outro na árvore ARIA), aberto por →/Enter/Espaço (← em RTL)
+ * com o foco no primeiro item; ←/Esc (→ em RTL) fecham e devolvem o foco ao
+ * item pai; Tab fecha a cadeia toda.
  */
 
 export interface MenuHost extends ReactiveControllerHost {
@@ -57,6 +62,8 @@ const foldMenuText = (text: string, lang: string | undefined): string => {
 const resolveTarget = (target: MenuReturnFocus): HTMLElement | null =>
   typeof target === 'function' ? target() : target;
 
+const isEnabled = (item: HTMLElement): boolean => item.getAttribute('aria-disabled') !== 'true';
+
 export class MenuController<D = unknown> implements ReactiveController {
   readonly #host: MenuHost;
   readonly #panelClass: string;
@@ -65,6 +72,11 @@ export class MenuController<D = unknown> implements ReactiveController {
   #restoreFocus: MenuReturnFocus = null;
   #typeahead = '';
   #typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Item pai (chave) do submenu aberto. */
+  #submenu: string | null = null;
+  #submenuShown = false;
+  /** O submenu abriu pelo teclado: o foco vai ao primeiro item dele. */
+  #submenuFocus = false;
 
   constructor(host: MenuHost, panelClass: string) {
     this.#host = host;
@@ -84,6 +96,11 @@ export class MenuController<D = unknown> implements ReactiveController {
     return this.#anchor?.opener ?? null;
   }
 
+  /** Chave do item cujo submenu está aberto (`null`: nenhum). */
+  get submenu(): string | null {
+    return this.#submenu;
+  }
+
   /** Timer da busca por letra pendente (diagnóstico de memória). */
   get timers(): number {
     return this.#typeaheadTimer === undefined ? 0 : 1;
@@ -92,12 +109,14 @@ export class MenuController<D = unknown> implements ReactiveController {
   show(anchor: MenuAnchor<D>): void {
     if (this.#anchor) {
       // Outro menu deste controlador: o painel novo se posiciona e recebe o foco de novo.
+      this.#submenuPanel?.hidePopover?.();
       this.#panel?.hidePopover?.();
     }
 
     this.#anchor = anchor;
     this.#shown = false;
     this.#restoreFocus = null;
+    this.#resetSubmenu();
     this.#host.requestUpdate();
   }
 
@@ -131,9 +150,73 @@ export class MenuController<D = unknown> implements ReactiveController {
     }
   }
 
+  /** Abre o submenu do item `key`; com `focusFirst` (teclado), o foco vai ao primeiro item dele. */
+  openSubmenu(key: string, focusFirst = false): void {
+    if (!this.#anchor) {
+      return;
+    }
+
+    if (this.#submenu === key) {
+      if (focusFirst) {
+        if (this.#submenuShown) {
+          this.#focusFirstIn(this.#submenuPanel);
+        } else {
+          this.#submenuFocus = true;
+        }
+      }
+
+      return;
+    }
+
+    this.#submenuPanel?.hidePopover?.();
+    this.#submenu = key;
+    this.#submenuShown = false;
+    this.#submenuFocus = focusFirst;
+    this.#host.requestUpdate();
+  }
+
+  /** Fecha o submenu; com `focusParent`, o foco volta ao item que o abriu. */
+  closeSubmenu(focusParent = false): void {
+    const key = this.#submenu;
+
+    if (key === null) {
+      return;
+    }
+
+    const parent = this.#parentItem(key);
+    const submenu = this.#submenuPanel;
+    const active = (this.#host.renderRoot as ShadowRoot).activeElement as Element | null | undefined;
+    // O foco estava no submenu (que sai do DOM): volta ao pai, nunca ao <body> (fechado pelo ponteiro também).
+    const hadFocus = !!active && !!submenu?.contains(active);
+    submenu?.hidePopover?.();
+    this.#resetSubmenu();
+    this.#host.requestUpdate();
+
+    if (focusParent || hadFocus) {
+      parent?.focus();
+    }
+  }
+
+  /** Ponteiro sobre um item do menu de cima: abre o submenu dele (sem foco) ou fecha o aberto. */
+  hoverItem(key: string, hasSubmenu: boolean): void {
+    if (hasSubmenu) {
+      this.openSubmenu(key);
+    } else {
+      this.closeSubmenu();
+    }
+  }
+
+  #resetSubmenu(): void {
+    this.#submenu = null;
+    this.#submenuShown = false;
+    this.#submenuFocus = false;
+  }
+
   #close(): void {
     this.#anchor = null;
     this.#clearTypeahead();
+    this.#submenuPanel?.hidePopover?.();
+    this.#resetSubmenu();
     this.#panel?.hidePopover?.();
     document.removeEventListener('pointerdown', this.#outsidePointerDown, true);
     this.#host.requestUpdate();
@@ -143,8 +226,26 @@ export class MenuController<D = unknown> implements ReactiveController {
     return this.#host.renderRoot.querySelector<HTMLElement>(`.${this.#panelClass}`);
   }
 
+  get #submenuPanel(): HTMLElement | null {
+    return this.#host.renderRoot.querySelector<HTMLElement>(`.${this.#panelClass}-submenu`);
+  }
+
+  /** Itens de um painel: `menuitem` e `menuitemradio` (também dentro de `group`). */
+  #itemsOf(panel: Element | null | undefined): HTMLElement[] {
+    return [...panel?.querySelectorAll<HTMLElement>('[role^=menuitem]') ?? []];
+  }
+
   get #items(): HTMLElement[] {
-    return [...this.#panel?.querySelectorAll<HTMLElement>('[role=menuitem]') ?? []];
+    return this.#itemsOf(this.#panel);
+  }
+
+  #parentItem(key: string): HTMLElement | null {
+    return this.#items.find(item => item.getAttribute('data-submenu') === key) ?? null;
+  }
+
+  #focusFirstIn(panel: Element | null): void {
+    const items = this.#itemsOf(panel);
+    (items.find(isEnabled) ?? items[0])?.focus();
   }
 
   hostUpdated(): void {
@@ -161,21 +262,56 @@ export class MenuController<D = unknown> implements ReactiveController {
 
     const panel = this.#panel;
 
-    if (!panel || this.#shown) {
+    if (!panel) {
       return;
     }
 
-    this.#shown = true;
+    if (!this.#shown) {
+      this.#shown = true;
 
-    if (typeof panel.showPopover === 'function' && !panel.matches(':popover-open')) {
-      panel.showPopover();
+      if (typeof panel.showPopover === 'function' && !panel.matches(':popover-open')) {
+        panel.showPopover();
+      }
+
+      this.#position(panel, this.#anchor);
+      document.addEventListener('pointerdown', this.#outsidePointerDown, true);
+      const items = this.#items;
+      const enabled = items.filter(isEnabled);
+      ((this.#anchor.focusLast ? enabled[enabled.length - 1] : enabled[0]) ?? items[0])?.focus();
     }
 
-    this.#position(panel, this.#anchor);
-    document.addEventListener('pointerdown', this.#outsidePointerDown, true);
-    const items = this.#items;
-    const enabled = items.filter(item => item.getAttribute('aria-disabled') !== 'true');
-    ((this.#anchor.focusLast ? enabled[enabled.length - 1] : enabled[0]) ?? items[0])?.focus();
+    this.#showSubmenu();
+  }
+
+  /** Submenu pedido e ainda não mostrado: camada do topo, ao lado do item pai, foco (teclado). */
+  #showSubmenu(): void {
+    const key = this.#submenu;
+
+    if (key === null || this.#submenuShown) {
+      return;
+    }
+
+    const submenu = this.#submenuPanel;
+    const parent = this.#parentItem(key);
+
+    // O item pai não existe neste menu: nada a abrir.
+    if (!submenu || !parent) {
+      this.#resetSubmenu();
+      return;
+    }
+
+    this.#submenuShown = true;
+
+    if (typeof submenu.showPopover === 'function' && !submenu.matches(':popover-open')) {
+      submenu.showPopover();
+    }
+
+    this.#positionSubmenu(submenu, parent);
+
+    if (this.#submenuFocus) {
+      this.#submenuFocus = false;
+      this.#focusFirstIn(submenu);
+    }
   }
 
   hostDisconnected(): void {
@@ -183,6 +319,7 @@ export class MenuController<D = unknown> implements ReactiveController {
     this.#anchor = null;
     this.#shown = false;
     this.#restoreFocus = null;
+    this.#resetSubmenu();
     this.#clearTypeahead();
   }
 
@@ -197,9 +334,30 @@ export class MenuController<D = unknown> implements ReactiveController {
       return;
     }
 
-    const items = this.#items;
-    const index = items.indexOf(event.composedPath()[0] as HTMLElement);
+    const target = event.composedPath()[0] as HTMLElement;
+    const submenu = this.#submenuPanel;
+    const inSubmenu = !!submenu?.contains(target);
+    const items = inSubmenu ? this.#itemsOf(submenu) : this.#items;
+    const index = items.indexOf(target);
+    const parentKey = inSubmenu ? undefined : target.getAttribute?.('data-submenu') ?? undefined;
+    // As setas de abrir/fechar o submenu seguem a direção do texto (RTL troca).
+    const rtl = this.#host._isRtl();
+    const openKey = rtl ? 'ArrowLeft' : 'ArrowRight';
+    const closeKey = rtl ? 'ArrowRight' : 'ArrowLeft';
     let next: number | undefined;
+
+    if (parentKey !== undefined && (event.key === openKey || event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      this.openSubmenu(parentKey, true);
+      return;
+    }
+
+    if (inSubmenu && (event.key === closeKey || event.key === 'Escape')) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeSubmenu(true);
+      return;
+    }
 
     switch (event.key) {
       case 'ArrowDown':
@@ -233,7 +391,14 @@ export class MenuController<D = unknown> implements ReactiveController {
     }
 
     event.preventDefault();
-    items[next]?.focus();
+    const item = items[next];
+
+    // Andar no menu de cima fecha o submenu aberto (o foco sai do item pai).
+    if (!inSubmenu && item !== target) {
+      this.closeSubmenu();
+    }
+
+    item?.focus();
   };
 
   /** Busca por letra (APG): sem modificadores, Espaço fora; várias letras em 500 ms; sem achar, não move. */
@@ -242,7 +407,7 @@ export class MenuController<D = unknown> implements ReactiveController {
       return undefined;
     }
 
-    const panel = this.#panel;
+    const panel = items[0].closest('[role=menu]') ?? this.#panel;
     const lang = panel?.closest('[lang]')?.getAttribute('lang') ?? undefined;
     const char = foldMenuText(event.key, lang);
 
@@ -304,12 +469,36 @@ export class MenuController<D = unknown> implements ReactiveController {
     panel.style.top = `${Math.round(Math.max(margin, Math.min(top, viewportHeight - height - margin)))}px`;
   }
 
+  /** Ao lado do item pai (no lado do fim; sem espaço, no outro), preso à janela. */
+  #positionSubmenu(submenu: HTMLElement, parent: HTMLElement): void {
+    const margin = 8;
+    const rect = parent.getBoundingClientRect();
+    const width = submenu.offsetWidth;
+    const height = submenu.offsetHeight;
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const rtl = this.#host._isRtl();
+    let left = rtl ? rect.left - width : rect.right;
+
+    if (!rtl && left + width > viewportWidth - margin && rect.left - width >= margin) {
+      left = rect.left - width;
+    } else if (rtl && left < margin && rect.right + width <= viewportWidth - margin) {
+      left = rect.right;
+    }
+
+    // O 1º item na altura do pai (o painel tem 8px de respiro em cima).
+    const top = rect.top - 8;
+    submenu.style.left = `${Math.round(Math.max(margin, Math.min(left, viewportWidth - width - margin)))}px`;
+    submenu.style.top = `${Math.round(Math.max(margin, Math.min(top, viewportHeight - height - margin)))}px`;
+  }
+
   readonly #outsidePointerDown = (event: PointerEvent): void => {
     const opener = this.#anchor?.opener;
     // O botão que abriu (aria-expanded) trata o próprio clique: fecha, não reabre.
     const keep = event.composedPath().some(target =>
       target instanceof HTMLElement
       && (target.classList.contains(this.#panelClass)
+        || target.classList.contains(`${this.#panelClass}-submenu`)
         || (!!opener && target === opener && target.getAttribute('aria-expanded') === 'true')));
 
     if (!keep) {
@@ -332,8 +521,12 @@ export interface MenuEntry {
   suffixLang?: string;
   /** Idioma do texto: o da i18n nos embutidos; o do conteúdo do hospedeiro (ou `''`) nos dele. */
   lang?: string;
-  /** O item abre um diálogo (seletor de colunas pelo "mais"). */
+  /** O item abre um diálogo (seletor de colunas pelo "mais" e pelo menu do cabeçalho). */
   hasPopup?: 'dialog';
+  /** `menuitemradio` com este `aria-checked` (itens do submenu de fixar); ausente = `menuitem`. */
+  checked?: boolean;
+  /** Submenu: o item abre um `menu` com estes itens num `group` com o nome do item. */
+  children?: readonly MenuEntry[];
 }
 
 export interface MenuRenderContext {
@@ -351,38 +544,103 @@ export interface MenuRenderContext {
   /** Ativação de um item `aria-disabled` (não age; o grid pode anunciar o porquê). */
   onDisabledAction?: (key: string) => void;
   onKeyDown: (event: KeyboardEvent) => void;
+  /** Controlador do menu (submenu aberto, ponteiro sobre os itens); sem ele, nada de submenu. */
+  controller?: MenuController<any>;
 }
 
-/** O menu (sem estado): itens `menuitem` com foco móvel e separadores. */
-export const renderMenu = ({ className, part, label, labelledBy, labelLang, entries, onAction, onDisabledAction, onKeyDown }: MenuRenderContext): TemplateResult => html`
-  <div
-    class="grid-menu ${className}"
-    part=${part}
-    .popover=${'manual'}
-    role="menu"
-    lang=${ifDefined(labelLang)}
-    aria-label=${ifDefined(label)}
-    aria-labelledby=${ifDefined(labelledBy)}
-    @contextmenu=${(event: Event) => event.preventDefault()}
-    @keydown=${onKeyDown}>
-    ${map(entries, (entry, index) => html`${entry.separatorBefore && index > 0
-      ? html`<div class="menu-separator" part="menu-separator" role="separator"></div>`
-      : nothing}<button
-        class="menu-item group-panel-menu-item"
-        part="menu-item"
-        type="button"
-        role="menuitem"
-        tabindex="-1"
-        lang=${ifDefined(entry.lang)}
-        aria-haspopup=${ifDefined(entry.hasPopup)}
-        aria-disabled=${entry.disabled ? 'true' : 'false'}
-        @click=${() => {
-          if (entry.disabled) {
-            onDisabledAction?.(entry.key);
-          } else {
-            onAction(entry.key);
-          }
-        }}><span class="menu-item-text">${entry.label}</span>${entry.hiddenSuffix
-          ? html`<span class="visually-hidden" lang=${ifDefined(entry.suffixLang)}> ${entry.hiddenSuffix}</span>`
-          : nothing}</button>`)}
-  </div>`;
+/** Seta do item com submenu (espelhada em RTL pelo CSS). */
+const submenuArrow = svg`<path d="M9.3 6.7 10.7 5.3l6.7 6.7-6.7 6.7-1.4-1.4 5.3-5.3z"/>`;
+/** Marca do `menuitemradio` marcado. */
+const checkMark = svg`<path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6 11-11-1.4-1.4z"/>`;
+
+const renderItem = (entry: MenuEntry, context: MenuRenderContext, submenuId: string, inSubmenu: boolean): TemplateResult => {
+  const { onAction, onDisabledAction, controller } = context;
+  const parent = !inSubmenu && !!entry.children?.length && !!controller;
+  const expanded = parent && controller.submenu === entry.key;
+  const radio = entry.checked !== undefined;
+
+  return html`<button
+    class="menu-item group-panel-menu-item ${parent ? 'menu-item-parent' : ''} ${radio ? 'menu-item-radio' : ''}"
+    part="menu-item"
+    type="button"
+    role=${radio ? 'menuitemradio' : 'menuitem'}
+    tabindex="-1"
+    lang=${ifDefined(entry.lang)}
+    data-submenu=${ifDefined(parent ? entry.key : undefined)}
+    aria-haspopup=${ifDefined(parent ? 'menu' : entry.hasPopup)}
+    aria-expanded=${ifDefined(parent ? (expanded ? 'true' : 'false') : undefined)}
+    aria-controls=${ifDefined(expanded ? submenuId : undefined)}
+    aria-checked=${ifDefined(radio ? (entry.checked ? 'true' : 'false') : undefined)}
+    aria-disabled=${entry.disabled ? 'true' : 'false'}
+    @pointerenter=${!inSubmenu && controller
+      ? (event: PointerEvent) => {
+        if (event.pointerType !== 'touch') {
+          controller.hoverItem(entry.key, parent);
+        }
+      }
+      : nothing}
+    @click=${() => {
+      if (parent) {
+        if (expanded) {
+          controller.closeSubmenu();
+        } else {
+          controller.openSubmenu(entry.key);
+        }
+      } else if (entry.disabled) {
+        onDisabledAction?.(entry.key);
+      } else {
+        onAction(entry.key);
+      }
+    }}>${radio
+      ? html`<svg class="menu-item-check" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">${
+        entry.checked ? checkMark : nothing}</svg>`
+      : nothing}<span class="menu-item-text">${entry.label}</span>${entry.hiddenSuffix
+      ? html`<span class="visually-hidden" lang=${ifDefined(entry.suffixLang)}> ${entry.hiddenSuffix}</span>`
+      : nothing}${parent
+      ? html`<svg class="menu-item-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">${submenuArrow}</svg>`
+      : nothing}</button>`;
+};
+
+const renderEntries = (entries: readonly MenuEntry[], context: MenuRenderContext, submenuId: string, inSubmenu: boolean) =>
+  map(entries, (entry, index) => html`${entry.separatorBefore && index > 0
+    ? html`<div class="menu-separator" part="menu-separator" role="separator"></div>`
+    : nothing}${renderItem(entry, context, submenuId, inSubmenu)}`);
+
+/**
+ * O menu (sem estado): itens com foco móvel e separadores. O submenu aberto
+ * vem como painel irmão (`role="menu"` com um `group` nomeado pelo item pai),
+ * também na camada do topo.
+ */
+export const renderMenu = (context: MenuRenderContext): TemplateResult => {
+  const { className, part, label, labelledBy, labelLang, entries, onKeyDown, controller } = context;
+  const submenuId = `${className.split(' ')[0]}-submenu`;
+  const open = controller?.submenu ?? null;
+  const parent = open === null ? undefined : entries.find(entry => entry.key === open && entry.children?.length);
+
+  return html`
+    <div
+      class="grid-menu ${className}"
+      part=${part}
+      .popover=${'manual'}
+      role="menu"
+      lang=${ifDefined(labelLang)}
+      aria-label=${ifDefined(label)}
+      aria-labelledby=${ifDefined(labelledBy)}
+      @contextmenu=${(event: Event) => event.preventDefault()}
+      @keydown=${onKeyDown}>
+      ${renderEntries(entries, context, submenuId, false)}
+    </div>${parent
+      ? html`<div
+        class="grid-menu grid-submenu ${submenuId}"
+        id=${submenuId}
+        part=${part}
+        .popover=${'manual'}
+        role="menu"
+        lang=${ifDefined(labelLang)}
+        aria-label=${parent.label}
+        @contextmenu=${(event: Event) => event.preventDefault()}
+        @keydown=${onKeyDown}>
+        <div class="menu-group" role="group" aria-label=${parent.label} lang=${ifDefined(parent.lang)}>${renderEntries(parent.children!, context, submenuId, true)}</div>
+      </div>`
+      : nothing}`;
+};

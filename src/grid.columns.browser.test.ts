@@ -328,7 +328,7 @@ describe('colunas fixas', () => {
 
 describe('visibilidade e seletor', () => {
   const chooser = (grid: DataGrid) => root(grid).querySelector<HTMLElement>('.column-chooser');
-  const checkboxes = (grid: DataGrid) => [...chooser(grid)!.querySelectorAll<HTMLInputElement>('input[type=checkbox]')];
+  const checkboxes = (grid: DataGrid) => [...chooser(grid)!.querySelectorAll<HTMLInputElement>('.column-chooser-list input[type=checkbox]')];
 
   it('visible: false oculta e o aria-colcount conta só as visíveis', async () => {
     const grid = await createGrid({
@@ -360,7 +360,8 @@ describe('visibilidade e seletor', () => {
     expect(panel.getAttribute('role')).toBe('dialog');
     expect(panel.matches(':popover-open')).toBe(true);
     expect(checkboxes(grid).map(c => c.closest('label')!.textContent.trim())).toEqual(['A', 'B']);
-    expect(root(grid).activeElement).toBe(checkboxes(grid)[0]);
+    // Foco inicial na busca (como o AG Grid).
+    expect(root(grid).activeElement).toBe(chooser(grid)!.querySelector('.column-chooser-search'));
 
     checkboxes(grid)[0].click();
     await settle(grid);
@@ -398,23 +399,28 @@ describe('visibilidade e seletor', () => {
     expect(last.checked).toBe(true);
   });
 
-  it('fixar pelo seletor move a coluna para o bloco e não altera o hospedeiro', async () => {
+  it('fixar pelo menu do cabeçalho move a coluna para o bloco e não altera o hospedeiro', async () => {
     const columns: GridColumnDef[] = [{ path: 'a', label: 'A' }, { path: 'b', label: 'B' }, { path: 'c', label: 'C' }];
     const grid = await createGrid({ columns, items: [{}] });
-    grid.openColumnChooser();
-    await settle(grid);
 
-    const pinEnd = chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-end')[0];
-    expect(pinEnd.getAttribute('aria-pressed')).toBe('false');
-    pinEnd.click();
-    await settle(grid);
+    const pin = async (column: GridColumnDef, side: string) => {
+      grid.openContextMenu({ column });
+      await settle(grid);
+      root(grid).querySelector<HTMLElement>('.context-menu-panel [aria-haspopup=menu]')!.click();
+      await settle(grid);
+      const radios = [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel-submenu [role=menuitemradio]')];
+      const radio = radios.find(item => item.textContent.trim() === side)!;
+      const checked = radio.getAttribute('aria-checked');
+      radio.click();
+      await settle(grid);
+      return checked;
+    };
+
+    expect(await pin(columns[0], 'Pin to end')).toBe('false');
     expect(headerLabels(grid)).toEqual(['B', 'C', 'A']);
     expect(headers(grid)[2].classList.contains('fixed-end')).toBe(true);
 
-    const pinned = [...chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-end')].find(b => b.getAttribute('aria-pressed') === 'true')!;
-    expect(pinned.title).toBe('Unpin');
-    pinned.click();
-    await settle(grid);
+    expect(await pin(columns[0], 'Unpin')).toBe('false');
     expect(headers(grid).some(th => th.classList.contains('fixed'))).toBe(false);
 
     for (const column of columns) {
@@ -567,7 +573,7 @@ describe('com ordenação (frente 03)', () => {
     grid.sortColumn(columns[0], 'desc');
     grid.openColumnChooser();
     await settle(grid);
-    root(grid).querySelector<HTMLInputElement>('.column-chooser input[type=checkbox]')!.click();
+    root(grid).querySelector<HTMLInputElement>('.column-chooser-list input[type=checkbox]')!.click();
     await settle(grid);
     expect(headerLabels(grid)).toEqual(['City']);
     expect(grid.getSorting().map(s => s.column.label)).toEqual(['Name']);

@@ -102,6 +102,18 @@ const key = (target: HTMLElement, name: string, init: KeyboardEventInit = {}): v
   target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, composed: true, ...init }));
 };
 
+/** Fixa/solta pelo submenu "Fixar coluna ▸" do menu do cabeçalho. */
+const pinFromMenu = async (grid: DataGrid, column: GridColumnDef, side: string): Promise<void> => {
+  grid.openContextMenu({ column });
+  await settle(grid);
+  root(grid).querySelector<HTMLElement>('.context-menu-panel [aria-haspopup=menu]')!.click();
+  await settle(grid);
+  [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel-submenu [role=menuitemradio]')].find(item => item.textContent.trim() === side)!.click();
+  await settle(grid);
+};
+
+const listBoxes = (grid: DataGrid) => [...chooser(grid)!.querySelectorAll<HTMLInputElement>('.column-chooser-list input[type=checkbox]')];
+
 const scrollHorizontally = async (grid: DataGrid, left: number): Promise<void> => {
   const scroller = grid._scrollContainerRef.value!;
   scroller.scrollLeft = left;
@@ -123,13 +135,26 @@ const exercise = async (grid: DataGrid, columns: GridColumnDef[]): Promise<void>
   await scrollHorizontally(grid, 400);
   await scrollHorizontally(grid, 0);
 
+  // Fixar e soltar pelo menu do cabeçalho (submenu).
+  await pinFromMenu(grid, columns[7], 'Pin to start');
+  await pinFromMenu(grid, columns[7], 'Unpin');
+
   root(grid).querySelector<HTMLButtonElement>('.column-chooser-button')!.click();
   await settle(grid);
-  chooser(grid)!.querySelectorAll<HTMLInputElement>('input[type=checkbox]')[6].click();
+  listBoxes(grid)[6].click();
   await settle(grid);
-  chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-start')[7].click();
+
+  // Busca (anúncio com espera) e reordenar pelo teclado, ida e volta.
+  const search = chooser(grid)!.querySelector<HTMLInputElement>('.column-chooser-search')!;
+  search.value = 'col';
+  search.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   await settle(grid);
-  chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-start')[7].click();
+  search.value = '';
+  search.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  await settle(grid);
+  key(listBoxes(grid)[7], 'ArrowDown', { altKey: true, shiftKey: true });
+  await settle(grid);
+  key(listBoxes(grid)[8], 'ArrowUp', { altKey: true, shiftKey: true });
   await settle(grid);
 };
 
@@ -196,7 +221,7 @@ describe('memória: recursos de coluna', () => {
     const round = async (): Promise<void> => {
       await exercise(grid, columns);
       // volta ao estado inicial de visibilidade e fecha o seletor
-      chooser(grid)!.querySelectorAll<HTMLInputElement>('input[type=checkbox]')[6].click();
+      listBoxes(grid)[6].click();
       await settle(grid);
       key(chooser(grid)!, 'Escape');
       await settle(grid);
@@ -239,9 +264,8 @@ describe('memória: recursos de coluna', () => {
     const replace = async (): Promise<Tracked> => {
       const old = grid.columns;
       grid.setColumnWidth(old[1], 200);
+      await pinFromMenu(grid, old[2], 'Pin to end');
       grid.openColumnChooser();
-      await settle(grid);
-      chooser(grid)!.querySelectorAll<HTMLButtonElement>('.pin-end')[2].click();
       await settle(grid);
       key(chooser(grid)!, 'Escape');
 

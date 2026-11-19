@@ -144,6 +144,13 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   `autoHideColumns` (irmão de `autoExpandRows`; `columnHiding` recusado por
   ler-se "o usuário pode ocultar"), `hidingPriority`, `getAdaptiveColumns`,
   parts `adaptive-*` com os adjetivos da célula (`modified`, `invalid`).
+- Menu do cabeçalho / seletor (2026-11-19): a chave `reorderColumnLabel`
+  é DESCRIÇÃO (vai no `aria-describedby` da caixa do seletor), não nome —
+  exceção registrada ao sufixo `Label`, mantida porque o nome foi aprovado
+  pelo usuário na proposta (o revisor sugeriu `reorderColumnHint`; trocar só
+  com aval, antes de publicar). `fixStartLabel`/`fixEndLabel` saem do
+  `GridI18n` para o `GridI18nInput`: obsoletas SEM substituta, avisam uma
+  vez e são ignoradas.
 
 ## Inventário (antes da revisão)
 

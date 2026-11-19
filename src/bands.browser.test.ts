@@ -220,7 +220,7 @@ describe('reordenar com bandas', () => {
     expect(reorder).toHaveBeenLastCalledWith(expect.objectContaining({ column: c.urban, band: c.population, index: 0, previousIndex: 1 }));
   });
 
-  it('menu da banda: só mover; sem agrupar nem redimensionar', async () => {
+  it('menu da banda: fixar, mover e os itens de todas as colunas; sem ordenar, agrupar nem redimensionar a banda', async () => {
     const c = makeColumns();
     const grid = await createGrid({ columns: c.all, items, configure: g => g.columnResizing = true });
 
@@ -228,7 +228,13 @@ describe('reordenar com bandas', () => {
     await pressOnActive(grid, 'F10', { shiftKey: true });
 
     const menu = root(grid).querySelector('.column-header-menu')!;
-    expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.textContent.trim())).toEqual(['Move left', 'Move right']);
+    expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.querySelector('.menu-item-text')!.textContent.trim())).toEqual([
+      'Pin column',
+      'Auto-size all columns',
+      'Move left',
+      'Move right',
+      'Reset columns',
+    ]);
   });
 });
 
@@ -378,7 +384,7 @@ describe('fixar, ocultar e seletor', () => {
 
     grid.openColumnChooser();
     await settle(grid);
-    const bandBox = () => root(grid).querySelector<HTMLInputElement>('.column-chooser-band > label input')!;
+    const bandBox = () => root(grid).querySelector<HTMLInputElement>('.column-chooser-band > .column-chooser-row > label input')!;
     const nested = root(grid).querySelector('.column-chooser-nested')!;
 
     expect(bandBox().indeterminate).toBe(true);
@@ -430,7 +436,7 @@ describe('fixar, ocultar e seletor', () => {
 
     grid.openColumnChooser();
     await settle(grid);
-    expect(root(grid).querySelector<HTMLInputElement>('.column-chooser-band > label input')!.disabled).toBe(true);
+    expect(root(grid).querySelector<HTMLInputElement>('.column-chooser-band > .column-chooser-row > label input')!.disabled).toBe(true);
   });
 
   it('agrupar folha de banda: sai do cabeçalho e volta ao fim da banda', async () => {

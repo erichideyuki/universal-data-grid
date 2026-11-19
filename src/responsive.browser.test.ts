@@ -636,6 +636,6 @@ describe('acessibilidade do responsivo (entrega)', () => {
     await settle(grid);
     const input = root(grid).querySelector<HTMLInputElement>('.column-chooser-adaptive input')!;
     const texts = input.getAttribute('aria-describedby')!.split(' ').map(id => root(grid).getElementById(id)?.textContent);
-    expect(texts).toEqual(['Hide column', 'In row details']);
+    expect(texts).toEqual(['Hide column', 'In row details', 'Alt+Shift+Up or Down arrow moves the column']);
   });
 });

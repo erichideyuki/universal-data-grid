@@ -29,11 +29,11 @@ export interface GridI18n {
   hideColumn: string;
   /** Tooltip of an unchecked column in the chooser. */
   showColumn: string;
-  /** Tooltip of the chooser button that fixes a column at the start (its name is `fixStartLabel`) and column header menu item. */
+  /** "Pin column" submenu item (column header menu) that pins the column to the start. */
   fixStart: string;
-  /** Tooltip of the chooser button that fixes a column at the end (its name is `fixEndLabel`) and column header menu item. */
+  /** "Pin column" submenu item (column header menu) that pins the column to the end. */
   fixEnd: string;
-  /** Tooltip of a pressed fix button (removes the fixing) and column header menu item. */
+  /** "Pin column" submenu item (column header menu) that unpins the column. */
   unfix: string;
   /** Tooltip of the column resize handle: double-click or Enter auto-sizes. */
   autoSize: string;
@@ -195,10 +195,6 @@ export interface GridI18n {
   searchPanelLabel: string;
   /** Name of the search field in the header filter. */
   headerFilterSearchLabel: string;
-  /** Name of the "pin to start" toggle in the column chooser. `{column}` = column label. */
-  fixStartLabel: string;
-  /** Name of the "pin to end" toggle in the column chooser. `{column}` = column label. */
-  fixEndLabel: string;
   /** Header filter note when only part of the values is listed. `{shown}`, `{count}`. */
   headerFilterTruncated: string;
   /** Header filter announcement after searching. `{count}` = values found (no plural forms: keep it a label). */
@@ -391,6 +387,30 @@ export interface GridI18n {
   childRowsLoadErrorAnnouncement: string;
   /** Announced after `*` expands the sibling nodes (`{count}`). */
   nodesExpandedAnnouncement: string;
+  /** Column header menu item that opens the "Pin column" submenu (`fixStart`, `fixEnd`, `unfix`). */
+  fixColumn: string;
+  /** Column header menu item that fits the width of every visible column to its content. */
+  autoSizeAllColumns: string;
+  /** Column header menu item that opens the column chooser (`column-chooser`). */
+  openColumnChooser: string;
+  /** Column header menu item that puts order, width, visibility and pinning back to the column definitions. */
+  resetColumns: string;
+  /** Name (and placeholder) of the search field of the column chooser. */
+  columnChooserSearchLabel: string;
+  /** Column chooser announcement after searching. `{count}` = columns found (no plural forms: keep it a label). */
+  columnChooserSearchAnnouncement: string;
+  /** Column chooser checkbox that shows (or hides) every listed column. */
+  selectAllColumns: string;
+  /** Description of the column chooser checkboxes: the keys that move the column. */
+  reorderColumnLabel: string;
+  /** Screen reader announcement after pinning a column to the start from the column header menu. `{column}`. */
+  columnFixedStartAnnouncement: string;
+  /** Screen reader announcement after pinning a column to the end from the column header menu. `{column}`. */
+  columnFixedEndAnnouncement: string;
+  /** Screen reader announcement after unpinning a column from the column header menu. `{column}`. */
+  columnUnfixedAnnouncement: string;
+  /** Screen reader announcement after "Auto-size all columns" in the column header menu. */
+  allColumnsAutoSizedAnnouncement: string;
 }
 
 /** Keys renamed in 1.x: old name → new name (spec 15). */
@@ -416,7 +436,14 @@ export type GridI18nInput = Partial<GridI18n> & {
   unpin?: string;
   /** @deprecated Use `groupPanelMenuLabel`. */
   groupPanelMenu?: string;
+  /** @deprecated Ignored: the column chooser has no pin buttons any more (pin from the column header menu). */
+  fixStartLabel?: string;
+  /** @deprecated Ignored: the column chooser has no pin buttons any more (pin from the column header menu). */
+  fixEndLabel?: string;
 };
+
+/** Chaves obsoletas sem substituta: avisam e saem. */
+const IGNORED_I18N_KEYS: ReadonlySet<string> = new Set(['fixStartLabel', 'fixEndLabel']);
 
 /** Troca as chaves antigas pelas novas (aviso uma vez por chave). */
 const normalizeTranslation = (translation: GridI18nInput): Partial<GridI18n> => {
@@ -424,6 +451,15 @@ const normalizeTranslation = (translation: GridI18nInput): Partial<GridI18n> => 
 
   for (const [key, value] of Object.entries(translation)) {
     const renamed = LEGACY_I18N_KEYS[key];
+
+    if (IGNORED_I18N_KEYS.has(key)) {
+      if (!warnedLegacyKeys.has(key)) {
+        warnedLegacyKeys.add(key);
+        console.warn(`setGridTranslation: "${key}" is deprecated and ignored (pin from the column header menu).`);
+      }
+
+      continue;
+    }
 
     if (!renamed) {
       result[key] = value;
@@ -553,8 +589,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Filter operation for {column}: {operation}',
     searchPanelLabel: 'Search in the grid',
     headerFilterSearchLabel: 'Search values',
-    fixStartLabel: 'Pin {column} to start',
-    fixEndLabel: 'Pin {column} to end',
     headerFilterTruncated: 'Showing {shown} of {count}',
     headerFilterSearchAnnouncement: 'Values: {count}',
     selectAllResults: 'Select all results ({count})',
@@ -651,6 +685,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Child rows loaded: {count}',
     childRowsLoadErrorAnnouncement: 'Could not load child rows',
     nodesExpandedAnnouncement: 'Expanded rows: {count}',
+    fixColumn: 'Pin column',
+    autoSizeAllColumns: 'Auto-size all columns',
+    openColumnChooser: 'Choose columns',
+    resetColumns: 'Reset columns',
+    columnChooserSearchLabel: 'Search columns',
+    columnChooserSearchAnnouncement: 'Columns: {count}',
+    selectAllColumns: 'Show all columns',
+    reorderColumnLabel: 'Alt+Shift+Up or Down arrow moves the column',
+    columnFixedStartAnnouncement: '{column} pinned to start',
+    columnFixedEndAnnouncement: '{column} pinned to end',
+    columnUnfixedAnnouncement: '{column} unpinned',
+    allColumnsAutoSizedAnnouncement: 'All columns auto-sized',
   },
   es: {
     noData: 'Sin datos',
@@ -748,8 +794,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Operación de filtro de {column}: {operation}',
     searchPanelLabel: 'Buscar en la cuadrícula',
     headerFilterSearchLabel: 'Buscar valores',
-    fixStartLabel: 'Fijar {column} al inicio',
-    fixEndLabel: 'Fijar {column} al final',
     headerFilterTruncated: 'Mostrando {shown} de {count}',
     headerFilterSearchAnnouncement: 'Valores: {count}',
     selectAllResults: 'Seleccionar todos los resultados ({count})',
@@ -846,6 +890,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Filas secundarias cargadas: {count}',
     childRowsLoadErrorAnnouncement: 'No se pudieron cargar las filas secundarias',
     nodesExpandedAnnouncement: 'Filas expandidas: {count}',
+    fixColumn: 'Fijar columna',
+    autoSizeAllColumns: 'Ajustar ancho de todas las columnas',
+    openColumnChooser: 'Elegir columnas',
+    resetColumns: 'Restablecer columnas',
+    columnChooserSearchLabel: 'Buscar columnas',
+    columnChooserSearchAnnouncement: 'Columnas: {count}',
+    selectAllColumns: 'Mostrar todas las columnas',
+    reorderColumnLabel: 'Alt+Mayús+Flecha arriba o abajo mueve la columna',
+    columnFixedStartAnnouncement: '{column} fijada al inicio',
+    columnFixedEndAnnouncement: '{column} fijada al final',
+    columnUnfixedAnnouncement: '{column} desfijada',
+    allColumnsAutoSizedAnnouncement: 'Ancho de todas las columnas ajustado',
   },
   pt: {
     noData: 'Sem dados',
@@ -943,8 +999,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Operação de filtro de {column}: {operation}',
     searchPanelLabel: 'Pesquisar na grade',
     headerFilterSearchLabel: 'Pesquisar valores',
-    fixStartLabel: 'Fixar {column} no início',
-    fixEndLabel: 'Fixar {column} no fim',
     headerFilterTruncated: 'Mostrando {shown} de {count}',
     headerFilterSearchAnnouncement: 'Valores: {count}',
     selectAllResults: 'Selecionar todos os resultados ({count})',
@@ -1041,6 +1095,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Linhas filhas carregadas: {count}',
     childRowsLoadErrorAnnouncement: 'Não foi possível carregar as linhas filhas',
     nodesExpandedAnnouncement: 'Linhas expandidas: {count}',
+    fixColumn: 'Fixar coluna',
+    autoSizeAllColumns: 'Ajustar largura de todas as colunas',
+    openColumnChooser: 'Escolher colunas',
+    resetColumns: 'Redefinir colunas',
+    columnChooserSearchLabel: 'Pesquisar colunas',
+    columnChooserSearchAnnouncement: 'Colunas: {count}',
+    selectAllColumns: 'Mostrar todas as colunas',
+    reorderColumnLabel: 'Alt+Shift+Seta para cima ou para baixo move a coluna',
+    columnFixedStartAnnouncement: '{column} fixada no início',
+    columnFixedEndAnnouncement: '{column} fixada no fim',
+    columnUnfixedAnnouncement: '{column} desafixada',
+    allColumnsAutoSizedAnnouncement: 'Largura de todas as colunas ajustada',
   },
   fr: {
     noData: 'Aucune donnée',
@@ -1138,8 +1204,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Opération de filtre pour {column} : {operation}',
     searchPanelLabel: 'Rechercher dans la grille',
     headerFilterSearchLabel: 'Rechercher des valeurs',
-    fixStartLabel: 'Épingler {column} au début',
-    fixEndLabel: 'Épingler {column} à la fin',
     headerFilterTruncated: '{shown} affichées sur {count}',
     headerFilterSearchAnnouncement: 'Valeurs : {count}',
     selectAllResults: 'Sélectionner tous les résultats ({count})',
@@ -1236,6 +1300,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Lignes enfants chargées : {count}',
     childRowsLoadErrorAnnouncement: 'Impossible de charger les lignes enfants',
     nodesExpandedAnnouncement: 'Lignes développées : {count}',
+    fixColumn: 'Épingler la colonne',
+    autoSizeAllColumns: 'Ajuster la largeur de toutes les colonnes',
+    openColumnChooser: 'Choisir les colonnes',
+    resetColumns: 'Réinitialiser les colonnes',
+    columnChooserSearchLabel: 'Rechercher des colonnes',
+    columnChooserSearchAnnouncement: 'Colonnes : {count}',
+    selectAllColumns: 'Afficher toutes les colonnes',
+    reorderColumnLabel: 'Alt+Maj+Flèche haut ou bas déplace la colonne',
+    columnFixedStartAnnouncement: '{column} épinglée au début',
+    columnFixedEndAnnouncement: '{column} épinglée à la fin',
+    columnUnfixedAnnouncement: '{column} désépinglée',
+    allColumnsAutoSizedAnnouncement: 'Largeur de toutes les colonnes ajustée',
   },
   de: {
     noData: 'Keine Daten',
@@ -1333,8 +1409,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Filteroperation für {column}: {operation}',
     searchPanelLabel: 'Im Raster suchen',
     headerFilterSearchLabel: 'Werte suchen',
-    fixStartLabel: '{column} am Anfang fixieren',
-    fixEndLabel: '{column} am Ende fixieren',
     headerFilterTruncated: '{shown} von {count} angezeigt',
     headerFilterSearchAnnouncement: 'Werte: {count}',
     selectAllResults: 'Alle Ergebnisse auswählen ({count})',
@@ -1431,6 +1505,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Untergeordnete Zeilen geladen: {count}',
     childRowsLoadErrorAnnouncement: 'Untergeordnete Zeilen konnten nicht geladen werden',
     nodesExpandedAnnouncement: 'Erweiterte Zeilen: {count}',
+    fixColumn: 'Spalte fixieren',
+    autoSizeAllColumns: 'Breite aller Spalten an Inhalt anpassen',
+    openColumnChooser: 'Spalten auswählen',
+    resetColumns: 'Spalten zurücksetzen',
+    columnChooserSearchLabel: 'Spalten suchen',
+    columnChooserSearchAnnouncement: 'Spalten: {count}',
+    selectAllColumns: 'Alle Spalten anzeigen',
+    reorderColumnLabel: 'Alt+Umschalt+Pfeil nach oben oder unten verschiebt die Spalte',
+    columnFixedStartAnnouncement: '{column} am Anfang fixiert',
+    columnFixedEndAnnouncement: '{column} am Ende fixiert',
+    columnUnfixedAnnouncement: 'Fixierung von {column} aufgehoben',
+    allColumnsAutoSizedAnnouncement: 'Breite aller Spalten angepasst',
   },
   it: {
     noData: 'Nessun dato',
@@ -1528,8 +1614,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Operazione di filtro per {column}: {operation}',
     searchPanelLabel: 'Cerca nella griglia',
     headerFilterSearchLabel: 'Cerca valori',
-    fixStartLabel: 'Blocca {column} all’inizio',
-    fixEndLabel: 'Blocca {column} alla fine',
     headerFilterTruncated: 'Visualizzati {shown} di {count}',
     headerFilterSearchAnnouncement: 'Valori: {count}',
     selectAllResults: 'Seleziona tutti i risultati ({count})',
@@ -1626,6 +1710,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Righe figlie caricate: {count}',
     childRowsLoadErrorAnnouncement: 'Impossibile caricare le righe figlie',
     nodesExpandedAnnouncement: 'Righe espanse: {count}',
+    fixColumn: 'Blocca colonna',
+    autoSizeAllColumns: 'Adatta larghezza di tutte le colonne',
+    openColumnChooser: 'Scegli colonne',
+    resetColumns: 'Ripristina colonne',
+    columnChooserSearchLabel: 'Cerca colonne',
+    columnChooserSearchAnnouncement: 'Colonne: {count}',
+    selectAllColumns: 'Mostra tutte le colonne',
+    reorderColumnLabel: 'Alt+Maiusc+Freccia su o giù sposta la colonna',
+    columnFixedStartAnnouncement: '{column} bloccata all’inizio',
+    columnFixedEndAnnouncement: '{column} bloccata alla fine',
+    columnUnfixedAnnouncement: '{column} sbloccata',
+    allColumnsAutoSizedAnnouncement: 'Larghezza di tutte le colonne adattata',
   },
   nl: {
     noData: 'Geen gegevens',
@@ -1723,8 +1819,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Filterbewerking voor {column}: {operation}',
     searchPanelLabel: 'Zoeken in het raster',
     headerFilterSearchLabel: 'Waarden zoeken',
-    fixStartLabel: '{column} aan het begin vastzetten',
-    fixEndLabel: '{column} aan het einde vastzetten',
     headerFilterTruncated: '{shown} van {count} weergegeven',
     headerFilterSearchAnnouncement: 'Waarden: {count}',
     selectAllResults: 'Alle resultaten selecteren ({count})',
@@ -1821,6 +1915,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Onderliggende rijen geladen: {count}',
     childRowsLoadErrorAnnouncement: 'Onderliggende rijen konden niet worden geladen',
     nodesExpandedAnnouncement: 'Uitgevouwen rijen: {count}',
+    fixColumn: 'Kolom vastzetten',
+    autoSizeAllColumns: 'Breedte van alle kolommen aanpassen',
+    openColumnChooser: 'Kolommen kiezen',
+    resetColumns: 'Kolommen herstellen',
+    columnChooserSearchLabel: 'Kolommen zoeken',
+    columnChooserSearchAnnouncement: 'Kolommen: {count}',
+    selectAllColumns: 'Alle kolommen tonen',
+    reorderColumnLabel: 'Alt+Shift+pijl omhoog of omlaag verplaatst de kolom',
+    columnFixedStartAnnouncement: '{column} vastgezet aan het begin',
+    columnFixedEndAnnouncement: '{column} vastgezet aan het einde',
+    columnUnfixedAnnouncement: '{column} losgemaakt',
+    allColumnsAutoSizedAnnouncement: 'Breedte van alle kolommen aangepast',
   },
   ru: {
     noData: 'Нет данных',
@@ -1918,8 +2024,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Операция фильтра для столбца {column}: {operation}',
     searchPanelLabel: 'Поиск в таблице',
     headerFilterSearchLabel: 'Поиск значений',
-    fixStartLabel: 'Закрепить {column} в начале',
-    fixEndLabel: 'Закрепить {column} в конце',
     headerFilterTruncated: 'Показано {shown} из {count}',
     headerFilterSearchAnnouncement: 'Значения: {count}',
     selectAllResults: 'Выбрать все результаты ({count})',
@@ -2016,6 +2120,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Загружено дочерних строк: {count}',
     childRowsLoadErrorAnnouncement: 'Не удалось загрузить дочерние строки',
     nodesExpandedAnnouncement: 'Развёрнуто строк: {count}',
+    fixColumn: 'Закрепить столбец',
+    autoSizeAllColumns: 'Подогнать ширину всех столбцов',
+    openColumnChooser: 'Выбрать столбцы',
+    resetColumns: 'Сбросить столбцы',
+    columnChooserSearchLabel: 'Поиск столбцов',
+    columnChooserSearchAnnouncement: 'Столбцы: {count}',
+    selectAllColumns: 'Показать все столбцы',
+    reorderColumnLabel: 'Alt+Shift+стрелка вверх или вниз перемещает столбец',
+    columnFixedStartAnnouncement: 'Столбец {column} закреплён в начале',
+    columnFixedEndAnnouncement: 'Столбец {column} закреплён в конце',
+    columnUnfixedAnnouncement: 'Столбец {column} откреплён',
+    allColumnsAutoSizedAnnouncement: 'Ширина всех столбцов подогнана',
   },
   pl: {
     noData: 'Brak danych',
@@ -2113,8 +2229,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'Operacja filtra dla {column}: {operation}',
     searchPanelLabel: 'Szukaj w siatce',
     headerFilterSearchLabel: 'Szukaj wartości',
-    fixStartLabel: 'Przypnij {column} na początku',
-    fixEndLabel: 'Przypnij {column} na końcu',
     headerFilterTruncated: 'Wyświetlono {shown} z {count}',
     headerFilterSearchAnnouncement: 'Wartości: {count}',
     selectAllResults: 'Zaznacz wszystkie wyniki ({count})',
@@ -2211,6 +2325,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Załadowane wiersze podrzędne: {count}',
     childRowsLoadErrorAnnouncement: 'Nie udało się załadować wierszy podrzędnych',
     nodesExpandedAnnouncement: 'Rozwinięte wiersze: {count}',
+    fixColumn: 'Przypnij kolumnę',
+    autoSizeAllColumns: 'Dopasuj szerokość wszystkich kolumn',
+    openColumnChooser: 'Wybierz kolumny',
+    resetColumns: 'Przywróć kolumny',
+    columnChooserSearchLabel: 'Szukaj kolumn',
+    columnChooserSearchAnnouncement: 'Kolumny: {count}',
+    selectAllColumns: 'Pokaż wszystkie kolumny',
+    reorderColumnLabel: 'Alt+Shift+strzałka w górę lub w dół przenosi kolumnę',
+    columnFixedStartAnnouncement: '{column} przypięto na początku',
+    columnFixedEndAnnouncement: '{column} przypięto na końcu',
+    columnUnfixedAnnouncement: '{column} odpięto',
+    allColumnsAutoSizedAnnouncement: 'Dopasowano szerokość wszystkich kolumn',
   },
   tr: {
     noData: 'Veri yok',
@@ -2308,8 +2434,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: '{column} için filtre işlemi: {operation}',
     searchPanelLabel: 'Tabloda ara',
     headerFilterSearchLabel: 'Değerlerde ara',
-    fixStartLabel: '{column} sütununu başa sabitle',
-    fixEndLabel: '{column} sütununu sona sabitle',
     headerFilterTruncated: '{count} değerden {shown} tanesi gösteriliyor',
     headerFilterSearchAnnouncement: 'Değerler: {count}',
     selectAllResults: 'Tüm sonuçları seç ({count})',
@@ -2406,6 +2530,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'Yüklenen alt satırlar: {count}',
     childRowsLoadErrorAnnouncement: 'Alt satırlar yüklenemedi',
     nodesExpandedAnnouncement: 'Genişletilen satırlar: {count}',
+    fixColumn: 'Sütunu sabitle',
+    autoSizeAllColumns: 'Tüm sütunların genişliğini sığdır',
+    openColumnChooser: 'Sütunları seç',
+    resetColumns: 'Sütunları sıfırla',
+    columnChooserSearchLabel: 'Sütunlarda ara',
+    columnChooserSearchAnnouncement: 'Sütunlar: {count}',
+    selectAllColumns: 'Tüm sütunları göster',
+    reorderColumnLabel: 'Alt+Shift+Yukarı veya Aşağı ok sütunu taşır',
+    columnFixedStartAnnouncement: '{column} başa sabitlendi',
+    columnFixedEndAnnouncement: '{column} sona sabitlendi',
+    columnUnfixedAnnouncement: '{column} sabitlemesi kaldırıldı',
+    allColumnsAutoSizedAnnouncement: 'Tüm sütunların genişliği sığdırıldı',
   },
   ja: {
     noData: 'データがありません',
@@ -2503,8 +2639,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: '{column} のフィルター演算: {operation}',
     searchPanelLabel: 'グリッド内を検索',
     headerFilterSearchLabel: '値を検索',
-    fixStartLabel: '{column} を先頭に固定',
-    fixEndLabel: '{column} を末尾に固定',
     headerFilterTruncated: '{count} 件中 {shown} 件を表示',
     headerFilterSearchAnnouncement: '値: {count}',
     selectAllResults: '検索結果をすべて選択 ({count})',
@@ -2601,6 +2735,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: '読み込んだ子行: {count}',
     childRowsLoadErrorAnnouncement: '子行を読み込めませんでした',
     nodesExpandedAnnouncement: '展開した行: {count}',
+    fixColumn: '列を固定',
+    autoSizeAllColumns: 'すべての列の幅を内容に合わせる',
+    openColumnChooser: '列を選択',
+    resetColumns: '列をリセット',
+    columnChooserSearchLabel: '列を検索',
+    columnChooserSearchAnnouncement: '列: {count}',
+    selectAllColumns: 'すべての列を表示',
+    reorderColumnLabel: 'Alt+Shift+上下矢印キーで列を移動',
+    columnFixedStartAnnouncement: '{column} を先頭に固定しました',
+    columnFixedEndAnnouncement: '{column} を末尾に固定しました',
+    columnUnfixedAnnouncement: '{column} の固定を解除しました',
+    allColumnsAutoSizedAnnouncement: 'すべての列の幅を調整しました',
   },
   ko: {
     noData: '데이터 없음',
@@ -2698,8 +2844,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: '{column} 필터 연산: {operation}',
     searchPanelLabel: '그리드에서 검색',
     headerFilterSearchLabel: '값 검색',
-    fixStartLabel: '{column}을(를) 시작 부분에 고정',
-    fixEndLabel: '{column}을(를) 끝 부분에 고정',
     headerFilterTruncated: '{count}개 중 {shown}개 표시',
     headerFilterSearchAnnouncement: '값: {count}',
     selectAllResults: '검색 결과 모두 선택 ({count})',
@@ -2796,6 +2940,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: '불러온 하위 행: {count}',
     childRowsLoadErrorAnnouncement: '하위 행을 불러올 수 없습니다',
     nodesExpandedAnnouncement: '펼친 행: {count}',
+    fixColumn: '열 고정',
+    autoSizeAllColumns: '모든 열 너비를 내용에 맞게 조정',
+    openColumnChooser: '열 선택',
+    resetColumns: '열 초기화',
+    columnChooserSearchLabel: '열 검색',
+    columnChooserSearchAnnouncement: '열: {count}',
+    selectAllColumns: '모든 열 표시',
+    reorderColumnLabel: 'Alt+Shift+위쪽 또는 아래쪽 화살표로 열 이동',
+    columnFixedStartAnnouncement: '{column}을(를) 시작 부분에 고정했습니다',
+    columnFixedEndAnnouncement: '{column}을(를) 끝 부분에 고정했습니다',
+    columnUnfixedAnnouncement: '{column} 고정을 해제했습니다',
+    allColumnsAutoSizedAnnouncement: '모든 열 너비를 조정했습니다',
   },
   zh: {
     noData: '无数据',
@@ -2893,8 +3049,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: '{column} 的筛选运算：{operation}',
     searchPanelLabel: '在表格中搜索',
     headerFilterSearchLabel: '搜索值',
-    fixStartLabel: '将 {column} 固定到开头',
-    fixEndLabel: '将 {column} 固定到末尾',
     headerFilterTruncated: '显示 {count} 项中的 {shown} 项',
     headerFilterSearchAnnouncement: '值：{count}',
     selectAllResults: '全选搜索结果（{count}）',
@@ -2991,6 +3145,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: '已加载子行：{count}',
     childRowsLoadErrorAnnouncement: '无法加载子行',
     nodesExpandedAnnouncement: '已展开的行：{count}',
+    fixColumn: '固定列',
+    autoSizeAllColumns: '自动调整所有列宽',
+    openColumnChooser: '选择列',
+    resetColumns: '重置列',
+    columnChooserSearchLabel: '搜索列',
+    columnChooserSearchAnnouncement: '列：{count}',
+    selectAllColumns: '显示所有列',
+    reorderColumnLabel: 'Alt+Shift+上下方向键移动列',
+    columnFixedStartAnnouncement: '已将 {column} 固定到开头',
+    columnFixedEndAnnouncement: '已将 {column} 固定到末尾',
+    columnUnfixedAnnouncement: '已取消固定 {column}',
+    allColumnsAutoSizedAnnouncement: '已自动调整所有列宽',
   },
   ar: {
     noData: 'لا توجد بيانات',
@@ -3088,8 +3254,6 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     filterOperationButtonLabel: 'عملية التصفية لـ {column}: {operation}',
     searchPanelLabel: 'البحث في الجدول',
     headerFilterSearchLabel: 'البحث في القيم',
-    fixStartLabel: 'تثبيت {column} في البداية',
-    fixEndLabel: 'تثبيت {column} في النهاية',
     headerFilterTruncated: 'عرض {shown} من {count}',
     headerFilterSearchAnnouncement: 'القيم: {count}',
     selectAllResults: 'تحديد كل النتائج ({count})',
@@ -3186,6 +3350,18 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     childRowsLoadedAnnouncement: 'الصفوف الفرعية المحمّلة: {count}',
     childRowsLoadErrorAnnouncement: 'تعذّر تحميل الصفوف الفرعية',
     nodesExpandedAnnouncement: 'الصفوف الموسّعة: {count}',
+    fixColumn: 'تثبيت العمود',
+    autoSizeAllColumns: 'ملاءمة عرض كل الأعمدة',
+    openColumnChooser: 'اختيار الأعمدة',
+    resetColumns: 'إعادة تعيين الأعمدة',
+    columnChooserSearchLabel: 'البحث في الأعمدة',
+    columnChooserSearchAnnouncement: 'الأعمدة: {count}',
+    selectAllColumns: 'إظهار كل الأعمدة',
+    reorderColumnLabel: 'Alt+Shift+السهم لأعلى أو لأسفل ينقل العمود',
+    columnFixedStartAnnouncement: 'تم تثبيت {column} في البداية',
+    columnFixedEndAnnouncement: 'تم تثبيت {column} في النهاية',
+    columnUnfixedAnnouncement: 'تم إلغاء تثبيت {column}',
+    allColumnsAutoSizedAnnouncement: 'تمت ملاءمة عرض كل الأعمدة',
   },
 });
 

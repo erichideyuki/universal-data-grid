@@ -123,21 +123,22 @@ describe('revisão do site de documentação', () => {
     expect(toolbar.contains(hit)).toBe(true);
   });
 
-  it('cabeçalho: realce no hover sem mexer no layout (sem o botão ⋮, rótulo no fim parado)', async () => {
+  it('cabeçalho: realce no hover sem mexer no layout (o "⋮" sempre visível, rótulo no fim parado)', async () => {
     const grid = await createGrid({ columns: columns(), items: orders(5) });
     const th = headerCell(grid, 'Order'); // número: rótulo alinhado no fim
     const text = th.querySelector('.header-text')!;
     const before = { th: th.getBoundingClientRect().height, text: text.getBoundingClientRect().left };
 
     expect(getComputedStyle(th).backgroundImage).toBe('none');
-    expect(root(grid).querySelector('.column-header-menu-button')).toBeNull();
+    const button = th.querySelector('.column-header-menu-button')!;
+    const buttonLeft = button.getBoundingClientRect().left;
 
     await userEvent.hover(th);
 
     expect(getComputedStyle(th).backgroundImage).toContain('gradient');
     expect(th.getBoundingClientRect().height).toBe(before.th);
     expect(text.getBoundingClientRect().left).toBe(before.text);
-    expect(th.querySelector('button')).toBeNull();
+    expect(button.getBoundingClientRect().left).toBe(buttonLeft);
 
     await userEvent.unhover(th);
   });

@@ -413,3 +413,41 @@ no desenho e na entrega:
   nos preços nem na taxa, e alta/baixa também por ▲/▼ e sinal.
 - Testes: `src/reshape.browser.test.ts` (roteiro de teclado, axe com o
   reshape pendente, vazamento).
+
+## Menu do cabeçalho e seletor (modelo AG Grid, 2026-11-19)
+
+Revisado pelo `a11y-reviewer` no desenho e aprovado pelo usuário. Detalhes
+e "Referência medida" na spec 18; aqui o que é de acessibilidade:
+
+- Botão "⋮" sempre visível (descobrível sem hover, alvo de toque): 24×24
+  px, como o funil (WCAG 2.5.8), sem sobrepor a alça de 24 px; ícone e
+  funil na cor dos controles sem transparência (≥ 3:1 em repouso, WCAG
+  1.4.11 — saiu o `opacity: 0.6` do funil); `:focus-visible` com o anel.
+  Fora da ordem de Tab (um ponto de parada por grid), F2 chega nele;
+  `aria-haspopup="menu"`, `aria-expanded`, ícone `aria-hidden`; nome
+  "Options for {column}" fora do rótulo do `columnheader`.
+- Submenu "Fixar coluna": padrão menu da APG com submenu (→/← trocam em
+  RTL), `menuitemradio` com `aria-checked` num `group` nomeado; o lado
+  atual não é `aria-disabled` (ativá-lo só fecha). Forced-colors: pai
+  aberto e "⋮" aberto com contorno `Highlight`; ícones em `currentColor`.
+  Nada anima (e `prefers-reduced-motion` garante).
+- Foco depois das ações do menu do cabeçalho: mover segue a coluna;
+  ordenar/fixar/auto-ajustar/redefinir voltam à célula; "Escolher colunas"
+  vai ao seletor e Esc volta à célula. Fixar e "auto-ajustar todas" são
+  anunciados.
+- Seletor: busca nomeada (não só placeholder) com a contagem anunciada com
+  espera; "Mostrar todas" nativa mista; alça de arrasto só de ponteiro com
+  a alternativa Alt+Shift+↑/↓ (WCAG 2.1.1 e 2.5.7), anunciada, com o foco
+  mantido, dica em `aria-describedby` e `aria-keyshortcuts`.
+- Testes: axe sem violações com o submenu aberto (LTR e RTL) e com o
+  seletor aberto; roteiros de teclado automatizados em
+  `src/header-menu.browser.test.ts`.
+- Revisão da entrega (a11y-reviewer): corrigidos o foco que caía no
+  `<body>` quando o ponteiro fechava o submenu com o foco dentro (volta ao
+  item pai), o contraste do placeholder da busca do seletor (cor variante,
+  ≥ 4,5:1) e o indicador de soltar do seletor em forced-colors (borda
+  `Highlight`). Aceito e registrado: na coluna alinhada ao fim o F2 segue
+  o DOM (funil → ⋮ → alça), não a ordem visual espelhada. Pendentes, por
+  pedirem chave nova na i18n (aval do usuário): anunciar o movimento
+  recusado no seletor (Alt+Shift+↑/↓ contra outro bloco) e anunciar
+  "Reset columns".

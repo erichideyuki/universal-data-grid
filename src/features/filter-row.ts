@@ -122,7 +122,7 @@ const OPERATION_KEYS: Record<GridFilterOperation, keyof GridI18n> = {
 };
 
 export const operationName = (operation: GridFilterOperation, translation: GridI18n): string =>
-  translation[OPERATION_KEYS[operation]];
+  translation[OPERATION_KEYS[operation]] ?? '';
 
 const operationGlyph = (operation: GridFilterOperation): TemplateResult | string =>
   operation === 'contains' ? searchIcon : OPERATION_GLYPHS[operation];

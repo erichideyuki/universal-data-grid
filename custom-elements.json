@@ -201,6 +201,10 @@
               "name": "--u-grid-resize-handle-width"
             },
             {
+              "description": "Size of the \"⋮\" column header menu button and of the header filter button. Default `24px` (WCAG 2.5.8).",
+              "name": "--u-grid-column-header-menu-button-size"
+            },
+            {
               "description": "Color of the resize bar shown on hover/focus. Default: `--u-grid-group-toggle-color`.",
               "name": "--u-grid-resize-handle-color"
             },
@@ -439,8 +443,12 @@
               "name": "group-panel-menu"
             },
             {
-              "description": "The column header context menu.",
+              "description": "The column header context menu (and its \"Pin column\" submenu).",
               "name": "column-header-menu"
+            },
+            {
+              "description": "The \"⋮\" button that opens the column header menu in leaf headers (`show-column-header-menu-button`).",
+              "name": "column-header-menu-button"
             },
             {
               "description": "The filter row (`<tr>`) below the column headers.",
@@ -1034,8 +1042,28 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Built-in items of the column header context menu (right-click, long\npress, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
+              "description": "Built-in items of the column header menu (the \"⋮\" button, right-click,\nlong press, Shift+F10 or the context menu key on a header): sort, pin\n(a \"Pin column\" submenu), auto-size this or all columns, widen/narrow,\nmove left/right, group by the column, open the column chooser and reset\nthe columns. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "attribute": "column-header-menu"
+            },
+            {
+              "kind": "field",
+              "name": "showColumnHeaderMenuButton",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Shows the \"⋮\" button that opens the column header menu in every leaf\nheader with menu items (`column-header-menu`; band menus open by\nright-click, long press, Shift+F10 or the context menu key). It is always visible and takes\nwidth in the header. Default `true`; `show-column-header-menu-button=\"false\"`\nhides it (the menu still opens by right-click, long press, Shift+F10 and\nthe context menu key).",
+              "attribute": "show-column-header-menu-button"
+            },
+            {
+              "kind": "field",
+              "name": "columnFixing",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Lets the user pin columns to the start or the end (\"Pin column\" in the\ncolumn header menu). Default `true`; `column-fixing=\"false\"` removes the\npin items. Columns pinned by `fixed` stay pinned.",
+              "attribute": "column-fixing"
             },
             {
               "kind": "field",
@@ -1156,7 +1184,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Shows the column chooser button in the bar above the table.",
+              "description": "Shows the column chooser button in the bar above the table (and \"Choose\ncolumns\" in the column header menu). The chooser shows/hides columns,\nfilters them by a search box and reorders them by dragging or\nAlt+Shift+↑/↓. Pin a column from its header menu.",
               "attribute": "column-chooser"
             },
             {
@@ -1887,6 +1915,26 @@
             },
             {
               "kind": "method",
+              "name": "autoSizeAllColumns",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Fits the width of every visible column to its header and rendered cells\n(like `autoSizeColumn` on each one)."
+            },
+            {
+              "kind": "method",
+              "name": "resetColumns",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Puts the column layout back to the column definitions: order, width,\nvisibility and pinning (a partial `setState` of the columns). Sorting,\nfiltering and grouping are kept. Like `resetState`, it fires only\n`u-grid-state-change` (no column event — also for \"Reset columns\" in\nthe column header menu, then with `sources: ['user']`), never moves the\nfocus nor announces anything."
+            },
+            {
+              "kind": "method",
               "name": "refresh",
               "return": {
                 "type": {
@@ -2495,7 +2543,7 @@
               "type": {
                 "text": "CustomEvent<GridStateChangeEventDetail>"
               },
-              "description": "`state-change-delay` ms after the last change of the user state (`getState`): user gesture, method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back)."
+              "description": "`state-change-delay` ms after the last change of the user state (`getState`): user gesture, method, property or `setState` — once per burst, only if the state really changed — and after a restore from `stateStorage` (`sources: ['storage']`, not saved back). \"Reset columns\" (column header menu, `sources: ['user']`) and `resetColumns()` fire only this one, no column event."
             },
             {
               "name": "u-grid-page-change",
@@ -2600,7 +2648,7 @@
               "type": {
                 "text": "CustomEvent<GridColumnReorderEventDetail>"
               },
-              "description": "The user moved a column or a band (drag and drop, Alt+Shift+←/→ on the header or the column header menu)."
+              "description": "The user moved a column or a band (drag and drop on the header or in the column chooser, Alt+Shift+←/→ on the header, Alt+Shift+↑/↓ in the column chooser, or the column header menu)."
             },
             {
               "name": "u-grid-column-visibility-change",
@@ -2614,7 +2662,7 @@
               "type": {
                 "text": "CustomEvent<GridColumnFixedChangeEventDetail>"
               },
-              "description": "The user fixed or unfixed a column (or a top-level band) in the column chooser."
+              "description": "The user fixed or unfixed a column (or a top-level band) from the column header menu (\"Pin column\")."
             },
             {
               "name": "u-grid-column-resize",
@@ -2691,7 +2739,7 @@
               "type": {
                 "text": "CustomEvent<GridContextMenuOpeningEventDetail>"
               },
-              "description": "Before a context menu opens (header, group panel, row, group row: right-click, long press, Shift+F10, the context menu key, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays."
+              "description": "Before a context menu opens (header, group panel, row, group row: right-click, long press, Shift+F10, the context menu key, the header \"⋮\" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays."
             },
             {
               "name": "u-grid-copying",
@@ -2998,8 +3046,26 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Built-in items of the column header context menu (right-click, long\npress, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
+              "description": "Built-in items of the column header menu (the \"⋮\" button, right-click,\nlong press, Shift+F10 or the context menu key on a header): sort, pin\n(a \"Pin column\" submenu), auto-size this or all columns, widen/narrow,\nmove left/right, group by the column, open the column chooser and reset\nthe columns. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "fieldName": "columnHeaderMenu"
+            },
+            {
+              "name": "show-column-header-menu-button",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Shows the \"⋮\" button that opens the column header menu in every leaf\nheader with menu items (`column-header-menu`; band menus open by\nright-click, long press, Shift+F10 or the context menu key). It is always visible and takes\nwidth in the header. Default `true`; `show-column-header-menu-button=\"false\"`\nhides it (the menu still opens by right-click, long press, Shift+F10 and\nthe context menu key).",
+              "fieldName": "showColumnHeaderMenuButton"
+            },
+            {
+              "name": "column-fixing",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "true",
+              "description": "Lets the user pin columns to the start or the end (\"Pin column\" in the\ncolumn header menu). Default `true`; `column-fixing=\"false\"` removes the\npin items. Columns pinned by `fixed` stay pinned.",
+              "fieldName": "columnFixing"
             },
             {
               "name": "row-menu",
@@ -3077,7 +3143,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Shows the column chooser button in the bar above the table.",
+              "description": "Shows the column chooser button in the bar above the table (and \"Choose\ncolumns\" in the column header menu). The chooser shows/hides columns,\nfilters them by a search box and reorders them by dragging or\nAlt+Shift+↑/↓. Pin a column from its header menu.",
               "fieldName": "columnChooser"
             },
             {

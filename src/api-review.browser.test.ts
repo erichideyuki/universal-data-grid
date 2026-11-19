@@ -225,16 +225,24 @@ describe('métodos', () => {
   });
 });
 
+/** Fixa pelo submenu "Fixar coluna ▸" do menu do cabeçalho (o seletor não tem mais botões de fixar). */
+const pinFromMenu = async (grid: DataGrid, column: GridColumnDef, side: 'Pin to start' | 'Pin to end' | 'Unpin'): Promise<void> => {
+  grid.openContextMenu({ column });
+  await settle(grid);
+  const parent = [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel [role=menuitem]')].find(item => item.textContent.trim() === 'Pin column')!;
+  parent.click();
+  await settle(grid);
+  [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel-submenu [role=menuitemradio]')].find(item => item.textContent.trim() === side)!.click();
+  await settle(grid);
+};
+
 describe('eventos', () => {
-  it('u-grid-column-fixed-change ao fixar pelo seletor', async () => {
+  it('u-grid-column-fixed-change ao fixar pelo menu do cabeçalho', async () => {
     const grid = await createGrid({ columns: columns(), items: items() });
     const details: GridColumnFixedChangeEventDetail[] = [];
     grid.addEventListener('u-grid-column-fixed-change', event => details.push(event.detail));
 
-    grid.openColumnChooser();
-    await settle(grid);
-    root(grid).querySelectorAll<HTMLButtonElement>('.column-chooser .pin-end')[0].click();
-    await settle(grid);
+    await pinFromMenu(grid, grid.columns[0], 'Pin to end');
 
     expect(details).toEqual([{ column: grid.columns[0], fixed: 'end', previousFixed: null }]);
   });
@@ -293,12 +301,13 @@ describe('i18n', () => {
     setGridTranslation('x-legacy', { pinEnd: 'P1', fixEnd: 'F1' });
 
     const grid = await createGrid({ columns: columns(), items: items(), configure: g => g.language = 'x-legacy' });
-    grid.openColumnChooser();
+    grid.openContextMenu({ column: grid.columns[0] });
+    await settle(grid);
+    root(grid).querySelector<HTMLElement>('.context-menu-panel [aria-haspopup=menu]')!.click();
     await settle(grid);
 
-    const pinStart = root(grid).querySelector<HTMLButtonElement>('.column-chooser .pin-start')!;
-    const pinEnd = root(grid).querySelector<HTMLButtonElement>('.column-chooser .pin-end')!;
-    expect([pinStart.title, pinEnd.title]).toEqual(['P0', 'F1']);
+    const radios = [...root(grid).querySelectorAll<HTMLElement>('.context-menu-panel-submenu [role=menuitemradio]')].map(item => item.textContent.trim());
+    expect(radios.slice(0, 2)).toEqual(['P0', 'F1']);
     expect(warned('"pinStart" is deprecated, use "fixStart"')).toBe(1);
   });
 
@@ -323,9 +332,9 @@ describe('memória', () => {
 
       grid.groupColumn(grid.columns[0]);
       grid.sortColumn(grid.columns[1], 'desc');
+      await pinFromMenu(grid, grid.columns[2], 'Pin to end');
       grid.openColumnChooser();
       await settle(grid);
-      root(grid).querySelectorAll<HTMLButtonElement>('.column-chooser .pin-end')[0].click();
       grid.closeColumnChooser();
       grid.ungroupColumn(grid.columns[0]);
       await settle(grid);
