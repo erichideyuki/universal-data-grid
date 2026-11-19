@@ -150,6 +150,8 @@ export class FilterRowController implements ReactiveController {
   #menuShown = false;
   #menuFocus: 'checked' | 'first' | 'last' = 'checked';
   #restoreFocusTo: GridColumnDef | undefined;
+  /** Menu aberto: de operação ou de valor (booleano) — a coluna booleana pode ter os dois botões. */
+  #menuKind: FilterMenuKind = 'operation';
 
   constructor(host: FilterRowHost) {
     this.#host = host;
@@ -168,6 +170,15 @@ export class FilterRowController implements ReactiveController {
 
   get menuColumn(): GridColumnDef | undefined {
     return this.#menuColumn;
+  }
+
+  get menuKind(): FilterMenuKind {
+    return this.#menuKind;
+  }
+
+  /** O menu `kind` desta coluna está aberto (o `aria-expanded` de cada botão). */
+  isMenuOpen(column: GridColumnDef, kind: FilterMenuKind): boolean {
+    return this.#menuColumn === column && this.#menuKind === kind;
   }
 
   /** Solta o estado de colunas que saíram. */
@@ -242,6 +253,13 @@ export class FilterRowController implements ReactiveController {
     this.#apply(column, this.operationOf(column), texts);
   }
 
+  /** Escolha no menu de valor (booleano): aplica na hora e devolve o foco ao botão. */
+  selectValue(column: GridColumnDef, text: string): void {
+    this.closeMenu(true);
+    this.input(column, 0, text, true);
+    this.#host.requestUpdate();
+  }
+
   /** Escolha no menu de operação. */
   selectOperation(column: GridColumnDef, operation: GridFilterOperation | null): void {
     this.closeMenu(true);
@@ -293,30 +311,31 @@ export class FilterRowController implements ReactiveController {
 
   // ------------------------------------------------------------ menu
 
-  toggleMenu(column: GridColumnDef): void {
-    if (this.#menuColumn === column) {
+  toggleMenu(column: GridColumnDef, kind: FilterMenuKind = 'operation'): void {
+    if (this.isMenuOpen(column, kind)) {
       this.closeMenu(true);
       return;
     }
 
-    this.openMenu(column);
+    this.openMenu(column, 'checked', kind);
   }
 
   /** Abre o menu com o foco na operação atual (clique/Enter) ou no 1º/último item (↓/↑, APG Menu Button). */
-  openMenu(column: GridColumnDef, focus: 'checked' | 'first' | 'last' = 'checked'): void {
+  openMenu(column: GridColumnDef, focus: 'checked' | 'first' | 'last' = 'checked', kind: FilterMenuKind = 'operation'): void {
     this.closeMenu();
     this.#menuColumn = column;
+    this.#menuKind = kind;
     this.#menuFocus = focus;
     this.#menuShown = false;
     this.#host.requestUpdate();
   }
 
   /** ↓/↑ no botão de operação abrem o menu (spec 17, A11). */
-  readonly onButtonKeyDown = (event: KeyboardEvent, column: GridColumnDef): void => {
+  readonly onButtonKeyDown = (event: KeyboardEvent, column: GridColumnDef, kind: FilterMenuKind = 'operation'): void => {
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
-      this.openMenu(column, event.key === 'ArrowDown' ? 'first' : 'last');
+      this.openMenu(column, event.key === 'ArrowDown' ? 'first' : 'last', kind);
     }
   };
 
@@ -336,14 +355,14 @@ export class FilterRowController implements ReactiveController {
     return this.#host.renderRoot.querySelector<HTMLElement>('.filter-menu');
   }
 
-  #buttonOf(column: GridColumnDef): HTMLElement | null {
-    return this.#host.renderRoot.querySelector<HTMLElement>(`.filter-operation-button[data-column="${columnKeyOf(column)}"]`);
+  #buttonOf(column: GridColumnDef, kind: FilterMenuKind): HTMLElement | null {
+    return this.#host.renderRoot.querySelector<HTMLElement>(`[data-filter-menu="${columnKeyOf(column)}"][data-filter-menu-kind="${kind}"]`);
   }
 
   hostUpdated(): void {
     if (!this.#menuColumn) {
       if (this.#restoreFocusTo) {
-        this.#buttonOf(this.#restoreFocusTo)?.focus();
+        this.#buttonOf(this.#restoreFocusTo, this.#menuKind)?.focus();
         this.#restoreFocusTo = undefined;
       }
 
@@ -362,7 +381,7 @@ export class FilterRowController implements ReactiveController {
       menu.showPopover();
     }
 
-    this.#position(menu, this.#buttonOf(this.#menuColumn));
+    this.#position(menu, this.#buttonOf(this.#menuColumn, this.#menuKind));
     document.addEventListener('pointerdown', this.#outsidePointerDown, true);
     const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
     const target = this.#menuFocus === 'first' ? items[0]
@@ -407,7 +426,7 @@ export class FilterRowController implements ReactiveController {
   readonly #outsidePointerDown = (event: PointerEvent): void => {
     const keep = event.composedPath().some(target =>
       target instanceof HTMLElement
-      && (target.classList.contains('filter-menu') || target.classList.contains('filter-operation-button')));
+      && (target.classList.contains('filter-menu') || target.hasAttribute('data-filter-menu')));
 
     if (!keep) {
       this.closeMenu();
@@ -451,6 +470,8 @@ export class FilterRowController implements ReactiveController {
   };
 }
 
+export type FilterMenuKind = 'operation' | 'value';
+
 let nextColumnKey = 0;
 const columnKeys = new WeakMap<GridColumnDef, number>();
 
@@ -480,6 +501,9 @@ export interface FilterCellContext {
 const inputType = (dataType: GridColumnDataType | undefined): 'number' | 'date' | 'text' =>
   dataType === 'number' ? 'number' : dataType === 'date' || dataType === 'datetime' ? 'date' : 'text';
 
+const booleanValueText = (text: string, translation: GridI18n): string =>
+  text === 'true' ? translation.trueText : text === 'false' ? translation.falseText : translation.filterAll;
+
 /** Célula da linha de filtro: botão de operação + editor(es) pelo `dataType`. */
 export const renderFilterCell = ({
   controller,
@@ -501,7 +525,6 @@ export const renderFilterCell = ({
   const texts = controller.textsOf(column);
   const label = formatMessage(translation.filterEditorLabel, { column: column.label || column.path || '' });
   const isDate = dataType === 'date' || dataType === 'datetime';
-  const open = controller.menuColumn === column;
 
   const editor = (index: number, ariaLabel: string) => html`
     <input
@@ -526,17 +549,23 @@ export const renderFilterCell = ({
   let editors: TemplateResult;
 
   if (dataType === 'boolean') {
+    // Botão de menu (APG Menu Button) no lugar do <select> nativo, que não
+    // aceita estilo (tema escuro, altura): o valor é um menuitemradio.
+    const valueText = booleanValueText(texts[0] ?? '', translation);
+
     editors = html`
-      <select
-        class="filter-editor"
+      <button
+        class="filter-editor filter-value-button"
         part="filter-editor"
-        aria-label=${label}
-        .value=${live(texts[0] ?? '')}
-        @change=${(event: Event) => controller.input(column, 0, (event.target as HTMLSelectElement).value, true)}>
-        <option value="">${translation.filterAll}</option>
-        <option value="true">${translation.trueText}</option>
-        <option value="false">${translation.falseText}</option>
-      </select>`;
+        type="button"
+        data-filter-menu=${columnKeyOf(column)}
+        data-filter-menu-kind="value"
+        aria-haspopup="menu"
+        aria-expanded=${controller.isMenuOpen(column, 'value') ? 'true' : 'false'}
+        aria-label=${`${label}, ${valueText}`}
+        @click=${() => controller.toggleMenu(column, 'value')}
+        @keydown=${(event: KeyboardEvent) => controller.onButtonKeyDown(event, column, 'value')}><span class="filter-value-text">${valueText}</span><span
+          class="filter-value-arrow" aria-hidden="true"></span></button>`;
   } else if (operation === 'between') {
     editors = html`
       <span class="filter-between">
@@ -563,9 +592,10 @@ export const renderFilterCell = ({
               class="filter-operation-button"
               part="filter-operation-button"
               type="button"
-              data-column=${columnKeyOf(column)}
+              data-filter-menu=${columnKeyOf(column)}
+              data-filter-menu-kind="operation"
               aria-haspopup="menu"
-              aria-expanded=${open ? 'true' : 'false'}
+              aria-expanded=${controller.isMenuOpen(column, 'operation') ? 'true' : 'false'}
               aria-label=${operationLabel}
               title=${operationLabel}
               @click=${() => controller.toggleMenu(column)}
@@ -583,6 +613,30 @@ export const renderFilterMenu = (
   dataType: GridColumnDataType | undefined,
   translation: GridI18n,
 ): TemplateResult => {
+  if (dataType === 'boolean' && controller.menuKind === 'value') {
+    const value = controller.textsOf(column)[0] ?? '';
+
+    return html`
+      <div
+        class="filter-menu"
+        .popover=${'manual'}
+        role="menu"
+        aria-label=${formatMessage(translation.filterEditorLabel, { column: column.label || column.path || '' })}
+        @keydown=${controller.onMenuKeyDown}>
+        ${map(['', 'true', 'false'], text => html`
+          <button
+            class="filter-menu-item"
+            type="button"
+            role="menuitemradio"
+            tabindex="-1"
+            aria-checked=${text === value ? 'true' : 'false'}
+            @click=${() => controller.selectValue(column, text)}>
+            <span class="filter-menu-glyph" aria-hidden="true">${text === value ? '✓' : ''}</span>
+            <span>${booleanValueText(text, translation)}</span>
+          </button>`)}
+      </div>`;
+  }
+
   const current = controller.operationOf(column);
 
   return html`

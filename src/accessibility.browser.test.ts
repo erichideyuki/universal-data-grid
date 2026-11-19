@@ -344,7 +344,9 @@ describe('ARIA e nomes', () => {
 
     expect(ghost).not.toBeNull();
     expect(ghost!.getAttribute('aria-hidden')).toBe('true');
-    expect(ghost!.querySelector('[tabindex]') ?? (ghost!.firstElementChild!.hasAttribute('tabindex') ? ghost : null)).toBeNull();
+    // Nada no Tab sob aria-hidden: o th e os botões clonados ficam com tabindex -1.
+    const focusables = [ghost!.firstElementChild!, ...ghost!.querySelectorAll('[tabindex], button, input, a[href]')];
+    expect(focusables.map(element => element.getAttribute('tabindex'))).toEqual(focusables.map(() => '-1'));
   });
 
   it('textos da interface levam o lang da tradução quando difere da página (WCAG 3.1.2)', async () => {
@@ -1087,6 +1089,8 @@ describe('revisão de a11y da implementação', () => {
   it('clicar no "⋮" com o menu aberto fecha', async () => {
     const grid = await createGrid({ columns: columns(), items: people() });
     const button = headerCell(grid, 'Name').querySelector<HTMLElement>('.column-header-menu-button')!;
+    // O botão só ocupa espaço com o cabeçalho sob o ponteiro (revisão do site).
+    await userEvent.hover(headerCell(grid, 'Name'));
     await userEvent.click(button);
     await settle(grid);
     expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();

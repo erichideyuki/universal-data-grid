@@ -93,7 +93,7 @@
               "name": "--u-grid-cell-font-weight"
             },
             {
-              "description": "Intensity of the row hover tint (`0%` disables it). Default: state-layer hover token or `8%`.",
+              "description": "Intensity of the row and header hover tint (`0%` disables it). Default: state-layer hover token or `8%`.",
               "name": "--u-grid-row-hover-opacity"
             },
             {
@@ -455,7 +455,7 @@
               "name": "filter-cell"
             },
             {
-              "description": "Editors (inputs and selects) of the filter row.",
+              "description": "Editors of the filter row (inputs, and the value menu button of boolean columns).",
               "name": "filter-editor"
             },
             {
@@ -3892,7 +3892,7 @@
                 "text": "GridColumnAlignment | null"
               },
               "default": "null",
-              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`).",
+              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `start`).",
               "attribute": "alignment"
             },
             {
@@ -4217,7 +4217,7 @@
                 "text": "GridColumnAlignment | null"
               },
               "default": "null",
-              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`).",
+              "description": "Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `start`).",
               "fieldName": "alignment"
             },
             {

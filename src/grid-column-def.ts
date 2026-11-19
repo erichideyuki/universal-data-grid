@@ -103,7 +103,7 @@ export interface GridColumnDef<TItem = any> {
   dataType?: GridColumnDataType | null;
   /** `Intl` options or a formatter function. */
   format?: GridColumnFormat<TItem> | null;
-  /** Logical alignment; default by data type (numbers at the end). In a band, of the header label (default `center`). */
+  /** Logical alignment; default by data type (numbers at the end). In a band, of the header label (default `start`). */
   alignment?: GridColumnAlignment | null;
   /** Cell value used to group, sort and filter. Default: read `path`. */
   valueGetter?: ((item: TItem) => unknown) | null;

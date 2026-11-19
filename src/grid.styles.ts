@@ -35,6 +35,7 @@ export const styles = css`
     --_focus-ring: var(--u-grid-focus-ring-width, 2px) solid var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
     --_selection-column-width: 48px;
     --_detail-toggle-width: 40px;
+    --_command-column-width: 176px;
     --_selected-row-color: var(--u-grid-selected-row-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 12%, transparent));
   }
 
@@ -211,13 +212,26 @@ export const styles = css`
   .column-lines .header,
   .group-row,
   thead:where(.grid-table > *),
-  .row-lines tr:where(.grid-table > * > *):not(.last):not(:last-child),
+  .row-lines :is(tbody, tfoot) > tr:where(.grid-table > * > *):not(.last):not(:last-child),
+  .row-lines thead > tr:where(.grid-table > * > *):has(+ .filter-row),
   tr:where(.grid-table > * > *):has(+ .group-row) {
     box-shadow: inset 0 calc(var(--_row-lines-height) * -1) 0 0 var(--_border-color);
   }
 
   /* Espaçadora do virtualizador (altura até a 1ª linha da janela): sem linha nem borda. */
   tr:where(.grid-table > * > *).spacer {
+    box-shadow: none;
+  }
+
+  /*
+   * Última linha do corpo: fica com a sobra da altura do \`<tbody>\` (a altura
+   * virtual). Em %, a tabela dá a sobra só a ela — sem isso a sobra se divide
+   * entre as linhas de altura automática, inclusive a da célula ativa fora da
+   * janela (\`.pinned\`, fora do fluxo mas com vaga na grade), e as linhas
+   * visíveis descem (revisão do site: master-detail e adicionar/cancelar).
+   */
+  tr:where(.grid-table > * > *).filler {
+    height: 100%;
     box-shadow: none;
   }
 
@@ -737,6 +751,16 @@ export const styles = css`
     cursor: pointer;
   }
 
+  /* Cabeçalho multinível: o rótulo das folhas fica embaixo, junto das células. */
+  thead:where(.grid-table > *):has(.band-header) .header-column {
+    vertical-align: bottom;
+  }
+
+  /* Realce sob o ponteiro (o mesmo tom da linha; \`--u-grid-row-hover-opacity: 0%\` desliga). */
+  th:where(.grid-table > * > * > *):is(.header-column, .band-header):hover {
+    background-image: linear-gradient(color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent), color-mix(in srgb, currentColor var(--_row-hover-opacity), transparent));
+  }
+
   .header-column.sorted {
     color: var(--u-grid-sorted-header-color, currentColor);
   }
@@ -814,7 +838,8 @@ export const styles = css`
     padding: var(--_header-padding);
     /* \`--u-grid-toolbar-height\` é a altura mínima: a barra cresce ao quebrar linha. */
     min-height: var(--_header-height);
-    z-index: 1;
+    /* Acima do cabeçalho (2) e das células sticky do corpo (recuos de grupo, expansão, fixas: 1). */
+    z-index: 3;
   }
 
   .drag-here {
@@ -1297,7 +1322,11 @@ export const styles = css`
     font-size: 1.125rem;
     cursor: pointer;
     color: var(--_toggle-color);
-    opacity: 0;
+  }
+
+  /* Fora do hover/foco o botão não ocupa espaço: o rótulo usa a largura toda. */
+  :is(.header-column, .band-header):not(:hover, :focus-within) .column-header-menu-button:not([aria-expanded="true"]) {
+    display: none;
   }
 
   .column-header-menu-button::before {
@@ -1306,12 +1335,6 @@ export const styles = css`
     height: 1em;
     background-color: currentColor;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
-  }
-
-  :is(.header-column, .band-header):hover .column-header-menu-button,
-  :is(.header-column, .band-header):focus-within .column-header-menu-button,
-  .column-header-menu-button[aria-expanded="true"] {
-    opacity: 1;
   }
 
   .column-header-menu-button:hover,
@@ -1324,9 +1347,9 @@ export const styles = css`
     outline-offset: -2px;
   }
 
-  @media (hover: none) {
-    .column-header-menu-button {
-      opacity: 1;
+  @media (hover: none), (any-pointer: coarse) {
+    :is(.header-column, .band-header):not(:hover, :focus-within) .column-header-menu-button:not([aria-expanded="true"]) {
+      display: inline-flex;
     }
   }
 
@@ -1447,11 +1470,51 @@ export const styles = css`
     border: none;
     /* Limite do campo ≥ 3:1 (WCAG 1.4.11, spec 17); as linhas da grade (20%) não bastam. */
     border-bottom: 1px solid var(--u-color-outline, rgb(121, 116, 126));
-    border-radius: 4px 4px 0 0;
-    background-color: color-mix(in srgb, currentColor 4%, transparent);
+    border-radius: 0;
+    /* Sem fundo preenchido (revisão do site): só a linha de baixo marca o campo. */
+    background: transparent;
     font: inherit;
     font-size: 0.875rem;
     color: inherit;
+  }
+
+  /* Ícone da operação (lupa, glifos) centrado no botão redondo. */
+  .filter-operation-button > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  /* Valor do filtro booleano: botão de menu com a cara dos outros campos (estilizável, tema escuro). */
+  .filter-value-button {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .filter-value-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .filter-value-arrow {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    background-color: var(--_toggle-color);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1 3h8L5 8z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  .filter-value-button:focus-visible {
+    outline: var(--_focus-ring);
+    outline-offset: 1px;
   }
 
   .filter-between {
@@ -1819,7 +1882,8 @@ export const styles = css`
     }
 
     .column-header-menu-button::before,
-    .toolbar-more-button::before {
+    .toolbar-more-button::before,
+    .filter-value-arrow {
       forced-color-adjust: none;
       background-color: ButtonText;
     }
@@ -2180,7 +2244,7 @@ export const styles = css`
 
   /* Coluna dos botões da linha. */
   .command-column {
-    width: 176px;
+    width: var(--_command-column-width);
   }
 
   td:where(.grid-table > * > * > *).command-cell,

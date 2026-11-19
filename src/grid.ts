@@ -1594,7 +1594,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-cell-inline-padding - Inline padding of data and header cells. Default `16px`.
  * @cssprop --u-grid-cell-font-size - Data cell font size. Default `0.875rem`.
  * @cssprop --u-grid-cell-font-weight - Data cell font weight.
- * @cssprop --u-grid-row-hover-opacity - Intensity of the row hover tint (`0%` disables it). Default: state-layer hover token or `8%`.
+ * @cssprop --u-grid-row-hover-opacity - Intensity of the row and header hover tint (`0%` disables it). Default: state-layer hover token or `8%`.
  * @cssprop --u-grid-line-opacity - Opacity of the row/column lines (derived from the text color). Default `20%`.
  * @cssprop --u-grid-line-width - Base line thickness. Default `1px`.
  * @cssprop --u-grid-row-line-width - Row separator thickness.
@@ -1685,7 +1685,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart column-header-menu-button - The "⋮" button that opens the column header menu.
  * @csspart filter-row - The filter row (`<tr>`) below the column headers.
  * @csspart filter-cell - Cells of the filter row.
- * @csspart filter-editor - Editors (inputs and selects) of the filter row.
+ * @csspart filter-editor - Editors of the filter row (inputs, and the value menu button of boolean columns).
  * @csspart filter-operation-button - The operation button of a filter row cell.
  * @csspart search-input - The search panel input.
  * @csspart header-filter-button - The funnel button in a column header (`header-filter`).
@@ -14381,8 +14381,9 @@ export class DataGrid extends LitElement {
       'column-lines': this.showColumnLines,
     };
 
-    // Com todas as larguras definidas a tabela não estica: soma exata (como
-    // no modo `widget` da referência). Com alguma automática, ocupa a largura.
+    // Com todas as larguras definidas a tabela tem a soma exata e a sobra da
+    // largura vai para a última coluna (como na referência, medida na revisão
+    // do site); com alguma automática, a tabela ocupa a largura e ela leva a sobra.
     const fit = layout.length > 0 && (this.#virtualColumns || layout.every(({ column }) =>
       this.#userWidths.has(column) || (column.width !== null && column.width !== undefined)));
 
@@ -14424,7 +14425,7 @@ export class DataGrid extends LitElement {
             @paste=${this.#onPaste}
             @focusin=${this.#onGridFocusIn}
             @focusout=${this.#onGridFocusOut}>
-            <colgroup>${this.#renderColGroups(layout)}</colgroup>
+            <colgroup>${this.#renderColGroups(layout, fit && !this.#virtualColumns)}</colgroup>
             ${this.#renderColumnHeaders(layout)}
             ${fixedTop.length ? this.#renderFixedRows('top', fixedTop, headerRows, layout) : nothing}
             <tbody
@@ -14436,7 +14437,7 @@ export class DataGrid extends LitElement {
               @pointerdown=${this.#onBodyPointerDown}>
               <tr class="spacer" role="presentation" aria-hidden="true" style="height: ${window.offset}px;"></tr>
               ${this.#renderBody(window, headerRows, layout)}
-              <tr role="presentation"></tr>
+              <tr class="filler" role="presentation"></tr>
             </tbody>
             ${fixedBottom.length ? this.#renderFixedRows('bottom', fixedBottom, headerRows, layout) : nothing}
             ${footerRows ? this.#renderTotalFooter(layout, this.#ariaRowIndexOf(this.#rows.length, headerRows)) : nothing}
@@ -14465,19 +14466,49 @@ export class DataGrid extends LitElement {
     `;
   }
 
-  #renderColGroups(layout: ColumnLayout[]): HTMLTemplateResult {
+  /**
+   * `fill`: todas as larguras definidas — a última coluna leva a sobra da
+   * largura visível (`--_viewport-inline-size`, medida no `ResizeObserver`),
+   * sem ler o DOM no render: as outras colunas entram na conta pelos px e
+   * pelas larguras do CSS (recuos, expansão, caixas, comandos).
+   */
+  #renderColGroups(layout: ColumnLayout[], fill = false): HTMLTemplateResult {
+    const widthOf = (column: GridColumnDef): number | undefined => {
+      const cap = this.#adaptiveCap;
+      const chosen = this.#widthOf(column);
+
+      return cap?.column === column && chosen !== undefined ? Math.min(chosen, cap.width) : chosen;
+    };
+
+    const last = layout[layout.length - 1];
+    let fillWidth: string | undefined;
+
+    if (fill && last) {
+      const others = layout.reduce((sum, { column, gapBefore }) => sum + gapBefore + (column === last.column ? 0 : widthOf(column) ?? 0), this.#trailingGap);
+      const reserved = [
+        `${others}px`,
+        ...this._groupColumns.map(() => 'var(--_group-column-width)'),
+        ...this.#showDetailColumn ? ['var(--_detail-toggle-width)'] : [],
+        ...this.#showSelectionColumn ? ['var(--_selection-column-width)'] : [],
+        ...this.#showCommandColumn ? ['var(--_command-column-width)'] : [],
+      ].join(' - ');
+      const own = widthOf(last.column) ?? 0;
+
+      fillWidth = `max(${own}px, var(--_viewport-inline-size, 0px) - ${reserved})`;
+    }
+
     return html`
       ${map(this._groupColumns, () => html`
         <col class="group-column"/>`)}
       ${this.#showDetailColumn ? html`<col class="detail-toggle-column"/>` : nothing}
       ${this.#showSelectionColumn ? html`<col class="selection-column"/>` : nothing}
       ${map(layout, ({ column, gapBefore }) => {
-        const cap = this.#adaptiveCap;
-        const chosen = this.#widthOf(column);
-        const width = cap?.column === column && chosen !== undefined ? Math.min(chosen, cap.width) : chosen;
+        const width = widthOf(column);
         const colStyles: { width?: string } = {};
 
-        if (width !== undefined) {
+        if (fillWidth && column === last.column) {
+          colStyles.width = fillWidth;
+        } else if (width !== undefined) {
           colStyles.width = `${width}px`;
         }
 
@@ -14772,7 +14803,7 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
     // Banda fixa só gruda se as filhas grudam (as fixas deixam de grudar no responsivo, spec 21).
     const side = first.className.split(' ').includes('fixed') ? this._fixedOf(column) : null;
-    const alignment = column.alignment ?? 'center';
+    const alignment = column.alignment ?? 'start';
     const classes: Record<string, boolean> = {
       fixed: !!side,
       'fixed-start': side === 'start',

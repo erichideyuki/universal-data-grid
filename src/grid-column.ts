@@ -148,7 +148,7 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** `Intl` options or a formatter function (property only). */
   @property({ attribute: false }) format: GridColumnFormat | null = null;
 
-  /** Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `center`). */
+  /** Logical alignment (`start`, `center`, `end`); follows RTL. Default by data type. In a band, of the header label (default `start`). */
   @property() alignment: GridColumnAlignment | null = null;
 
   /** Computes the cell value used to group, sort and filter (property only). Default: read `path`. */

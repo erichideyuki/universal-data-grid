@@ -5,7 +5,7 @@ import { makeOrders } from '../shared/data.js';
 
 export const meta = {
   title: 'Preset themes',
-  description: 'A theme is a handful of custom properties plus a few appearance properties (`rowHeight`, `striped`, `showColumnLines`). **Compact** for dense screens, **Spreadsheet** with column lines and tight cells, a **Brand** palette, and a **Dark surface** that works on a light page — the code below each choice is all it takes.',
+  description: 'A theme is a handful of custom properties plus a few appearance properties (`rowHeight`, `striped`, `showColumnLines`). **Material** is the default; **Material dark** keeps a dark grid on any page; **Bootstrap-like**, **Fluent-like** and **Classic** evoke familiar looks; **Compact** is for dense screens and **High contrast** maximizes legibility. Every theme uses only the grid\'s own `--u-grid-*` properties (and the `--u-color-*` tokens it falls back to), and `light-dark()` keeps the light ones readable on a dark page. The code below each choice is all it takes.',
 };
 
 interface Theme {
@@ -16,78 +16,167 @@ interface Theme {
 }
 
 const THEMES: Record<string, Theme> = {
-  Default: { css: {}, rowHeight: 48, striped: false, showColumnLines: false },
-  Compact: {
-    rowHeight: 32,
-    striped: true,
-    showColumnLines: false,
-    css: {
-      '--u-grid-cell-block-padding': '4px',
-      '--u-grid-cell-font-size': '0.8125rem',
-      '--u-grid-header-cell-height': '36px',
-      '--u-grid-toolbar-height': '44px',
-      '--u-grid-group-chip-height': '28px',
-    },
-  },
-  Spreadsheet: {
-    rowHeight: 28,
-    striped: false,
-    showColumnLines: true,
-    css: {
-      '--u-grid-cell-padding': '4px 8px',
-      '--u-grid-header-cell-padding': '4px 8px',
-      '--u-grid-header-cell-height': '30px',
-      '--u-grid-cell-font-size': '0.8125rem',
-      '--u-grid-line-opacity': '35%',
-      '--u-grid-header-background-color': 'light-dark(#f1f3f4, #2d2f31)',
-      '--u-grid-selected-row-indicator-width': '0',
-      '--u-grid-focus-ring-color': '#1a73e8',
-      '--u-grid-row-hover-opacity': '0%',
-    },
-  },
-  Brand: {
-    rowHeight: 44,
-    striped: true,
-    showColumnLines: false,
-    css: {
-      '--u-grid-background-color': '#f4fbfa',
-      '--u-grid-color': '#0e2a29',
-      '--u-grid-header-background-color': '#cce8e6',
-      '--u-grid-header-cell-font-weight': '700',
-      '--u-grid-striped-background-color': '#e6f4f2',
-      '--u-grid-selected-row-background-color': '#b0dcd8',
-      '--u-grid-selected-row-indicator-color': '#00696d',
-      '--u-grid-focus-ring-color': '#00696d',
-      '--u-grid-sorted-header-color': '#00696d',
-      '--u-grid-drop-indicator-color': '#00696d',
-      '--u-grid-group-chip-outline-color': '#00696d',
-      '--u-grid-group-chip-shape': '16px',
-    },
-  },
-  'Dark surface': {
+  Material: { css: {}, rowHeight: 48, striped: false, showColumnLines: false },
+  'Material dark': {
     rowHeight: 48,
     striped: false,
     showColumnLines: false,
     css: {
-      '--u-grid-background-color': '#1b1b21',
-      '--u-grid-color': '#e4e1e9', // always together with the background
-      '--u-grid-header-background-color': '#25252c',
-      '--u-grid-summary-background-color': '#25252c',
-      '--u-grid-selected-row-background-color': '#3a3768',
-      '--u-grid-selected-row-indicator-color': '#c6bfff',
-      '--u-grid-focus-ring-color': '#c6bfff',
-      '--u-grid-group-toggle-color': '#c8c5d0',
-      '--u-grid-group-chip-outline-color': '#928f9a',
+      'color-scheme': 'dark', // native controls and light-dark() inside the grid go dark too
+      '--u-grid-background-color': '#1c1b22',
+      '--u-grid-color': '#e7e1ec', // always together with the background
+      '--u-grid-header-background-color': '#24232b',
+      '--u-grid-summary-background-color': '#24232b',
+      '--u-grid-selected-row-background-color': 'rgb(196 182 255 / 0.16)',
+      '--u-color-primary': '#c4b6ff',
+      '--u-color-on-primary': '#2f1f6b',
+      '--u-color-on-surface': '#e7e1ec',
+      '--u-color-on-surface-variant': '#cbc4d2',
+      '--u-color-outline': '#958f9c',
+      '--u-color-surface-container': '#2a2931',
+      '--u-color-surface-container-high': '#33323a',
+    },
+  },
+  'Bootstrap-like': {
+    rowHeight: 40,
+    striped: true,
+    showColumnLines: false,
+    css: {
+      '--u-grid-background-color': 'light-dark(#ffffff, #1f2327)',
+      '--u-grid-color': 'light-dark(#202428, #e2e5e9)',
+      '--u-grid-header-background-color': 'light-dark(#f2f4f6, #2a2f34)',
+      '--u-grid-header-cell-font-weight': '700',
+      '--u-grid-cell-padding': '8px 12px',
+      '--u-grid-header-cell-padding': '8px 12px',
+      '--u-grid-header-cell-height': '42px',
+      '--u-grid-cell-font-size': '0.9375rem',
+      '--u-grid-line-opacity': '16%',
+      '--u-grid-striped-background-color': 'light-dark(rgb(0 0 0 / 0.035), rgb(255 255 255 / 0.04))',
+      '--u-grid-row-hover-opacity': '6%',
+      '--u-grid-selected-row-background-color': 'light-dark(#dce9fe, #1b3a66)',
+      '--u-grid-selected-row-indicator-width': '0', // the checkbox column shows the selection
+      '--u-grid-group-chip-shape': '4px',
+      '--u-grid-group-toggle-shape': '4px',
+      '--u-grid-menu-shape': '6px',
+      '--u-grid-header-filter-shape': '6px',
+      '--u-grid-column-chooser-shape': '6px',
+      '--u-color-primary': 'light-dark(#1d6ae5, #79a9fb)',
+      '--u-color-on-primary': 'light-dark(#ffffff, #0b2552)',
+      '--u-color-outline': 'light-dark(#868e96, #8b939b)',
+      '--u-color-on-surface': 'light-dark(#202428, #e2e5e9)',
+      '--u-color-surface-container': 'light-dark(#ffffff, #2a2f34)',
+    },
+  },
+  'Fluent-like': {
+    rowHeight: 42,
+    striped: false,
+    showColumnLines: false,
+    css: {
+      'font-family': '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif',
+      '--u-grid-background-color': 'light-dark(#ffffff, #262626)',
+      '--u-grid-color': 'light-dark(#1e1e1e, #f3f3f3)',
+      '--u-grid-header-cell-font-weight': '600',
+      '--u-grid-cell-inline-padding': '12px',
+      '--u-grid-line-opacity': '12%',
+      '--u-grid-row-hover-opacity': '5%',
+      '--u-grid-selected-row-background-color': 'light-dark(#ececec, #3a3a3a)',
+      '--u-grid-selected-row-indicator-width': '2px',
+      '--u-grid-selected-row-indicator-color': 'light-dark(#1764c0, #5ea6f2)',
+      '--u-grid-focus-ring-color': 'light-dark(#1e1e1e, #ffffff)',
+      '--u-grid-sorted-header-color': 'light-dark(#1764c0, #5ea6f2)',
+      '--u-grid-group-chip-shape': '4px',
+      '--u-grid-group-toggle-shape': '4px',
+      '--u-grid-menu-shape': '8px',
+      '--u-grid-header-filter-shape': '8px',
+      '--u-grid-column-chooser-shape': '8px',
+      '--u-color-primary': 'light-dark(#1764c0, #5ea6f2)',
+      '--u-color-on-primary': 'light-dark(#ffffff, #0a2240)',
+      '--u-color-on-surface': 'light-dark(#1e1e1e, #f3f3f3)',
+      '--u-color-surface-container': 'light-dark(#ffffff, #2e2e2e)',
+    },
+  },
+  Classic: {
+    rowHeight: 34,
+    striped: false,
+    showColumnLines: true,
+    css: {
+      '--u-grid-background-color': 'light-dark(#ffffff, #2a2a2a)',
+      '--u-grid-color': 'light-dark(#333333, #e6e6e6)',
+      '--u-grid-header-background-color': 'light-dark(#f4f4f4, #353535)',
+      '--u-grid-summary-background-color': 'light-dark(#f4f4f4, #353535)',
+      '--u-grid-cell-padding': '7px 10px',
+      '--u-grid-header-cell-padding': '7px 10px',
+      '--u-grid-header-cell-height': '36px',
+      '--u-grid-cell-font-size': '0.8125rem',
+      '--u-grid-line-opacity': '22%',
+      '--u-grid-toolbar-height': '48px',
+      '--u-grid-selected-row-background-color': 'light-dark(#e2edf9, #2d4058)',
+      '--u-grid-selected-row-indicator-width': '0', // the checkbox column shows the selection
+      '--u-grid-group-chip-shape': '2px',
+      '--u-grid-group-chip-height': '28px',
+      '--u-grid-group-toggle-shape': '2px',
+      '--u-grid-menu-shape': '2px',
+      '--u-grid-header-filter-shape': '2px',
+      '--u-grid-column-chooser-shape': '2px',
+      '--u-color-primary': 'light-dark(#2f74b5, #6aa8e0)',
+      '--u-color-on-primary': 'light-dark(#ffffff, #0c2238)',
+      '--u-color-on-surface': 'light-dark(#333333, #e6e6e6)',
+      '--u-color-surface-container': 'light-dark(#ffffff, #353535)',
+    },
+  },
+  Compact: {
+    rowHeight: 30,
+    striped: true,
+    showColumnLines: false,
+    css: {
+      '--u-grid-cell-block-padding': '4px',
+      '--u-grid-cell-inline-padding': '10px',
+      '--u-grid-cell-font-size': '0.8125rem',
+      '--u-grid-header-cell-height': '34px',
+      '--u-grid-filter-row-height': '36px',
+      '--u-grid-toolbar-height': '44px',
+      '--u-grid-group-chip-height': '26px',
+      '--u-grid-group-chip-padding': '10px',
+    },
+  },
+  'High contrast': {
+    rowHeight: 44,
+    striped: false,
+    showColumnLines: true,
+    css: {
+      '--u-grid-background-color': 'light-dark(#ffffff, #000000)',
+      '--u-grid-color': 'light-dark(#000000, #ffffff)',
+      '--u-grid-header-cell-font-weight': '700',
+      '--u-grid-cell-font-weight': '500',
+      '--u-grid-line-opacity': '100%',
+      '--u-grid-row-hover-opacity': '14%',
+      '--u-grid-selected-row-background-color': 'light-dark(#d7e3ff, #002a5c)',
+      '--u-grid-selected-row-indicator-width': '6px',
+      '--u-grid-selected-row-indicator-color': 'light-dark(#0030b8, #ffd60a)',
+      '--u-grid-focus-ring-color': 'light-dark(#0030b8, #ffd60a)',
+      '--u-grid-focus-ring-width': '3px',
+      '--u-grid-sorted-header-color': 'light-dark(#0030b8, #ffd60a)',
+      '--u-grid-search-highlight-background-color': '#ffe14d',
+      '--u-grid-search-highlight-color': '#000000',
+      '--u-grid-group-chip-outline-width': '2px',
+      '--u-color-primary': 'light-dark(#0030b8, #ffd60a)',
+      '--u-color-on-primary': 'light-dark(#ffffff, #000000)',
+      '--u-color-on-surface': 'light-dark(#000000, #ffffff)',
+      '--u-color-on-surface-variant': 'light-dark(#000000, #ffffff)',
+      '--u-color-outline': 'light-dark(#000000, #ffffff)',
+      '--u-color-surface-container': 'light-dark(#ffffff, #000000)',
+      '--u-color-surface-container-high': 'light-dark(#ffffff, #000000)',
     },
   },
 };
 
 export default (host: HTMLElement) => {
-  const grid = createGrid(host, 420);
+  const grid = createGrid(host, 460);
 
   grid.keyExpr = 'id';
   grid.selectionMode = 'multiple';
   grid.showCheckboxes = true;
+  grid.showFilterRow = true;
   grid.columns = [
     { path: 'country', label: 'Country', width: 160, groupIndex: 0 },
     { path: 'customer', label: 'Customer', width: 200 },
@@ -105,7 +194,7 @@ export default (host: HTMLElement) => {
     const theme = THEMES[name]!;
 
     grid.removeAttribute('style'); // drop the previous theme…
-    grid.style.height = '420px'; // …but keep the height
+    grid.style.height = '460px'; // …but keep the height
 
     for (const [property, value] of Object.entries(theme.css)) {
       grid.style.setProperty(property, value);
@@ -121,7 +210,7 @@ export default (host: HTMLElement) => {
     code.textContent = `u-grid {\n${declarations.join('\n') || '  /* the defaults */'}\n}\n\n<u-grid ${attributes.join(' ')}></u-grid>`;
   };
 
-  controls(host, select('Theme', Object.keys(THEMES), 'Default', apply));
+  controls(host, select('Theme', Object.keys(THEMES), 'Material', apply));
   host.append(code);
-  apply('Default');
+  apply('Material');
 };

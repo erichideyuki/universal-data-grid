@@ -77,7 +77,11 @@ describe('redimensionar', () => {
   });
 
   it('modo widget: só a coluna muda e a tabela acompanha', async () => {
-    const grid = await createGrid({ columns: columnsOf(3), items: [rowOf(3)], configure: g => g.columnResizing = true });
+    // Mais estreito que a soma: sem sobra para a última coluna (ela leva a sobra quando há).
+    const grid = await createGrid({ columns: columnsOf(3), items: [rowOf(3)], configure: g => {
+      g.columnResizing = true;
+      g.style.width = '250px';
+    } });
     const table = root(grid).querySelector('table')!;
     const before = table.getBoundingClientRect().width;
 
@@ -94,6 +98,7 @@ describe('redimensionar', () => {
       configure: g => {
         g.columnResizing = true;
         g.resizeMode = 'next-column';
+        g.style.width = '250px';
       },
     });
     const events: unknown[] = [];

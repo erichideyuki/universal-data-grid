@@ -181,7 +181,8 @@ describe('linha de filtro', () => {
       expect(root(grid).querySelector('tr.filter-row')!.getAttribute('aria-rowindex')).toBe('2');
       expect(editor(grid, 0).getAttribute('aria-label')).toBe('Filter Name');
       expect((editor(grid, 1) as HTMLInputElement).type).toBe('number');
-      expect(editor(grid, 3).tagName).toBe('SELECT');
+      expect(editor(grid, 3).tagName).toBe('BUTTON');
+      expect(editor(grid, 3).getAttribute('aria-haspopup')).toBe('menu');
       expect((editor(grid, 4) as HTMLInputElement).type).toBe('date');
 
       typeInto(editor(grid, 0), 'jo');
@@ -220,11 +221,20 @@ describe('linha de filtro', () => {
   it('booleano em três estados e data ao confirmar', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.showFilterRow = true });
 
-    typeInto(editor(grid, 3), 'false', 'change');
-    await settle(grid);
-    expect(names(grid)).toEqual(['José', '<b>x</b>']);
+    // Booleano: botão de menu (estilizável) com menuitemradio.
+    const chooseBoolean = async (label: string) => {
+      click(editor(grid, 3));
+      await settle(grid);
+      const item = [...root(grid).querySelectorAll<HTMLElement>('.filter-menu [role=menuitemradio]')].find(element => element.textContent.trim() === label)!;
+      click(item);
+      await settle(grid);
+    };
 
-    typeInto(editor(grid, 3), '', 'change');
+    await chooseBoolean('False');
+    expect(names(grid)).toEqual(['José', '<b>x</b>']);
+    expect(editor(grid, 3).getAttribute('aria-label')).toMatch(/, False$/);
+
+    await chooseBoolean('(All)');
     typeInto(editor(grid, 4), '1994-03-05', 'change');
     await settle(grid);
     expect(grid.filterValue).toEqual(['born', '=', '1994-03-05']);

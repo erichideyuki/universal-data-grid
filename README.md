@@ -1239,8 +1239,11 @@ column out).
 - Using the handle (drag, click, double-click, keys) never sorts the column; neither does dragging a
   header to reorder it.
 
-When every visible column has a width (set by you or by the user), the table is exactly as wide as
-their sum and does not stretch; with at least one auto-width column, the table fills the grid.
+When every visible column has a width (set by you or by the user), the last column absorbs any
+leftover width so the table still fills the grid (its own width is the minimum); with at least one
+auto-width column, that column takes the leftover. With column virtualization the table is exactly
+as wide as the sum. `getColumnWidth()` and the resize handle report the set width, not the
+stretched one.
 
 ```ts
 grid.setColumnWidth(column, 180); // clamped to minWidth/maxWidth
@@ -1322,7 +1325,7 @@ grid.columns = [
 </u-grid>
 ```
 
-- In a band only `label`, `headerRenderer`, `alignment` (of the label; default `center`), `fixed`,
+- In a band only `label`, `headerRenderer`, `alignment` (of the label; default `start`), `fixed`,
   `visible` and `showInChooser` apply; the other fields are ignored. With `<u-grid-column>`, the
   band's `label` is its own text (without the nested columns) and `columns` is a read-only list of
   the nested elements (`null` without them).
@@ -2341,7 +2344,7 @@ interface GridI18n {
   headerFilterLabel: string;   // header filter button / popover name: "Filter options for {column}"
   filterBetweenStart: string;  // "From" (first `between` editor)
   filterBetweenEnd: string;    // "To"
-  filterAll: string;           // "(All)" in the boolean filter row select
+  filterAll: string;           // "(All)" in the boolean filter row value menu
   filterBlanks: string;        // "(Blanks)" in the header filter
   filterClear: string;         // "Clear filter" in the header filter
   searchPlaceholder: string;   // "Search…" placeholder (names: searchPanelLabel, headerFilterSearchLabel)
@@ -2546,7 +2549,7 @@ tint derive from it.
 | `--u-grid-color` | on-surface token | Text color of the grid (not inherited from the page). |
 | `--u-grid-striped-background-color` | surface token | Background of even rows when `striped`. |
 | `--u-grid-header-background-color` | grid background | Header / sticky background. |
-| `--u-grid-row-hover-opacity` | state-layer token / `8%` | Tint of the data row under the pointer (`0%` disables it). |
+| `--u-grid-row-hover-opacity` | state-layer token / `8%` | Tint of the data row and of the column/band header under the pointer (`0%` disables both). |
 | `--u-grid-toolbar-height` | `56px` | Minimum height of the bar above the table (group panel, search, chooser button); it grows when its content wraps. |
 | `--u-grid-toolbar-padding` | `8px 16px` | Bar padding (or `--u-grid-toolbar-block-padding` / `--u-grid-toolbar-inline-padding`). |
 | `--u-grid-header-cell-height` | `46px` | Column header height. |
@@ -2651,7 +2654,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `column-header-menu-button` | The "⋮" button that opens the column header menu. |
 | `filter-row` | The filter row (`<tr>`). |
 | `filter-cell` | Filter row cells. |
-| `filter-editor` | Filter row inputs and selects. |
+| `filter-editor` | Filter row editors: the inputs, and the value menu button of boolean columns. |
 | `filter-operation-button` | The operation button of a filter row cell. |
 | `search-input` | The search panel input. |
 | `header-filter-button` | The funnel button in a header. |
@@ -3089,8 +3092,12 @@ When migrating CSS, remove the old names: an old **shorthand** (`--u-table-cell-
 longhands.
 
 Also changed (not deprecations): `::part(cell)` now matches every data cell (the empty-state cell
-is only `::part(no-data)`); data rows get a hover tint (`--u-grid-row-hover-opacity: 0%` turns it
-off); `items` is no longer read from an `items` attribute.
+is only `::part(no-data)`); data rows and column headers get a hover tint
+(`--u-grid-row-hover-opacity: 0%` turns it off); `items` is no longer read from an `items`
+attribute; band labels default to `start` (set `alignment: 'center'` for the old look); the boolean
+filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
+`menuitemradio`) instead of a native `<select>`; with every column width set, the last column
+absorbs the leftover width.
 
 ---
 

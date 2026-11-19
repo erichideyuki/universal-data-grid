@@ -124,6 +124,8 @@ describe('memória do virtualizador (spec 14)', () => {
       columns: [{ path: 'a', label: 'A', width: 80, wrap: true }],
       items: Array.from({ length: 200 }, () => ({ a: text })),
       height: '400px',
+      // Estreito: a última coluna leva a sobra da largura e o texto deixaria de quebrar.
+      configure: g => g.style.width = '120px',
     });
 
     for (let round = 0; round < 5; round++) {

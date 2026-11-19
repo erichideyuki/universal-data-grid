@@ -44,9 +44,25 @@ export class ColumnDragAndDropAdapter {
         const original = event.currentTarget;
         const clone = event.currentTarget.cloneNode(true) as HTMLElement;
 
+        // Fora da tabela o clone perde o CSS de `th` da grade: leva o tamanho e
+        // a aparência calculados da célula (mesma largura e altura, com rowspan).
         const rect = original.getBoundingClientRect();
-        clone.style.width = rect.width + 'px';
-        clone.style.minWidth = clone.style.width;
+        const computed = getComputedStyle(original);
+        Object.assign(clone.style, {
+          display: 'flex',
+          alignItems: computed.verticalAlign === 'bottom' ? 'flex-end' : 'center',
+          justifyContent: computed.textAlign === 'center' ? 'center' : computed.textAlign === 'end' || computed.textAlign === 'right' ? 'flex-end' : 'flex-start',
+          boxSizing: 'border-box',
+          width: `${rect.width}px`,
+          minWidth: `${rect.width}px`,
+          maxWidth: `${rect.width}px`,
+          height: `${rect.height}px`,
+          padding: computed.padding,
+          font: computed.font,
+          color: computed.color,
+          overflow: 'hidden',
+          whiteSpace: computed.whiteSpace,
+        });
 
         const moveContainer = document.createElement('div');
         moveContainer.style.top = rect.top + 'px';
@@ -55,7 +71,8 @@ export class ColumnDragAndDropAdapter {
         // Só visual: fora da árvore de acessibilidade e sem focáveis (spec 17). Sem
         // \`inert\`: o fantasma precisa continuar recebendo o clique que termina o arrasto.
         moveContainer.setAttribute('aria-hidden', 'true');
-        [clone, ...clone.querySelectorAll('[tabindex]')].forEach(element => element.removeAttribute('tabindex'));
+        // Nada focável sob `aria-hidden` (axe aria-hidden-focus): o th e os botões clonados ficam fora do Tab.
+        [clone, ...clone.querySelectorAll('[tabindex], button, input, a[href]')].forEach(element => element.setAttribute('tabindex', '-1'));
         moveContainer.appendChild(clone);
 
         this.#grid._containerRef.value!.appendChild(moveContainer);

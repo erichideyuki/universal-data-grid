@@ -9,7 +9,7 @@ import { makeStocks, random, type Stock } from '../shared/data.js';
 
 export const meta = {
   title: 'Stock ticker with applyChanges',
-  description: 'A `dataSource` serves the rows once; a timer then pushes price changes with `applyChanges({ update })`. Updated rows are patched in place by `keyExpr` (no re-sorting or re-filtering while you read) and changed cells flash through a renderer plus `::part`. Select rows, sort or focus a cell — nothing is lost between ticks.',
+  description: 'A `dataSource` serves the rows once; a timer (1 tick/s by default, adjustable) then pushes price changes with `applyChanges({ update })`. Updated rows are patched in place by `keyExpr` (no re-sorting or re-filtering while you read) and changed cells flash through a renderer plus `::part`. Select rows, sort or focus a cell — nothing is lost between ticks.',
 };
 
 interface Tick extends Stock {
@@ -70,6 +70,7 @@ export default (host: HTMLElement) => {
   grid.dataSource = { load: async () => ({ data: [...rows.values()] }) };
 
   let perTick = 20;
+  let ticksPerSecond = 1;
   let timer: ReturnType<typeof setInterval> | undefined;
   let sent = 0;
   let since = performance.now();
@@ -102,7 +103,8 @@ export default (host: HTMLElement) => {
 
     const elapsed = performance.now() - since;
 
-    if (elapsed > 1000) {
+    // About once a second (a little slack: at 1 tick/s the interval jitters around 1000 ms).
+    if (elapsed >= 950) {
       rate.textContent = `${Math.round(sent * 1000 / elapsed).toLocaleString()} updates/s`;
       sent = 0;
       since = performance.now();
@@ -111,7 +113,9 @@ export default (host: HTMLElement) => {
 
   const start = () => {
     clearInterval(timer);
-    timer = setInterval(tick, 100);
+    sent = 0;
+    since = performance.now();
+    timer = setInterval(tick, 1000 / ticksPerSecond);
     toggle.textContent = 'Pause';
   };
 
@@ -126,7 +130,14 @@ export default (host: HTMLElement) => {
 
   controls(host,
     toggle,
-    select('Updates per tick (10 ticks/s)', ['1', '5', '20', '50', '100'], '20', value => (perTick = Number(value))),
+    select('Ticks per second', ['0.5', '1', '2', '5', '10'], '1', value => {
+      ticksPerSecond = Number(value);
+
+      if (timer) {
+        start(); // restarts the interval at the new rate
+      }
+    }),
+    select('Updates per tick', ['1', '5', '20', '50', '100'], '20', value => (perTick = Number(value))),
     rate);
 
   start();

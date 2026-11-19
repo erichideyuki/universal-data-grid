@@ -56,7 +56,8 @@ Bandas:
   = `columns` com pelo menos 1 item (`null`/`[]` = folha). Nome do
   DevExtreme; `children` sombrearia `Element.children` no `<u-grid-column>`.
 - Na banda valem só `label`, `headerRenderer`, `alignment` (do rótulo;
-  padrão `center`), `fixed`, `visible`, `showInChooser`, `columns`; o resto
+  padrão `start`, como no DevExtreme — revisão do site; folhas do multinível
+  embaixo), `fixed`, `visible`, `showInChooser`, `columns`; o resto
   é ignorado (documentado, sem aviso). Profundidade livre.
 - `fixed` só no nível de cima: banda fixa leva os filhos; `fixed` numa
   coluna aninhada é ignorado (as folhas herdam o da banda de cima, inclusive
