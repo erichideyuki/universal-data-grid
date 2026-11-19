@@ -443,10 +443,6 @@
               "name": "column-header-menu"
             },
             {
-              "description": "The \"⋮\" button that opens the column header menu.",
-              "name": "column-header-menu-button"
-            },
-            {
               "description": "The filter row (`<tr>`) below the column headers.",
               "name": "filter-row"
             },
@@ -1028,7 +1024,7 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Built-in items of the column header context menu (right-click, long\npress, the \"⋮\" button, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
+              "description": "Built-in items of the column header context menu (right-click, long\npress, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "attribute": "column-header-menu"
             },
             {
@@ -2685,7 +2681,7 @@
               "type": {
                 "text": "CustomEvent<GridContextMenuOpeningEventDetail>"
               },
-              "description": "Before a context menu opens (header, group panel, row, group row: right-click, long press, Shift+F10, the context menu key, the header \"⋮\" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays."
+              "description": "Before a context menu opens (header, group panel, row, group row: right-click, long press, Shift+F10, the context menu key, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays."
             },
             {
               "name": "u-grid-copying",
@@ -2983,7 +2979,7 @@
                 "text": "boolean"
               },
               "default": "true",
-              "description": "Built-in items of the column header context menu (right-click, long\npress, the \"⋮\" button, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
+              "description": "Built-in items of the column header context menu (right-click, long\npress, Shift+F10 or the context menu key on a header):\nsort, group by the column, pin it, move it left/right, auto-size or\nwiden/narrow it. It is the single-pointer alternative to dragging (WCAG\n2.5.7): with `column-header-menu=\"false\"` the host must provide one\n(it may add items through `u-grid-context-menu-opening`). Only actions\nthat apply to the column are listed; without any, the browser menu is\nkept. Default `true`.",
               "fieldName": "columnHeaderMenu"
             },
             {

@@ -38,8 +38,6 @@ export interface HeaderCellContext {
   keyShortcuts?: string;
   /** Clique direito: menu do cabeçalho (spec 17, A1). */
   onContextMenu?: (event: MouseEvent) => void;
-  /** Botão "⋮" do menu do cabeçalho (alternativa de toque ao clique direito). */
-  menuButton?: TemplateResult | typeof nothing;
   /** Conteúdo do rótulo (`headerRenderer`); padrão: `column.label`. */
   label?: unknown;
   /** Nível de baixo coberto pela célula (`data-level`, frente 13). */
@@ -68,7 +66,6 @@ export interface BandHeaderCellContext {
   description?: string;
   keyShortcuts?: string;
   onContextMenu?: (event: MouseEvent) => void;
-  menuButton?: TemplateResult | typeof nothing;
   label?: unknown;
 }
 
@@ -139,7 +136,6 @@ export const renderBandHeaderCell = ({
   description = '',
   keyShortcuts,
   onContextMenu,
-  menuButton = nothing,
   label = column.label,
 }: BandHeaderCellContext): TemplateResult => html`
   <th
@@ -157,7 +153,7 @@ export const renderBandHeaderCell = ({
     data-column-id=${columnId}
     tabindex=${tabIndex}
     @contextmenu=${onContextMenu ?? nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${menuButton}</span>${
+    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span></span>${
       renderDescription(idSuffix, description)}
   </th>`;
 
@@ -179,7 +175,6 @@ export const renderHeaderCell = ({
   description = '',
   keyShortcuts,
   onContextMenu,
-  menuButton = nothing,
   label = column.label,
   level,
   rowSpan,
@@ -214,6 +209,6 @@ export const renderHeaderCell = ({
         }
       }
       : nothing}>
-    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}${menuButton}</span>${trailing}${
+    <span class="header-content"><span class="header-text" id="header-text-${idSuffix}">${label}</span>${renderSortIndicator(order, sortIndex)}${filterButton}</span>${trailing}${
       renderDescription(idSuffix, description)}
   </th>`;

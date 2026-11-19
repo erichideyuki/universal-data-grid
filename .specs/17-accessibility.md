@@ -302,9 +302,16 @@ acréscimos voltam ao usuário para confirmação junto com a entrega):
   focável na árvore sombra; reconfere depois do `updateComplete` do Lit);
   decorativos ficam sem `tabindex` e o clique neles não trava as setas.
   Alvos `aria-hidden` nunca recebem foco.
-- O "⋮" fica no fluxo do cabeçalho, depois do funil (não cobre funil, seta
-  nem alça); só a opacidade alterna.
-- Clicar no "⋮" com o menu aberto fecha (não fecha-e-reabre).
+- ~~O "⋮" fica no fluxo do cabeçalho~~ / ~~clicar no "⋮" com o menu aberto
+  fecha~~: o botão saiu (revisão do site, decisão do usuário): no hover ele
+  empurrava o rótulo alinhado no fim e fazia a linha do cabeçalho crescer.
+  O menu do cabeçalho abre por clique direito, toque longo (iOS incluso,
+  \`LongPressController\`), Shift+F10 / tecla Menu no cabeçalho focado (APG
+  grid) e \`openContextMenu()\`; segue sendo a alternativa de ponteiro único
+  ao arrasto (2.5.7). F2 no cabeçalho percorre só conteúdo do
+  \`headerRenderer\`, funil e alça, e sai do \`aria-keyshortcuts\` quando não
+  há nenhum. Linha de filtro: o editor ficou sem borda (como o DevExtreme);
+  a célula com o foco ganha uma linha de 2px na cor primária.
 - Enter/Esc durante composição de IME não aplicam nem fecham o funil.
 - Os menus do grid cancelam o `contextmenu` (a tecla Menu o solta no
   `keyup`, já com o foco no menu).

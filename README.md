@@ -984,7 +984,7 @@ column chooser button are separate stops in the bar above.
 | `Alt`+`Shift`+`←`/`→` on a group chip | Change the grouping level. |
 | `Ctrl`+`G` or `Delete` on a group chip | Ungroup the column (the focus goes to its header). |
 | `Shift`+`F10` / menu key on a group chip | Open the group panel menu (also moves the chip left/right). |
-| `F2` / `Alt`+`↓` on a header | `F2` cycles through the header filter button, the "⋮" menu button and the resize handle, then back to the header / `Alt`+`↓` opens the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
+| `F2` / `Alt`+`↓` on a header | `F2` cycles through the header's own controls (`headerRenderer` content, header filter button, resize handle), then back to the header / `Alt`+`↓` opens the header filter (`Esc` closes it and returns to the button, `Esc` again to the cell). |
 | `↓` on a filter row operation button | Open the operation menu on its first item (`↑`: last item). |
 | In the header filter list | One `Tab` stop: `↑`/`↓`/`Home`/`End` move, `→`/`←` expand/collapse dates or go to the child/parent (mirrored in RTL), `Space` checks, `Enter` applies (also in its search field), a letter goes to the search field. |
 
@@ -1060,8 +1060,8 @@ reach it. "Select all" selects the rows that pass the filter and the search.
   pinned-column edges and active states use system colors. Transitions are off with
   `prefers-reduced-motion: reduce`.
 - Every drag gesture has a keyboard alternative (WCAG 2.1.1) and a single-pointer one (WCAG 2.5.7):
-  the column header menu (right-click or the "⋮" button, shown on hover and always on touch
-  screens) groups, moves and resizes columns; the group panel menu moves chips. With
+  the column header menu (right-click, a long press on touch screens, `Shift+F10` or the menu key)
+  groups, moves and resizes columns; the group panel menu moves chips. With
   `column-header-menu="false"` the host must provide its own alternative.
 - Headers expose `aria-keyshortcuts` and a description with what is not visible to a screen
   reader: the sort priority (only the first sorted column has `aria-sort`, as ARIA asks), pinned and
@@ -1080,8 +1080,7 @@ reach it. "Select all" selects the rows that pass the filter and the search.
 > the grid sets its own text color (`--u-grid-color`) — on dark pages set it together with
 > `--u-grid-background-color`; the resize hit area is 24px and reserved at the end of resizable
 > headers; `dragToGroup`/`autoSize` texts mention the keyboard (update your overrides);
-> `--u-grid-toolbar-height` is now a minimum height (the bar wraps); headers with a menu show a
-> "⋮" button (on hover; always on touch screens, where the header reserves 28px for it);
+> `--u-grid-toolbar-height` is now a minimum height (the bar wraps);
 > `fixStart`/`fixEnd`, `searchPlaceholder` and `filterOperationLabel` no longer name controls — the
 > names come from `fixStartLabel`/`fixEndLabel`, `searchPanelLabel` and
 > `filterOperationButtonLabel`; languages added with `setGridTranslation` get the new keys in
@@ -1344,7 +1343,7 @@ grid.columns = [
 - **Keyboard**: `↑`/`↓` move between header levels (`↑` from a column goes to its band, `↓` from a
   band to the column under the remembered position), `←`/`→` move along the level skipping the whole
   band, `Home`/`End` go to the first/last cell of the level and `Ctrl+Home` to the top-left header.
-  On a band, `Shift+F10` (or the `⋮` button) opens a menu with "Move left/right"; `Enter`, `Space`
+  On a band, `Shift+F10`, the menu key, right-click or a long press open a menu with "Move left/right"; `Enter`, `Space`
   and `Ctrl+G` do nothing.
 - **Accessibility**: bands are `role="columnheader"` cells with a native `colspan`, header rows have
   `aria-rowindex` 1…N (the filter row follows), and `aria-colindex` is always the real column index.
@@ -1666,7 +1665,7 @@ exporter gets an `AbortSignal`). For other formats (PDF), add your own toolbar i
 ### Context menus
 
 Right-click, a long press (touch), `Shift+F10` or the context menu key opens the context menu of a
-column header (also its "⋮" button), the group panel (a chip or its empty area), a data row or a
+column header, the group panel (a chip or its empty area), a data row or a
 group row. Built-in items:
 
 | Target | Built-in items (only those that apply) | Turned off by |
@@ -2381,7 +2380,7 @@ interface GridI18n {
   columnMovedAnnouncement: string;  // "{column} moved to position {position} of {count}"
   groupedAnnouncement: string;      // "Grouped by {column}"
   ungroupedAnnouncement: string;    // "Ungrouped {column}"
-  columnHeaderMenuLabel: string;    // column header menu and its button: "Options for {column}"
+  columnHeaderMenuLabel: string;    // column header menu: "Options for {column}"
   groupColumn: string;              // "Group by this column"
   moveLeft: string;                 // "Move left" (physical side, also in RTL)
   moveRight: string;                // "Move right"
@@ -2463,7 +2462,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `autoExpandGroups` | `auto-expand-groups`  | `boolean` | `false` | Render groups expanded by default (initial default; changing it resets the expansion state). |
 | `showGroupCount`   | `show-group-count`    | `boolean` | `true`  | Show the row count in group rows. |
 | `groupPanelMenu`   | `group-panel-menu`    | `boolean` | `true`  | Built-in items of the group panel menu (ungroup, move, expand/collapse all). See [Context menus](#context-menus). |
-| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, "⋮", Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
+| `columnHeaderMenu` | `column-header-menu`  | `boolean` | `true`  | Built-in items of the column header menu (right-click, long press, Shift+F10): sort, group, pin, move, auto-size, widen/narrow. The single-pointer alternative to dragging (WCAG 2.5.7). |
 | `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). With `cell-selection-mode`, the cell menu also opens with the range items. |
 | `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
 | `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
@@ -2651,7 +2650,6 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `column-header-menu` | The column header context menu. |
 | `row-menu` | The context menu of data and group rows. |
 | `toolbar-menu` | The "More actions" and Export menus. |
-| `column-header-menu-button` | The "⋮" button that opens the column header menu. |
 | `filter-row` | The filter row (`<tr>`). |
 | `filter-cell` | Filter row cells. |
 | `filter-editor` | Filter row editors: the inputs, and the value menu button of boolean columns. |

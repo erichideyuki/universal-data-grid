@@ -29,7 +29,7 @@ const CONTROLS: Control[] = [
   { property: '--u-grid-cell-font-size', type: 'range', label: 'Font size', min: 0.75, max: 1, step: 0.0625, unit: 'rem', value: '0.875' },
   { property: '--u-grid-cell-inline-padding', type: 'range', label: 'Cell padding', min: 4, max: 32, step: 2, unit: 'px', value: '16' },
   { property: '--u-grid-header-cell-height', type: 'range', label: 'Header height', min: 32, max: 64, step: 2, unit: 'px', value: '46' },
-  { property: '--u-grid-line-opacity', type: 'range', label: 'Line opacity', min: 0, max: 60, step: 5, unit: '%', value: '20' },
+  { property: '--u-grid-line-opacity', type: 'range', label: 'Divider opacity', min: 0, max: 60, step: 5, unit: '%', value: '20' },
   { property: '--u-grid-selected-row-indicator-width', type: 'range', label: 'Selection bar', min: 0, max: 8, step: 1, unit: 'px', value: '3' },
 ];
 

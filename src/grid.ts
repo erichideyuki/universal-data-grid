@@ -1572,7 +1572,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @fires {CustomEvent<GridSaveErrorEventDetail>} u-grid-save-error - The `waitUntil` promise rejected; the changes stay pending.
  * @fires {CustomEvent<GridEditCancelEventDetail>} u-grid-edit-cancel - Pending changes were discarded (Esc, Cancel, Discard changes, `discardChanges`).
  * @fires {CustomEvent<GridContextMenuOpeningEventDetail>} u-grid-context-menu-opening - Before a context menu opens (header, group panel, row, group row: right-click,
- * long press, Shift+F10, the context menu key, the header "⋮" button, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
+ * long press, Shift+F10, the context menu key, `openContextMenu`): change `detail.menuItems` in place. Cancelable; canceled or empty, the browser menu stays.
  * @fires {CustomEvent<GridExportingEventDetail>} u-grid-exporting - Before an export started from the UI (toolbar, "More actions", row menu). Cancelable: export your own way (e.g. PDF).
  * @fires {CustomEvent<GridExportEventDetail>} u-grid-export - An export started from the UI finished.
  * @fires {CustomEvent<GridExportErrorEventDetail>} u-grid-export-error - An export started from the UI failed (`detail.error`).
@@ -1682,7 +1682,6 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart toolbar-menu - The "More actions" and export menus.
  * @csspart group-panel-menu - The group panel context menu.
  * @csspart column-header-menu - The column header context menu.
- * @csspart column-header-menu-button - The "⋮" button that opens the column header menu.
  * @csspart filter-row - The filter row (`<tr>`) below the column headers.
  * @csspart filter-cell - Cells of the filter row.
  * @csspart filter-editor - Editors of the filter row (inputs, and the value menu button of boolean columns).
@@ -3516,7 +3515,7 @@ export class DataGrid extends LitElement {
 
   /**
    * Built-in items of the column header context menu (right-click, long
-   * press, the "⋮" button, Shift+F10 or the context menu key on a header):
+   * press, Shift+F10 or the context menu key on a header):
    * sort, group by the column, pin it, move it left/right, auto-size or
    * widen/narrow it. It is the single-pointer alternative to dragging (WCAG
    * 2.5.7): with `column-header-menu="false"` the host must provide one
@@ -13866,13 +13865,13 @@ export class DataGrid extends LitElement {
     this.#onRangePointerDown(event);
   };
 
-  /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, menu, alça. */
+  /** Alvos do F2 no cabeçalho, em ordem: conteúdo do `headerRenderer`, funil, alça. */
   #headerControls(cell: HTMLElement): (HTMLElement | SVGElement)[] {
     const label = cell.querySelector<HTMLElement>('.header-text');
 
     return [
       ...label ? focusTargetsWithin(label) : [],
-      ...cell.querySelectorAll<HTMLElement>('.header-filter-button, .column-header-menu-button, .resize-handle'),
+      ...cell.querySelectorAll<HTMLElement>('.header-filter-button, .resize-handle'),
     ];
   }
 
@@ -13925,7 +13924,7 @@ export class DataGrid extends LitElement {
     }
 
     if (event.key === 'F2') {
-      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): o do `headerRenderer`, funil, menu, alça.
+      // Conteúdo interativo do cabeçalho (fora da ordem de Tab): o do `headerRenderer`, funil, alça.
       const target = this.#headerControls(cell)[0];
 
       if (target) {
@@ -14756,7 +14755,8 @@ export class DataGrid extends LitElement {
 
     return renderHeaderCell({
       column,
-      classes: cell.headerClasses,
+      // Cabeçalho multinível: a folha que fecha a última posição não leva a linha do fim (é a borda do grid).
+      classes: header.start + header.span === cells.length ? { ...cell.headerClasses, 'last-column': true } : cell.headerClasses,
       styles: cell.headerStyles,
       colIndex: cell.col + 1,
       tabIndex: active === column ? 0 : -1,
@@ -14784,7 +14784,6 @@ export class DataGrid extends LitElement {
         : nothing,
       filtered: hasColumnCondition(filterValue, column),
       description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
-      menuButton: this.#renderColumnMenuButton(column),
       keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
       label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
     });
@@ -14834,9 +14833,10 @@ export class DataGrid extends LitElement {
       description: side === 'start' ? translation.columnFixedStart : side === 'end' ? translation.columnFixedEnd : '',
       keyShortcuts: [
         ...this.#hasMovableNeighbor(column) ? ['Alt+Shift+ArrowLeft', 'Alt+Shift+ArrowRight'] : [],
-        ...hasMenu ? ['Shift+F10', 'F2'] : [],
+        ...hasMenu ? ['Shift+F10'] : [],
+        // F2 só leva a algum lugar com conteúdo do \`headerRenderer\` (o botão "⋮" saiu: menu de contexto).
+        ...column.headerRenderer ? ['F2'] : [],
       ].join(' '),
-      menuButton: this.#renderColumnMenuButton(column),
       label: column.headerRenderer ? this.#renderHeaderContent(column, id) : column.label,
     });
   }
@@ -14896,7 +14896,7 @@ export class DataGrid extends LitElement {
       keys.push('Alt+ArrowDown');
     }
 
-    if (funnel || resizable || this.#hasColumnMenu(column)) {
+    if (funnel || resizable || column.headerRenderer) {
       keys.push('F2');
     }
 
@@ -17424,51 +17424,6 @@ export class DataGrid extends LitElement {
       || (this.columnChooser && !grouped && this._isRegularColumn(column) && !this._parentBandOf(column))
       || this.#hasMovableNeighbor(column)
       || (!band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column)));
-  }
-
-  /**
-   * Botão "⋮": abre o menu no toque (iOS não tem menu de contexto) e mostra
-   * que ele existe. O ícone é máscara CSS (um nó por cabeçalho; spec 16).
-   */
-  #renderColumnMenuButton(column: GridColumnDef) {
-    if (!this.#hasColumnMenu(column)) {
-      return nothing;
-    }
-
-    const label = formatMessage(this.#translation.columnHeaderMenuLabel, { column: column.label ?? '' });
-    const open = this.#contextMenuOpenFor('header', column);
-
-    return html`<button
-      class="column-header-menu-button"
-      part="column-header-menu-button"
-      type="button"
-      tabindex="-1"
-      aria-haspopup="menu"
-      aria-expanded=${open ? 'true' : 'false'}
-      aria-label=${label}
-      title=${label}
-      @click=${(event: MouseEvent) => {
-        event.stopPropagation();
-
-        // O botão também é alça do arrasto do cabeçalho: o clique que termina um arrasto não abre.
-        if (this.#consumeDrag(event)) {
-          return;
-        }
-
-        if (open) {
-          this.#contextMenu.hide(true);
-          return;
-        }
-
-        const button = event.currentTarget as HTMLElement;
-        this.#openHeaderMenu(column, button.closest('th')!, { opener: button, returnFocus: button }, null);
-      }}
-      @keydown=${(event: KeyboardEvent) => {
-        // Enter/Espaço no botão não podem ordenar a coluna.
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.stopPropagation();
-        }
-      }}></button>`;
   }
 
   #groupPanelMenuItems(column: GridColumnDef | null): BuiltInMenuItem[] {

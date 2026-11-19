@@ -122,7 +122,7 @@ ARIA:
 - `aria-colcount` = navegáveis totais; `aria-colindex` sempre o real.
 - Ids do cabeçalho com nível + índice (`header-text-{nível}-{col}`).
 - `aria-keyshortcuts` da banda: `Alt+Shift+ArrowLeft Alt+Shift+ArrowRight
-  Shift+F10` (+`F2` com o ⋮).
+  Shift+F10` (+`F2` só com conteúdo do `headerRenderer`; o ⋮ saiu na revisão do site).
 - Rótulo da banda quebra linha (1.4.12) e a banda tem borda visível
   (`CanvasText` em `forced-colors`).
 
@@ -137,7 +137,7 @@ Foco e teclado (padrão espacial da APG; início/fim lógicos, espelham em RTL):
 - Ctrl+Home: 1ª célula do 1º nível.
 - Alt+Shift+←/→: move entre os irmãos visíveis do mesmo bloco (folha não
   sai da banda); na banda, move o bloco; anuncia a posição entre irmãos.
-- Shift+F10 / ⋮ na banda: "Mover para a esquerda/direita". Enter/Espaço/
+- Shift+F10 / tecla Menu / clique direito na banda: "Mover para a esquerda/direita". Enter/Espaço/
   Ctrl+G na banda: nada.
 - Arrastar banda = bloco; folha só dentro da banda. O menu é a alternativa
   de ponteiro único (2.5.7).

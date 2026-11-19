@@ -249,7 +249,7 @@ describe('teclado', () => {
     expect(root(grid).querySelector('.group')).toBeNull();
   });
 
-  it('F2 percorre funil → menu → alça → célula no cabeçalho (spec 05)', async () => {
+  it('F2 percorre funil → alça → célula no cabeçalho (spec 05; sem o "⋮", revisão do site)', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
       g.headerFilter = true;
       g.columnResizing = true;
@@ -259,8 +259,6 @@ describe('teclado', () => {
 
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('header-filter-button')).toBe(true);
-    await press(grid, 'F2');
-    expect(focused(grid)?.classList.contains('column-header-menu-button')).toBe(true);
     await press(grid, 'F2');
     expect(focused(grid)?.classList.contains('resize-handle')).toBe(true);
     await press(grid, 'F2');
@@ -433,12 +431,37 @@ describe('contraste dos padrões (WCAG 1.4.3, 1.4.11)', () => {
     expect(contrast(text, background)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('limite do editor da linha de filtro ≥ 3:1 contra o fundo', async () => {
-    const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.showFilterRow = true });
-    const editor = root(grid).querySelector<HTMLElement>('.filter-editor')!;
-    const border = over(parseColor(getComputedStyle(editor).borderBottomColor), WHITE);
+  it('linha de filtro sem borda (revisão do site): a linha de foco da célula ≥ 3:1; sem botão de operação, o campo mantém o limite ≥ 3:1', async () => {
+    const grid = await createGrid({
+      columns: [...columns(), { path: 'name', label: 'Nickname', filterOperations: ['contains'] }],
+      items: people(),
+      configure: g => g.showFilterRow = true,
+    });
+    const editors = [...root(grid).querySelectorAll<HTMLInputElement>('input.filter-editor')];
+    const single = editors.at(-1)!;
 
-    expect(contrast(border, WHITE)).toBeGreaterThanOrEqual(3);
+    editors[0].focus();
+    await settle(grid);
+    const shadow = getComputedStyle(editors[0].closest('td')!).boxShadow;
+    const line = over(parseColor(shadow.match(/(?:rgba?|color)\([^)]*\)(?= 0px -2px)/)![0]), WHITE);
+    expect(contrast(line, WHITE)).toBeGreaterThanOrEqual(3);
+
+    expect(single.closest('.filter-cell-content')!.querySelector('.filter-operation-button')).toBeNull();
+    expect(getComputedStyle(single).borderBottomStyle).toBe('solid');
+    expect(contrast(over(parseColor(getComputedStyle(single).borderBottomColor), WHITE), WHITE)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('linha de filtro "between": o campo focado leva o próprio anel (dois campos na mesma célula)', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'age', label: 'Age', dataType: 'number', defaultFilterOperation: 'between' }],
+      items: people(),
+      configure: g => g.showFilterRow = true,
+    });
+    const second = root(grid).querySelectorAll<HTMLInputElement>('.filter-between input.filter-editor')[1];
+
+    second.focus(); // campo de texto: sempre :focus-visible
+    await settle(grid);
+    expect(getComputedStyle(second).outlineStyle).toBe('solid');
   });
 });
 
@@ -675,7 +698,7 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
     expect(focused(grid)).not.toBeNull();
   });
 
-  it('sem ações para a coluna: menu do navegador, sem botão e sem Shift+F10', async () => {
+  it('sem ações para a coluna: menu do navegador e sem Shift+F10', async () => {
     const grid = await createGrid({ columns: [{ path: 'name', label: 'Name', groupable: false, sortable: false }], items: people() });
     const th = headerCell(grid, 'Name');
     const event = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
@@ -683,22 +706,20 @@ describe('A1 — menu do cabeçalho (alternativa ao arrasto, WCAG 2.5.7)', () =>
     await settle(grid);
 
     expect(event.defaultPrevented).toBe(false);
-    expect(th.querySelector('.column-header-menu-button')).toBeNull();
     // Coluna única: nem Alt+Shift (sem vizinha) — sem atributo.
     expect(th.getAttribute('aria-keyshortcuts') ?? '').not.toContain('Shift+F10');
   });
 
-  it('botão abre o menu; com column-resizing, largura por clique sem arrasto', async () => {
+  it('clique direito abre o menu; com column-resizing, largura por clique sem arrasto', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => {
       g.language = 'en';
       g.columnResizing = true;
     } });
-    const button = headerCell(grid, 'Age').querySelector<HTMLElement>('.column-header-menu-button')!;
     const before = headerCell(grid, 'Age').getBoundingClientRect().width;
 
-    expect(button.getAttribute('aria-label')).toBe('Options for Age');
-    button.click();
+    await userEvent.click(headerCell(grid, 'Age'), { button: 'right' });
     await settle(grid);
+    expect(root(grid).querySelector('.column-header-menu')!.getAttribute('aria-label')).toBe('Options for Age');
     const wider = menuItems(grid).find(item => item.textContent.trim() === 'Increase width')!;
     wider.focus();
     wider.click();
@@ -983,11 +1004,11 @@ describe('A12 — mais de um focável na célula; custom elements', () => {
 });
 
 describe('revisão da implementação (A1–A14)', () => {
-  it('sem funil nem alça, F2 (que leva ao "⋮") entra no aria-keyshortcuts', async () => {
+  it('sem funil nem alça, F2 não entra no aria-keyshortcuts (não há para onde ir sem o "⋮")', async () => {
     const grid = await createGrid({ columns: columns(), items: people() });
 
     expect(headerCell(grid, 'Name').getAttribute('aria-keyshortcuts')).toBe(
-      'Shift+F10 Control+G Meta+G Alt+Shift+ArrowLeft Alt+Shift+ArrowRight F2',
+      'Shift+F10 Control+G Meta+G Alt+Shift+ArrowLeft Alt+Shift+ArrowRight',
     );
   });
 
@@ -1060,45 +1081,6 @@ describe('revisão de a11y da implementação', () => {
     await userEvent.click(badge);
     await press(grid, 'ArrowDown');
     expect(focused(grid)?.matches('td[data-col]')).toBe(true);
-  });
-
-  it('o "⋮" não cobre o funil nem a seta (coluna à direita, com alça)', async () => {
-    const grid = await createGrid({
-      columns: [{ path: 'name', label: 'Name' }, { path: 'age', label: 'Age', alignment: 'end' }],
-      items: people(),
-      configure: g => {
-        g.headerFilter = true;
-        g.columnResizing = true;
-      },
-    });
-    grid.sortColumn(grid.columns[1], 'asc');
-    await settle(grid);
-    const th = headerCell(grid, 'Age');
-    th.focus();
-    await settle(grid);
-
-    const rect = (selector: string) => th.querySelector(selector)!.getBoundingClientRect();
-    const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-    const button = rect('.column-header-menu-button');
-
-    expect(overlap(button, rect('.header-filter-button'))).toBe(false);
-    expect(overlap(button, rect('.sort-indicator'))).toBe(false);
-    expect(overlap(button, rect('.resize-handle'))).toBe(false);
-  });
-
-  it('clicar no "⋮" com o menu aberto fecha', async () => {
-    const grid = await createGrid({ columns: columns(), items: people() });
-    const button = headerCell(grid, 'Name').querySelector<HTMLElement>('.column-header-menu-button')!;
-    // O botão só ocupa espaço com o cabeçalho sob o ponteiro (revisão do site).
-    await userEvent.hover(headerCell(grid, 'Name'));
-    await userEvent.click(button);
-    await settle(grid);
-    expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
-
-    await userEvent.click(headerCell(grid, 'Name').querySelector<HTMLElement>('.column-header-menu-button')!);
-    await settle(grid);
-    expect(root(grid).querySelector('.column-header-menu')).toBeNull();
-    expect(headerCell(grid, 'Name').querySelector('.column-header-menu-button')!.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('Enter que confirma a composição (IME) não aplica o filtro do funil', async () => {

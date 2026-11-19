@@ -534,8 +534,10 @@ export const styles = css`
   }
 
   th:where(.grid-table > * > * > *).fixed,
-  th:where(.grid-table > * > * > *).sticky-cell {
-    background-color: var(--u-grid-header-background-color, var(--_background-color));
+  th:where(.grid-table > * > * > *).sticky-cell,
+  thead:where(.grid-table > *) td:where(.grid-table > * > * > *):is(.fixed, .sticky-cell) {
+    /* Na linha de filtro (\`<td>\` no \`<thead>\`) também: o fundo é o do cabeçalho (revisão do site). */
+    background: var(--u-grid-header-background-color, var(--_background-color));
   }
 
   .row-lines tr:where(.grid-table > * > *):not(.last):not(:last-child) > :is(.fixed, .sticky-cell),
@@ -749,6 +751,17 @@ export const styles = css`
   .header-column.sortable,
   .group.sortable {
     cursor: pointer;
+  }
+
+  /*
+   * Cabeçalho multinível com linhas de coluna: a folha que é a última da SUA
+   * \`<tr>\` (ex.: a última de uma banda, ao lado de uma folha com rowspan)
+   * não está na borda do grid — leva a linha do fim; só a da última posição
+   * (\`.last-column\`) fica sem (revisão do site).
+   */
+  .column-lines thead:where(.grid-table > *):has(.band-header) th:where(.grid-table > * > * > *).header-column:not(.last-column) {
+    --_col-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
+    box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
   /* Cabeçalho multinível: o rótulo das folhas fica embaixo, junto das células. */
@@ -1304,55 +1317,6 @@ export const styles = css`
     }
   }
 
-  /*
-   * Botão "⋮" do menu do cabeçalho (spec 17, A1): no fluxo, depois do funil
-   * (não cobre a seta nem o funil); aparece no hover/foco e fica sempre
-   * visível em telas de toque. Alvo de 24px (WCAG 2.5.8).
-   */
-  .column-header-menu-button {
-    all: unset;
-    box-sizing: border-box;
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    font-size: 1.125rem;
-    cursor: pointer;
-    color: var(--_toggle-color);
-  }
-
-  /* Fora do hover/foco o botão não ocupa espaço: o rótulo usa a largura toda. */
-  :is(.header-column, .band-header):not(:hover, :focus-within) .column-header-menu-button:not([aria-expanded="true"]) {
-    display: none;
-  }
-
-  .column-header-menu-button::before {
-    content: "";
-    width: 1em;
-    height: 1em;
-    background-color: currentColor;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
-  }
-
-  .column-header-menu-button:hover,
-  .column-header-menu-button[aria-expanded="true"] {
-    background-image: linear-gradient(color-mix(in srgb, currentColor 8%, transparent), color-mix(in srgb, currentColor 8%, transparent));
-  }
-
-  .column-header-menu-button:focus-visible {
-    outline: var(--_focus-ring);
-    outline-offset: -2px;
-  }
-
-  @media (hover: none), (any-pointer: coarse) {
-    :is(.header-column, .band-header):not(:hover, :focus-within) .column-header-menu-button:not([aria-expanded="true"]) {
-      display: inline-flex;
-    }
-  }
-
   /* ------------------------------------------------------------- filtro */
 
   .toolbar-spacer {
@@ -1413,6 +1377,28 @@ export const styles = css`
     vertical-align: middle;
   }
 
+  /*
+   * Célula da linha de filtro com o foco: linha de destaque embaixo (única
+   * linha do campo), com a cor e a espessura do anel de foco (tokens do tema).
+   */
+  .filter-row > td:where(.grid-table > * > * > *):focus-within {
+    --_row-line: inset 0 calc(var(--u-grid-focus-ring-width, 2px) * -1) 0 0 var(--u-grid-focus-ring-color, var(--u-color-primary, rgb(103, 80, 164)));
+    box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
+  }
+
+  /*
+   * O editor único da célula não leva anel próprio: a linha de destaque já
+   * marca o foco. No "between" (dois campos) o anel fica, para mostrar qual.
+   */
+  .filter-cell-content > input.filter-editor:focus-visible {
+    outline: none;
+  }
+
+  /* Sem botão de operação (uma operação só) nada marca o campo: fica a linha de baixo (≥ 3:1, WCAG 1.4.11). */
+  .filter-cell-content:not(:has(> .filter-operation-button)) > input.filter-editor {
+    border-block-end: 1px solid var(--u-color-outline, rgb(121, 116, 126));
+  }
+
   .filter-cell-content {
     display: flex;
     align-items: center;
@@ -1468,10 +1454,12 @@ export const styles = css`
     height: 32px;
     padding-inline: 8px;
     border: none;
-    /* Limite do campo ≥ 3:1 (WCAG 1.4.11, spec 17); as linhas da grade (20%) não bastam. */
-    border-bottom: 1px solid var(--u-color-outline, rgb(121, 116, 126));
     border-radius: 0;
-    /* Sem fundo preenchido (revisão do site): só a linha de baixo marca o campo. */
+    /*
+     * Sem fundo nem linha (revisão do site, como o DevExtreme): a lupa/glifo
+     * da operação marca o campo; a célula com o foco ganha a linha de
+     * destaque de 2px (\`.filter-row > td:focus-within\`).
+     */
     background: transparent;
     font: inherit;
     font-size: 0.875rem;
@@ -1797,6 +1785,16 @@ export const styles = css`
       border-block-end: 1px solid CanvasText;
     }
 
+    /* Editor do filtro: o alto contraste tira o box-shadow da linha de foco; limite e anel em cores do sistema. */
+    input.filter-editor {
+      border-block-end: 1px solid CanvasText;
+    }
+
+    .filter-cell-content > input.filter-editor:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
     .column-lines td:not(.group-column):not(:last-child),
     .column-lines th:not(.group-column):not(:last-child),
     .fixed-start-edge {
@@ -1881,7 +1879,6 @@ export const styles = css`
       outline-offset: -2px;
     }
 
-    .column-header-menu-button::before,
     .toolbar-more-button::before,
     .filter-value-arrow {
       forced-color-adjust: none;

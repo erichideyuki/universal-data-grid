@@ -151,7 +151,7 @@ export interface GridI18n {
   groupedAnnouncement: string;
   /** Screen reader announcement after ungrouping a column (keyboard or group panel menu). `{column}`. */
   ungroupedAnnouncement: string;
-  /** Name of the column header menu and of its button. `{column}` = column label. */
+  /** Name of the column header menu. `{column}` = column label. */
   columnHeaderMenuLabel: string;
   /** Column header menu item that groups by the column. */
   groupColumn: string;

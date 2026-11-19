@@ -288,17 +288,18 @@ describe('teclado entre níveis', () => {
 });
 
 describe('foco e teclado na banda (revisão de a11y)', () => {
-  it('F2 na banda foca o ⋮ visível; Esc volta à banda', async () => {
+  it('sem o "⋮" (revisão do site): F2 na banda não sai dela e não entra no aria-keyshortcuts; Shift+F10 abre o menu', async () => {
     const c = makeColumns();
     const grid = await createGrid({ columns: c.all, items });
     const band = headerCell(grid, 'Population');
 
+    expect(band.getAttribute('aria-keyshortcuts') ?? '').not.toContain('F2');
     band.focus();
     await pressOnActive(grid, 'F2');
-    const button = root(grid).activeElement as HTMLElement;
+    expect(root(grid).activeElement).toBe(headerCell(grid, 'Population'));
 
-    expect(button.classList.contains('column-header-menu-button')).toBe(true);
-    expect(getComputedStyle(button).opacity).toBe('1');
+    await pressOnActive(grid, 'F10', { shiftKey: true });
+    expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
     await pressOnActive(grid, 'Escape');
     expect(root(grid).activeElement).toBe(headerCell(grid, 'Population'));
   });

@@ -123,40 +123,83 @@ describe('revisão do site de documentação', () => {
     expect(toolbar.contains(hit)).toBe(true);
   });
 
-  it('cabeçalho: realce no hover; o botão ⋮ só ocupa espaço no hover', async () => {
+  it('cabeçalho: realce no hover sem mexer no layout (sem o botão ⋮, rótulo no fim parado)', async () => {
     const grid = await createGrid({ columns: columns(), items: orders(5) });
-    const th = headerCell(grid, 'Name');
-    const button = th.querySelector<HTMLElement>('.column-header-menu-button')!;
+    const th = headerCell(grid, 'Order'); // número: rótulo alinhado no fim
+    const text = th.querySelector('.header-text')!;
+    const before = { th: th.getBoundingClientRect().height, text: text.getBoundingClientRect().left };
 
     expect(getComputedStyle(th).backgroundImage).toBe('none');
-    expect(button.getBoundingClientRect().width).toBe(0);
+    expect(root(grid).querySelector('.column-header-menu-button')).toBeNull();
 
     await userEvent.hover(th);
 
     expect(getComputedStyle(th).backgroundImage).toContain('gradient');
-    expect(button.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(th.getBoundingClientRect().height).toBe(before.th);
+    expect(text.getBoundingClientRect().left).toBe(before.text);
+    expect(th.querySelector('button')).toBeNull();
 
     await userEvent.unhover(th);
   });
 
-  it.each(['{Escape}', '{Tab}'])('menu do ⋮ aberto pelo teclado: %s devolve o foco ao cabeçalho, não ao <body>', async closeKey => {
+  it('cabeçalho: clique direito abre o menu (o mesmo do Shift+F10)', async () => {
+    const grid = await createGrid({ columns: columns(), items: orders(5), configure: g => g.language = 'en' });
+
+    await userEvent.click(headerCell(grid, 'Name'), { button: 'right' });
+    await settle(grid);
+
+    expect(root(grid).querySelector('.column-header-menu')
+      ?.getAttribute('aria-label')).toBe('Options for Name');
+  });
+
+  it('cabeçalho no toque (sem o ⋮): toque longo abre o menu com o foco no 1º item, engole o clique (não ordena); Esc volta ao cabeçalho', async () => {
+    const grid = await createGrid({ columns: columns(), items: orders(5) });
+    const th = headerCell(grid, 'Name');
+    const rect = th.getBoundingClientRect();
+    const touch = (type: string) => th.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, composed: true, cancelable: true, pointerType: 'touch', isPrimary: true, pointerId: 9,
+      clientX: rect.left + 20, clientY: rect.top + rect.height / 2,
+    }));
+
+    touch('pointerdown');
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await settle(grid);
+
+    expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
+    expect(root(grid).activeElement?.getAttribute('role')).toMatch(/^menuitem/);
+
+    touch('pointerup');
+    const click = new MouseEvent('click', { bubbles: true, composed: true, cancelable: true });
+    th.dispatchEvent(click);
+    await settle(grid);
+    expect(click.defaultPrevented).toBe(true);
+    expect(grid.getSorting()).toEqual([]);
+
+    await userEvent.keyboard('{Escape}');
+    await settle(grid);
+    expect(root(grid).querySelector('.column-header-menu')).toBeNull();
+    expect(root(grid).activeElement).toBe(th);
+  });
+
+  it.each([
+    ['Shift+F10', '{Shift>}{F10}{/Shift}', '{Escape}'],
+    ['Shift+F10', '{Shift>}{F10}{/Shift}', '{Tab}'],
+    ['ContextMenu', '{ContextMenu}', '{Escape}'],
+  ])('menu do cabeçalho pelo teclado (%s): %s abre, %s devolve o foco ao cabeçalho', async (_, openKeys, closeKey) => {
     const grid = await createGrid({ columns: columns(), items: orders(5) });
     const th = headerCell(grid, 'Name');
 
     th.focus();
-    await userEvent.keyboard('{F2}');
-    await settle(grid);
-    expect(root(grid).activeElement?.classList.contains('column-header-menu-button')).toBe(true);
-
-    await userEvent.keyboard('{Enter}');
+    await userEvent.keyboard(openKeys);
     await settle(grid);
     expect(root(grid).querySelector('.column-header-menu')).not.toBeNull();
+    expect(root(grid).activeElement?.getAttribute('role')).toMatch(/^menuitem/);
 
     await userEvent.keyboard(closeKey);
     await settle(grid);
 
-    const active = root(grid).activeElement;
-    expect(active === th || active === th.querySelector('.column-header-menu-button')).toBe(true);
+    expect(root(grid).querySelector('.column-header-menu')).toBeNull();
+    expect(root(grid).activeElement).toBe(th);
   });
 
   it('arrasto do cabeçalho: o clone tem a largura e a altura da célula (com rowspan)', async () => {
@@ -288,6 +331,47 @@ describe('revisão do site de documentação', () => {
 
     expect(Math.abs((icon.top + icon.bottom) / 2 - (box.top + box.bottom) / 2)).toBeLessThan(1);
     expect(getComputedStyle(root(grid).querySelector('input.filter-editor')!).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  });
+
+  it('filtro: editor sem linha embaixo; a célula com o foco ganha a linha de destaque de 2px', async () => {
+    const grid = await createGrid({ columns: columns(), items: orders(5), configure: g => g.showFilterRow = true });
+    const inputs = [...root(grid).querySelectorAll<HTMLInputElement>('input.filter-editor')];
+
+    // Texto e número ("=") sem borda nenhuma.
+    expect(inputs.map(input => getComputedStyle(input).borderBottomStyle)).toEqual(inputs.map(() => 'none'));
+
+    inputs[1].focus();
+    await settle(grid);
+    const cell = inputs[1].closest('td')!;
+
+    expect(getComputedStyle(cell).boxShadow).toMatch(/0px -2px 0px 0px inset/);
+    expect(getComputedStyle(inputs[1]).outlineStyle).toBe('none');
+    expect(getComputedStyle(inputs[0].closest('td')!).boxShadow).not.toMatch(/-2px/);
+  });
+
+  it('filtro com caixas de seleção: a célula da coluna de seleção tem o fundo do cabeçalho', async () => {
+    const grid = await createGrid({ columns: columns(), items: orders(5), configure: g => {
+      g.keyExpr = 'id';
+      g.selectionMode = 'multiple';
+      g.showCheckboxes = true;
+      g.showFilterRow = true;
+      g.style.setProperty('--u-grid-background-color', 'rgb(255, 255, 255)');
+      g.style.setProperty('--u-grid-header-background-color', 'rgb(1, 2, 3)');
+    } });
+    const cell = root(grid).querySelector<HTMLElement>('.filter-row > td.selection-cell')!;
+
+    expect(getComputedStyle(cell).backgroundColor).toBe('rgb(1, 2, 3)');
+  });
+
+  it('bandas com linhas de coluna: a última folha da sua <tr> ao lado de uma folha com rowspan leva a linha do fim; só a última coluna fica sem', async () => {
+    const grid = await createGrid({ columns: bandColumns(), items: orders(5), configure: g => g.showColumnLines = true });
+    const country = headerCell(grid, 'Country'); // última <th> da 3ª linha, antes de "Total" (rowspan)
+    const total = headerCell(grid, 'Total');
+
+    expect(country.parentElement!.lastElementChild).toBe(country);
+    expect(getComputedStyle(country).boxShadow).toMatch(/-1px 0px 0px 0px inset/);
+    expect(total.classList.contains('last-column')).toBe(true);
+    expect(getComputedStyle(total).boxShadow).not.toMatch(/-1px 0px 0px 0px inset/);
   });
 
   it.each(['template', 'nested grid'])('master-detail (%s): rolar mostra as linhas virtualizadas (nenhuma faixa vazia)', async kind => {
