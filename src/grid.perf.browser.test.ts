@@ -965,7 +965,8 @@ const remoteScenario = (rows: number, label: string) => {
 /**
  * Frente 08: `applyChanges` numa carga única de `rows` linhas ordenadas e
  * filtradas — atualizar, remover e acrescentar 100 linhas por chave sem
- * reordenar nem refiltrar tudo.
+ * reordenar nem refiltrar tudo; e o mesmo lote com `reshapeOnChanges`
+ * (reordena e refiltra o milhão).
  */
 const applyChangesScenario = (rows: number, label: string) => {
   it(`${label} linhas carregadas de uma vez: applyChanges (atualizar, remover, acrescentar)`, async () => {
@@ -1005,13 +1006,18 @@ const applyChangesScenario = (rows: number, label: string) => {
       () => grid.applyChanges({ remove: ids.map(id => rows + id) }),
     );
 
+    // reshapeOnChanges: o mesmo lote reordena e refiltra tudo (custo de uma ordenação + filtro).
+    grid.reshapeOnChanges = true;
+    const reshape = await interaction('applyReshape', grid, () => grid.applyChanges({ update: updates() }), () => undefined);
+    grid.reshapeOnChanges = false;
+
     await perf.unthrottle();
     const total = grid.getTotalCount();
 
     grid.remove();
     items = undefined;
 
-    const metrics = { ...update, ...remove, ...add };
+    const metrics = { ...update, ...remove, ...add, ...reshape };
 
     checkBudgets(rows, metrics, perf.report(`apply-changes-${label}`, metrics));
     expect(total).toBeGreaterThan(rows * 0.7);

@@ -2,7 +2,8 @@
   "apply-changes-1m": {
     "applyUpdateMs": 199.3,
     "applyRemoveMs": 209.4,
-    "applyAddMs": 129.4
+    "applyAddMs": 129.4,
+    "applyReshapeMs": 336.8
   },
   "bands-1m": {
     "firstRenderMs": 61,

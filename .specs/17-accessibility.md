@@ -395,3 +395,21 @@ erro sempre. Seleção recursiva exige as caixas (o misto só aparece nelas:
 `aria-checked="mixed"`, linha `aria-selected="false"`). RTL: recuo por
 `padding-inline-start`, seta espelhada recolhida; `forced-colors`: botão
 `ButtonText`, indicador `CanvasText`; movimento reduzido: sem giro.
+
+## `reshapeOnChanges` (dados ao vivo que reordenam)
+
+Decidido com o usuário em 2026-11-19, após a revisão do `a11y-reviewer`
+no desenho e na entrega:
+
+- Com o foco do teclado no corpo, um editor aberto ou o menu de contexto
+  aberto, o reshape fica congelado: os valores mudam no lugar e as linhas
+  só andam quando o foco sai do corpo, a edição termina ou o menu fecha
+  (WCAG 2.4.3, 3.2.2, 2.2.2). O clique foca a célula, então cobre o
+  ponteiro.
+- O foco segue a linha pela chave. Nenhum anúncio por reshape: com o foco
+  dentro ele nunca roda. A recarga remota do reshape é silenciosa (sem
+  "Carregando…" nem `aria-busy`).
+- Exemplo do ticker: botão "Pause updates" antes do grid, sem região viva
+  nos preços nem na taxa, e alta/baixa também por ▲/▼ e sinal.
+- Testes: `src/reshape.browser.test.ts` (roteiro de teclado, axe com o
+  reshape pendente, vazamento).

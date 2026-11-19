@@ -4,12 +4,12 @@ import { keyed } from 'lit/directives/keyed.js';
 import '@universal-material/data-grid';
 import type { GridColumnDef } from '@universal-material/data-grid';
 
-import { button, controls, createGrid, el, select, stat } from '../shared/controls.js';
+import { button, checkbox, controls, createGrid, el, select, stat } from '../shared/controls.js';
 import { makeStocks, random, type Stock } from '../shared/data.js';
 
 export const meta = {
   title: 'Stock ticker with applyChanges',
-  description: 'A `dataSource` serves the rows once; a timer (1 tick/s by default, adjustable) then pushes price changes with `applyChanges({ update })`. Updated rows are patched in place by `keyExpr` (no re-sorting or re-filtering while you read) and changed cells flash through a renderer plus `::part`. Select rows, sort or focus a cell — nothing is lost between ticks.',
+  description: 'A `dataSource` serves the rows once; a timer (1 tick/s by default, adjustable) then pushes price changes with `applyChanges({ update })`. With `reshapeOnChanges` the rows re-sort as prices move (sorted by Change % here — click another header to re-sort by it); turn it off and updates stay in place. While a cell has keyboard focus or an editor is open, rows hold still and move once focus leaves the grid. Changed cells flash through a renderer plus `::part`; selection survives every tick.',
 };
 
 interface Tick extends Stock {
@@ -40,6 +40,10 @@ const tickRenderer = (item: Tick, { text }: { text: string }) => {
   return html`${keyed(item.version, html`<span part=${parts}>${text}</span>`)}`;
 };
 
+/** Price cell: the direction is also in the text (▲/▼), not only in the color. */
+const priceRenderer = (item: Tick, context: { text: string }) =>
+  tickRenderer(item, { text: `${item.version ? (item.direction === 'up' ? '▲ ' : '▼ ') : ''}${context.text}` });
+
 export default (host: HTMLElement) => {
   host.append(el('style', {}, STYLE));
 
@@ -50,9 +54,9 @@ export default (host: HTMLElement) => {
     { path: 'symbol', label: 'Symbol', width: 110, fixed: 'start' },
     { path: 'company', label: 'Company', width: 220 },
     { path: 'sector', label: 'Sector', width: 140 },
-    { path: 'price', label: 'Price', width: 130, dataType: 'number', format: { style: 'currency', currency: 'USD' }, renderer: tickRenderer },
+    { path: 'price', label: 'Price', width: 130, dataType: 'number', format: { style: 'currency', currency: 'USD' }, renderer: priceRenderer },
     { path: 'change', label: 'Change', width: 120, dataType: 'number', format: { signDisplay: 'exceptZero', minimumFractionDigits: 2, maximumFractionDigits: 2 }, renderer: tickRenderer },
-    { path: 'changePercent', label: 'Change %', width: 120, dataType: 'number', format: { style: 'percent', signDisplay: 'exceptZero', minimumFractionDigits: 2 }, renderer: tickRenderer },
+    { path: 'changePercent', label: 'Change %', width: 120, dataType: 'number', sortOrder: 'desc', format: { style: 'percent', signDisplay: 'exceptZero', minimumFractionDigits: 2 }, renderer: tickRenderer },
     { path: 'volume', label: 'Volume', width: 140, dataType: 'number' },
     { path: 'updatedAt', label: 'Updated', width: 130, dataType: 'datetime', format: { timeStyle: 'medium' } },
   ];
@@ -63,6 +67,7 @@ export default (host: HTMLElement) => {
   const next = random(42);
 
   grid.keyExpr = 'symbol';
+  grid.reshapeOnChanges = true; // updates re-sort (and re-filter) the rows
   grid.selectionMode = 'multiple';
   grid.showCheckboxes = true;
   grid.columns = columns;
@@ -75,6 +80,7 @@ export default (host: HTMLElement) => {
   let sent = 0;
   let since = performance.now();
   const rate = stat();
+  rate.removeAttribute('role'); // no live region: a rate read out every second is noise
 
   const tick = () => {
     const update: Tick[] = [];
@@ -116,17 +122,18 @@ export default (host: HTMLElement) => {
     sent = 0;
     since = performance.now();
     timer = setInterval(tick, 1000 / ticksPerSecond);
-    toggle.textContent = 'Pause';
+    toggle.textContent = 'Pause updates';
   };
 
   const stop = () => {
     clearInterval(timer);
     timer = undefined;
-    toggle.textContent = 'Resume';
+    toggle.textContent = 'Resume updates';
     rate.textContent = 'Paused';
   };
 
-  const toggle = button('Pause', () => (timer ? stop() : start()), { className: 'primary' });
+  // First in the tab order, before the grid (WCAG 2.2.2: moving content can be paused).
+  const toggle = button('Pause updates', () => (timer ? stop() : start()), { className: 'primary' });
 
   controls(host,
     toggle,
@@ -138,6 +145,7 @@ export default (host: HTMLElement) => {
       }
     }),
     select('Updates per tick', ['1', '5', '20', '50', '100'], '20', value => (perTick = Number(value))),
+    checkbox('Re-sort on updates', true, checked => (grid.reshapeOnChanges = checked)),
     rate);
 
   start();

@@ -1178,9 +1178,9 @@ in the repository (not exported; copy it as a starting point for a server).
 await grid.refresh();                     // reload (keeps the rows on screen until the answer)
 
 grid.applyChanges({                       // by key, without reloading everything
-  update: [{ id: 7, status: 'Paid' }],    // replaced in place (no re-sorting or re-filtering)
+  update: [{ id: 7, status: 'Paid' }],    // replaced in place (unless reshapeOnChanges)
   remove: [12],
-  add: [newOrder],                        // appended at the end
+  add: [newOrder],                        // appended at the end (unless reshapeOnChanges)
 });
 ```
 
@@ -1188,6 +1188,24 @@ grid.applyChanges({                       // by key, without reloading everythin
 key). `update` and `remove` need `keyExpr`. Selection, focus and group expansion are kept. With
 remote paging or grouping, `update` patches the loaded blocks and `add`/`remove` reload the rows in
 view. `getTotalCount()` returns the number of data rows (`-1` while unknown).
+
+**Live data that moves (`reshapeOnChanges`, attribute `reshape-on-changes`).** By default updates
+stay where they are, so rows don't jump under the reader. Turn it on for tickers and dashboards:
+every `applyChanges` then re-applies filtering, sorting, grouping and summaries — an updated row
+moves to its sorted place, a row that stops matching the filter leaves (it stays selected by key,
+as with any filter) and added rows go to their sorted place. Several calls in one frame reshape
+once.
+
+```ts
+grid.reshapeOnChanges = true;
+setInterval(() => grid.applyChanges({ update: latestPrices() }), 1000);
+```
+
+While keyboard focus is in the grid body or an editor is open, values keep updating in place but
+rows don't move (arrow keys never land on a row that slid in); the rows move once focus leaves the
+body or the edit ends, and focus stays on its row. With remote paging or grouping each reshape
+reloads the rows in view from the server, one reload at a time (calls during a reload are merged
+into one more). Saving edits never reshapes: the edited row keeps its position.
 
 ### Paging and infinite scrolling
 
@@ -2495,6 +2513,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `keyExpr`          | `key-expr`            | `string \| (item) => GridRowKey \| null` | `null` | Row key. See [Row keys](#row-keys-keyexpr). |
 | `dataSource`       | *(property only)*     | `GridDataSource \| null` | `null` | Data source (alternative to `items`). See [Data source](#data-source). |
 | `remoteOperations` | `remote-operations`   | `boolean \| GridRemoteOperations` | `false` | What the server does (the attribute is all or nothing). |
+| `reshapeOnChanges` | `reshape-on-changes` | `boolean` | `false` | `applyChanges` re-applies filter, sort, groups and summaries. See [Refreshing and incremental changes](#refreshing-and-incremental-changes). |
 | `paging`           | `paging`              | `boolean` | `false` | Pages and the pager. See [Paging](#paging-and-infinite-scrolling). |
 | `pageSize`         | `page-size`           | `number`  | `20`    | Rows per page; block size of a remote source. |
 | `pageIndex`        | `page-index`          | `number`  | `0`     | Current page (0-based, clamped). Setting it fires no event. |

@@ -147,7 +147,7 @@ export interface GridRemoteOperations {
 
 /** Changes for `applyChanges()`: `update` and `remove` find rows by key (`keyExpr`). */
 export interface GridDataChanges<TItem = any> {
-  /** New items (appended to the loaded rows; with remote paging the rows reload). */
+  /** New items (appended to the loaded rows, or at their sorted place with `reshapeOnChanges`; with remote paging the rows reload). */
   add?: readonly TItem[];
   /** New versions of items (same key). */
   update?: readonly TItem[];

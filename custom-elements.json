@@ -764,6 +764,16 @@
             },
             {
               "kind": "field",
+              "name": "reshapeOnChanges",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Makes `applyChanges()` re-apply filtering, sorting, grouping and\nsummaries (attribute `reshape-on-changes`): updated rows move to their\nsorted place, rows that stop matching the filter leave and added rows go\nto their sorted place instead of the end. Several calls in one frame are\nreshaped once. While keyboard focus is in the grid body or an editor is\nopen, values still update in place and the rows only move after focus\nleaves the body or the edit ends. With remote paging or grouping it\nreloads the rows in view from the server (one reload at a time). Only\n`applyChanges()`: saved edits keep their position. `false` (default):\nchanges are applied in place.",
+              "attribute": "reshape-on-changes"
+            },
+            {
+              "kind": "field",
               "name": "treeMode",
               "type": {
                 "text": "GridTreeMode"
@@ -1901,7 +1911,7 @@
                   }
                 }
               ],
-              "description": "Applies changes to the loaded rows of `dataSource` without reloading\neverything: `update` replaces items by key in place (no re-sorting nor\nre-filtering, as the reference `push`), `remove` takes rows out, `add`\nappends at the end. With remote paging or grouping, `update` patches the\nloaded blocks and `add`/`remove` reload the shown rows. Selection, focus\nand group expansion are kept. `update`/`remove` need `keyExpr`. With\n`items` it does nothing (warning): set a new `items` array instead —\nrows keep their state by key."
+              "description": "Applies changes to the loaded rows of `dataSource` without reloading\neverything: `update` replaces items by key in place (no re-sorting nor\nre-filtering, as the reference `push`, unless `reshapeOnChanges`),\n`remove` takes rows out, `add` appends at the end (with\n`reshapeOnChanges`, at its sorted place). With remote paging or grouping, `update` patches the\nloaded blocks and `add`/`remove` reload the shown rows. Selection, focus\nand group expansion are kept. `update`/`remove` need `keyExpr`. With\n`items` it does nothing (warning): set a new `items` array instead —\nrows keep their state by key."
             },
             {
               "kind": "method",
@@ -2757,6 +2767,15 @@
               "default": "false",
               "description": "What the server does with `dataSource` (attribute `remote-operations`:\nall or nothing). `false` (default): one call loads every row and the\ngrid filters, sorts, groups, summarizes and pages. `true`: everything on\nthe server. An object picks operations; remote `paging` or `grouping`\nalso turn on remote `filtering`, `sorting` and `summary` (paging also\ngrouping), with a console warning. Remote operations use the column\n`path` (not `valueGetter`, `comparator` nor `groupValueGetter`).",
               "fieldName": "remoteOperations"
+            },
+            {
+              "name": "reshape-on-changes",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Makes `applyChanges()` re-apply filtering, sorting, grouping and\nsummaries (attribute `reshape-on-changes`): updated rows move to their\nsorted place, rows that stop matching the filter leave and added rows go\nto their sorted place instead of the end. Several calls in one frame are\nreshaped once. While keyboard focus is in the grid body or an editor is\nopen, values still update in place and the rows only move after focus\nleaves the body or the edit ends. With remote paging or grouping it\nreloads the rows in view from the server (one reload at a time). Only\n`applyChanges()`: saved edits keep their position. `false` (default):\nchanges are applied in place.",
+              "fieldName": "reshapeOnChanges"
             },
             {
               "name": "tree-mode",

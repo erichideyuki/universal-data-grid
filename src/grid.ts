@@ -2075,6 +2075,27 @@ export class DataGrid extends LitElement {
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'remote-operations' })
   remoteOperations: boolean | GridRemoteOperations = false;
 
+  /**
+   * Makes `applyChanges()` re-apply filtering, sorting, grouping and
+   * summaries (attribute `reshape-on-changes`): updated rows move to their
+   * sorted place, rows that stop matching the filter leave and added rows go
+   * to their sorted place instead of the end. Several calls in one frame are
+   * reshaped once. While keyboard focus is in the grid body or an editor is
+   * open, values still update in place and the rows only move after focus
+   * leaves the body or the edit ends. With remote paging or grouping it
+   * reloads the rows in view from the server (one reload at a time). Only
+   * `applyChanges()`: saved edits keep their position. `false` (default):
+   * changes are applied in place.
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'reshape-on-changes' })
+  reshapeOnChanges = false;
+
+  /** Reshape adiado: o foco do teclado ou um editor está no corpo (spec 17: nada muda de lugar sob o usuário). */
+  #reshapePending = false;
+  /** Recarga remota do reshape em voo / outra pedida enquanto ela corre (no máximo uma de cada). */
+  #reshapeLoading = false;
+  #reshapeQueued = false;
+
   #remote: RemoteFlags = NO_REMOTE;
   #remoteSource: boolean | GridRemoteOperations | undefined;
   readonly #loader = new RemoteLoader({
@@ -5298,6 +5319,11 @@ export class DataGrid extends LitElement {
     this.#observeFixedSections();
     this.#syncTableLabel();
 
+    // Editor fechou (ou o foco saiu sem focusout no corpo): o reshape adiado roda agora.
+    if (this.#reshapePending && !this.#reshapeFrozen) {
+      queueMicrotask(() => this.#flushReshape());
+    }
+
     // Com `wrap` a linha pode crescer: mede as renderizadas a cada render
     // (alturas por índice; trocar as linhas ou o `rowHeight` as esquece).
     if (this.#hasWrap !== this.#measuredWrap) {
@@ -6051,6 +6077,10 @@ export class DataGrid extends LitElement {
    * error — see `u-grid-load-error`).
    */
   async refresh(): Promise<void> {
+    // Recarregar já reorganiza tudo: o reshape adiado ou na fila sobra.
+    this.#reshapePending = false;
+    this.#reshapeQueued = false;
+
     if (!this.#dataSource) {
       this.#sortDirty = true;
       this.#rankCache.clear();
@@ -6075,14 +6105,20 @@ export class DataGrid extends LitElement {
   /**
    * Applies changes to the loaded rows of `dataSource` without reloading
    * everything: `update` replaces items by key in place (no re-sorting nor
-   * re-filtering, as the reference `push`), `remove` takes rows out, `add`
-   * appends at the end. With remote paging or grouping, `update` patches the
+   * re-filtering, as the reference `push`, unless `reshapeOnChanges`),
+   * `remove` takes rows out, `add` appends at the end (with
+   * `reshapeOnChanges`, at its sorted place). With remote paging or grouping, `update` patches the
    * loaded blocks and `add`/`remove` reload the shown rows. Selection, focus
    * and group expansion are kept. `update`/`remove` need `keyExpr`. With
    * `items` it does nothing (warning): set a new `items` array instead —
    * rows keep their state by key.
    */
   applyChanges<TItem = any>(changes: GridDataChanges<TItem>): void {
+    this.#applyDataChanges(changes, this.reshapeOnChanges);
+  }
+
+  /** `applyChanges` com o reshape explícito (salvar edição passa `false`: a linha fica no lugar). */
+  #applyDataChanges<TItem>(changes: GridDataChanges<TItem>, reshape: boolean): void {
     if (!this.#dataSource) {
       console.warn('<u-grid>: applyChanges() works with "dataSource"; with "items", set a new array (rows keep their state by keyExpr).');
       return;
@@ -6109,6 +6145,11 @@ export class DataGrid extends LitElement {
 
     if (!this.#lazy) {
       this.#applyLocalChanges(add, new Map(update.map(item => [this.#baseKeyOf(item), item])), new Set(remove));
+
+      if (reshape && (add.length || update.length || remove.length)) {
+        this.#requestReshape();
+      }
+
       return;
     }
 
@@ -6117,14 +6158,121 @@ export class DataGrid extends LitElement {
     if (update.length && generation) {
       const keyOf = this.#keyOf;
 
+      // Os valores novos aparecem já, no lugar; o reshape (recarga) vem depois.
       if (generation.updateItems(keyOf, new Map(update.map(item => [keyOf(item), item])))) {
         this.requestUpdate();
       }
     }
 
-    if (add.length || remove.length) {
+    if (reshape && (add.length || update.length || remove.length)) {
+      this.#requestReshape();
+    } else if (add.length || remove.length) {
       this.#refreshCount++;
       this.requestUpdate();
+    }
+  }
+
+  /**
+   * Corpo congelado para o reshape (spec 17, revisão de a11y): foco do
+   * teclado numa célula do corpo (setas não podem cair noutra linha) ou
+   * editor aberto. O clique foca a célula, então também cobre o ponteiro.
+   */
+  get #reshapeFrozen(): boolean {
+    // Menu de contexto aberto: a linha âncora e os índices do pedido não podem andar (fecha → `updated()` aplica).
+    if (this.#editor || this.#contextMenu.open) {
+      return true;
+    }
+
+    const active = this.shadowRoot?.activeElement;
+    const table = this.#tableRef.value;
+
+    if (active && table?.contains(active) && !active.closest('thead, tfoot')) {
+      return true;
+    }
+
+    // Editor ou conteúdo de célula no light DOM (renderers com slot): o
+    // `activeElement` da raiz do grid (dentro de outro shadow root, o de
+    // `document` seria o host externo) e só se o slot dele estiver no corpo.
+    const outer = (this.getRootNode() as Document | ShadowRoot).activeElement;
+
+    if (!outer || outer === this || !this.contains(outer)) {
+      return false;
+    }
+
+    let child: Element = outer;
+
+    while (child.parentElement && child.parentElement !== this) {
+      child = child.parentElement;
+    }
+
+    const slot = child.assignedSlot;
+
+    return !!slot && !!table?.contains(slot) && !slot.closest('thead, tfoot');
+  }
+
+  #requestReshape(): void {
+    if (this.#reshapeFrozen) {
+      this.#reshapePending = true;
+      return;
+    }
+
+    this.#reshape();
+  }
+
+  /** Reaplica filtro, ordenação, grupos e resumos (no próximo render: chamadas no mesmo quadro viram uma). */
+  #reshape(): void {
+    this.#reshapePending = false;
+
+    if (this.#lazy) {
+      this.#reshapeRemote();
+      return;
+    }
+
+    this.#sortDirty = true;
+    this.#rankCache.clear();
+    this.#filtering.invalidate();
+    this.#totalsDirty = true;
+    this.#groupsDirty = true;
+    this.requestUpdate();
+  }
+
+  /** Recarga do servidor com no máximo uma em voo e uma na fila (um ticker não vira um pedido por quadro). */
+  #reshapeRemote(): void {
+    if (this.#reshapeLoading) {
+      this.#reshapeQueued = true;
+      return;
+    }
+
+    this.#reshapeLoading = true;
+    this.#refreshCount++;
+    this.requestUpdate();
+
+    void this.updateComplete
+      .then(() => this.#loader.whenSettled())
+      .then(() => this.updateComplete)
+      .catch(() => undefined)
+      .finally(() => {
+        this.#reshapeLoading = false;
+        const queued = this.#reshapeQueued;
+        // Fora da página ou com a opção desligada, a recarga da fila não serve mais.
+        this.#reshapeQueued = false;
+
+        if (queued && this.isConnected && this.reshapeOnChanges) {
+          this.#requestReshape();
+        }
+      });
+  }
+
+  /** Foco saiu do corpo ou o editor fechou: aplica o reshape adiado. */
+  #flushReshape(): void {
+    // Opção desligada enquanto esperava: o reshape adiado não vale mais.
+    if (!this.reshapeOnChanges) {
+      this.#reshapePending = false;
+      return;
+    }
+
+    if (this.#reshapePending && this.isConnected && !this.#reshapeFrozen) {
+      this.#reshape();
     }
   }
 
@@ -7599,7 +7747,8 @@ export class DataGrid extends LitElement {
     }
 
     if (this.#dataSource) {
-      this.applyChanges({ add, update: [...updates.values()], remove });
+      // Salvar não reorganiza (mesmo com `reshapeOnChanges`): a linha editada fica no lugar.
+      this.#applyDataChanges({ add, update: [...updates.values()], remove }, false);
     } else {
       this.#ensureRows();
       this.#applyLocalChanges(add, updates, new Set(remove), originals);
@@ -11725,7 +11874,8 @@ export class DataGrid extends LitElement {
       clearTimeout(this.#loadingTimer);
       this.#loadingTimer = undefined;
       this.#clearLoadingAnnouncement();
-    } else if (!this.#loadingTimer && !this.#loadingAnnounced) {
+    } else if (!this.#loadingTimer && !this.#loadingAnnounced && !this.#reshapeLoading) {
+      // A recarga do reshape (reshapeOnChanges) é silenciosa: as linhas velhas ficam até a resposta.
       this.#loadingTimer = setTimeout(() => {
         this.#loadingTimer = undefined;
 
@@ -13775,6 +13925,11 @@ export class DataGrid extends LitElement {
 
   /** Perda de foco do editor (clique fora): válido confirma; inválido fica pendente marcado. */
   readonly #onGridFocusOut = (event: FocusEvent): void => {
+    // Reshape adiado pelo foco no corpo (reshapeOnChanges): aplica quando o foco sai dele.
+    if (this.#reshapePending) {
+      queueMicrotask(() => this.#flushReshape());
+    }
+
     // Responsivo congelado pelo editor da linha de filtro (spec 21): recalcula quando o foco sai dele.
     if (this.#adaptiveDirty && this.autoHideColumns) {
       queueMicrotask(() => this.isConnected && this.requestUpdate());
@@ -14411,7 +14566,7 @@ export class DataGrid extends LitElement {
             aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined)}
-            aria-busy=${ifDefined(waiting || this.#isLoading || this.#filtering.pending ? 'true' : undefined)}
+            aria-busy=${ifDefined(waiting || (this.#isLoading && !this.#reshapeLoading) || this.#filtering.pending ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
