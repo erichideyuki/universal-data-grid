@@ -20,8 +20,90 @@ export interface VirtualWindow {
   offset: number;
 }
 
+/** Retângulo (coordenadas da tela) da parte visível de uma porta de rolagem. */
+export interface PortRect {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Porta de rolagem: um elemento rolável ou a janela, com a mesma interface
+ * (spec 27). Na janela, o tamanho visível é o do `documentElement` (sem as
+ * barras de rolagem) e a rolagem é a do `scrollingElement`.
+ */
+export class ScrollPort {
+  readonly source: HTMLElement | Window;
+
+  constructor(source: HTMLElement | Window) {
+    this.source = source;
+  }
+
+  get isWindow(): boolean {
+    return !(this.source instanceof HTMLElement);
+  }
+
+  /** Onde ouvir o `scroll`/`scrollend`. */
+  get target(): EventTarget {
+    return this.source;
+  }
+
+  /** Elemento que rola (na janela, o `scrollingElement`). */
+  get element(): HTMLElement {
+    const source = this.source;
+
+    return source instanceof HTMLElement
+      ? source
+      : (source.document.scrollingElement as HTMLElement | null) ?? source.document.documentElement;
+  }
+
+  get scrollTop(): number {
+    const source = this.source;
+    return source instanceof HTMLElement ? source.scrollTop : source.scrollY;
+  }
+
+  set scrollTop(value: number) {
+    const source = this.source;
+
+    if (source instanceof HTMLElement) {
+      source.scrollTop = value;
+    } else {
+      source.scrollTo({ top: value, behavior: 'instant' });
+    }
+  }
+
+  get clientHeight(): number {
+    const source = this.source;
+    return source instanceof HTMLElement ? source.clientHeight : source.document.documentElement.clientHeight;
+  }
+
+  /** Parte visível (por dentro das bordas, sem as barras), em coordenadas da tela. */
+  rect(): PortRect {
+    const source = this.source;
+
+    if (!(source instanceof HTMLElement)) {
+      const root = source.document.documentElement;
+      return { top: 0, left: 0, right: root.clientWidth, bottom: root.clientHeight };
+    }
+
+    const box = source.getBoundingClientRect();
+    const top = box.top + source.clientTop;
+    // Em RTL a barra vertical fica à esquerda: a área útil começa depois dela.
+    const bar = Math.max(0, source.offsetWidth - source.clientLeft * 2 - source.clientWidth);
+    const left = box.left + source.clientLeft + (bar && getComputedStyle(source).direction === 'rtl' ? bar : 0);
+
+    return { top, left, right: left + source.clientWidth, bottom: top + source.clientHeight };
+  }
+}
+
 export interface RowVirtualizerOptions {
-  getScrollElement: () => HTMLElement | null;
+  getScrollElement: () => HTMLElement | Window | null;
+  /**
+   * Porta externa (spec 27): o que vem depois do corpo também rola e o corpo
+   * pode estar abaixo da dobra. Só muda o mapeamento físico → virtual na escala.
+   */
+  isExternal?: () => boolean;
   /** Altura estimada (e, sem `wrap`, exata) de cada linha. */
   rowHeight: () => number;
   /** Linhas a mais acima e abaixo da janela. */
@@ -72,6 +154,12 @@ export class RowVirtualizer implements ReactiveController {
   #virtual = 0;
   /** Posição virtual pedida por `scrollToIndex` para a próxima rolagem física. */
   #pending: { physical: number; virtual: number } | undefined;
+  /**
+   * Rolagem até um destino na escala com a porta externa (spec 27): a
+   * rolagem (suave ou não) vai de `from` até o destino, e as posições do
+   * caminho interpolam o virtual — o destino virtual dura até a chegada.
+   */
+  #glide: { fromPhysical: number; fromVirtual: number; physical: number; virtual: number } | undefined;
 
   /** Alturas medidas (`wrap`): árvore de Fenwick (1-based) e altura por linha. */
   #tree: Float64Array | undefined;
@@ -86,8 +174,11 @@ export class RowVirtualizer implements ReactiveController {
   #variableSizes: Float64Array = new Float64Array(0);
   #variableTree: Float64Array | undefined;
 
-  #scroller: HTMLElement | undefined;
+  #scroller: ScrollPort | undefined;
   #resizeObserver: ResizeObserver | undefined;
+  /** Porta = janela: o tamanho visível muda no `resize` (não há elemento a observar). */
+  #windowResize: (() => void) | undefined;
+  #windowFrame = 0;
   /** Janela do último render (para só pedir render quando ela muda). */
   #rendered: VirtualWindow | undefined;
 
@@ -108,38 +199,81 @@ export class RowVirtualizer implements ReactiveController {
   }
 
   hostDisconnected(): void {
-    this.#scroller?.removeEventListener('scroll', this.#onScroll);
+    const scroller = this.#scroller;
+    scroller?.target.removeEventListener('scroll', this.#onScroll);
+
+    if (this.#windowResize) {
+      scroller?.target.removeEventListener('resize', this.#windowResize);
+      this.#windowResize = undefined;
+    }
+
+    cancelAnimationFrame(this.#windowFrame);
+    this.#windowFrame = 0;
+
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
     this.#scroller = undefined;
+    this.#glide = undefined;
+    this.#pending = undefined;
+  }
+
+  /** Porta atual (spec 27); `undefined` antes do 1º render ou desconectado. */
+  get port(): ScrollPort | undefined {
+    return this.#scroller;
   }
 
   #attach(): void {
-    const scroller = this.#options.getScrollElement() ?? undefined;
+    const source = this.#options.getScrollElement() ?? undefined;
 
-    if (!scroller || scroller === this.#scroller) {
+    if (!source || source === this.#scroller?.source) {
       return;
     }
 
     this.hostDisconnected();
+    const scroller = new ScrollPort(source);
     this.#scroller = scroller;
-    scroller.addEventListener('scroll', this.#onScroll, { passive: true });
+    scroller.target.addEventListener('scroll', this.#onScroll, { passive: true });
 
-    if (typeof ResizeObserver !== 'undefined') {
-      this.#resizeObserver = new ResizeObserver(() => {
-        const viewport = scroller.clientHeight;
+    const resized = (): void => {
+      const viewport = scroller.clientHeight;
+      const margin = this.#options.getScrollMargin?.() ?? 0;
 
-        const margin = this.#options.getScrollMargin?.() ?? 0;
+      if (viewport !== this.#viewport || margin !== this.#margin) {
+        this.#viewport = viewport;
+        this.#margin = margin;
+        this.#syncFromScroll(scroller.scrollTop);
+        this.#host.requestUpdate();
+      }
+    };
 
-        if (viewport !== this.#viewport || margin !== this.#margin) {
-          this.#viewport = viewport;
-          this.#margin = margin;
-          this.#syncFromScroll(scroller.scrollTop);
-          this.#host.requestUpdate();
-        }
+    if (scroller.isWindow) {
+      this.#windowResize = resized;
+      scroller.target.addEventListener('resize', resized, { passive: true });
+      // Como o 1º aviso do `ResizeObserver`: depois do 1º render (a hidratação
+      // do SSR precisa desenhar as mesmas linhas iniciais que o servidor).
+      this.#windowFrame = requestAnimationFrame(() => {
+        this.#windowFrame = 0;
+        resized();
       });
-      this.#resizeObserver.observe(scroller);
+    } else if (typeof ResizeObserver !== 'undefined') {
+      this.#resizeObserver = new ResizeObserver(resized);
+      this.#resizeObserver.observe(scroller.element);
     }
+  }
+
+  /**
+   * Relê a margem, o tamanho e a posição sem evento de rolagem (spec 27: o
+   * conteúdo acima do grid mudou de altura dentro da porta externa).
+   */
+  sync(): void {
+    const scroller = this.#scroller;
+
+    if (!scroller) {
+      return;
+    }
+
+    this.#viewport = scroller.clientHeight || this.#viewport;
+    this.#onScroll();
   }
 
   // ------------------------------------------------------------- tamanhos
@@ -518,6 +652,52 @@ export class RowVirtualizer implements ReactiveController {
     }
   };
 
+  /**
+   * Porta externa (spec 27): onde a linha `index` fica no corpo FÍSICO para
+   * um `scrollIntoView` chegar nela. Fora da escala, o início virtual; na
+   * escala, escolhe o par destino (físico, virtual) — passo pequeno 1:1,
+   * salto proporcional — e o guarda até a rolagem chegar. `stickyTop` e
+   * `stickyBottom`: o que cobre o corpo na porta no destino.
+   */
+  revealOffset(index: number, stickyTop: number, stickyBottom: number): number {
+    const scroller = this.#scroller;
+    const row = Math.min(Math.max(this.#count - 1, 0), Math.max(0, index));
+
+    if (!scroller || !this.scaled) {
+      return this.startOf(row);
+    }
+
+    this.#margin = this.#options.getScrollMargin?.() ?? this.#margin;
+    const viewport = this.#viewport || scroller.clientHeight;
+    const start = this.startOf(row) + this.#margin - stickyTop;
+    const end = this.startOf(row) + this.sizeOf(row) + this.#margin + stickyBottom;
+    const current = this.#virtual;
+    let target = current;
+
+    if (start < current) {
+      target = start;
+    } else if (end > current + viewport) {
+      target = end - viewport;
+    }
+
+    target = Math.max(0, target);
+    const physical = Math.abs(target - current) <= viewport
+      ? this.#physical + target - current
+      : this.#externalPhysicalOf(target);
+
+    this.#glide = { fromPhysical: this.#physical, fromVirtual: current, physical, virtual: target };
+
+    // No destino, a linha fica onde o deslocamento do destino a põe.
+    return this.startOf(row) - (target - physical);
+  }
+
+  /** A rolagem acabou (`scrollend`) longe do destino: esquece o destino guardado. */
+  endGlide(): void {
+    if (this.#glide && Math.abs(this.#physical - this.#glide.physical) >= 1) {
+      this.#glide = undefined;
+    }
+  }
+
   /** Maior `scrollTop` físico (o que vem antes do corpo também rola). */
   #maxPhysical(): number {
     return Math.max(0, this.getTotalSize() + this.#margin - this.#viewport);
@@ -527,10 +707,87 @@ export class RowVirtualizer implements ReactiveController {
     return Math.max(0, this.virtualSize + this.#margin - this.#viewport);
   }
 
+  #external(): boolean {
+    return this.#options.isExternal?.() ?? false;
+  }
+
+  /**
+   * Porta externa (spec 27), salto na escala: perto das pontas do corpo (uma
+   * janela de cada lado) e fora dele, 1:1 com a ponta — o conteúdo do
+   * hospedeiro antes e depois não escala, e voltar do rodapé da página cai
+   * nas últimas linhas; no meio, proporcional. Contínuo nas emendas.
+   */
+  #externalZones(): { p0: number; p1: number; v0: number; v1: number; maxPhysical: number; maxVirtual: number } {
+    const zone = Math.max(this.#viewport, this.#height());
+    const maxPhysical = this.#maxPhysical();
+    const maxVirtual = this.#maxVirtual();
+
+    return {
+      p0: this.#margin + zone,
+      p1: maxPhysical - zone,
+      v0: this.#margin + zone,
+      v1: maxVirtual - zone,
+      maxPhysical,
+      maxVirtual,
+    };
+  }
+
+  #externalVirtualOf(physical: number): number {
+    const { p0, p1, v0, v1, maxPhysical, maxVirtual } = this.#externalZones();
+
+    if (physical <= p0) {
+      return physical;
+    }
+
+    if (physical >= p1) {
+      return maxVirtual + physical - maxPhysical;
+    }
+
+    return v0 + (physical - p0) * (v1 - v0) / Math.max(1, p1 - p0);
+  }
+
+  #externalPhysicalOf(virtual: number): number {
+    const { p0, p1, v0, v1, maxPhysical, maxVirtual } = this.#externalZones();
+
+    if (virtual <= v0) {
+      return virtual;
+    }
+
+    if (virtual >= v1) {
+      return maxPhysical + virtual - maxVirtual;
+    }
+
+    return p0 + (virtual - v0) * (p1 - p0) / Math.max(1, v1 - v0);
+  }
+
   /** Atualiza a posição virtual a partir da física (ver a classe). */
   #syncFromScroll(physical: number): void {
     const previous = this.#physical;
     this.#physical = physical;
+    const glide = this.#glide;
+
+    if (glide) {
+      const low = Math.min(glide.fromPhysical, glide.physical) - 1;
+      const high = Math.max(glide.fromPhysical, glide.physical) + 1;
+
+      if (physical >= low && physical <= high) {
+        const span = glide.physical - glide.fromPhysical;
+        const t = Math.abs(span) < 1 ? 1 : Math.min(1, Math.max(0, (physical - glide.fromPhysical) / span));
+
+        this.#virtual = t === 1
+          ? glide.virtual + physical - glide.physical
+          : glide.fromVirtual + t * (glide.virtual - glide.fromVirtual);
+
+        if (Math.abs(physical - glide.physical) < 1) {
+          this.#glide = undefined;
+        }
+
+        return;
+      }
+
+      // Saiu do caminho (o usuário rolou para outro lado): mapeamento normal.
+      this.#glide = undefined;
+    }
 
     if (this.#pending && Math.abs(this.#pending.physical - physical) < 1) {
       this.#virtual = this.#pending.virtual;
@@ -549,7 +806,14 @@ export class RowVirtualizer implements ReactiveController {
     const maxVirtual = this.#maxVirtual();
     const delta = physical - previous;
 
-    if (physical <= 0) {
+    if (this.#external()) {
+      // Antes do corpo e depois do fim: 1:1 com a ponta; passo pequeno: 1:1; salto: zonas (acima).
+      const small = Math.abs(delta) <= Math.max(this.#viewport, this.#height());
+
+      this.#virtual = physical > this.#margin && physical < maxPhysical - 1 && small
+        ? Math.min(maxVirtual, Math.max(0, this.#virtual + delta))
+        : this.#externalVirtualOf(physical);
+    } else if (physical <= 0) {
       this.#virtual = 0;
     } else if (physical >= maxPhysical - 1) {
       this.#virtual = maxVirtual;
@@ -563,7 +827,13 @@ export class RowVirtualizer implements ReactiveController {
   /** Mantém as posições válidas depois de mudar o tamanho da lista. */
   #clamp(): void {
     if (!this.scaled) {
-      this.#virtual = Math.min(this.#physical, this.#maxPhysical());
+      // Porta externa: depois do corpo há conteúdo do hospedeiro; a posição é a física.
+      this.#virtual = this.#external() ? this.#physical : Math.min(this.#physical, this.#maxPhysical());
+      return;
+    }
+
+    if (this.#external() && (this.#physical <= this.#margin || this.#physical >= this.#maxPhysical() - 1)) {
+      this.#virtual = this.#externalVirtualOf(this.#physical);
       return;
     }
 

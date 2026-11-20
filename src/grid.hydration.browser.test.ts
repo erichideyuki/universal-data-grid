@@ -133,6 +133,23 @@ describe('hidratação do SSR', () => {
     expect(table.getAttribute('aria-label')).toBe('Renamed');
   });
 
+  it('rolagem pela janela (frente 27, RTL): o servidor já desenha o modo externo e a hidratação não pula', async () => {
+    const html = await commands.renderGridSsr('parentScroll');
+    expect(html).toContain('layout external-scroll');
+
+    const { grid, ssrIndexes } = await hydrate('parentScroll');
+    const root = grid.shadowRoot!;
+
+    expect(errors).toEqual([]);
+    expect(rowIndexes(grid)[0]).toBe(ssrIndexes[0]);
+    expect(root.querySelector('.layout')!.classList.contains('external-scroll')).toBe(true);
+    expect(getComputedStyle(grid).height).not.toBe('400px');
+    // Cresce com as 400 linhas; a janela rola, e só o visível é desenhado.
+    expect(grid.getBoundingClientRect().height).toBeGreaterThan(400 * 40);
+    expect(dataRows(grid).length).toBeLessThan(60);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+
   it('linhas fixas e linha inteira (frente 20) hidratam sem duplicar', async () => {
     const { grid, ssrIndexes } = await hydrate('fixed');
     const root = grid.shadowRoot!;

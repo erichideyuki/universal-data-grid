@@ -28,6 +28,8 @@ export interface HydrationScenario {
   rowRenderer?: GridRowRenderer;
   /** Frente 21: `auto-hide-columns` e largura do hospedeiro (px; o servidor não sabe a largura). */
   autoHideWidth?: number;
+  /** Frente 27: `scroll-container` (o grid cresce com o conteúdo; quem rola é a janela). */
+  scrollContainer?: string;
 }
 
 const countries = ['Argentina', 'Brazil', 'Chile', 'Denmark'];
@@ -98,6 +100,7 @@ export const hydrationScenarios = {
     rowRenderer: (item: { year: number; country: string }) => item.year % 5 === 0 && html`<p class="wide">${item.country} ${item.year}</p>`,
   },
   responsive: { language: 'en', columns: fixedColumns, items, autoHideWidth: 420 },
+  parentScroll: { language: 'ar', dir: 'rtl', columns: fixedColumns, items, scrollContainer: 'window' },
 } satisfies Record<string, HydrationScenario>;
 
 export type HydrationScenarioName = keyof typeof hydrationScenarios;

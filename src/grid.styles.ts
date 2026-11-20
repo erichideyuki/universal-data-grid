@@ -107,6 +107,104 @@ export const styles = css`
     overflow: auto;
   }
 
+  /*
+   * Rolagem por contêiner externo (spec 27): o grid cresce com o conteúdo e
+   * quem rola, nas duas direções, é o contêiner; tudo o que é sticky gruda
+   * nele. O atributo cobre o SSR; o modo vindo só da propriedade (e a
+   * anulação quando o contêiner não resolve) usa a folha da instância.
+   * \`overflow-anchor: none\`: a âncora de rolagem do navegador não escolhe
+   * linhas que o virtualizador troca (a posição é relida pelo
+   * \`IntersectionObserver\`).
+   */
+  :host([scroll-container]) {
+    height: auto;
+    overflow-anchor: none;
+  }
+
+  /* Tão larga quanto a tabela: a barra e a paginação grudam na borda inicial visível. */
+  .layout.external-scroll {
+    height: auto;
+    inline-size: max-content;
+    min-inline-size: 100%;
+  }
+
+  .external-scroll > .container,
+  .external-scroll .scroll-container {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Barra e paginação: na largura da parte visível do grid, presas à borda inicial. */
+  .external-scroll .header,
+  .external-scroll > .pager {
+    inline-size: var(--_viewport-inline-size, 100%);
+  }
+
+  .external-scroll > .pager {
+    position: sticky;
+    inset-inline-start: 0;
+  }
+
+  /* O que o hospedeiro gruda no contêiner (\`scroll-padding\` dele) desloca o que o grid gruda. */
+  .external-scroll .header,
+  .external-scroll thead:where(.grid-table > *) {
+    top: var(--_port-inset-top, 0px);
+  }
+
+  .external-scroll .header + table:where(.grid-table) thead:where(.grid-table > *) {
+    top: calc(var(--_port-inset-top, 0px) + var(--_toolbar-offset, var(--_header-height)));
+  }
+
+  .external-scroll tbody:where(.grid-table > *).fixed-top-rows {
+    top: calc(var(--_port-inset-top, 0px) + var(--_fixed-top-offset, 0px));
+  }
+
+  .external-scroll tbody:where(.grid-table > *).fixed-bottom-rows {
+    bottom: calc(var(--_port-inset-bottom, 0px) + var(--_fixed-bottom-offset, 0px));
+  }
+
+  .external-scroll .total-footer {
+    bottom: var(--_port-inset-bottom, 0px);
+  }
+
+  /* Barra de erro: no pé da parte visível, não no fim de um grid de milhões de linhas. */
+  .external-scroll .error-row {
+    position: sticky;
+    bottom: var(--_port-inset-bottom, 0px);
+    inline-size: var(--_viewport-inline-size, 100%);
+    inset-inline-start: 0;
+  }
+
+  /* Painel de carga: no centro da parte visível do grid (medido na rolagem). */
+  .external-scroll .load-panel {
+    inset-block-start: var(--_visible-block-center, 50%);
+    inset-inline-start: var(--_visible-inline-center, 50%);
+  }
+
+  /*
+   * Foco nativo (Tab de fora, controle de renderer) e \`scrollIntoView\` da
+   * célula: não param sob o que o grid gruda (WCAG 2.4.11). As margens são
+   * medidas pelo grid; o \`scroll-padding\` do contêiner o navegador já soma.
+   */
+  .external-scroll tbody:where(.grid-table > *).body-rows > tr > :is(td, th),
+  .external-scroll tbody:where(.grid-table > *).body-rows > tr > :is(td, th) * {
+    scroll-margin-block: var(--_reveal-top, 0px) var(--_reveal-bottom, 0px);
+    scroll-margin-inline: var(--_reveal-start, 0px) var(--_reveal-end, 0px);
+  }
+
+  .external-scroll :is(thead, tfoot, tbody.fixed-rows):where(.grid-table > *) > tr > :is(td, th),
+  .external-scroll :is(thead, tfoot, tbody.fixed-rows):where(.grid-table > *) > tr > :is(td, th) * {
+    scroll-margin-inline: var(--_reveal-start, 0px) var(--_reveal-end, 0px);
+  }
+
+  /* Alvo invisível do \`scrollIntoView\` de uma linha fora da janela virtual. */
+  .reveal-probe {
+    position: absolute;
+    inline-size: 1px;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
   /* Quebra linha em telas estreitas (WCAG 1.4.10, spec 17 A9). */
   .group-container {
     display: flex;

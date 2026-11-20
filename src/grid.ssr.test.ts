@@ -54,6 +54,17 @@ describe('SSR', () => {
     expect(output).not.toContain('Sem dados');
   });
 
+  it('scroll-container (frente 27): desenha o modo externo sem erro, pelo atributo', async () => {
+    const output = await renderToString(html`
+      <u-grid scroll-container="window" .columns=${columns} .items=${items}></u-grid>`);
+
+    expect(output).toContain('layout external-scroll');
+    expect(output).toContain('Brazil');
+
+    const plain = await renderToString(html`<u-grid .columns=${columns} .items=${items}></u-grid>`);
+    expect(plain).not.toContain('layout external-scroll');
+  });
+
   it('sem itens mostra o texto de vazio traduzido', async () => {
     const output = await renderToString(html`
       <u-grid language="pt" .columns=${columns} .items=${[]}></u-grid>`);

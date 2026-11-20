@@ -15,7 +15,7 @@ import '../grid.js';
  */
 export const renderScenario = (name: HydrationScenarioName): Promise<string> => {
   const scenario: HydrationScenario = hydrationScenarios[name];
-  const { language, dir, columns, items, filter, detailRenderer, ariaLabel, ariaLabelledBy, stateStorageKey, fixedTopItems, fixedBottomItems, rowRenderer, autoHideWidth } = scenario;
+  const { language, dir, columns, items, filter, detailRenderer, ariaLabel, ariaLabelledBy, stateStorageKey, fixedTopItems, fixedBottomItems, rowRenderer, autoHideWidth, scrollContainer } = scenario;
 
   // Como o demo (`dev/dev-root.ts`): agrupado, ordenação múltipla, redimensionar, seletor.
   return collectResult(render(html`
@@ -24,7 +24,8 @@ export const renderScenario = (name: HydrationScenarioName): Promise<string> => 
       dir=${ifDefined(dir)}
       aria-label=${ifDefined(ariaLabel)}
       aria-labelledby=${ifDefined(ariaLabelledBy)}
-      style="display: block; height: 400px${autoHideWidth ? `; width: ${autoHideWidth}px` : ''}"
+      style="display: block${scrollContainer ? '' : '; height: 400px'}${autoHideWidth ? `; width: ${autoHideWidth}px` : ''}"
+      scroll-container=${ifDefined(scrollContainer)}
       ?auto-hide-columns=${!!autoHideWidth}
       auto-expand-groups
       sorting="multiple"

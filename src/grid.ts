@@ -122,6 +122,7 @@ import {
   measureContentWidth,
   type WidthBounds,
 } from './features/resize.js';
+import { ScrollPortController } from './features/scroll-port.js';
 import { Debouncer, renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
 import {
   countSelected,
@@ -3295,6 +3296,31 @@ export class DataGrid extends LitElement {
   @property({ attribute: 'scroll-mode' }) scrollMode: GridScrollMode = 'virtual';
 
   /**
+   * Scrolls the grid with an outer container instead of its own scrollbar:
+   * the id of an ANCESTOR of the grid (the first ancestor with this id,
+   * crossing shadow boundaries, unlike IDREF attributes), or `window` for
+   * the page (wins over an element with `id="window"`). The grid grows to
+   * its content (do not give it a height), the container scrolls in both
+   * directions, and rows and columns are still virtualized by the visible
+   * part of the container; toolbar, headers, totals, fixed rows and columns
+   * stick to it. The container's `scroll-padding-top`/`-bottom` offsets
+   * what the page sticks there (an app bar). `<html>` (or the
+   * `document.scrollingElement`) means the window. Not found or not an
+   * ancestor: a console warning and the grid's own scrolling. Resolved when
+   * the grid connects and when this changes (changing the ancestor's id
+   * later does not re-resolve). The attribute alone renders the outer mode
+   * on the server.
+   */
+  @property({ attribute: 'scroll-container' }) scrollContainer: string | null = null;
+
+  /**
+   * The outer scroll container by reference (wins over `scrollContainer`):
+   * an ancestor element, or `window`. `document.documentElement` (or the
+   * `document.scrollingElement`) means the window. See `scrollContainer`.
+   */
+  @property({ attribute: false }) scrollContainerElement: HTMLElement | Window | null = null;
+
+  /**
    * Origem da última mudança que pode encolher as linhas (dados, filtro,
    * agrupamento, expansão): a página limitada por ela dispara
    * `u-grid-page-change` com essa origem. Sem causa (setters de página), o
@@ -4901,20 +4927,34 @@ export class DataGrid extends LitElement {
   readonly _scrollContainerRef: Ref<HTMLDivElement> = createRef();
   /** @internal */
   readonly _groupContainerRef: Ref<HTMLDivElement> = createRef();
+  readonly #layoutRef: Ref<HTMLDivElement> = createRef();
+
+  /** Rolagem por contêiner externo (spec 27). */
+  readonly #scrollPort = new ScrollPortController(this, {
+    scroll: () => this.#onExternalScroll(),
+    moved: () => this.#onExternalMoved(),
+  });
 
   readonly #virtualizer = new RowVirtualizer(this, {
-    getScrollElement: () => this._scrollContainerRef.value ?? null,
+    getScrollElement: () => this.#scrollPort.port?.source ?? this._scrollContainerRef.value ?? null,
+    isExternal: () => this.#scrollPort.port !== null,
     rowHeight: () => this.rowHeight,
     overscan: 3,
     getScrollMargin: () => {
       const scroller = this._scrollContainerRef.value;
       const table = scroller?.querySelector<HTMLTableElement>('table.grid-table');
+      const port = this.#scrollPort.port;
+
+      if (!scroller || !table) {
+        return 0;
+      }
+
+      // Onde a porta começa, em coordenadas da tela, e quanto ela já rolou.
+      const origin = port ? port.rect().top - port.scrollTop : scroller.getBoundingClientRect().top - scroller.scrollTop;
 
       // O corpo começa depois do cabeçalho e das linhas fixas do topo (no fluxo, sticky ou não).
-      return scroller && table
-        ? table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (table.tHead?.offsetHeight ?? 0)
-        + (table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows')?.offsetHeight ?? 0)
-        : 0;
+      return table.getBoundingClientRect().top - origin + (table.tHead?.offsetHeight ?? 0)
+        + (table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows')?.offsetHeight ?? 0);
     },
     // Barra, cabeçalho e fixas do topo grudam: a área coberta vai até o fim do último.
     getStickyHeight: () => {
@@ -4981,8 +5021,12 @@ export class DataGrid extends LitElement {
     const toolbar = this.#observedToolbar?.isConnected ? this.#observedToolbar.offsetHeight : 0;
     const head = table.tHead?.offsetHeight ?? 0;
     const foot = table.tFoot?.offsetHeight ?? 0;
-    const covered = toolbar + head + foot + (top?.offsetHeight ?? 0) + (bottom?.offsetHeight ?? 0);
-    const sticky = !(top || bottom) || covered <= scroller.clientHeight * 0.5 || !scroller.clientHeight;
+    const port = this.#scrollPort.port;
+    // Porta externa (spec 27): a conta é contra a altura da porta, somando o que o hospedeiro gruda nela.
+    const inset = port ? this.#scrollPort.padding() : { top: 0, bottom: 0 };
+    const height = port ? port.clientHeight : scroller.clientHeight;
+    const covered = toolbar + head + foot + (top?.offsetHeight ?? 0) + (bottom?.offsetHeight ?? 0) + inset.top + inset.bottom;
+    const sticky = !(top || bottom) || covered <= height * 0.5 || !height;
 
     container.style.setProperty('--_fixed-top-offset', `${toolbar + head}px`);
     container.style.setProperty('--_fixed-bottom-offset', `${foot}px`);
@@ -5059,6 +5103,10 @@ export class DataGrid extends LitElement {
       cachedBlocks: this.#loader.blocksCached,
       loadTimers: (this.#flushTimer === undefined ? 0 : 1) + (this.#loadingTimer === undefined ? 0 : 1),
       rowExpansion: this.#rowExpansion.size,
+      // Rolagem por contêiner externo (frente 27): porta ligada, linhas observadas, esperas de `scrollend`.
+      scrollPortAttached: this.#scrollPort.port ? 1 : 0,
+      scrollPortObservedRows: this.#scrollPort.observedRows,
+      scrollEndWaits: this.#scrollPort.scrollEndWaits,
       // Responsivo (frente 21): o anúncio das ocultas por espaço e o que é guardado por coluna.
       adaptiveTimers: this.#adaptiveTimer === undefined ? 0 : 1,
       adaptiveColumns: this.#adaptiveColumns.length + this.#reportedAdaptive.length,
@@ -5200,6 +5248,10 @@ export class DataGrid extends LitElement {
   }
 
   override willUpdate(changed: PropertyValues<this>) {
+    if (changed.has('scrollContainer') || changed.has('scrollContainerElement')) {
+      this.#scrollPort.resolve();
+    }
+
     // No servidor o Lit não chama o `attributeChangedCallback` do elemento: lê o `aria-label` aqui.
     if (isServer) {
       this.#hostLabel.update();
@@ -5377,6 +5429,7 @@ export class DataGrid extends LitElement {
   override updated(changed: PropertyValues<this>) {
     const virtualizer = this.#virtualizer;
     this.#pruneRowRenders();
+    this.#afterExternalRender();
     this.#observeToolbar();
     this.#observeFixedSections();
     this.#syncTableLabel();
@@ -7334,7 +7387,11 @@ export class DataGrid extends LitElement {
       return 0;
     }
 
-    const limit = scroller.getBoundingClientRect().top + this.#stickyTop();
+    const port = this.#scrollPort.port;
+    // Porta externa (spec 27): abaixo do que gruda no topo da porta (ou do início do corpo, se ele está mais abaixo).
+    const limit = port
+      ? Math.max(port.rect().top + this.#scrollPort.padding().top + this.#stickyTop(), rows[0].getBoundingClientRect().top)
+      : scroller.getBoundingClientRect().top + this.#stickyTop();
 
     for (const tr of rows) {
       if (tr.getBoundingClientRect().bottom > limit + 1) {
@@ -9138,7 +9195,7 @@ export class DataGrid extends LitElement {
       return undefined;
     }
 
-    const box = scroller.getBoundingClientRect();
+    const box = this.#visibleScrollBox(scroller);
     const head = table.tHead?.getBoundingClientRect().bottom ?? box.top;
     const px = Math.min(Math.max(x, box.left + 1), box.right - 2);
     const py = Math.min(Math.max(y, Math.max(head, box.top) + 1), box.bottom - 2);
@@ -9161,6 +9218,29 @@ export class DataGrid extends LitElement {
     }
 
     return undefined;
+  }
+
+  /**
+   * Área visível da rolagem em coordenadas da tela: o contêiner interno, ou
+   * a parte do grid dentro da porta externa (spec 27).
+   */
+  #visibleScrollBox(scroller: HTMLElement): { top: number; left: number; right: number; bottom: number } {
+    const box = scroller.getBoundingClientRect();
+    const port = this.#scrollPort.port;
+
+    if (!port) {
+      return box;
+    }
+
+    const view = port.rect();
+    const inset = this.#scrollPort.padding();
+
+    return {
+      top: Math.max(box.top, view.top + inset.top),
+      left: Math.max(box.left, view.left),
+      right: Math.min(box.right, view.right),
+      bottom: Math.min(box.bottom, view.bottom - inset.bottom),
+    };
   }
 
   #dragRangeTo(): void {
@@ -9215,7 +9295,7 @@ export class DataGrid extends LitElement {
         return;
       }
 
-      const box = scroller.getBoundingClientRect();
+      const box = this.#visibleScrollBox(scroller);
       const head = Math.max(drag.table.tHead?.getBoundingClientRect().bottom ?? box.top, box.top);
       const speed = (distance: number): number => Math.min(Math.ceil(distance / 2) + 2, 48);
       const dy = drag.y < head + AUTO_SCROLL_EDGE
@@ -9229,7 +9309,7 @@ export class DataGrid extends LitElement {
         return;
       }
 
-      scroller.scrollBy(dx, dy);
+      (this.#scrollPort.port?.source ?? scroller).scrollBy(dx, dy);
       this.#dragRangeTo();
       this.#scheduleRangeAutoScroll();
     });
@@ -11043,28 +11123,38 @@ export class DataGrid extends LitElement {
       return { first: 0, last: -1 };
     }
 
-    const viewport = this.#viewportWidth || DEFAULT_VIEWPORT_WIDTH;
+    const viewport = this.#columnViewport() || DEFAULT_VIEWPORT_WIDTH;
     return columnWindow(offsets, this.#scrollStart, Math.max(viewport - this.#fixedArea, 0), COLUMN_OVERSCAN);
   }
 
   /** Rolagem horizontal: re-renderiza só quando a janela de colunas muda. */
   readonly #onHorizontalScroll = (): void => {
     const scroller = this._scrollContainerRef.value;
+    const external = this.#externalHorizontal();
+
+    if (external) {
+      this.#syncVisibleWidth(external.visible);
+    }
 
     if (!scroller || !this.#freeOffsets) {
       return;
     }
 
-    // Em RTL o scrollLeft vai de 0 a negativo.
-    const start = Math.abs(scroller.scrollLeft);
-    const viewport = scroller.clientWidth;
+    // Em RTL o scrollLeft vai de 0 a negativo. Porta externa: a parte da tabela antes da borda visível.
+    const start = external ? external.start : Math.abs(scroller.scrollLeft);
+    const viewport = external ? external.visible : scroller.clientWidth;
 
-    if (start === this.#scrollStart && viewport === this.#viewportWidth) {
+    if (start === this.#scrollStart && viewport === this.#columnViewport()) {
       return;
     }
 
     this.#scrollStart = start;
-    this.#viewportWidth = viewport;
+
+    if (external) {
+      this.#visibleWidth = viewport;
+    } else {
+      this.#viewportWidth = viewport;
+    }
 
     const next = this.#horizontalWindow();
 
@@ -11268,15 +11358,25 @@ export class DataGrid extends LitElement {
     }
 
     this.#resizeObserver = new ResizeObserver(entries => {
-      if (entries.some(entry => entry.target === scroller)) {
+      if (entries.some(entry => entry.target === scroller || entry.target === this)) {
+        // Porta externa (spec 27): o `.scroll-container` tem a largura da tabela; a do grid é a do host.
+        const width = this.#scrollPort.port ? this.clientWidth : scroller.clientWidth;
         this.#layoutDirty = true;
         this.#adaptiveDirty = true;
-        this.#viewportWidth = scroller.clientWidth;
+        this.#viewportWidth = width;
         // Zoom só de texto muda o `font-size`: a largura padrão da conta do responsivo acompanha (1.4.4).
         this.#fontScale = this.autoHideColumns ? (parseFloat(getComputedStyle(this).fontSize) || 16) / 16 : 1;
         // Largura visível: o conteúdo do detalhe e da linha inteira não passa dela (WCAG 1.4.10).
         // No contêiner: o \`style\` do \`.scroll-container\` é do template (o render o sobrescreve).
-        this._containerRef.value?.style.setProperty('--_viewport-inline-size', `${scroller.clientWidth}px`);
+        this.#layoutRef.value?.style.setProperty('--_fill-inline-size', `${width}px`);
+
+        // Porta externa (spec 27): a parte visível, medida na rolagem.
+        if (this.#scrollPort.port) {
+          this.#onExternalMoved();
+        } else {
+          this.#layoutRef.value?.style.setProperty('--_viewport-inline-size', `${width}px`);
+        }
+
         this.requestUpdate();
       }
 
@@ -11289,6 +11389,8 @@ export class DataGrid extends LitElement {
     });
 
     this.#resizeObserver.observe(scroller);
+    // Porta externa: a largura do grid é a do host (o `.scroll-container` cresce com a tabela).
+    this.#resizeObserver.observe(this);
     this.#observeToolbar();
   }
 
@@ -11333,13 +11435,103 @@ export class DataGrid extends LitElement {
       return;
     }
 
+    const external = this.#externalHorizontal();
     // Em RTL o scrollLeft vai de 0 a negativo.
-    const offset = Math.abs(scroller.scrollLeft);
-    const overflow = scroller.scrollWidth - scroller.clientWidth;
+    const offset = external ? external.start : Math.abs(scroller.scrollLeft);
+    const after = external ? external.end : scroller.scrollWidth - scroller.clientWidth - offset;
 
     container.classList.toggle('scroll-start', offset > 0.5);
-    container.classList.toggle('scroll-end', overflow - offset > 0.5);
+    container.classList.toggle('scroll-end', after > 0.5);
   };
+
+  /**
+   * Porta externa (spec 27): quanto da tabela fica antes da borda inicial
+   * visível (`start`), depois da final (`end`) e a largura visível — pelos
+   * retângulos, então vale em LTR/RTL e com qualquer `dir` no contêiner.
+   */
+  #externalHorizontal(): { start: number; end: number; visible: number } | undefined {
+    const port = this.#scrollPort.port;
+    const table = this.#tableRef.value;
+
+    if (!port || !table) {
+      return undefined;
+    }
+
+    const box = table.getBoundingClientRect();
+    const view = port.rect();
+    const left = Math.max(0, view.left - box.left);
+    const right = Math.max(0, box.right - view.right);
+    const visible = Math.max(0, Math.min(view.right, box.right) - Math.max(view.left, box.left));
+    const rtl = this.matches(':dir(rtl)');
+
+    return { start: rtl ? right : left, end: rtl ? left : right, visible: Math.round(visible) };
+  }
+
+  /** Largura visível da porta externa sobre a tabela (0 = rolagem interna). */
+  #visibleWidth = 0;
+  #syncedVisibleWidth = -1;
+
+  /** Largura da área das colunas: a do grid, ou a parte visível na porta externa. */
+  #columnViewport(): number {
+    return this.#scrollPort.port ? this.#visibleWidth : this.#viewportWidth;
+  }
+
+  /** `--_viewport-inline-size` = parte visível (barra, detalhe, linha inteira, paginação). */
+  #syncVisibleWidth(width: number): void {
+    if (width !== this.#syncedVisibleWidth && width > 0) {
+      this.#syncedVisibleWidth = width;
+      this.#layoutRef.value?.style.setProperty('--_viewport-inline-size', `${width}px`);
+    }
+  }
+
+  /** Rolagem da porta externa (spec 27). */
+  #onExternalScroll(): void {
+    this.#onHorizontalScroll();
+    this.#updateScrollShadows();
+    this.#syncLoadPanel();
+  }
+
+  /** Depois de cada render com a porta externa: margens, linhas observadas, painel de carga. */
+  #afterExternalRender(): void {
+    if (!this.#scrollPort.port) {
+      return;
+    }
+
+    this.#syncRevealMargins();
+    this.#scrollPort.observeRows(this.#tableRef.value?.querySelectorAll(':scope > tbody.body-rows > tr[data-index]:not(.pinned)') ?? []);
+    this.#syncLoadPanel();
+  }
+
+  /** Painel de carga no centro da parte visível do grid na porta externa. */
+  #syncLoadPanel(): void {
+    const container = this._containerRef.value;
+    const port = this.#scrollPort.port;
+
+    if (!port || !container?.querySelector('.lang-scope > .load-panel')) {
+      return;
+    }
+
+    const box = container.getBoundingClientRect();
+    const view = port.rect();
+    const top = Math.max(box.top, view.top);
+    const bottom = Math.min(box.bottom, view.bottom);
+    const left = Math.max(box.left, view.left);
+    const right = Math.min(box.right, view.right);
+    const block = (top + bottom) / 2 - box.top;
+    const inline = this.matches(':dir(rtl)') ? box.right - (left + right) / 2 : (left + right) / 2 - box.left;
+
+    container.style.setProperty('--_visible-block-center', `${Math.max(0, block)}px`);
+    container.style.setProperty('--_visible-inline-center', `${Math.max(0, inline)}px`);
+  }
+
+  /** A porta externa mudou de tamanho, ou o grid se moveu nela sem rolagem (spec 27). */
+  #onExternalMoved(): void {
+    this.#virtualizer.sync();
+    this.#onHorizontalScroll();
+    this.#updateScrollShadows();
+    this.#syncFixedRows();
+    this.#syncRevealMargins();
+  }
 
   /**
    * Classe, deslocamento `sticky` e limites de cada coluna visível. Os
@@ -13296,6 +13488,17 @@ export class DataGrid extends LitElement {
     this.#focusPending ||= focus;
     this.#revealPending ||= reveal || focus;
     this.#revealAttempts = 0;
+
+    // Porta externa (spec 27): chamada de API respeita o `scroll-behavior` do contêiner; teclado/clique, instantâneo.
+    if (reveal || focus) {
+      this.#revealByApi = source === 'api';
+
+      // Ação do usuário no meio de uma rolagem suave da API: vale a do usuário (instantânea, já).
+      if (source === 'user') {
+        this.#revealInFlight = false;
+      }
+    }
+
     this.#reportFocus(source);
     this.requestUpdate();
   }
@@ -13518,7 +13721,8 @@ export class DataGrid extends LitElement {
       (value ?? cell).focus({ preventScroll: true });
     }
 
-    if (!this.#revealPending) {
+    // Rolagem suave até a linha em curso (porta externa): continua quando ela acabar.
+    if (!this.#revealPending || this.#revealInFlight) {
       return;
     }
 
@@ -13534,6 +13738,16 @@ export class DataGrid extends LitElement {
     }
 
     this.#revealPending = false;
+
+    if (this.#scrollPort.port) {
+      // Porta externa (spec 27): as margens do `scroll-margin` (CSS) e o `scroll-padding` do contêiner.
+      this.#syncRevealMargins();
+      const behavior = this.#revealBehavior();
+      cell.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
+      this.#afterRevealScroll(behavior);
+      this.#revealByApi = false;
+      return;
+    }
 
     const scroller = this._scrollContainerRef.value;
 
@@ -13553,9 +13767,114 @@ export class DataGrid extends LitElement {
   /** Rola até a linha `index` sem depender de ela estar renderizada (abaixo do que é fixo no topo). */
   #scrollRowIntoView(index: number): void {
     // Linhas fixas não rolam na vertical.
-    if (this.#isBodyIndex(index)) {
+    if (!this.#isBodyIndex(index)) {
+      return;
+    }
+
+    if (this.#scrollPort.port) {
+      this.#revealExternalRow(index);
+    } else {
       this.#virtualizer.scrollToIndex(index);
     }
+  }
+
+  /** A última revelação veio de chamada de API (`focusCell`, `editCell`...). */
+  #revealByApi = false;
+  /** Rolagem suave da porta externa em curso: a revelação continua no `scrollend`. */
+  #revealInFlight = false;
+  /** Margens horizontais do que gruda (colunas fixas, recuos), medidas no render. */
+  #revealInline = { start: 0, end: 0 };
+  #revealMarginsKey = '';
+  #revealProbe: HTMLDivElement | undefined;
+
+  /** `instant` para ação do usuário e com `prefers-reduced-motion`; `auto` (o `scroll-behavior` do contêiner) para API. */
+  #revealBehavior(): ScrollBehavior {
+    return this.#revealByApi && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'instant';
+  }
+
+  /**
+   * Margens de rolagem (spec 27) das células e dos focáveis delas (CSS) e
+   * deslocamentos do que o hospedeiro gruda no contêiner (`scroll-padding`
+   * dele), para o `sticky` e para a regra dos 50%.
+   */
+  #syncRevealMargins(): void {
+    const layout = this.#layoutRef.value;
+
+    if (!layout || !this.#scrollPort.port) {
+      return;
+    }
+
+    const inset = this.#scrollPort.padding();
+    // A barra de erro (56px) cobre o pé da parte visível.
+    const error = this.#dataSource && this.#loader.error ? 56 : 0;
+    const values = [this.#stickyTop(), this.#stickyBottom() + error, this.#revealInline.start, this.#revealInline.end, inset.top, inset.bottom];
+    const key = values.join();
+
+    if (key === this.#revealMarginsKey) {
+      return;
+    }
+
+    this.#revealMarginsKey = key;
+    const names = ['--_reveal-top', '--_reveal-bottom', '--_reveal-start', '--_reveal-end', '--_port-inset-top', '--_port-inset-bottom'];
+    names.forEach((name, i) => layout.style.setProperty(name, `${values[i]}px`));
+  }
+
+  /**
+   * Linha fora da janela virtual com a porta externa: um alvo invisível onde
+   * a linha estaria recebe o `scrollIntoView` (rola também os ancestrais do
+   * contêiner). Na horizontal fica na borda visível — o ajuste horizontal
+   * vem com a célula, quando a linha entrar no render.
+   */
+  #revealExternalRow(index: number): void {
+    const port = this.#scrollPort.port;
+    const container = this._containerRef.value;
+    const body = this.#tableRef.value?.querySelector<HTMLElement>(':scope > tbody.body-rows');
+
+    if (!port || !container || !body) {
+      return;
+    }
+
+    this.#syncRevealMargins();
+    const inset = this.#scrollPort.padding();
+    const top = this.#stickyTop();
+    const bottom = this.#stickyBottom() + (this.#dataSource && this.#loader.error ? 56 : 0);
+    const offset = this.#virtualizer.revealOffset(index, top + inset.top, bottom + inset.bottom);
+    const box = container.getBoundingClientRect();
+    const view = port.rect();
+    const probe = this.#revealProbe ??= Object.assign(document.createElement('div'), { className: 'reveal-probe' });
+
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.top = `${body.getBoundingClientRect().top - box.top + offset}px`;
+    probe.style.height = `${this.#virtualizer.sizeOf(index)}px`;
+    probe.style.left = `${Math.max(0, Math.min(box.width - 1, Math.max(view.left, box.left) - box.left))}px`;
+    probe.style.scrollMargin = `${top}px 0px ${bottom}px`;
+    container.append(probe);
+
+    const behavior = this.#revealBehavior();
+    probe.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
+    this.#afterRevealScroll(behavior, probe);
+  }
+
+  /** Depois do `scrollIntoView` na porta externa: instantâneo relê já; suave espera o `scrollend`. */
+  #afterRevealScroll(behavior: ScrollBehavior, probe?: HTMLElement): void {
+    if (behavior === 'instant') {
+      probe?.remove();
+      this.#virtualizer.sync();
+      return;
+    }
+
+    this.#revealInFlight = true;
+    this.#scrollPort.afterScrollEnd(() => {
+      // O alvo fica até a rolagem suave chegar (tirá-lo antes pode interrompê-la).
+      probe?.remove();
+      this.#revealInFlight = false;
+      this.#virtualizer.endGlide();
+
+      if (this.isConnected) {
+        this.#virtualizer.sync();
+        this.requestUpdate();
+      }
+    });
   }
 
   /** Altura do que fica preso no topo da rolagem (cabeçalho das colunas ou barra). */
@@ -13581,6 +13900,14 @@ export class DataGrid extends LitElement {
   /** Linhas do corpo que cabem na área visível. */
   #pageSize(): number {
     const scroller = this._scrollContainerRef.value;
+    const port = this.#scrollPort.port;
+
+    if (port) {
+      // Porta externa (spec 27): a altura da porta menos o que grudaria nela,
+      // quanto do grid estiver à vista agora.
+      const inset = this.#scrollPort.padding();
+      return Math.max(1, Math.floor((port.clientHeight - inset.top - inset.bottom - this.#stickyTop() - this.#stickyBottom()) / this.rowHeight));
+    }
 
     if (!scroller) {
       return 1;
@@ -14716,13 +15043,14 @@ export class DataGrid extends LitElement {
     const fixedStart = layout.reduce((sum, { headerClasses, width }) => sum + (headerClasses['fixed-start'] ? width ?? 0 : 0), 0);
     // A barra de erro cobre o pé da área de rolagem: o foco não para debaixo dela.
     // `--_fixed-*`: o rótulo da banda prende entre as áreas fixas (frente 13).
+    this.#revealInline = { start: this.#stickyStart() + fixedStart, end: fixedEnd };
     const scrollPadding = `scroll-padding-inline: ${this.#stickyStart() + fixedStart}px ${fixedEnd}px;`
       + ` --_fixed-start: ${this.#stickyStart() + fixedStart}px; --_fixed-end: ${fixedEnd}px;`
       + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
 
     // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
     return html`
-      <div class=${waiting ? 'layout state-loading' : 'layout'}>
+      <div class=${`layout${waiting ? ' state-loading' : ''}${this.#scrollPort.external ? ' external-scroll' : ''}`} ${ref(this.#layoutRef)}>
       <div
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}>
@@ -14791,7 +15119,8 @@ export class DataGrid extends LitElement {
 
   /**
    * `fill`: todas as larguras definidas — a última coluna leva a sobra da
-   * largura visível (`--_viewport-inline-size`, medida no `ResizeObserver`),
+   * largura do grid (`--_fill-inline-size`, medida no `ResizeObserver`; com a
+   * porta externa, a do grid — não a parte visível, que muda na rolagem),
    * sem ler o DOM no render: as outras colunas entram na conta pelos px e
    * pelas larguras do CSS (recuos, expansão, caixas, comandos).
    */
@@ -14817,7 +15146,7 @@ export class DataGrid extends LitElement {
       ].join(' - ');
       const own = widthOf(last.column) ?? 0;
 
-      fillWidth = `max(${own}px, var(--_viewport-inline-size, 0px) - ${reserved})`;
+      fillWidth = `max(${own}px, var(--_fill-inline-size, 0px) - ${reserved})`;
     }
 
     return html`
