@@ -112,6 +112,32 @@ export class ScrollPortController implements ReactiveController {
     }
   }
 
+  /**
+   * A tabela mais larga que o grid transborda no contêiner (que rola nas duas
+   * direções, spec 27). Com \`overflow-x: hidden\`/\`clip\` nele (ou em
+   * \`html\`/\`body\`, com a janela), o transbordo some sem rolagem possível
+   * e sem nenhum sinal: avisa uma vez (relato de uso, 0.3.0).
+   */
+  checkHorizontalClip(tableWidth: number): void {
+    const port = this.#port;
+    const host = this.#host;
+
+    if (!port || tableWidth <= host.clientWidth + 1) {
+      return;
+    }
+
+    const document = host.ownerDocument;
+    const clipping = (element: Element) => ['hidden', 'clip'].includes(getComputedStyle(element).overflowX);
+    const culprit = port.isWindow
+      ? [document.documentElement, document.body].find(element => element && clipping(element))
+      : clipping(port.source as HTMLElement) ? port.source as HTMLElement : undefined;
+
+    if (culprit) {
+      this.#warnOnce(culprit, `the table is wider than the grid, but ${port.isWindow ? `<${culprit.tagName.toLowerCase()}>` : 'its scroll container'} has `
+      + 'overflow-x: hidden/clip, so the extra columns cannot be scrolled to; use overflow-x: auto (or give the columns less width).');
+    }
+  }
+
   #warn(key: string, message: string): void {
     if (!this.#warned.has(key)) {
       this.#warned.add(key);

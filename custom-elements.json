@@ -77,6 +77,10 @@
               "name": "--u-grid-header-cell-font-weight"
             },
             {
+              "description": "With `header-wrap`, max lines of the default header label (ellipsis on the last). Integer or `none` (default).",
+              "name": "--u-grid-header-cell-max-lines"
+            },
+            {
               "description": "Data cell padding (shorthand; wins over the longhands). Default `13px 16px`.",
               "name": "--u-grid-cell-padding"
             },
@@ -706,7 +710,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). A\ncolumn's `headerWrap` wins. Auto-size measures the label in one line. If\nthe toolbar and the headers take more than half of the visible height,\nthe headers stop sticking (WCAG 2.4.11).",
+              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). It\nbreaks only between words (hyphenation follows the `lang`); a word longer\nthan the column ends in an ellipsis, and `--u-grid-header-cell-max-lines`\nlimits the lines. A cut default label shows its full text as a tooltip on\nhover; from the keyboard, widen the column (Alt+→) or auto-size it from\nthe header menu. A column's `headerWrap` wins. Auto-size measures the\nlabel in one line. If the toolbar and the headers take more than half of\nthe visible height, the headers stop sticking (WCAG 2.4.11).",
               "attribute": "header-wrap"
             },
             {
@@ -2857,7 +2861,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). A\ncolumn's `headerWrap` wins. Auto-size measures the label in one line. If\nthe toolbar and the headers take more than half of the visible height,\nthe headers stop sticking (WCAG 2.4.11).",
+              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). It\nbreaks only between words (hyphenation follows the `lang`); a word longer\nthan the column ends in an ellipsis, and `--u-grid-header-cell-max-lines`\nlimits the lines. A cut default label shows its full text as a tooltip on\nhover; from the keyboard, widen the column (Alt+→) or auto-size it from\nthe header menu. A column's `headerWrap` wins. Auto-size measures the\nlabel in one line. If the toolbar and the headers take more than half of\nthe visible height, the headers stop sticking (WCAG 2.4.11).",
               "fieldName": "headerWrap"
             },
             {

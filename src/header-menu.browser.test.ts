@@ -814,8 +814,8 @@ describe('espaço dos botões do cabeçalho', () => {
     // 110 − 16 (padding do começo) − 4 (espaço até os botões) − 48 − 8 (alça) = 34 (era 24).
     expect(box(start, '.header-text').width).toBe(34);
 
-    // Alinhada no fim: os botões vão para o começo e avançam o mesmo sobre o padding.
-    expect(box(end, '.column-header-menu-button').left).toBe(8);
+    // Alinhada no fim: os botões vão para o começo, sem avançar sobre o padding (o "⋮" não encosta no da coluna anterior).
+    expect(box(end, '.column-header-menu-button').left).toBe(16);
 
     // RTL: espelhado — o "⋮" termina (à esquerda) onde começa a alça.
     grid.dir = 'rtl';
@@ -823,6 +823,6 @@ describe('espaço dos botões do cabeçalho', () => {
     const [rtlStart, rtlEnd] = [...grid.shadowRoot!.querySelectorAll<HTMLElement>('th.header-column')];
     expect(box(rtlStart, '.column-header-menu-button').left).toBe(box(rtlStart, '.resize-handle').right);
     expect(box(rtlStart, '.resize-handle').left).toBe(0);
-    expect(110 - box(rtlEnd, '.column-header-menu-button').right).toBe(8);
+    expect(110 - box(rtlEnd, '.column-header-menu-button').right).toBe(16);
   });
 });

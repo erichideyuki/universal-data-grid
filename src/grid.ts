@@ -1622,6 +1622,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-header-cell-padding - Header cell padding.
  * @cssprop --u-grid-header-cell-font-size - Header cell font size. Default `0.8125rem`.
  * @cssprop --u-grid-header-cell-font-weight - Header cell font weight.
+ * @cssprop --u-grid-header-cell-max-lines - With `header-wrap`, max lines of the default header label (ellipsis on the last). Integer or `none` (default).
  * @cssprop --u-grid-cell-padding - Data cell padding (shorthand; wins over the longhands). Default `13px 16px`.
  * @cssprop --u-grid-cell-block-padding - Block padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `13px`.
  * @cssprop --u-grid-cell-inline-padding - Inline padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `16px`.
@@ -1824,10 +1825,14 @@ export class DataGrid extends LitElement {
 
   /**
    * Wraps the column header labels in several lines instead of an ellipsis
-   * (the header row grows; `--u-grid-header-cell-height` is its minimum). A
-   * column's `headerWrap` wins. Auto-size measures the label in one line. If
-   * the toolbar and the headers take more than half of the visible height,
-   * the headers stop sticking (WCAG 2.4.11).
+   * (the header row grows; `--u-grid-header-cell-height` is its minimum). It
+   * breaks only between words (hyphenation follows the `lang`); a word longer
+   * than the column ends in an ellipsis, and `--u-grid-header-cell-max-lines`
+   * limits the lines. A cut default label shows its full text as a tooltip on
+   * hover; from the keyboard, widen the column (Alt+→) or auto-size it from
+   * the header menu. A column's `headerWrap` wins. Auto-size measures the
+   * label in one line. If the toolbar and the headers take more than half of
+   * the visible height, the headers stop sticking (WCAG 2.4.11).
    */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'header-wrap' }) headerWrap = false;
 
@@ -5213,6 +5218,21 @@ export class DataGrid extends LitElement {
     return result;
   }
 
+  /**
+   * Fontes carregadas depois da medida (relato de uso: "Obrigatório" medido
+   * com a fonte de reserva e cortado 1px quando a Lato chegou): as larguras
+   * automáticas são medidas de novo; as do usuário e as definidas ficam.
+   */
+  readonly #onFontsLoaded = (): void => {
+    if (!this.columnAutoWidth) {
+      return;
+    }
+
+    this.#autoWidthDirty = true;
+    this.#layoutDirty = true;
+    this.requestUpdate();
+  };
+
   override connectedCallback() {
     // Shadow root declarativo antes do 1º update: hidratação do SSR.
     const hydrating = !this.hasUpdated && !!this.shadowRoot;
@@ -5220,6 +5240,8 @@ export class DataGrid extends LitElement {
     super.connectedCallback();
     this.#readDeclarativeColumns();
     this.#unobserveDocumentLanguage = observeDocumentLanguage(() => this.requestUpdate());
+    // Fonte da página que chega depois da 1ª medida (web font): \`column-auto-width\` mede de novo.
+    document.fonts?.addEventListener('loadingdone', this.#onFontsLoaded);
     this.#hostLabel.update();
     this.#dragAndDropDirty = true;
     this.#layoutDirty = true;
@@ -5257,6 +5279,7 @@ export class DataGrid extends LitElement {
     super.disconnectedCallback();
     this.#unobserveDocumentLanguage?.();
     this.#unobserveDocumentLanguage = undefined;
+    document.fonts?.removeEventListener('loadingdone', this.#onFontsLoaded);
     this.#columnDragAndDrop.detach();
     this.#groupDragAndDrop.detach();
     releaseInteractions(this);
@@ -11635,6 +11658,7 @@ export class DataGrid extends LitElement {
     this.#syncFixedRows();
     this.#syncRevealMargins();
     this.#scrollPort.checkHeight();
+    this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
   }
 
   /**
@@ -13063,7 +13087,23 @@ export class DataGrid extends LitElement {
    * ao passar o mouse — medir todas as células a cada render custaria caro.
    */
   readonly #updateCellHint = (event: Event): void => {
-    const cell = (event.target as Element | null)?.closest?.('td.truncate');
+    const target = event.target as Element | null;
+    // Rótulo do cabeçalho cortado (reticências, palavra longa ou limite de linhas): a dica tem o texto
+    // inteiro — só no rótulo padrão (\`headerRenderer\` cuida do próprio conteúdo). Conforto de mouse:
+    // pelo teclado, o rótulo inteiro se lê alargando a coluna ou pelo autoajuste (spec 17).
+    const label = target?.closest?.('th .header-text');
+
+    if (label instanceof HTMLElement && !label.firstElementChild) {
+      if (label.scrollWidth > label.clientWidth || label.scrollHeight > label.clientHeight) {
+        label.title = label.textContent.trim();
+      } else {
+        label.removeAttribute('title');
+      }
+
+      return;
+    }
+
+    const cell = target?.closest?.('td.truncate');
 
     if (!(cell instanceof HTMLElement)) {
       return;

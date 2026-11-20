@@ -140,8 +140,8 @@ export interface GridColumnDef<TItem = any> {
   /** Wraps the cell text in several lines instead of an ellipsis (cells only; see `headerWrap`). */
   wrap?: boolean;
   /**
-   * Wraps the header label in several lines instead of an ellipsis; the
-   * header row grows. `null`/absent: the grid's `headerWrap`; `false` turns it
+   * Wraps the header label in several lines (between words) instead of an
+   * ellipsis; the header row grows. `null`/absent: the grid's `headerWrap`; `false` turns it
    * off for this column.
    */
   headerWrap?: boolean | null;

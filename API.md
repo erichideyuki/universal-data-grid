@@ -298,7 +298,7 @@ interface GridColumnDef<TItem = any> {
   falseText?: string | null;
   /** Wrap long cell text over several lines instead of truncating with an ellipsis (cells only). */
   wrap?: boolean;
-  /** Wrap the header label over several lines. null: the grid's `headerWrap`; false turns it off here. */
+  /** Wrap the header label over several lines, between words. null: the grid's `headerWrap`; false turns it off here. */
   headerWrap?: boolean | null;
   /** Text shown for `null`/`undefined` values. Default: empty. */
   emptyText?: string | null;
@@ -2765,7 +2765,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button (and "Choose columns" in the column header menu): search, show all, show/hide, reorder. See [Column chooser](#column-chooser). |
 | `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content (the header label in one line, with its buttons). |
-| `headerWrap`       | `header-wrap`         | `boolean` | `false` | Wrap the column header labels over several lines instead of an ellipsis (a column's `headerWrap` wins). The header row grows; if the bar and the headers take more than half of the visible height, the headers stop sticking. |
+| `headerWrap`       | `header-wrap`         | `boolean` | `false` | Wrap the column header labels over several lines instead of an ellipsis (a column's `headerWrap` wins). Breaks only between words (hyphenation follows the `lang`); a word longer than the column ends in an ellipsis; `--u-grid-header-cell-max-lines` limits the lines; a cut default label shows the full text as a hover tooltip. The header row grows; if the bar and the headers take more than half of the visible height, the headers stop sticking. |
 | `columnRenderingMode` | `column-rendering-mode` | `'auto' \| 'virtual' \| 'standard'` | `'auto'` | Column virtualization (`auto`: virtual with more than 50 leaf columns). See [Column virtualization](#column-virtualization). |
 | `showFilterRow`    | `show-filter-row`     | `boolean` | `false` | Show the filter row. See [Filtering](#filtering). |
 | `showSearchPanel`  | `show-search-panel`   | `boolean` | `false` | Show the search box in the bar above the table. |
@@ -2843,6 +2843,7 @@ tint derive from it.
 | `--u-grid-header-cell-height` | `46px` | Minimum column header height (rows with `header-wrap` grow). |
 | `--u-grid-header-cell-padding` | `13px 16px` | Header cell padding. |
 | `--u-grid-header-cell-font-size` / `--u-grid-header-cell-font-weight` | `0.8125rem` / inherited | Header text. |
+| `--u-grid-header-cell-max-lines` | `none` | With `header-wrap` (grid or column), maximum lines of the default header label: an ellipsis on the last line and the full text as a hover tooltip; the full label stays the header's accessible name. `headerRenderer` output is never clipped. A positive integer or `none`; invalid values mean no limit. Prefer 2 or more lines: from the keyboard the full label is read by widening the column (Alt+→) or auto-sizing it, so keep the header menu or resizing on. |
 | `--u-grid-cell-padding` | `13px 16px` | Data cell padding (shorthand; wins over the longhands). `--u-grid-cell-block-padding` (`13px`) / `--u-grid-cell-inline-padding` (`16px`) set one axis of both data and header cells (unless `--u-grid-cell-padding` / `--u-grid-header-cell-padding` is set). |
 | `--u-grid-cell-font-size` / `--u-grid-cell-font-weight` | `0.875rem` / inherited | Data cell text. |
 | `--u-grid-line-opacity` | `20%` | Opacity of row/column lines (derived from the text color). |
@@ -3415,6 +3416,15 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): `header-wrap` breaks only between words (it used to split words at
+any letter); a word longer than the column ends in an ellipsis, `--u-grid-header-cell-max-lines`
+limits the lines, and a cut default header label shows its full text as a hover tooltip; with
+`column-auto-width`, web fonts that load after the first measure trigger a new measure (a label
+was cut by 1px); header buttons of end-aligned columns no longer reach into the start padding (the
+"⋮" sat close to the previous column's); with `scroll-container`, a console warning tells when the
+container (or `html`/`body` for `window`) has `overflow-x: hidden/clip` while the table is wider
+than the grid.
 
 In 0.3.0: computed columns (a `valueGetter` and a `name`, no `path`) are
 filterable by default — they get a filter row editor and a header filter button, and the search

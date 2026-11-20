@@ -1,3 +1,5 @@
+import { html } from 'lit';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 
@@ -643,7 +645,7 @@ describe('headerWrap', () => {
 
   it('quebra o rótulo e o cabeçalho cresce; a coluna pode desligar; auto-size mede numa linha', async () => {
     const grid = await createGrid({
-      columns: [{ path: 'a', label: longLabel, width: 110 }, { path: 'b', label: longLabel, width: 110, headerWrap: false }, { path: 'c', label: 'C' }],
+      columns: [{ path: 'a', label: longLabel, width: 170 }, { path: 'b', label: longLabel, width: 110, headerWrap: false }, { path: 'c', label: 'C' }],
       items,
       configure: g => g.headerWrap = true,
     });
@@ -651,7 +653,7 @@ describe('headerWrap', () => {
     expect(header(grid, 0).classList.contains('header-wrap')).toBe(true);
     expect(truncated(header(grid, 0))).toBe(false);
     const wrapped = header(grid, 0).getBoundingClientRect().height;
-    expect(wrapped).toBeGreaterThan(60);
+    expect(wrapped).toBeGreaterThan(52);
     expect(header(grid, 1).classList.contains('header-wrap')).toBe(false);
     expect(truncated(header(grid, 1))).toBe(true);
 
@@ -668,7 +670,7 @@ describe('headerWrap', () => {
     const grid = document.createElement('u-grid');
     grid.style.cssText = 'display:block;height:300px';
     grid.setAttribute('header-wrap', '');
-    grid.innerHTML = `<u-grid-column path="a" width="110">${longLabel}</u-grid-column>`
+    grid.innerHTML = `<u-grid-column path="a" width="170">${longLabel}</u-grid-column>`
       + `<u-grid-column path="b" width="110" header-wrap="false">${longLabel}</u-grid-column><u-grid-column path="c">C</u-grid-column>`;
     grid.items = items;
     document.body.append(grid);
@@ -711,5 +713,100 @@ describe('headerWrap', () => {
     await settle(grid);
     const cell = grid.shadowRoot!.activeElement as HTMLElement;
     expect(cell.getBoundingClientRect().top).toBeGreaterThanOrEqual(Math.floor(thead.getBoundingClientRect().bottom));
+  });
+});
+
+// Relato de uso (0.3.0): "Obrigatório" cortado 1px — medido com a fonte de reserva antes de a web font chegar.
+it('fonte carregada depois da medida: column-auto-width mede de novo (document.fonts loadingdone)', async () => {
+  const grid = await createGrid({
+    columns: [{ path: 'a', label: 'Obrigatório' }, { path: 'b', label: 'Certificado' }, { path: 'c', label: 'C' }],
+    items: [{ a: 'x', b: 'y', c: 'z' }],
+    configure: g => {
+      // Estreito: as colunas ficam na largura medida (nada a distribuir).
+      g.style.width = '200px';
+      g.columnAutoWidth = true;
+      g.headerFilter = true;
+    },
+  });
+  const width = () => root(grid).querySelector<HTMLElement>('th.header-column')!.getBoundingClientRect().width;
+  const before = width();
+
+  // A fonte "chega" mais larga (aqui, um tamanho maior); sem o evento, a largura medida não muda.
+  grid.style.setProperty('--u-grid-header-cell-font-size', '20px');
+  await settle(grid);
+  expect(width()).toBe(before);
+
+  document.fonts.dispatchEvent(new Event('loadingdone'));
+  await settle(grid);
+  await settle(grid);
+  expect(width()).toBeGreaterThan(before);
+  const text = root(grid).querySelector<HTMLElement>('th.header-column .header-text')!;
+  expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
+});
+
+// Relato de uso (0.3.0): rótulos longos quebravam no meio da palavra ("Procediment/o") e o cabeçalho chegava a 6 linhas.
+describe('headerWrap: só entre palavras e --u-grid-header-cell-max-lines', () => {
+  const long = 'PRO-014 - Procedimento de Brindes, Presentes e Hospitalidades';
+  const make = (configure?: (grid: DataGrid) => void) => createGrid({
+    columns: [
+      { path: 'a', label: long, width: 150, headerWrap: true },
+      { path: 'b', label: 'Custom', width: 150, headerWrap: true, headerRenderer: () => html`<b>${long}</b>` },
+      { path: 'c', label: 'C' },
+    ],
+    items: [{ a: 'x', b: 'y', c: 'z' }],
+    configure: g => {
+      g.headerFilter = true;
+      configure?.(g);
+    },
+  });
+  const label = (grid: DataGrid, index = 0) => root(grid).querySelectorAll<HTMLElement>('th.header-column .header-text')[index];
+
+  /** Linhas visíveis: os topos distintos das caixas de texto que cabem na caixa do rótulo. */
+  const lines = (element: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const box = element.getBoundingClientRect();
+    return new Set([...range.getClientRects()].filter(rect => rect.top < box.bottom - 1).map(rect => Math.round(rect.top))).size;
+  };
+
+  it('não parte palavras; palavra maior que a coluna fica com reticências', async () => {
+    const grid = await make();
+    const walker = document.createTreeWalker(label(grid), NodeFilter.SHOW_TEXT);
+    let text = walker.nextNode();
+
+    while (text && !text.textContent!.includes('Procedimento')) {
+      text = walker.nextNode();
+    }
+
+    const range = document.createRange();
+    const start = text!.textContent!.indexOf('Procedimento');
+    range.setStart(text!, start);
+    range.setEnd(text!, start + 'Procedimento'.length);
+
+    // A palavra numa linha só (cortada com reticências se não couber), nunca em duas.
+    expect(new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size).toBe(1);
+    expect(getComputedStyle(label(grid)).overflowWrap).toBe('normal');
+  });
+
+  it('limite de linhas: corta com reticências, dica com o texto inteiro; headerRenderer nunca é cortado', async () => {
+    const grid = await make(g => g.style.setProperty('--u-grid-header-cell-max-lines', '2'));
+    const text = label(grid);
+
+    expect(lines(text)).toBeLessThanOrEqual(2);
+    expect(text.scrollHeight).toBeGreaterThan(text.clientHeight);
+    text.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, composed: true }));
+    expect(text.title).toBe(long);
+    // O nome do cabeçalho segue sendo o rótulo inteiro.
+    expect(text.closest('th')!.getAttribute('aria-labelledby')).toBe(text.id);
+    expect(text.textContent.trim()).toBe(long);
+
+    // Conteúdo próprio (pode ter controles): sem corte.
+    const custom = label(grid, 1);
+    expect(getComputedStyle(custom).webkitLineClamp).toBe('none');
+    expect(custom.scrollHeight).toBeLessThanOrEqual(custom.clientHeight + 1);
+
+    const { default: axe } = await import('axe-core');
+    const result = await axe.run(grid as unknown as Element);
+    expect(result.violations.map(v => v.id)).toEqual([]);
   });
 });

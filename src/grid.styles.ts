@@ -870,11 +870,27 @@ export const styles = css`
     white-space: normal;
   }
 
+  /*
+   * Quebra só entre palavras (hífen com \`hyphens: auto\` e o \`lang\` do
+   * hospedeiro); uma palavra maior que a coluna fica com reticências na linha
+   * dela. Com \`--u-grid-header-cell-max-lines\`, as linhas além do limite viram
+   * reticências. O texto inteiro segue no nome acessível; quem enxerga e usa
+   * teclado o lê alargando a coluna (Alt+→) ou pelo autoajuste do menu ⋮
+   * (WCAG 1.4.12; spec 17). Só no rótulo padrão: conteúdo de
+   * \`headerRenderer\` (pode ter controles focáveis) nunca é cortado.
+   */
   .header-column.header-wrap > .header-content > .header-text {
     white-space: normal;
-    overflow-wrap: break-word;
+    overflow-wrap: normal;
     hyphens: auto;
-    text-overflow: clip;
+  }
+
+  .header-column.header-wrap > .header-content > .header-text:not(:has(*)) {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--u-grid-header-cell-max-lines, none);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Auto-size mede o rótulo numa linha só (como o DevExtreme): senão a coluna encolhe até a maior palavra. */
@@ -912,10 +928,13 @@ export const styles = css`
     margin-inline-end: calc(min(var(--_resize-handle-width), var(--_cell-inline-padding)) - var(--_cell-inline-padding));
   }
 
-  /* Botões no começo: o mesmo avanço sobre o padding do começo (lá não há alça). */
+  /*
+   * Botões no começo (rótulo no fim): sem avanço sobre o padding do começo —
+   * senão o "⋮" encosta no "⋮" da coluna anterior (16px entre eles).
+   */
   .header-column.align-end .header-buttons {
     flex-direction: row-reverse;
-    margin-inline: calc(min(var(--_resize-handle-width), var(--_cell-inline-padding)) - var(--_cell-inline-padding)) auto;
+    margin-inline: 0 auto;
   }
 
   /* Centro: texto e seta no meio do espaço que sobra antes dos botões. */

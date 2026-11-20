@@ -278,3 +278,23 @@ describe('memória: recursos de coluna', () => {
     await expectCollected(await replace());
   });
 });
+
+describe('column-auto-width e fontes carregadas depois (listener em document.fonts)', () => {
+  it('grid com auto-width removido é coletado; o evento de fonte depois não o segura', async () => {
+    const scenario = async (): Promise<Tracked> => {
+      const columns = makeColumns().map(column => ({ ...column, width: null }));
+      const items = makeItems(10);
+      const grid = await createGrid({ columns, items, height: '300px', configure: g => g.columnAutoWidth = true });
+
+      document.fonts.dispatchEvent(new Event('loadingdone'));
+      await settle(grid);
+      grid.remove();
+      await settle(grid);
+      document.fonts.dispatchEvent(new Event('loadingdone'));
+
+      return track({ grid, columns, items });
+    };
+
+    await expectCollected(await scenario());
+  });
+});

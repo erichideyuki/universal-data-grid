@@ -1,11 +1,11 @@
 import '@universal-material/data-grid';
 import type { GridColumnDef } from '@universal-material/data-grid';
 
-import { checkbox, controls, createGrid } from '../shared/controls.js';
+import { checkbox, controls, createGrid, select } from '../shared/controls.js';
 
 export const meta = {
   title: 'Long header labels',
-  description: 'With `header-wrap`, long labels break over several lines instead of an ellipsis and the header row grows (`--u-grid-header-cell-height` becomes its minimum); a column\'s `headerWrap: false` keeps one line. Auto-size still fits the label in one line. If the bar and the headers took more than half of the visible height, the headers would stop sticking.',
+  description: 'With `header-wrap`, long labels break over several lines — between words — instead of an ellipsis, and the header row grows (`--u-grid-header-cell-height` becomes its minimum); a column\'s `headerWrap: false` keeps one line. `--u-grid-header-cell-max-lines` caps the lines with an ellipsis: hover a cut label for its full text (the full label stays its accessible name; from the keyboard, widen the column or auto-size it). Auto-size still fits the label in one line.',
 };
 
 interface Training {
@@ -37,7 +37,11 @@ export default (host: HTMLElement) => {
     ...Object.fromEntries(DOCUMENTS.map((_, index) => [`d${index}`, (row + index) % 3 ? 'Done' : 'Pending'])),
   }));
 
-  controls(host, checkbox('header-wrap', true, checked => {
-    grid.headerWrap = checked;
-  }));
+  controls(host,
+    checkbox('header-wrap', true, checked => {
+      grid.headerWrap = checked;
+    }),
+    select('Max lines', ['none', '2', '3'] as const, 'none', lines => {
+      grid.style.setProperty('--u-grid-header-cell-max-lines', lines);
+    }));
 };

@@ -635,3 +635,38 @@ describe('nada do grid escapa do contêiner externo', () => {
     expect(document.documentElement.scrollHeight).toBeLessThan(5_000);
   });
 });
+
+// Relato de uso (0.3.0): contêiner com overflow-x: hidden escondia as colunas que transbordam, sem nenhum aviso.
+describe('aviso: contêiner que corta a rolagem horizontal', () => {
+  const warnings = (spy: { mock: { calls: unknown[][] } }): string[] =>
+    spy.mock.calls.map(call => String(call[0])).filter(text => text.includes('overflow-x: hidden/clip'));
+
+  it('contêiner com overflow-x: hidden e tabela mais larga que o grid avisa uma vez; sem transbordo, não', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { parent, grid } = await make('element', { cols: 6, configure: g => g.style.width = '500px' });
+
+    expect(warnings(warn)).toEqual([]);
+
+    parent.style.overflowX = 'hidden';
+    grid.style.width = '480px';
+    await settle(grid);
+    await settle(grid);
+    expect(warnings(warn)).toHaveLength(1);
+
+    // Os mesmos avisos não se repetem a cada medida.
+    grid.style.width = '470px';
+    await settle(grid);
+    await settle(grid);
+    expect(warnings(warn)).toHaveLength(1);
+  });
+
+  it('janela: <body> com overflow-x: hidden avisa', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    document.body.style.overflowX = 'hidden';
+    cleanups.push(() => document.body.style.removeProperty('overflow-x'));
+    await make('window', { cols: 12 });
+
+    expect(warnings(warn)).toHaveLength(1);
+    expect(warnings(warn)[0]).toContain('<body>');
+  });
+});
