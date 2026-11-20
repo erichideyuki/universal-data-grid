@@ -271,9 +271,9 @@ interface GridColumnDef<TItem = any> {
   columns?: readonly GridColumnDef<TItem>[] | null;
   /** Dot-path into each item, e.g. `"user.address.city"`. */
   path?: string;
-  /** Stable id in the saved state and in string column references (summaries). Default: `path`. */
+  /** Stable id in the saved state, in string column references (summaries) and, without `path`, in filter conditions. Default: `path`. */
   name?: string;
-  /** The column's name as text: header text (unless headerRenderer; empty: path) and its name in menus, chips, chooser, announcements and export (empty: path, then name, as is). With <u-grid-column>, the element's text content. */
+  /** The column's name as text: header text (unless headerRenderer; empty: path, or the name of a column with a valueGetter) and its name in menus, chips, chooser, announcements and export (empty: path, then name, as is). With <u-grid-column>, the element's text content. */
   label?: string;
   /** Fixed column width in pixels. Omit for auto width (under virtual column rendering: auto-size width or max(minWidth, 150) px). */
   width?: number | null;
@@ -555,9 +555,11 @@ grid.filterValue = ['!', ['status', '=', 'archived']];
 grid.filterValue = null; // no filter
 ```
 
-- A condition is `[path, operation, value]`, where `path` is the column `path` (a path without a
-  column is read from the items; with two columns on the same path, the first wins). `[path, value]`
-  means `=`.
+- A condition is `[field, operation, value]`, where `field` is the column `path` or, for a
+  [computed column](#filtering-computed-columns) (a `valueGetter` and no `path`), its `name`. A
+  `path` match wins over a `name` (the reverse of string column references elsewhere), and a field
+  that matches no column is read from the items as a dot path; with two columns on the same path,
+  the first wins. `[field, value]` means `=`.
 - Groups join expressions with `'and'` / `'or'` (`and` binds tighter; two expressions in a row
   mean `and`, as in DevExtreme); `['!', expression]` negates.
 
@@ -583,9 +585,36 @@ the top-level `and` conditions of their column and leave the rest of the express
 
 | Option | Attribute | Default | Description |
 | ------ | --------- | ------- | ----------- |
-| `filterable` | `filterable` | `true` with a `path` | `false` removes the column from the filter row, the header filter and the search. Columns need a `path` to be filtered. |
+| `filterable` | `filterable` | `true` with a `path`, or with a `valueGetter` and a `name` (not with remote filtering) | `false` removes the column from the filter row, the header filter and the search. A column needs a `path`, or a `valueGetter` and a `name`, to be filtered. |
 | `filterOperations` | `filter-operations` | by type | Operations of the filter row menu (attribute: space separated, `filter-operations="contains startswith ="`). Text: `contains notcontains startswith endswith = <>`; number/date: `= <> < > <= >= between`; boolean: `=`. Only the menu is restricted. |
 | `defaultFilterOperation` | `default-filter-operation` | `contains` (text), `=` | Operation of the filter row editor; one outside `filterOperations` falls back to the first of the list. |
+
+### Filtering computed columns
+
+A column whose value comes only from its `valueGetter` (no `path`) is filtered by that value: the
+filter row, the header filter (its list shows the distinct computed values) and the search use it,
+and `displayValue`/`format` apply to text operations as in any column. Give it a `name`: conditions,
+`filterValue` and the saved state refer to it by that `name`.
+
+```ts
+grid.columns = [
+  { path: 'user', label: 'User' },
+  { name: 'docA', label: 'Policy A', valueGetter: row => statusOf(row, 'A') },
+];
+grid.filterValue = ['docA', 'anyof', ['pending', 'expired']];
+```
+
+- Without a `name` the column cannot be addressed and is not filterable (`filterable: true` warns
+  once); neither is a column with neither `path` nor `valueGetter` (it has no value to filter). A computed column whose `name` is also another column's `path` (or repeats the `name` of an
+  earlier computed column) is not filterable either, so no filter control ever filters another
+  column; `filterable: true` on it warns once.
+- A computed column without `label` shows its `name` as the header text (with a console warning
+  when it is filterable or sortable: the `name` is usually an id, not a label).
+- With a remote `dataSource` (`remoteOperations` filtering), computed columns are not filterable by
+  default: the server does not know the getter. With `filterable: true` they get a filter row editor
+  (no header filter: its list would come only from the loaded rows), and their conditions reach
+  `load()` as they are, by `name` (`filter`, `filterValue`, and the search in `filter`): translate
+  them on the server.
 
 ### Filtering API
 
@@ -596,7 +625,8 @@ grid.getCombinedFilter();      // filterValue `and` the search, e.g. for a serve
 grid.clearFilter();            // removes filterValue and searchText
 ```
 
-`getCombinedFilter()` turns the search into `[path, 'contains', text]` conditions joined by `'or'`
+`getCombinedFilter()` turns the search into `[field, 'contains', text]` conditions (`field`: the
+`path`, or the `name` of a computed column) joined by `'or'`
 over the visible filterable columns (number and date columns included: `contains` matches their
 displayed text).
 
@@ -2251,8 +2281,8 @@ grid.resetState();                      // back to the column definitions and in
   itself, so the selection and the detail rows are left out).
 - Columns are identified by `name` (`GridColumnDef.name` / `<u-grid-column name>`), or by `path`
   without one. A column without either is left out of the state (console warning); give two
-  columns with the same `path` different names. `filterValue` refers to columns by `path`, like the
-  property.
+  columns with the same `path` different names. `filterValue` refers to columns by `path` (or by
+  `name` for a computed column without `path`), like the property.
 - With [bands](#bands-multi-level-headers), the order of the columns inside each band and of the
   bands themselves comes from the column order. A band with a `name` also keeps its own visibility
   and, at the top level, its fixed side (a band without `name` is left out silently); each column
@@ -3180,7 +3210,7 @@ import {
   type GridSummaryFormat,   // Intl options or (value) => string
   type GridSummaryValue,    // { item, value, text }
   type GridFilterOperation, // '=' | '<>' | '<' | ... | 'isblank' | 'isnotblank'
-  type GridFilterCondition, // [path, operation, value?]
+  type GridFilterCondition, // [field, operation, value?]
   type GridFilterExpression, // condition | ['!', expr] | (expr | 'and' | 'or')[]
   type GridFilterEventDetail, // { filterValue, previousFilterValue, searchText, previousSearchText, source }
   type GridColumnResizeEventDetail,
@@ -3385,6 +3415,11 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): computed columns (a `valueGetter` and a `name`, no `path`) are
+filterable by default — they get a filter row editor and a header filter button, and the search
+also matches their displayed text (set `filterable: false` to keep the old behavior); a computed
+column without `label` shows its `name` as the header text instead of an empty header.
 
 In 0.2.0: a column without `label` shows its `path` as the header text and uses `path`, then
 `name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;

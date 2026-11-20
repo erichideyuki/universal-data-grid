@@ -37,8 +37,13 @@ export const isFilterOperation = (value: unknown): value is GridFilterOperation 
 /** O que o avaliador precisa do grid — tudo sem DOM. */
 export interface FilterContext {
   language: string | undefined;
-  /** Colunas conhecidas: o `field` texto de uma condição é procurado pelo `path`. */
+  /** Colunas conhecidas: o campo de uma condição é procurado pelo `path`, depois pelo `name` (sem `path`). */
   columns: readonly GridColumnDef[];
+  /**
+   * Resolução do campo já indexada pelo grid (a mesma da interface). Sem ela,
+   * {@link resolveFilterColumn} sobre `columns`.
+   */
+  resolve?: FilterFieldResolver;
   /** `dataType` efetivo (informado ou inferido). */
   dataTypeOf(column: GridColumnDef): GridColumnDataType | undefined;
   /** Texto exibido (`displayValue`/`format`), o mesmo da célula. */
@@ -224,9 +229,25 @@ const readerFor = (column: GridColumnDef, compiler: Compiler): ValueReader => {
   return read;
 };
 
-/** Coluna do `path` (a primeira, se houver duas); sem coluna, lê o caminho do item. */
+/** Coluna do campo de uma condição; `undefined` = nenhuma (o campo é lido como caminho do item). */
+export type FilterFieldResolver = (field: string) => GridColumnDef | undefined;
+
+/**
+ * Coluna do campo de uma condição (spec 28): a primeira com esse `path`;
+ * senão a primeira SEM `path` com esse `name` (coluna calculada). O `path`
+ * vem antes para nenhuma expressão antiga mudar de sentido.
+ */
+export const resolveFilterColumn = (field: string, columns: readonly GridColumnDef[]): GridColumnDef | undefined =>
+  columns.find(column => column.path === field) ?? columns.find(column => !column.path && column.name === field);
+
+/** Campo canônico da coluna nas condições: `path`, senão `name`. */
+export const filterFieldOf = (column: GridColumnDef): string | undefined =>
+  column.path || column.name || undefined;
+
+/** Coluna do campo; sem coluna, lê o caminho do item. */
 const resolveColumn = (field: string, compiler: Compiler): GridColumnDef => {
-  const known = compiler.context.columns.find(column => column.path === field);
+  const { context } = compiler;
+  const known = context.resolve ? context.resolve(field) : resolveFilterColumn(field, context.columns);
 
   if (known) {
     return known;
@@ -726,7 +747,12 @@ export const filterItems = <T>(items: readonly T[], predicate: FilterPredicate |
  * `null` sem texto ou sem colunas.
  */
 export const searchExpression = (text: string, columns: readonly GridColumnDef[]): GridFilterExpression | null => {
-  const conditions: GridFilterCondition[] = !text.trim() ? [] : columns.filter(column => column.path).map(column => [column.path!, 'contains', text]);
+  const conditions: GridFilterCondition[] = !text.trim()
+    ? []
+    : columns.flatMap(column => {
+      const field = filterFieldOf(column);
+      return field ? [[field, 'contains', text] as const] : [];
+    });
 
   if (!conditions.length) {
     return null;
@@ -761,8 +787,14 @@ export const splitConjuncts = (expression: GridFilterExpression | null | undefin
   return group.filter(entry => !isConnector(entry)) as GridFilterExpression[];
 };
 
-const sameField = (field: string, column: GridColumnDef): boolean =>
-  !!column.path && field === column.path;
+/**
+ * A condição de `field` é da coluna? Com `path`, pelo texto (duas colunas do
+ * mesmo `path` mostram a mesma condição, como antes); sem `path`, pela
+ * resolução — a mesma do avaliador, para a interface nunca mostrar ou trocar
+ * a condição de outra coluna (colisão de `name` com `path`).
+ */
+const sameField = (field: string, column: GridColumnDef, resolve: FilterFieldResolver): boolean =>
+  column.path ? field === column.path : !!column.name && field === column.name && resolve(field) === column;
 
 /** Tipo de condição de coluna: a da linha de filtro ou a do filtro do cabeçalho (`anyof`/`noneof`). */
 export type ColumnFilterKind = 'row' | 'header';
@@ -775,6 +807,7 @@ export const findColumnCondition = (
   expression: GridFilterExpression | null | undefined,
   column: GridColumnDef,
   kind: ColumnFilterKind,
+  resolve: FilterFieldResolver,
 ): [GridFilterOperation, unknown] | undefined => {
   for (const part of splitConjuncts(expression)) {
     if (!isFilterCondition(part)) {
@@ -783,7 +816,7 @@ export const findColumnCondition = (
 
     const [field, operation, value] = conditionParts(part);
 
-    if (isFilterOperation(operation) && sameField(field, column) && kindOf(operation) === kind) {
+    if (isFilterOperation(operation) && sameField(field, column, resolve) && kindOf(operation) === kind) {
       return [operation, value];
     }
   }
@@ -792,8 +825,12 @@ export const findColumnCondition = (
 };
 
 /** A coluna tem alguma condição no nível de cima (ícone de funil ativo)? */
-export const hasColumnCondition = (expression: GridFilterExpression | null | undefined, column: GridColumnDef): boolean =>
-  splitConjuncts(expression).some(part => isFilterCondition(part) && sameField(conditionParts(part)[0], column));
+export const hasColumnCondition = (
+  expression: GridFilterExpression | null | undefined,
+  column: GridColumnDef,
+  resolve: FilterFieldResolver,
+): boolean =>
+  splitConjuncts(expression).some(part => isFilterCondition(part) && sameField(conditionParts(part)[0], column, resolve));
 
 /**
  * Troca a condição da coluna (do `kind`) por `condition` — ou só tira, com
@@ -805,6 +842,7 @@ export const replaceColumnCondition = (
   column: GridColumnDef,
   kind: ColumnFilterKind | 'all',
   condition: GridFilterCondition | null,
+  resolve: FilterFieldResolver,
 ): GridFilterExpression | null => {
   const parts = splitConjuncts(expression).filter(part => {
     if (!isFilterCondition(part)) {
@@ -813,7 +851,7 @@ export const replaceColumnCondition = (
 
     const [field, operation] = conditionParts(part);
 
-    return !sameField(field, column) || (kind !== 'all' && isFilterOperation(operation) && kindOf(operation) !== kind);
+    return !sameField(field, column, resolve) || (kind !== 'all' && isFilterOperation(operation) && kindOf(operation) !== kind);
   });
 
   if (condition) {

@@ -12,7 +12,7 @@ import type {
 } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
 import { booleanTexts, columnText } from '../row-model/columns.js';
-import { type ColumnFilterKind, findColumnCondition } from '../row-model/filter.js';
+import { type ColumnFilterKind, filterFieldOf, findColumnCondition } from '../row-model/filter.js';
 import { toDate } from '../row-model/format.js';
 import { Debouncer, searchIcon } from './search.js';
 import { formatMessage } from './sorting.js';
@@ -133,6 +133,7 @@ export interface FilterRowHost extends ReactiveControllerHost {
   readonly filterValue: GridFilterExpression | null;
   _columnDataType(column: GridColumnDef): GridColumnDataType | undefined;
   _userFilterColumn(column: GridColumnDef, kind: ColumnFilterKind | 'all', condition: GridFilterCondition | null): void;
+  _resolveFilterField(field: string): GridColumnDef | undefined;
   _isRtl(): boolean;
 }
 
@@ -144,6 +145,7 @@ export interface FilterRowHost extends ReactiveControllerHost {
  */
 export class FilterRowController implements ReactiveController {
   readonly #host: FilterRowHost;
+  readonly #resolve = (field: string): GridColumnDef | undefined => this.#host._resolveFilterField(field);
   readonly #debouncer: Debouncer<GridColumnDef>;
   readonly #drafts = new Map<GridColumnDef, string[]>();
   readonly #operations = new Map<GridColumnDef, GridFilterOperation>();
@@ -200,7 +202,7 @@ export class FilterRowController implements ReactiveController {
 
   /** Operação atual da coluna: a da condição, a escolhida sem valor ou a padrão. */
   operationOf(column: GridColumnDef): GridFilterOperation {
-    const condition = findColumnCondition(this.#host.filterValue, column, 'row');
+    const condition = findColumnCondition(this.#host.filterValue, column, 'row', this.#resolve);
 
     return condition?.[0] ?? this.#operations.get(column) ?? defaultOperationOf(column, this.#host._columnDataType(column));
   }
@@ -213,7 +215,7 @@ export class FilterRowController implements ReactiveController {
       return draft;
     }
 
-    const condition = findColumnCondition(this.#host.filterValue, column, 'row');
+    const condition = findColumnCondition(this.#host.filterValue, column, 'row', this.#resolve);
     const dataType = this.#host._columnDataType(column);
 
     if (!condition) {
@@ -286,7 +288,7 @@ export class FilterRowController implements ReactiveController {
 
   #apply(column: GridColumnDef, operation: GridFilterOperation, texts: readonly string[]): void {
     const dataType = this.#host._columnDataType(column);
-    const path = column.path!;
+    const path = filterFieldOf(column)!;
     let condition: GridFilterCondition | null = null;
 
     if (NO_VALUE.has(operation)) {

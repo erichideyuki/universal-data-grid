@@ -255,6 +255,7 @@ import {
   type ColumnFilterKind,
   type FilterContext,
   filterItems,
+  type FilterFieldResolver,
   hasColumnCondition,
   replaceColumnCondition,
   searchExpression,
@@ -3750,8 +3751,9 @@ export class DataGrid extends LitElement {
    * Column filter (property only): a serializable expression such as
    * `[['age', '>', 30], 'and', ['name', 'contains', 'an']]`. The filter row
    * and the header filter read and write it, so it always holds the current
-   * filter. The grid keeps a frozen copy (never the host array). Setting it
-   * does not fire `u-grid-filter-change`.
+   * filter. A condition refers to its column by `path` or, for a computed
+   * column (`valueGetter` without `path`), by `name`. The grid keeps a frozen
+   * copy (never the host array). Setting it does not fire `u-grid-filter-change`.
    */
   @property({ attribute: false })
   get filterValue(): GridFilterExpression | null {
@@ -6498,7 +6500,8 @@ export class DataGrid extends LitElement {
 
   /**
    * The effective filter: `filterValue` `and` the search, as an expression
-   * (copy). The search becomes `[path, 'contains', text]` joined by `or`
+   * (copy). The search becomes `[field, 'contains', text]` (`field`: the
+   * `path`, or the `name` of a computed column) joined by `or`
    * over the visible filterable columns (number and date columns included:
    * `contains` matches their displayed text). `null` without filter.
    */
@@ -10004,6 +10007,13 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _columnChanged(column: GridColumnDef, change: GridColumnChange): void {
+    // `path`/`name` podem ter mudado no mesmo objeto (spec 28). Renomear
+    // uma calculada chega como `display`: o campo das condições mudou.
+    this.#filterFields = undefined;
+
+    if (change === 'display' && !column.path && column.valueGetter) {
+      this.#filtering.invalidate();
+    }
 
     if (change === 'columns') {
       // Colunas aninhadas entraram/saíram de uma banda declarativa.
@@ -10091,6 +10101,20 @@ export class DataGrid extends LitElement {
    * coluna e instância (spec 00).
    */
   #warnUnlabeledColumns(tree: ColumnTree<GridColumnDef>): void {
+    for (const column of tree.leaves) {
+      // Calculada sem `label` (spec 28): o cabeçalho mostra o `name`, que costuma ser id.
+      if (!column.label && !column.headerRenderer && !column.path && column.valueGetter && column.name
+        && (this.#isFilterable(column) || isColumnSortable(column))) {
+        const key = `computed:${column.name}`;
+
+        if (!this.#warnedUnlabeled.has(key)) {
+          this.#warnedUnlabeled.add(key);
+          console.warn(`<u-grid>: column "${column.name}" has a "valueGetter" but no "label"; its header, menus and `
+            + `announcements show the name "${column.name}".`);
+        }
+      }
+    }
+
     for (const column of [...tree.leaves, ...tree.bands]) {
       if (!column.headerRenderer || column.label) {
         continue;
@@ -10120,6 +10144,7 @@ export class DataGrid extends LitElement {
   #syncColumns(): void {
     const tree = buildColumnTree<GridColumnDef>(this.columns);
     this.#columnTree = tree;
+    this.#filterFields = undefined;
     this.#warnUnlabeledColumns(tree);
     this.#visibleBands = undefined;
     // Só as folhas têm células; as bandas são só cabeçalho.
@@ -10527,7 +10552,7 @@ export class DataGrid extends LitElement {
       const order = sorting.find(spec => spec.column === column)?.order;
       const parts = [
         ...order ? [order === 'asc' ? translation.sortAscending : translation.sortDescending] : [],
-        ...hasColumnCondition(filterValue, column) ? [translation.columnFiltered] : [],
+        ...hasColumnCondition(filterValue, column, this.#resolveFilterField) ? [translation.columnFiltered] : [],
       ];
 
       return parts.length ? [`${columnText(column)}${translation.adaptiveLabelSeparator}${parts.join(', ')}`] : [];
@@ -12057,7 +12082,7 @@ export class DataGrid extends LitElement {
 
       if (!this.#warnedColumns.has(id)) {
         this.#warnedColumns.add(id);
-        console.warn(`<u-grid>: column "${column.label ?? column.path ?? ''}" needs a plain "path" for remote ${operation}; ignored on the server.`);
+        console.warn(`<u-grid>: column "${columnText(column)}" needs a plain "path" for remote ${operation}; ignored on the server.`);
       }
 
       return undefined;
@@ -12618,6 +12643,7 @@ export class DataGrid extends LitElement {
     return {
       language,
       columns,
+      resolve: this.#resolveFilterField,
       dataTypeOf,
       textOf: (item, column) => formatCell(item, column, contextOf(column)),
       alphabetOf: column => displayAlphabet(column, contextOf(column), foldText),
@@ -12642,7 +12668,7 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _searchColumns(): GridColumnDef[] {
-    return [...this._groupColumns, ...this._shownColumns].filter(isColumnFilterable);
+    return [...this._groupColumns, ...this._shownColumns].filter(column => this.#isFilterable(column));
   }
 
   /** @internal */
@@ -12652,7 +12678,84 @@ export class DataGrid extends LitElement {
 
   /** @internal */
   _isFilterable(column: GridColumnDef): boolean {
-    return isColumnFilterable(column);
+    return this.#isFilterable(column);
+  }
+
+  /** @internal */
+  _resolveFilterField(field: string): GridColumnDef | undefined {
+    return this.#resolveFilterField(field);
+  }
+
+  /** Campo de condição → coluna (spec 28); índice refeito quando as colunas mudam. */
+  #filterFields: Map<string, GridColumnDef> | undefined;
+
+  /** Coluna do campo de uma condição: `path`, depois `name` de coluna sem `path` (o mesmo do avaliador). */
+  readonly #resolveFilterField: FilterFieldResolver = field => {
+    if (!this.#filterFields) {
+      const index = new Map<string, GridColumnDef>();
+      const leaves = this.#columnTree.leaves;
+
+      for (const column of leaves) {
+        if (column.path && !index.has(column.path)) {
+          index.set(column.path, column);
+        }
+      }
+
+      for (const column of leaves) {
+        if (!column.path && column.name && !index.has(column.name)) {
+          index.set(column.name, column);
+        }
+      }
+
+      this.#filterFields = index;
+    }
+
+    return this.#filterFields.get(field);
+  };
+
+  /** Colunas já avisadas por `filterable: true` sem efeito (uma vez por coluna). */
+  readonly #warnedFilterable = new WeakSet<GridColumnDef>();
+
+  /**
+   * O usuário pode filtrar pela coluna (linha de filtro, funil, busca)? Além
+   * de {@link isColumnFilterable}: a coluna sem `path` precisa ser a dona do
+   * próprio `name` (sem colisão com um `path` ou com outra calculada) e, com
+   * filtro remoto, só com `filterable: true` (o servidor não conhece o getter).
+   */
+  #isFilterable(column: GridColumnDef): boolean {
+    if (!isColumnFilterable(column)) {
+      if (column.filterable === true) {
+        this.#warnFilterable(column, 'needs a "path", or a "valueGetter" and a "name", to be filterable; ignored.');
+      }
+
+      return false;
+    }
+
+    if (column.path) {
+      return true;
+    }
+
+    if (this.#resolveFilterField(column.name!) !== column) {
+      if (column.filterable === true) {
+        this.#warnFilterable(column, `has the name "${column.name!}" of another column's path or name; not filterable.`);
+      }
+
+      return false;
+    }
+
+    return !this.#remote.filtering || column.filterable === true;
+  }
+
+  /** Funil do filtro do cabeçalho: sem ele na coluna calculada remota (a lista viria só das linhas carregadas). */
+  #hasFunnel(column: GridColumnDef): boolean {
+    return this.headerFilter && this.#isFilterable(column) && (!!column.path || !this.#remote.filtering);
+  }
+
+  #warnFilterable(column: GridColumnDef, problem: string): void {
+    if (!this.#warnedFilterable.has(column)) {
+      this.#warnedFilterable.add(column);
+      console.warn(`<u-grid>: column "${columnText(column)}" ${problem}`);
+    }
   }
 
   /**
@@ -12661,7 +12764,7 @@ export class DataGrid extends LitElement {
    * @internal
    */
   _userFilterColumn(column: GridColumnDef, kind: ColumnFilterKind | 'all', condition: GridFilterCondition | null): void {
-    this.#changeFilter(replaceColumnCondition(this.#filtering.filterValue, column, kind, condition), this.#filtering.searchText, 'user');
+    this.#changeFilter(replaceColumnCondition(this.#filtering.filterValue, column, kind, condition, this.#resolveFilterField), this.#filtering.searchText, 'user');
   }
 
   /** @internal */
@@ -12677,7 +12780,7 @@ export class DataGrid extends LitElement {
    */
   _distinctValues(column: GridColumnDef): DistinctValues {
     const others = combineFilters(
-      replaceColumnCondition(this.#filtering.filterValue, column, 'header', null),
+      replaceColumnCondition(this.#filtering.filterValue, column, 'header', null, this.#resolveFilterField),
       searchExpression(this.#filtering.searchText, this._searchColumns()),
     );
     let items: readonly unknown[] = this.#items;
@@ -15420,7 +15523,7 @@ export class DataGrid extends LitElement {
           controller: this.#filterRow,
           column: cell.column,
           dataType: this.#dataTypeOf(cell.column),
-          filterable: isColumnFilterable(cell.column),
+          filterable: this.#isFilterable(cell.column),
           translation,
           className: cell.className,
           style: cell.style,
@@ -15601,12 +15704,12 @@ export class DataGrid extends LitElement {
         }
         : undefined,
       trailing: cell.resizable ? this.#renderResizeHandle(cell, idSuffix) : nothing,
-      filterButton: this.headerFilter && isColumnFilterable(column)
-        ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${idSuffix}`, idSuffix, this.#textLanguage)
+      filterButton: this.#hasFunnel(column)
+        ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, this.#resolveFilterField, `header-description-${idSuffix}`, idSuffix, this.#textLanguage)
         : nothing,
       menuButton: this.#renderColumnMenuButton(column, idSuffix),
-      filtered: hasColumnCondition(filterValue, column),
-      description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
+      filtered: hasColumnCondition(filterValue, column, this.#resolveFilterField),
+      description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column, this.#resolveFilterField)),
       keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
       label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : headerText(column),
     });
@@ -15696,7 +15799,7 @@ export class DataGrid extends LitElement {
   /** \`aria-keyshortcuts\` do cabeçalho: só as teclas que valem para a coluna (nomes do UI Events). */
   #headerKeyShortcuts(column: GridColumnDef, resizable: boolean): string {
     const keys: string[] = [];
-    const funnel = this.headerFilter && isColumnFilterable(column);
+    const funnel = this.#hasFunnel(column);
 
     if (this.#hasColumnMenu(column)) {
       keys.push('Shift+F10');
@@ -16333,7 +16436,7 @@ export class DataGrid extends LitElement {
       const sortText = order && sorting.length > 1 && sortPosition > 0
         ? formatMessage(translation.columnSortPriority, { order: orderText, priority: String(sortPosition + 1) })
         : orderText;
-      const filtered = hasColumnCondition(filterValue, column);
+      const filtered = hasColumnCondition(filterValue, column, this.#resolveFilterField);
       const cell = this.#adaptiveCellLayout(column, id);
       const removed = pending?.type === 'remove';
       const added = pending?.type === 'add';
@@ -17175,7 +17278,7 @@ export class DataGrid extends LitElement {
 
     const content = renderDataCell(this, row, cell.column, cell.id, cell.format, this.#renderEpoch(), adaptive);
 
-    return matcher && typeof content === 'string' && isColumnFilterable(cell.column)
+    return matcher && typeof content === 'string' && this.#isFilterable(cell.column)
       ? renderHighlighted(content, matcher)
       : content;
   }

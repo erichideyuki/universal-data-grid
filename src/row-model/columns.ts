@@ -20,12 +20,18 @@ export const columnText = (column: { label?: string | null; path?: string | null
   column.label || column.path || column.name || '';
 
 /**
- * Texto VISÍVEL do cabeçalho sem `headerRenderer`: `label`, senão `path`.
- * Sem `name`: coluna só de `renderer` (ações, "select") com `name` de
- * estado mantém o cabeçalho vazio, como antes.
+ * Texto VISÍVEL do cabeçalho sem `headerRenderer`: `label`, senão `path`,
+ * senão o `name` da coluna calculada (`valueGetter`; spec 28: filtrável e
+ * ordenável, não pode ficar sem nome). Coluna só de `renderer` (ações,
+ * "select") com `name` de estado mantém o cabeçalho vazio, como antes.
  */
-export const headerText = (column: { label?: string | null; path?: string | null }): string =>
-  column.label || column.path || '';
+export const headerText = (column: {
+  label?: string | null;
+  path?: string | null;
+  name?: string | null;
+  valueGetter?: unknown;
+}): string =>
+  column.label || column.path || (column.valueGetter ? column.name || '' : '');
 
 /**
  * Textos de `true`/`false` de uma coluna: os dela (`trueText`/`falseText`) ou

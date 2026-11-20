@@ -119,8 +119,9 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /**
    * Stable id of the column in the grid state (`getState`, `stateStorage`)
    * and in string column references (`summary` items look it up before
-   * `path`). Default: `path`. A column without `name` and `path` is left out
-   * of the state.
+   * `path`) and, for a column without `path`, in filter conditions
+   * (`filterValue`). Default: `path`. A column without `name` and `path` is
+   * left out of the state.
    */
   @property() name = '';
 
@@ -248,8 +249,9 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
 
   /**
    * Allows filtering by this column (filter row, header filter and, by
-   * default, the search panel). Default (`null`): `true` when the column has
-   * a `path`. `filterable="false"` disables it.
+   * default, the search panel). Default (`null`): `true` with a `path`, or
+   * with a `valueGetter` and a `name` (not with remote filtering).
+   * `filterable="false"` disables it.
    */
   @property({ converter: optionalBoolean }) filterable: boolean | null = null;
 

@@ -1198,7 +1198,7 @@
               "type": {
                 "text": "GridFilterExpression | null"
               },
-              "description": "Column filter (property only): a serializable expression such as\n`[['age', '>', 30], 'and', ['name', 'contains', 'an']]`. The filter row\nand the header filter read and write it, so it always holds the current\nfilter. The grid keeps a frozen copy (never the host array). Setting it\ndoes not fire `u-grid-filter-change`."
+              "description": "Column filter (property only): a serializable expression such as\n`[['age', '>', 30], 'and', ['name', 'contains', 'an']]`. The filter row\nand the header filter read and write it, so it always holds the current\nfilter. A condition refers to its column by `path` or, for a computed\ncolumn (`valueGetter` without `path`), by `name`. The grid keeps a frozen\ncopy (never the host array). Setting it does not fire `u-grid-filter-change`."
             },
             {
               "kind": "field",
@@ -2041,7 +2041,7 @@
                   "text": "GridFilterExpression | null"
                 }
               },
-              "description": "The effective filter: `filterValue` `and` the search, as an expression\n(copy). The search becomes `[path, 'contains', text]` joined by `or`\nover the visible filterable columns (number and date columns included:\n`contains` matches their displayed text). `null` without filter."
+              "description": "The effective filter: `filterValue` `and` the search, as an expression\n(copy). The search becomes `[field, 'contains', text]` (`field`: the\n`path`, or the `name` of a computed column) joined by `or`\nover the visible filterable columns (number and date columns included:\n`contains` matches their displayed text). `null` without filter."
             },
             {
               "kind": "method",
@@ -4006,7 +4006,7 @@
                 "text": "string"
               },
               "default": "''",
-              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`. A column without `name` and `path` is left out\nof the state.",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`) and, for a column without `path`, in filter conditions\n(`filterValue`). Default: `path`. A column without `name` and `path` is\nleft out of the state.",
               "attribute": "name"
             },
             {
@@ -4278,7 +4278,7 @@
                 "text": "boolean | null"
               },
               "default": "null",
-              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` when the column has\na `path`. `filterable=\"false\"` disables it.",
+              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` with a `path`, or\nwith a `valueGetter` and a `name` (not with remote filtering).\n`filterable=\"false\"` disables it.",
               "attribute": "filterable"
             },
             {
@@ -4399,7 +4399,7 @@
                 "text": "string"
               },
               "default": "''",
-              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`). Default: `path`. A column without `name` and `path` is left out\nof the state.",
+              "description": "Stable id of the column in the grid state (`getState`, `stateStorage`)\nand in string column references (`summary` items look it up before\n`path`) and, for a column without `path`, in filter conditions\n(`filterValue`). Default: `path`. A column without `name` and `path` is\nleft out of the state.",
               "fieldName": "name"
             },
             {
@@ -4579,7 +4579,7 @@
                 "text": "boolean | null"
               },
               "default": "null",
-              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` when the column has\na `path`. `filterable=\"false\"` disables it.",
+              "description": "Allows filtering by this column (filter row, header filter and, by\ndefault, the search panel). Default (`null`): `true` with a `path`, or\nwith a `valueGetter` and a `name` (not with remote filtering).\n`filterable=\"false\"` disables it.",
               "fieldName": "filterable"
             },
             {

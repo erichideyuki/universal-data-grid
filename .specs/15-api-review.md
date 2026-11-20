@@ -160,6 +160,12 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   property de deslocamento: o `scroll-padding` do contêiner é o contrato
   (uma `--u-grid-*` herdada vazaria para os grids internos). Sem `:state()`
   (seria API); o modo vindo da propriedade usa folha adotada da instância.
+- Frente 28: o campo de uma condição de filtro (`GridFilterCondition[0]`)
+  é o `path` ou, em coluna sem `path`, o `name` — `path` primeiro, ao
+  contrário do `GridColumnRef` (`name` primeiro), para nenhuma expressão
+  antiga mudar de sentido. Exceção registrada; o rótulo da tupla é `field`.
+  `filterable` liga por padrão com `valueGetter` + `name` (como
+  `sortable`/`groupable`), menos no filtro remoto.
 
 ## Inventário (antes da revisão)
 

@@ -46,13 +46,16 @@ export type GridFilterOperation =
   | 'between' | 'anyof' | 'noneof' | 'isblank' | 'isnotblank';
 
 /**
- * One condition: `[path, operation, value]`. `path` is the column `path`;
+ * One condition: `[field, operation, value]`. `field` is the column `path`
+ * or, for a column without `path` (computed by `valueGetter`), its `name`;
+ * a `path` match wins over a `name` (the reverse of `GridColumnRef`), and a
+ * field that matches no column is read from the items as a dot path.
  * `between` takes `[start, end]` (inclusive, either may be `null`), `anyof` /
  * `noneof` take a list, `isblank` / `isnotblank` take no value.
  */
 export type GridFilterCondition =
-  | readonly [path: string, operation: GridFilterOperation, value?: unknown]
-  | readonly [path: string, value: unknown];
+  | readonly [field: string, operation: GridFilterOperation, value?: unknown]
+  | readonly [field: string, value: unknown];
 
 /**
  * Serializable filter expression (same shape as DevExtreme): a condition, a
@@ -94,7 +97,7 @@ export interface GridColumnDef<TItem = any> {
   groupIndex?: number | null;
   /**
    * The column's name as text: the header text (unless `headerRenderer`;
-   * empty: `path`) and its name everywhere else (header buttons, group chip
+   * empty: `path`, or the `name` of a column with a `valueGetter`) and its name everywhere else (header buttons, group chip
    * and rows, column chooser, row details, announcements, export; empty:
    * `path`, then `name`, as is). Set it also with `headerRenderer`.
    */
@@ -104,8 +107,9 @@ export interface GridColumnDef<TItem = any> {
   /**
    * Stable id of the column in the grid state (`getState`, `stateStorage`)
    * and in string column references (`summary` items look it up before
-   * `path`). Default: `path`. A column without `name` and `path` is left out
-   * of the state.
+   * `path`) and, for a column without `path`, in filter conditions
+   * (`filterValue`). Default: `path`. A column without `name` and `path` is
+   * left out of the state.
    */
   name?: string;
   /** Data type; without it, inferred from the first non-null value. */
@@ -167,8 +171,9 @@ export interface GridColumnDef<TItem = any> {
   comparator?: GridColumnComparator<TItem> | null;
   /**
    * Allows filtering by this column (filter row, header filter and, by
-   * default, the search panel). Default: `true` when the column has a `path`
-   * (the filter expression refers to columns by `path`).
+   * default, the search panel). Default: `true` with a `path`, or with a
+   * `valueGetter` and a `name` (not with remote filtering). The filter
+   * expression refers to the column by `path` or, without one, by `name`.
    */
   filterable?: boolean | null;
   /**
@@ -510,11 +515,15 @@ export const isColumnExportable = (column: GridColumnDef): boolean =>
   column.exportable ?? (!!column.path || !!column.valueGetter || !!column.displayValue);
 
 /**
- * A coluna pode ser filtrada pelo usuário? (a expressão aponta a coluna pelo `path`)
+ * A coluna pode ser filtrada pelo usuário, olhando só a coluna? A condição a
+ * aponta pelo `path` ou, sem `path`, pelo `name` (spec 28). Padrão: com
+ * `path`, ou com `valueGetter` e `name` (sem getter a coluna sem `path` não
+ * tem valor; `filterable: true` não muda isso). O grid ainda tira a colisão
+ * de `name` e o remoto.
  * @internal
  */
 export const isColumnFilterable = (column: GridColumnDef): boolean =>
-  !!column.path && column.filterable !== false;
+  column.filterable !== false && (!!column.path || (!!column.valueGetter && !!column.name));
 
 // ----------------------------------------------------------------- edição
 

@@ -14,6 +14,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
 import { cleanup } from './test/fixture.js';
 import { makeColumns, makeItems } from './test/perf-data.js';
@@ -36,13 +37,22 @@ const rowCount = (grid: DataGrid) =>
   Number(grid.shadowRoot!.querySelector('[role=grid]')!.getAttribute('aria-rowcount'))
   - (grid.showColumnHeaders ? 1 : 0) - (grid.showFilterRow ? 1 : 0);
 
-const createGrid = async (items: object[], filterRow = false): Promise<DataGrid> => {
+/**
+ * Colunas calculadas (spec 28): situação composta (texto de poucos valores,
+ * sem alocar) e total (número calculado por linha), sem `path`.
+ */
+const computedColumns = (): GridColumnDef[] => [
+  { name: 'situation', label: 'Situation', valueGetter: (item: any) => item.active ? item.status : 'Inactive' },
+  { name: 'total', label: 'Total', dataType: 'number', valueGetter: (item: any) => item.quantity * item.price },
+];
+
+const createGrid = async (items: object[], filterRow = false, computed = false): Promise<DataGrid> => {
   const grid = document.createElement('u-grid');
 
   grid.style.display = 'block';
   grid.style.height = '600px';
   grid.showFilterRow = filterRow;
-  grid.columns = makeColumns();
+  grid.columns = computed ? [...makeColumns(), ...computedColumns()] : makeColumns();
   grid.items = items;
   document.body.append(grid);
   await painted(grid);
@@ -180,6 +190,23 @@ describe('desempenho do filtro (máquina fraca)', () => {
 
     expect(rowCount(grid)).toBeGreaterThan(0);
     check(rows, metrics, perf.report('filter-100k', metrics));
+  });
+
+  it('filter-computed-100k: condição pelo name de coluna calculada e a busca com 2 calculadas a mais', async () => {
+    const rows = 100_000;
+    const grid = await createGrid(makeItems(rows), false, true);
+
+    await perf.throttle();
+
+    const metrics = {
+      ...await filterChange('computedText', grid, () => grid.filterValue = ['situation', 'contains', 'pend']),
+      ...await filterChange('computedNumber', grid, () => grid.filterValue = ['total', 'between', [100, 5000]]),
+      ...await filterChange('computedAnyOf', grid, () => grid.filterValue = ['situation', 'anyof', ['Open', 'Inactive']]),
+      ...await filterChange('search', grid, () => grid.searchText = 'city 12'),
+    };
+
+    expect(rowCount(grid)).toBeGreaterThan(0);
+    check(rows, metrics, perf.report('filter-computed-100k', metrics));
   });
 
   it('filter-1m: digitar na linha de filtro não trava (fatias) e o resultado chega', async () => {

@@ -65,6 +65,12 @@
     "filterAnyOfMs": 31.4,
     "searchMs": 158.6
   },
+  "filter-computed-100k": {
+    "computedTextMs": 37.8,
+    "computedNumberMs": 51.3,
+    "computedAnyOfMs": 25.8,
+    "searchMs": 158.9
+  },
   "filter-1m": {
     "typingWorstMs": 47.3,
     "filterWorstMs": 49.3,

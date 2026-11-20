@@ -51,7 +51,7 @@ Conclusão: os três filtram pelo valor calculado e endereçam a coluna pelo
 id dela (`name`/`colId`/`field`); no remoto, mandam a condição como está.
 Divergem no padrão: DevExtreme e AG Grid exigem opt-in, MUI liga.
 
-## Proposta de API (revisada pelos subagentes em 2026-11-20; aguarda aval)
+## Proposta de API (revisada pelos subagentes; aprovada pelo usuário em 2026-11-20: padrão ligado, remoto manda pelo `name`, cabeçalho com `name` + aviso)
 
 Nenhum nome novo de propriedade, método, evento ou tipo. Mudam o sentido do
 campo da condição, o padrão de `filterable` e o texto do cabeçalho de uma
@@ -233,3 +233,49 @@ de ARIA. Recusado: nenhum.
   colisão sem funil ativo na outra coluna.
 - Sem cache novo, sem teste de vazamento novo (se entrar cache, entra).
 - Perf: cenário novo, `npm run test:perf` sem piora.
+
+## Decisões da implementação
+
+- `sameField` (estado da interface): coluna COM `path` compara o texto do
+  campo com o `path` (duas colunas do mesmo `path` mostram a mesma condição,
+  como antes); coluna SEM `path` usa a resolução (`resolve(field) ===
+  column`). O avaliador e a interface usam o mesmo índice
+  (`#resolveFilterField`, refeito quando as colunas mudam).
+- `filterable: true` não liga coluna sem `path` e sem `valueGetter` (só
+  `name`, ex. coluna de `renderer`): não tem valor para filtrar; avisa uma
+  vez (achado da revisão de entrega de a11y e de API).
+- Renomear o `name` de uma `<u-grid-column>` calculada chega como mudança
+  `display`; o grid refaz o filtro nesse caso (achado ALTA da revisão de
+  entrega de API; teste que falhava antes).
+- O aviso de calculada sem `label` só sai quando ela é filtrável ou
+  ordenável.
+- Perf (máquina fraca, `filter-computed-100k`): `contains` 37,8 ms,
+  `between` 51,3 ms, `anyof` 25,8 ms, busca com 2 calculadas a mais
+  158,9 ms — dentro do orçamento (200 ms) e na faixa do filtro por `path`
+  (`filter-100k`); o cache de valores do getter não foi necessário. Demais
+  cenários dentro da tolerância (`npm run test:perf`: 26 verdes).
+- Sem cache novo: nenhum teste de vazamento novo (o índice de campos e o
+  `WeakSet` dos avisos são da instância).
+
+## Revisão da entrega (2026-11-20)
+
+`webcomponent-api-reviewer`: ALTA (renomear `name` não refazia o filtro) e
+as MÉDIAS de documentação (`getCombinedFilter`, `label`, `name`,
+`filterValue`, `API.md`) corrigidas; BAIXAS aplicadas (`resolve`
+obrigatório no funil, comentário de tipo no `API.md`, nota do `sameField`
+acima).
+
+`a11y-reviewer`: MÉDIA (coluna só com `name` e `filterable: true` ganhava
+controles com cabeçalho sem nome) corrigida tornando-a não filtrável, sem
+mudar o texto do cabeçalho. BAIXAS aplicadas: texto "Filtered" conferido
+pelo `aria-describedby`, colisão entre duas calculadas, remoto com axe e
+sem `Alt+ArrowDown` no `aria-keyshortcuts`, OK do diálogo por teclado.
+Justificadas sem mudança: roteiro de teclado da linha de filtro e
+cabeçalho sem `label` em RTL — os controles e o `headerText` são os
+mesmos das colunas com `path`, já cobertos pelos roteiros das specs 05 e
+17 (a calculada não tem caminho de teclado próprio); o axe em RTL da
+calculada roda no teste do funil.
+
+Falha conhecida, fora da frente: `reshape.browser.test.ts` › "remote: one
+reload at a time, at most one queued" falha também sem as mudanças da
+frente (conferido revertendo `src/`); dependente de tempo.

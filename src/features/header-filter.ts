@@ -12,7 +12,7 @@ import type { GridI18n } from '../grid-i18n.js';
 import { labelledByHeader } from '../render/header.js';
 import { columnText } from '../row-model/columns.js';
 import type { DistinctDateNode, DistinctValue, DistinctValues } from '../row-model/distinct.js';
-import { type ColumnFilterKind, findColumnCondition, hasColumnCondition } from '../row-model/filter.js';
+import { type ColumnFilterKind, type FilterFieldResolver, filterFieldOf, findColumnCondition, hasColumnCondition } from '../row-model/filter.js';
 import { createTextMatcher } from '../row-model/fold.js';
 import { columnKeyOf } from './filter-row.js';
 import { Debouncer } from './search.js';
@@ -32,6 +32,7 @@ export interface HeaderFilterHost extends ReactiveControllerHost {
   readonly filterValue: GridFilterExpression | null;
   _distinctValues(column: GridColumnDef): DistinctValues;
   _userFilterColumn(column: GridColumnDef, kind: ColumnFilterKind | 'all', condition: GridFilterCondition | null): void;
+  _resolveFilterField(field: string): GridColumnDef | undefined;
   _isRtl(): boolean;
 }
 
@@ -149,7 +150,7 @@ export class HeaderFilterController implements ReactiveController {
 
     const distinct = this.#host._distinctValues(column);
     const all = [...distinct.blanks ? [null] : [], ...distinct.values.map(value => value.value)];
-    const condition = findColumnCondition(this.#host.filterValue, column, 'header');
+    const condition = findColumnCondition(this.#host.filterValue, column, 'header', field => this.#host._resolveFilterField(field));
     const listed = new Set((Array.isArray(condition?.[1]) ? condition[1] as unknown[] : []).map(keyOf));
     const selected = new Set<string>();
 
@@ -386,8 +387,8 @@ export class HeaderFilterController implements ReactiveController {
 
     if (unchecked.length) {
       condition = checked.length <= unchecked.length
-        ? [column.path!, 'anyof', checked]
-        : [column.path!, 'noneof', unchecked];
+        ? [filterFieldOf(column)!, 'anyof', checked]
+        : [filterFieldOf(column)!, 'noneof', unchecked];
     }
 
     this.close(true);
@@ -522,6 +523,8 @@ export const renderHeaderFilterButton = (
   column: GridColumnDef,
   filterValue: GridFilterExpression | null,
   translation: GridI18n,
+  /** Campo de condição → coluna (spec 28); o mesmo do avaliador. */
+  resolve: FilterFieldResolver,
   /** Descrição do cabeçalho (traz "Filtrada"); spec 17, A5. */
   describedBy?: string,
   /** Sufixo dos ids do cabeçalho: com `headerRenderer` o nome segue o texto renderizado. */
@@ -529,7 +532,7 @@ export const renderHeaderFilterButton = (
   /** Idioma dos textos da interface (o nome é texto da i18n; spec 17). */
   lang?: string,
 ): TemplateResult => {
-  const active = hasColumnCondition(filterValue, column);
+  const active = hasColumnCondition(filterValue, column, resolve);
   const label = formatMessage(translation.headerFilterLabel, { column: columnText(column) });
   const named = column.headerRenderer && idSuffix ? labelledByHeader(translation.headerFilterLabel, 'header-filter-name', idSuffix) : undefined;
 

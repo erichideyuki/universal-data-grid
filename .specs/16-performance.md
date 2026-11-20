@@ -322,3 +322,14 @@ cabeçalho (o ícone é máscara CSS; a 1ª versão com `<svg>` custava ~8).
 Só `domNodes` passou da tolerância (13 cenários, ex. `flat-1m` 585 → 685,
 `menus-1m` 217 → 243); os tempos ficaram dentro da linha de base nas duas
 rodadas. Regravado só o `domNodes` desses cenários, no mesmo commit.
+
+## Linha de base: filtro de coluna calculada (frente 28, 2026-11-20)
+
+Cenário novo `filter-computed-100k` (`src/filtering.perf.browser.test.ts`):
+as 24 colunas mais 2 calculadas sem `path` (situação composta, texto de
+poucos valores; total, número por linha). Mede `contains` e `anyof` na
+situação, `between` no total e a busca com as 2 calculadas a mais. Medido
+(máquina fraca): `computedTextMs` 37,8, `computedNumberMs` 51,3,
+`computedAnyOfMs` 25,8, `searchMs` 158,9 (orçamento 200). Entrou só a
+entrada do cenário novo na linha de base; os demais cenários ficaram dentro
+da tolerância e não foram regravados.

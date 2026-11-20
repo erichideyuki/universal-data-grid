@@ -9,9 +9,11 @@ import {
   FilterExpressionError,
   filterItems,
   filterMask,
+  filterFieldOf,
   findColumnCondition,
   hasColumnCondition,
   replaceColumnCondition,
+  resolveFilterColumn,
   searchExpression,
   splitConjuncts,
 } from './filter.js';
@@ -293,26 +295,92 @@ describe('busca e sincronia com a interface', () => {
 
   it('acha e troca a condição da linha e a do cabeçalho sem mexer no resto', () => {
     const a = col('a');
+    const resolve = (field: string) => resolveFilterColumn(field, [a]);
     const start: GridFilterExpression = [['a', 'contains', 'x'], 'and', ['b', '=', 2], 'and', ['a', 'anyof', [1, 2]]];
 
-    expect(findColumnCondition(start, a, 'row')).toEqual(['contains', 'x']);
-    expect(findColumnCondition(start, a, 'header')).toEqual(['anyof', [1, 2]]);
-    expect(hasColumnCondition(start, a)).toBe(true);
-    expect(hasColumnCondition(start, col('c'))).toBe(false);
+    expect(findColumnCondition(start, a, 'row', resolve)).toEqual(['contains', 'x']);
+    expect(findColumnCondition(start, a, 'header', resolve)).toEqual(['anyof', [1, 2]]);
+    expect(hasColumnCondition(start, a, resolve)).toBe(true);
+    expect(hasColumnCondition(start, col('c'), resolve)).toBe(false);
 
-    const replaced = replaceColumnCondition(start, a, 'row', ['a', 'startswith', 'y']);
+    const replaced = replaceColumnCondition(start, a, 'row', ['a', 'startswith', 'y'], resolve);
 
     expect(replaced).toEqual([['b', '=', 2], 'and', ['a', 'anyof', [1, 2]], 'and', ['a', 'startswith', 'y']]);
     expect(start[0]).toEqual(['a', 'contains', 'x']);
-    expect(replaceColumnCondition(start, a, 'all', null)).toEqual(['b', '=', 2]);
-    expect(replaceColumnCondition(['a', '=', 1], a, 'row', null)).toBeNull();
+    expect(replaceColumnCondition(start, a, 'all', null, resolve)).toEqual(['b', '=', 2]);
+    expect(replaceColumnCondition(['a', '=', 1], a, 'row', null, resolve)).toBeNull();
   });
 
   it('expressão com or no topo fica intacta ao filtrar outra coluna pela linha', () => {
+    const resolve = (field: string) => resolveFilterColumn(field, [col('a'), col('c')]);
     const orExpression: GridFilterExpression = [['a', '=', 1], 'or', ['b', '=', 2]];
 
-    expect(findColumnCondition(orExpression, col('a'), 'row')).toBeUndefined();
-    expect(replaceColumnCondition(orExpression, col('c'), 'row', ['c', '=', 3])).toEqual([orExpression, 'and', ['c', '=', 3]]);
+    expect(findColumnCondition(orExpression, col('a'), 'row', resolve)).toBeUndefined();
+    expect(replaceColumnCondition(orExpression, col('c'), 'row', ['c', '=', 3], resolve)).toEqual([orExpression, 'and', ['c', '=', 3]]);
+  });
+});
+
+describe('coluna calculada (valueGetter sem path, spec 28)', () => {
+  const items = [
+    { id: 1, first: 'Ana', last: 'Silva', a: 3, b: 4 },
+    { id: 2, first: 'Bruno', last: 'Souza', a: 1, b: 1 },
+    { id: 3, first: 'Carla', last: 'Silva', a: 5, b: 0 },
+    { id: 4, first: 'Davi', last: null, a: 2, b: 2 },
+  ];
+  const full: GridColumnDef = { name: 'full', label: 'Full', valueGetter: (row: any) => row.last ? `${row.first} ${row.last}` : null };
+  const sum: GridColumnDef = { name: 'sum', label: 'Sum', dataType: 'number', valueGetter: (row: any) => row.a + row.b };
+  const columns = [col('first'), full, sum];
+
+  it('filtra pelo name com o valor do getter, em cada família de operação', () => {
+    expect(run(items, columns, ['full', 'contains', 'silva'])).toEqual([1, 3]);
+    expect(run(items, columns, ['full', 'startswith', 'bru'])).toEqual([2]);
+    expect(run(items, columns, ['sum', '>', 3])).toEqual([1, 3, 4]);
+    expect(run(items, columns, ['sum', 2])).toEqual([2]);
+    expect(run(items, columns, ['sum', 'between', [2, 5]])).toEqual([2, 3, 4]);
+    expect(run(items, columns, ['full', 'isblank'])).toEqual([4]);
+    expect(run(items, columns, ['full', 'anyof', ['Ana Silva', null]])).toEqual([1, 4]);
+    expect(run(items, columns, ['sum', 'noneof', [7, 5]])).toEqual([2, 4]);
+  });
+
+  it('campo: path antes de name; name de coluna com path não resolve; sem coluna lê o item', () => {
+    const byPath = col('total');
+    const named = { ...col('amount'), name: 'price' };
+    const computed: GridColumnDef = { name: 'total', valueGetter: () => 1 };
+    const computedOther: GridColumnDef = { name: 'calc', valueGetter: () => 2 };
+    const list = [computed, byPath, named, computedOther];
+
+    expect(resolveFilterColumn('total', list)).toBe(byPath);
+    expect(resolveFilterColumn('calc', list)).toBe(computedOther);
+    expect(resolveFilterColumn('price', list)).toBeUndefined();
+    expect(run([{ id: 1, price: 9, amount: 1 }, { id: 2, price: 1, amount: 9 }], [named], ['price', '>', 5])).toEqual([1]);
+    expect(filterFieldOf(named)).toBe('amount');
+    expect(filterFieldOf(computed)).toBe('total');
+    expect(filterFieldOf({ label: 'x' })).toBeUndefined();
+  });
+
+  it('a busca inclui a calculada pelo name', () => {
+    expect(searchExpression('souza', [col('first'), full])).toEqual([['first', 'contains', 'souza'], 'or', ['full', 'contains', 'souza']]);
+    expect(run(items, columns, searchExpression('souza', columns))).toEqual([2]);
+    expect(run(items, columns, searchExpression('7', columns))).toEqual([1]);
+  });
+
+  it('sincronia da interface pelo name, sem pegar a condição de outra coluna na colisão', () => {
+    const resolve = (field: string) => resolveFilterColumn(field, columns);
+    const start: GridFilterExpression = [['full', 'contains', 'sil'], 'and', ['sum', 'anyof', [7]]];
+
+    expect(findColumnCondition(start, full, 'row', resolve)).toEqual(['contains', 'sil']);
+    expect(findColumnCondition(start, sum, 'header', resolve)).toEqual(['anyof', [7]]);
+    expect(hasColumnCondition(start, full, resolve)).toBe(true);
+    expect(replaceColumnCondition(start, full, 'all', null, resolve)).toEqual(['sum', 'anyof', [7]]);
+
+    // `name` da calculada igual ao `path` de outra coluna: a condição é da outra.
+    const clash: GridColumnDef = { name: 'first', valueGetter: () => 'x' };
+    const clashResolve = (field: string) => resolveFilterColumn(field, [col('first'), clash]);
+    const onFirst: GridFilterExpression = ['first', 'contains', 'a'];
+
+    expect(hasColumnCondition(onFirst, clash, clashResolve)).toBe(false);
+    expect(findColumnCondition(onFirst, clash, 'row', clashResolve)).toBeUndefined();
+    expect(replaceColumnCondition(onFirst, clash, 'all', null, clashResolve)).toEqual(onFirst);
   });
 });
 

@@ -56,9 +56,13 @@ export interface GridLoadOptions {
   readonly take?: number;
   /** Sorting, in priority order (grouped columns included, with the direction of their groups). */
   readonly sort: readonly GridLoadSort[];
-  /** Column filter `and` search — the same as `getCombinedFilter()`; `null` without filter. */
+  /**
+   * Column filter `and` search — the same as `getCombinedFilter()`; `null` without filter.
+   * A condition refers to its column by `path` or, for a computed column (`valueGetter`
+   * without `path`, filterable only with `filterable: true`), by `name`: translate it.
+   */
   readonly filter: GridFilterExpression | null;
-  /** Column filter only (the `filterValue` property). */
+  /** Column filter only (the `filterValue` property; columns by `path` or `name`, as in `filter`). */
   readonly filterValue: GridFilterExpression | null;
   /** Raw search text (already part of `filter`), for servers with their own text search. */
   readonly searchText: string;

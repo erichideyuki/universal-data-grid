@@ -74,7 +74,7 @@ export interface GridRowExpansionState {
 /**
  * The user state of a grid: JSON serializable, without row data (rows only
  * by key). Columns are identified by `name` (or `path`); `filterValue`
- * refers to columns by `path`, like the `filterValue` property.
+ * refers to columns by `path` (or `name` without one), like the `filterValue` property.
  */
 export interface GridState {
   /** Format version; older versions are migrated by `setState`. */
@@ -87,7 +87,7 @@ export interface GridState {
    * follows the order of the columns).
    */
   columns?: GridColumnState[];
-  /** Column filter (like the `filterValue` property: columns by `path`, dates as ISO text). */
+  /** Column filter (like the `filterValue` property: columns by `path` or `name`, dates as ISO text). */
   filterValue?: GridFilterExpression | null;
   /** Text of the search panel. */
   searchText?: string;
