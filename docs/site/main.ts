@@ -10,7 +10,7 @@ import type { DocPage, ExampleCleanup, ExampleMeta, ExampleMount } from './types
  * cartões de exemplo montados quando chegam perto da tela e desmontados ao
  * trocar de página.
  */
-const REPO = 'https://github.com/universal-material/data-grid';
+const REPO = 'https://github.com/erichideyuki/universal-data-grid';
 
 const pageModules = import.meta.glob<{ default: DocPage }>('../pages/*.ts');
 const exampleModules = import.meta.glob<{ default: ExampleMount; meta: ExampleMeta }>(['../examples/*/*.ts', '!../examples/shared/*.ts']);

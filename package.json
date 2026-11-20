@@ -16,11 +16,11 @@
   ],
   "homepage": "https://universal-material.github.io/data-grid/",
   "bugs": {
-    "url": "https://github.com/universal-material/data-grid/issues"
+    "url": "https://github.com/erichideyuki/universal-data-grid/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/universal-material/data-grid.git"
+    "url": "git+https://github.com/erichideyuki/universal-data-grid.git"
   },
   "license": "MIT",
   "funding": {

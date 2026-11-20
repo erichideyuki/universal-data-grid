@@ -1,6 +1,6 @@
 # `<u-grid>` API reference
 
-The complete guide and API reference of [`@universal-material/data-grid`](https://github.com/universal-material/data-grid#readme).
+The complete guide and API reference of [`@universal-material/data-grid`](https://github.com/erichideyuki/universal-data-grid#readme).
 For live examples of every feature, see the [documentation site](https://universal-material.github.io/data-grid/).
 
 ---
@@ -1171,7 +1171,7 @@ grid.dataSource = {
 > never concatenate them into SQL or a URL.
 
 A minimal reference of the contract over an array (filtering, sorting, groups, summaries, paging) is
-[`LocalDataSource`](https://github.com/universal-material/data-grid/blob/main/src/data/local-source.ts)
+[`LocalDataSource`](https://github.com/erichideyuki/universal-data-grid/blob/main/src/data/local-source.ts)
 in the repository (not exported; copy it as a starting point for a server).
 
 ### Refreshing and incremental changes
@@ -3313,4 +3313,4 @@ absorbs the leftover width.
 
 ## License
 
-[MIT](https://github.com/universal-material/data-grid/blob/main/LICENSE) © Eric Kono
+[MIT](https://github.com/erichideyuki/universal-data-grid/blob/main/LICENSE) © Eric Kono

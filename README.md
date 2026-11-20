@@ -1,7 +1,7 @@
 # `<u-grid>` — @universal-material/data-grid
 
 [![npm](https://img.shields.io/npm/v/@universal-material/data-grid)](https://www.npmjs.com/package/@universal-material/data-grid)
-[![license](https://img.shields.io/npm/l/@universal-material/data-grid)](https://github.com/universal-material/data-grid/blob/main/LICENSE)
+[![license](https://img.shields.io/npm/l/@universal-material/data-grid)](https://github.com/erichideyuki/universal-data-grid/blob/main/LICENSE)
 [![sponsor](https://img.shields.io/github/sponsors/erichideyuki?label=Sponsor&logo=GitHub)](https://github.com/sponsors/erichideyuki)
 
 **A fast, accessible data grid as a standard Web Component.** `<u-grid>` is built with
@@ -10,10 +10,10 @@ family. Because it is a native custom element, it works the same in plain HTML, 
 Vue or Svelte.
 
 **[Live documentation and examples →](https://universal-material.github.io/data-grid/)**
-&nbsp;·&nbsp; [Full API reference](https://github.com/universal-material/data-grid/blob/main/API.md)
-&nbsp;·&nbsp; [GitHub](https://github.com/universal-material/data-grid)
+&nbsp;·&nbsp; [Full API reference](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md)
+&nbsp;·&nbsp; [GitHub](https://github.com/erichideyuki/universal-data-grid)
 
-![Grouping by dragging a column header into the group panel](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/grouping.gif)
+![Grouping by dragging a column header into the group panel](https://raw.githubusercontent.com/erichideyuki/universal-data-grid/main/.github/readme/grouping.gif)
 
 ---
 
@@ -50,9 +50,9 @@ Vue or Svelte.
 
 | A million rows | Search and filter |
 | --- | --- |
-| ![Scrolling through a million rows, then grouping them by country](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/big-data.gif) | ![Typing in the search panel highlights matches, ignoring case and accents](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/filtering.gif) |
+| ![Scrolling through a million rows, then grouping them by country](https://raw.githubusercontent.com/erichideyuki/universal-data-grid/main/.github/readme/big-data.gif) | ![Typing in the search panel highlights matches, ignoring case and accents](https://raw.githubusercontent.com/erichideyuki/universal-data-grid/main/.github/readme/filtering.gif) |
 | **Real-time updates** | **Batch editing** |
-| ![A stock ticker updating prices many times per second](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/real-time.gif) | ![Editing cells in batch mode; changed cells stay marked until saved](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/editing.gif) |
+| ![A stock ticker updating prices many times per second](https://raw.githubusercontent.com/erichideyuki/universal-data-grid/main/.github/readme/real-time.gif) | ![Editing cells in batch mode; changed cells stay marked until saved](https://raw.githubusercontent.com/erichideyuki/universal-data-grid/main/.github/readme/editing.gif) |
 
 Every GIF is recorded from the [live documentation](https://universal-material.github.io/data-grid/), where you can try each feature yourself.
 
@@ -135,24 +135,24 @@ export class OrderList extends LitElement {
 Set `columns`, `items` and other objects as **properties** (not attributes), and listen to the
 `u-grid-*` events: `[columns]` in Angular (with `CUSTOM_ELEMENTS_SCHEMA`), `columns={…}` in
 React 19+, and `:columns.prop` in Vue. Import the package before the first render. Details are in
-[Using with frameworks](https://github.com/universal-material/data-grid/blob/main/API.md#using-with-frameworks).
+[Using with frameworks](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#using-with-frameworks).
 
 ## Documentation
 
 - **[Live docs](https://universal-material.github.io/data-grid/)** have one runnable example per
   feature, with its source code.
-- **[API.md](https://github.com/universal-material/data-grid/blob/main/API.md)** is the complete
+- **[API.md](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md)** is the complete
   guide and reference: every property, attribute, method, event, type, CSS custom property and
   part, by feature. Popular sections:
-  [columns](https://github.com/universal-material/data-grid/blob/main/API.md#defining-columns),
-  [data sources and paging](https://github.com/universal-material/data-grid/blob/main/API.md#data-sources-keys--paging),
-  [real-time changes](https://github.com/universal-material/data-grid/blob/main/API.md#refreshing-and-incremental-changes),
-  [editing](https://github.com/universal-material/data-grid/blob/main/API.md#editing),
-  [i18n](https://github.com/universal-material/data-grid/blob/main/API.md#internationalization-i18n),
-  [accessibility](https://github.com/universal-material/data-grid/blob/main/API.md#accessibility),
-  [theming](https://github.com/universal-material/data-grid/blob/main/API.md#theming),
-  [SSR](https://github.com/universal-material/data-grid/blob/main/API.md#server-side-rendering) and the
-  [API tables](https://github.com/universal-material/data-grid/blob/main/API.md#api-reference).
+  [columns](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#defining-columns),
+  [data sources and paging](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#data-sources-keys--paging),
+  [real-time changes](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#refreshing-and-incremental-changes),
+  [editing](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#editing),
+  [i18n](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#internationalization-i18n),
+  [accessibility](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#accessibility),
+  [theming](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#theming),
+  [SSR](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#server-side-rendering) and the
+  [API tables](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#api-reference).
 - `@universal-material/data-grid/custom-elements.json` describes the elements for IDEs and
   tooling.
 
@@ -168,4 +168,4 @@ If `<u-grid>` helps you, consider [sponsoring its development on GitHub](https:/
 
 ## License
 
-[MIT](https://github.com/universal-material/data-grid/blob/main/LICENSE) © Eric Kono
+[MIT](https://github.com/erichideyuki/universal-data-grid/blob/main/LICENSE) © Eric Kono
