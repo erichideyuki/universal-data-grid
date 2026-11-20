@@ -196,6 +196,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Árvore | `25-tree-data.md` | dados hierárquicos no próprio `<u-grid>` (`treeMode`) | feito |
 | Exportação em PDF | `26-export-pdf.md` | PDF marcado (PDF/UA) por motor próprio Rust/WASM em worker; entrada `export-pdf` | feito |
 | Rolagem pelo contêiner externo | `27-parent-scroll.md` | virtualizar linhas e colunas pela rolagem de um ancestral ou da janela, com o grid em qualquer posição; atributo `scroll-container` (id) e propriedade por elemento; partes grudadas nativas | feito |
+| Filtro em coluna calculada | `28-computed-column-filter.md` | colunas com `valueGetter` e `name` (sem `path`) filtráveis na linha de filtro, no filtro de cabeçalho e na busca; fora do servidor no modo remoto | feito |
 
 ### Pendências deixadas pelas frentes
 
@@ -208,3 +209,5 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Memória | Chromium retém ~0,6 KiB por grid criado (`<thead>` em shadow root, item 20 da spec 14); reportar ao Chromium e decidir se troca o `<thead>` |
 | Exportação | Google Sheets não verificado ao colar o HTML do Ctrl+C (o `'` visível segue no HTML por causa do LibreOffice) |
 | Rolagem pelo contêiner externo | Orçamento de perf da exportação em PDF falha também na main (relatado pela frente 27; investigar na spec 26/16) |
+| Lote de lacunas do clickCompliance (sem spec própria) | Feito na main: `loading` com `items`, `booleanDisplay: 'check'`, `trueText`/`falseText` por coluna, `headerWrap`, `firstItem` no `groupRenderer`, `--u-grid-toolbar-gap`, botões do cabeçalho mais junto, `dragToGroup` curto. No backlog: `groupInterval`, limite de largura do `autoHideColumns`, `--u-grid-body-padding-block-end`, botões do cabeçalho só no hover/foco, fixar coluna dentro de banda |
+| Coordenação | Teste `reshape.browser.test.ts` "remote: one reload at a time, at most one queued" falha na main (passa isolado com `-t`; falha rodando o arquivo inteiro) |

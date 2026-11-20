@@ -3421,18 +3421,18 @@ filterable by default — they get a filter row editor and a header filter butto
 also matches their displayed text (set `filterable: false` to keep the old behavior); a computed
 column without `label` shows its `name` as the header text instead of an empty header.
 
-In 0.2.0: a column without `label` shows its `path` as the header text and uses `path`, then
-`name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;
-totals of a column hidden by `autoHideColumns` are no longer shown in the last visible column; the
-cell padding longhands win over the old shorthands (the other axis comes from its own longhand or
-the default, so if you customized an old shorthand, set both longhands).
-
-After 0.2.0 (unreleased): the bar has `8px` between its items (`--u-grid-toolbar-gap`; host content
+Also in the next release: the bar has `8px` between its items (`--u-grid-toolbar-gap`; host content
 no longer touches the group panel), and the search panel and host content lost their own `8px`
 start margin; the column chooser icon is `24px`; the header "⋮" and filter buttons sit side by side
 and reach into the end padding up to the resize handle (about `10px` more for the label); the group
 panel hint is shorter in every language; `GridColumnBooleanDisplay` gained `'check'` (an exhaustive
 `switch` over it needs the new case).
+
+In 0.2.0: a column without `label` shows its `path` as the header text and uses `path`, then
+`name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;
+totals of a column hidden by `autoHideColumns` are no longer shown in the last visible column; the
+cell padding longhands win over the old shorthands (the other axis comes from its own longhand or
+the default, so if you customized an old shorthand, set both longhands).
 
 **Header menu and column chooser (behavior changes, modeled on AG Grid):**
 
