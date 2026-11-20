@@ -72,7 +72,7 @@ export interface GridColumnDef<TItem = any> {
   /**
    * Nested columns: a column with at least one nested column is a BAND (a
    * header over its columns, no cells). In a band only `label`,
-   * `headerRenderer`, `alignment` (of the label; default `center`), `fixed`,
+   * `headerRenderer`, `alignment` (of the label; default `start`), `fixed`,
    * `visible` and `showInChooser` apply; the other fields are ignored. A band
    * is shown while it is visible and has a visible column. Columns reorder
    * only inside their own band; only leaf columns sort, group and export.
@@ -88,7 +88,12 @@ export interface GridColumnDef<TItem = any> {
   minWidth?: number | null;
   /** INITIAL grouping level; afterwards grouping is grid state (`groupColumn`, `ungroupColumn`). */
   groupIndex?: number | null;
-  /** Header label. */
+  /**
+   * The column's name as text: the header text (unless `headerRenderer`;
+   * empty: `path`) and its name everywhere else (header buttons, group chip
+   * and rows, column chooser, row details, announcements, export; empty:
+   * `path`, then `name`, as is). Set it also with `headerRenderer`.
+   */
   label?: string;
   /** Dot path of the cell value in the row item (`"address.city"`). */
   path?: string;
@@ -121,7 +126,11 @@ export interface GridColumnDef<TItem = any> {
    * `null`, `undefined` and Lit's `nothing` render an empty cell. See `GridCellRenderer`.
    */
   renderer?: GridCellRenderer<TItem> | null;
-  /** Builds the header label (sort arrow, filter button and resize handle stay). `label` is still required. */
+  /**
+   * Builds the header label (sort arrow, filter button and resize handle stay; their accessible names
+   * follow the rendered text). Set `label` too: it names the column outside the header (without it
+   * the grid warns once and uses `path`, then `name`).
+   */
   headerRenderer?: GridHeaderRenderer<TItem> | null;
   /** Builds the label of the group rows of this column (expand button and aligned summaries stay). */
   groupRenderer?: GridGroupRenderer<TItem> | null;
@@ -208,7 +217,10 @@ export interface GridColumnDef<TItem = any> {
   valueSetter?: GridValueSetter<TItem> | null;
 }
 
-/** A column of the grid: its `name`, its `path` (first column with that name, else with that path) or the column itself. */
+/**
+ * A column of the grid: its `name`, its `path` (first column with that name, else with that path) or the column itself.
+ * Leaf columns only, including columns inside a band; a band is not a column reference.
+ */
 export type GridColumnRef<TItem = any> = string | GridColumnDef<TItem>;
 
 /** Values of a group from the outermost level, e.g. `['Brazil', 'SP']`. */

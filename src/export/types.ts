@@ -68,7 +68,7 @@ export interface GridCsvDownloadOptions extends GridCsvOptions {
 /** An exported column (`GridExportData.columns`). */
 export interface GridExportColumn<TItem = any> {
   column: GridColumnDef<TItem>;
-  /** Header text. */
+  /** The column's name as text: `label`, else `path`, else `name`. */
   label: string;
   /** Effective data type (declared or inferred). */
   dataType?: GridColumnDataType;

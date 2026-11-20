@@ -9,6 +9,8 @@ import type {
   GridFilterExpression,
 } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
+import { labelledByHeader } from '../render/header.js';
+import { columnText } from '../row-model/columns.js';
 import type { DistinctDateNode, DistinctValue, DistinctValues } from '../row-model/distinct.js';
 import { type ColumnFilterKind, findColumnCondition, hasColumnCondition } from '../row-model/filter.js';
 import { createTextMatcher } from '../row-model/fold.js';
@@ -522,9 +524,14 @@ export const renderHeaderFilterButton = (
   translation: GridI18n,
   /** Descrição do cabeçalho (traz "Filtrada"); spec 17, A5. */
   describedBy?: string,
+  /** Sufixo dos ids do cabeçalho: com `headerRenderer` o nome segue o texto renderizado. */
+  idSuffix?: string,
+  /** Idioma dos textos da interface (o nome é texto da i18n; spec 17). */
+  lang?: string,
 ): TemplateResult => {
   const active = hasColumnCondition(filterValue, column);
-  const label = formatMessage(translation.headerFilterLabel, { column: column.label || column.path || '' });
+  const label = formatMessage(translation.headerFilterLabel, { column: columnText(column) });
+  const named = column.headerRenderer && idSuffix ? labelledByHeader(translation.headerFilterLabel, 'header-filter-name', idSuffix) : undefined;
 
   return html`
     <button
@@ -532,8 +539,10 @@ export const renderHeaderFilterButton = (
       part="header-filter-button"
       type="button"
       tabindex="-1"
-      aria-label=${label}
-      title=${label}
+      aria-label=${ifDefined(named ? undefined : label)}
+      aria-labelledby=${ifDefined(named?.labelledBy)}
+      lang=${ifDefined(lang)}
+      title=${ifDefined(named && !column.label ? undefined : label)}
       aria-haspopup="dialog"
       aria-expanded=${controller.column === column ? 'true' : 'false'}
       aria-describedby=${ifDefined(active ? describedBy : undefined)}
@@ -549,7 +558,7 @@ export const renderHeaderFilterButton = (
         if (event.key === 'Enter' || event.key === ' ') {
           event.stopPropagation();
         }
-      }}>${funnelIcon(active)}</button>`;
+      }}>${funnelIcon(active)}${named?.parts ?? nothing}</button>`;
 };
 
 const checkbox = (
@@ -678,7 +687,7 @@ export const renderHeaderFilter = (controller: HeaderFilterController, translati
   const shown = visible.slice(0, HEADER_FILTER_RENDER_LIMIT);
   const blankVisible = distinct.blanks > 0 && !searching;
   const scope = [...blankVisible ? [null] : [], ...visible.map(value => value.value)];
-  const title = formatMessage(translation.headerFilterLabel, { column: column.label || column.path || '' });
+  const title = formatMessage(translation.headerFilterLabel, { column: columnText(column) });
   const items = controller.treeItems(translation);
   const activeKey = items.some(item => item.key === controller.activeItem) ? controller.activeItem : items[0]?.key;
   const truncated = !useTree && visible.length > shown.length;

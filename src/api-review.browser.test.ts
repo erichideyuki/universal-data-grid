@@ -293,6 +293,37 @@ describe('CSS', () => {
     expect(getComputedStyle(root(grid).querySelector('.container')!).getPropertyValue('--_header-height')
       .trim()).toBe('64px');
   });
+
+  // Regressão: o tema do Universal Material define --u-table-cell-padding no :root e ele anulava o longhand novo.
+  it('longhands de padding vencem os atalhos antigos (tema no :root)', async () => {
+    const page = document.documentElement.style;
+    page.setProperty('--u-table-cell-padding', '13px 16px');
+
+    try {
+      const grid = await createGrid({ columns: columns(), items: items() });
+      const td = () => getComputedStyle(root(grid).querySelector('td[part="cell"]')!);
+      const th = () => getComputedStyle(root(grid).querySelector('th')!);
+
+      // Sem longhand o atalho antigo vale.
+      page.setProperty('--u-table-cell-padding', '10px 20px');
+      expect([td().padding, th().padding]).toEqual(['10px 20px', '10px 20px']);
+
+      grid.style.setProperty('--u-grid-cell-block-padding', '6px');
+      expect([td().padding, th().padding]).toEqual(['6px 16px', '6px 16px']);
+
+      grid.style.removeProperty('--u-grid-cell-block-padding');
+      grid.style.setProperty('--u-grid-cell-inline-padding', '8px');
+      expect(td().padding).toBe('13px 8px');
+
+      // Também vence o atalho antigo das células de dados; o atalho novo vence tudo.
+      grid.style.setProperty('--u-grid-data-cell-padding', '1px');
+      expect(td().padding).toBe('13px 8px');
+      grid.style.setProperty('--u-grid-cell-padding', '2px 3px');
+      expect(td().padding).toBe('2px 3px');
+    } finally {
+      page.removeProperty('--u-table-cell-padding');
+    }
+  });
 });
 
 describe('i18n', () => {

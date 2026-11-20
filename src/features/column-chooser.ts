@@ -8,6 +8,7 @@ import interact from 'interactjs';
 
 import type { GridColumnDef } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
+import { columnText } from '../row-model/columns.js';
 import { InteractRegistry } from './drag-helper.js';
 import { formatMessage } from './sorting.js';
 
@@ -76,7 +77,7 @@ export const filterChooserItems = (items: ColumnChooserItem[], search: string): 
   }
 
   return items.flatMap(item => {
-    if (fold(item.column.label ?? '').includes(query)) {
+    if (fold(columnText(item.column)).includes(query)) {
       return [item];
     }
 
@@ -150,7 +151,7 @@ const renderChooserItems = (items: ColumnChooserItem[], context: ColumnChooserCo
                 }
               }}
               @change=${(event: Event) => onVisibleChange(item.column, (event.target as HTMLInputElement).checked)}>
-            <span id="column-chooser-label-${item.id}">${item.column.label ?? ''}</span>
+            <span id="column-chooser-label-${item.id}">${columnText(item.column)}</span>
           </label>
         </div>
         ${item.adaptive

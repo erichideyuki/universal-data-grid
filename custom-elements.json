@@ -73,15 +73,15 @@
               "name": "--u-grid-header-cell-font-weight"
             },
             {
-              "description": "Data cell padding. Default `13px 16px`.",
+              "description": "Data cell padding (shorthand; wins over the longhands). Default `13px 16px`.",
               "name": "--u-grid-cell-padding"
             },
             {
-              "description": "Block padding of data and header cells. Default `13px`.",
+              "description": "Block padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `13px`.",
               "name": "--u-grid-cell-block-padding"
             },
             {
-              "description": "Inline padding of data and header cells. Default `16px`.",
+              "description": "Inline padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `16px`.",
               "name": "--u-grid-cell-inline-padding"
             },
             {
@@ -962,7 +962,7 @@
                 "text": "number"
               },
               "default": "48",
-              "description": "Row height in px (rows with `wrap` columns can grow).",
+              "description": "Row height in px, padding included (rows with `wrap` columns or taller content grow; the virtualizer measures them).",
               "attribute": "row-height"
             },
             {
@@ -2993,7 +2993,7 @@
                 "text": "number"
               },
               "default": "48",
-              "description": "Row height in px (rows with `wrap` columns can grow).",
+              "description": "Row height in px, padding included (rows with `wrap` columns or taller content grow; the virtualizer measures them).",
               "fieldName": "rowHeight"
             },
             {
@@ -3955,7 +3955,7 @@
                 "text": "GridHeaderRenderer | null"
               },
               "default": "null",
-              "description": "Builds the header label (property only); sort arrow, filter button and resize handle stay."
+              "description": "Builds the header label (property only); sort arrow, filter button and resize handle stay. Keep\nthe text content: it still names the column outside the header (menus, chooser, announcements, export)."
             },
             {
               "kind": "field",
@@ -4263,7 +4263,7 @@
               "type": {
                 "text": "string"
               },
-              "description": "Header label: the trimmed text content of the element, without the text of nested columns.",
+              "description": "Header label: the trimmed text content of the element, without the text of nested columns. Also\nthe column's name outside the header. Empty: the header shows `path`; elsewhere `path`, then `name`, as is.",
               "readonly": true
             }
           ],

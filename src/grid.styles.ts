@@ -17,7 +17,18 @@ export const styles = css`
     --_borders-width: var(--u-grid-line-width, var(--u-grid-borders-width, 1px));
     --_cell-block-padding: var(--u-grid-cell-block-padding, var(--u-table-cell-block-padding, 13px));
     --_cell-inline-padding: var(--u-grid-cell-inline-padding, var(--u-table-cell-inline-padding, 16px));
-    --_cell-padding: var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding));
+    /*
+     * Os longhands novos (--u-grid-cell-block/inline-padding) vencem os atalhos
+     * antigos (--u-table-cell-padding, --u-grid-data-cell-padding): o tema do
+     * Universal Material define --u-table-cell-padding no :root, e ele anulava o
+     * longhand. Um var() sem fallback de variável não definida deixa a custom
+     * property inválida (valor inicial), então --_cell-padding-longhand só existe
+     * quando um dos dois longhands foi definido.
+     */
+    --_cell-padding-block-set: var(--u-grid-cell-block-padding) var(--_cell-inline-padding);
+    --_cell-padding-inline-set: var(--_cell-block-padding) var(--u-grid-cell-inline-padding);
+    --_cell-padding-longhand: var(--_cell-padding-block-set, var(--_cell-padding-inline-set));
+    --_cell-padding: var(--_cell-padding-longhand, var(--u-table-cell-padding, var(--_cell-block-padding) var(--_cell-inline-padding)));
     --_header-padding: var(--u-grid-toolbar-padding, var(--u-table-header-padding, var(--u-grid-toolbar-block-padding, var(--u-table-header-block-padding, 8px)) var(--u-grid-toolbar-inline-padding, var(--u-table-header-inline-padding, var(--_cell-inline-padding)))));
     --_column-lines-width: var(--u-grid-column-line-width, var(--u-grid-column-lines-width, var(--_borders-width)));
     --_drop-indicator-width: var(--u-grid-drop-indicator-width, 3px);
@@ -173,7 +184,7 @@ export const styles = css`
 
   td:where(.grid-table > * > * > *) {
     border-collapse: separate;
-    padding: var(--u-grid-cell-padding, var(--u-grid-data-cell-padding, var(--_cell-padding)));
+    padding: var(--u-grid-cell-padding, var(--_cell-padding-longhand, var(--u-grid-data-cell-padding, var(--_cell-padding))));
     font-size: var(--u-grid-cell-font-size, var(--u-td-font-size, 0.875rem));
     font-weight: var(--u-grid-cell-font-weight, var(--u-td-font-weight));
     text-align: start;
@@ -464,13 +475,6 @@ export const styles = css`
 
   td:where(.grid-table > * > * > *).detail-toggle-cell.adaptive-modified {
     box-shadow: inset calc(3px * var(--_dir)) 0 0 0 var(--u-grid-modified-cell-indicator-color, var(--u-color-primary, rgb(103, 80, 164)));
-  }
-
-  /* Total de coluna oculta levado à última coluna exibida: quebra linha (WCAG 1.4.10). */
-  td:where(.grid-table > * > * > *).summary-cell.adaptive-summaries {
-    white-space: normal;
-    text-overflow: clip;
-    height: auto;
   }
 
   @media (forced-colors: active) {

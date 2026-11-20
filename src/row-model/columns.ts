@@ -8,6 +8,25 @@
  * (invariante de que o cabeçalho depende para o `colspan`).
  */
 
+/**
+ * Nome da coluna em texto fora do cabeçalho (menus, chip, seletor, linha
+ * adaptativa, anúncios, exportação) e no cabeçalho sem `headerRenderer`:
+ * `label`, senão `path`, senão `name`, crus (sem humanizar: texto em inglês
+ * gerado do campo num grid de 14 idiomas seria pior que o id). `||`, não
+ * `??`: o `label` de `<u-grid-column>` é `''` quando vazio. Não usar na
+ * identidade de grupo (`group.ts`): a chave mudaria.
+ */
+export const columnText = (column: { label?: string | null; path?: string | null; name?: string | null }): string =>
+  column.label || column.path || column.name || '';
+
+/**
+ * Texto VISÍVEL do cabeçalho sem `headerRenderer`: `label`, senão `path`.
+ * Sem `name`: coluna só de `renderer` (ações, "select") com `name` de
+ * estado mantém o cabeçalho vazio, como antes.
+ */
+export const headerText = (column: { label?: string | null; path?: string | null }): string =>
+  column.label || column.path || '';
+
 /** O que a árvore precisa de uma coluna: os filhos, quando é banda. */
 export interface TreeColumn {
   columns?: readonly unknown[] | null;

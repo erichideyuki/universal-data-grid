@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from 'lit';
 import { classMap } from 'lit/directives/class-map.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 
+import { columnText } from '../row-model/columns.js';
 import type { GroupRow } from '../row-model/types.js';
 
 export interface GroupRowContext {
@@ -32,7 +33,7 @@ export interface GroupRowContext {
 }
 
 export const groupRowLabel = (row: GroupRow, separator: string, valueText: string): string =>
-  `${row.column.label ?? ''}${separator}${valueText}`;
+  `${columnText(row.column)}${separator}${valueText}`;
 
 /** Células de uma linha de grupo: recuo, botão de expandir, o rótulo e os resumos alinhados. */
 export const renderGroupRowCells = ({

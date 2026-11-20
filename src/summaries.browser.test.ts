@@ -146,6 +146,48 @@ describe('rodapé de totais', () => {
 
     expect(items).toEqual(sales());
   });
+
+  // Regressão: a coluna do resumo só era procurada no nível de cima de `columns` (banda ficava sem total e o valor saía 0).
+  it.each([
+    ['banda comum', undefined, 'standard'],
+    ['banda fixa', 'start', 'standard'],
+    ['colunas virtuais', undefined, 'virtual'],
+  ] as const)('soma colunas dentro de banda (%s)', async (_case, fixed, mode) => {
+    const amount: GridColumnDef = { path: 'amount', label: 'Amount', dataType: 'number', width: 120 };
+    const grid = await createGrid({
+      columns: [
+        { path: 'country', name: 'country', label: 'Country', width: 120 },
+        { label: 'Place', fixed, columns: [{ path: 'city', name: 'city', label: 'City', width: 120 }, amount] },
+        { label: 'When', columns: [{ path: 'day', name: 'day', label: 'Day', dataType: 'date', width: 120 }] },
+      ],
+      items: sales(),
+      configure: g => {
+        g.language = 'en';
+        g.columnRenderingMode = mode;
+        g.summary = {
+          total: [
+            { column: 'country', type: (_values, items) => `${items.length} rows` },
+            { column: amount, type: 'sum' },
+            { column: 'city', type: 'count' },
+            { column: 'day', type: 'max' },
+          ],
+        };
+      },
+    });
+
+    expect(grid.getSummaryValues().map(value => value.value)).toEqual(['4 rows', 47, 4, expect.any(Date)]);
+
+    const texts = new Map([...totalRow(grid)!.querySelectorAll<HTMLTableCellElement>('td.summary-cell')]
+      .map(td => [Number(td.getAttribute('aria-colindex')), visibleText(td)]));
+    const colOf = (label: string) => 1 + [...root(grid).querySelectorAll('th.header-column')]
+      .findIndex(th => th.querySelector('.header-text')?.textContent.trim() === label);
+    const at = (label: string) => texts.get(Number(root(grid).querySelectorAll('th.header-column')[colOf(label) - 1].getAttribute('aria-colindex')));
+
+    expect(at('Country')).toBe('4 rows');
+    expect(at('City')).toBe('Count: 4');
+    expect(at('Amount')).toBe('Sum: 47');
+    expect(at('Day')).toBe('Max: 3/1/2024');
+  });
 });
 
 describe('linha de grupo', () => {

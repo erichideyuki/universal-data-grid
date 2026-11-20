@@ -131,7 +131,10 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
    */
   @property({ attribute: false }) renderer: GridCellRenderer | null = null;
 
-  /** Builds the header label (property only); sort arrow, filter button and resize handle stay. */
+  /**
+   * Builds the header label (property only); sort arrow, filter button and resize handle stay. Keep
+   * the text content: it still names the column outside the header (menus, chooser, announcements, export).
+   */
   @property({ attribute: false }) headerRenderer: GridHeaderRenderer | null = null;
 
   /** Builds the label of the group rows of this column (property only); the expand button and aligned summaries stay. */
@@ -310,7 +313,10 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
     return this.#nested.length ? this.#nested : null;
   }
 
-  /** Header label: the trimmed text content of the element, without the text of nested columns. */
+  /**
+   * Header label: the trimmed text content of the element, without the text of nested columns. Also
+   * the column's name outside the header. Empty: the header shows `path`; elsewhere `path`, then `name`, as is.
+   */
   get label(): string {
     if (!this.columns) {
       return (this.textContent ?? '').trim();

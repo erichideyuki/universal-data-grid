@@ -210,7 +210,7 @@ import { rendererContent } from './render/content.js';
 import { renderBuiltInEditor } from './render/editors.js';
 import { renderIndentCells, renderSummaryCells, renderTotalFooter, type SummaryColumnLayout, type SummaryText } from './render/footer.js';
 import { groupRowLabel, renderGroupRowCells } from './render/group-row.js';
-import { isActivationKey, renderBandHeaderCell, renderHeaderCell, renderSortIndicator } from './render/header.js';
+import { isActivationKey, labelledByHeader, renderBandHeaderCell, renderHeaderCell, renderSortIndicator } from './render/header.js';
 import { keyedRows } from './render/keyed-rows.js';
 import { RowVirtualizer, type VirtualWindow } from './render/virtualizer.js';
 import { type AddedRow, RowsWithAdded } from './row-model/added-rows.js';
@@ -233,6 +233,8 @@ import {
   buildColumnTree,
   buildHeaderRows,
   type ColumnTree,
+  columnText,
+  headerText,
   headerCellAt,
   type HeaderCellLayout,
   type HeaderSlot,
@@ -1613,9 +1615,9 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-header-cell-padding - Header cell padding.
  * @cssprop --u-grid-header-cell-font-size - Header cell font size. Default `0.8125rem`.
  * @cssprop --u-grid-header-cell-font-weight - Header cell font weight.
- * @cssprop --u-grid-cell-padding - Data cell padding. Default `13px 16px`.
- * @cssprop --u-grid-cell-block-padding - Block padding of data and header cells. Default `13px`.
- * @cssprop --u-grid-cell-inline-padding - Inline padding of data and header cells. Default `16px`.
+ * @cssprop --u-grid-cell-padding - Data cell padding (shorthand; wins over the longhands). Default `13px 16px`.
+ * @cssprop --u-grid-cell-block-padding - Block padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `13px`.
+ * @cssprop --u-grid-cell-inline-padding - Inline padding of data and header cells; wins over the old `--u-table-cell-padding` and `--u-grid-data-cell-padding`. Default `16px`.
  * @cssprop --u-grid-cell-font-size - Data cell font size. Default `0.875rem`.
  * @cssprop --u-grid-cell-font-weight - Data cell font weight.
  * @cssprop --u-grid-row-hover-opacity - Intensity of the row and header hover tint (`0%` disables it). Default: state-layer hover token or `8%`.
@@ -2315,7 +2317,7 @@ export class DataGrid extends LitElement {
     const found = reference ? this.#resolveColumn(reference) : undefined;
 
     if (reference && !found) {
-      this.#warnTree('tree-column', `tree-column "${typeof reference === 'string' ? reference : reference.label ?? reference.path ?? ''}" matches no column; the first visible column is used.`);
+      this.#warnTree('tree-column', `tree-column "${typeof reference === 'string' ? reference : columnText(reference)}" matches no column; the first visible column is used.`);
     }
 
     return found && visible.includes(found) ? found : visible[0];
@@ -3530,7 +3532,7 @@ export class DataGrid extends LitElement {
 
   // Booleanos: `"false"` desliga (padrão `true` precisa disso — spec 15).
 
-  /** Row height in px (rows with `wrap` columns can grow). */
+  /** Row height in px, padding included (rows with `wrap` columns or taller content grow; the virtualizer measures them). */
   @property({ type: Number, attribute: 'row-height' }) rowHeight = 48;
 
   /** Tints even rows. */
@@ -4315,7 +4317,7 @@ export class DataGrid extends LitElement {
 
       if (!name) {
         if (warn) {
-          this.#warnState(`a column without "name" or "path" (${JSON.stringify(column.label ?? '')}) is left out of the state.`);
+          this.#warnState(`a column without "name" or "path" (${JSON.stringify(columnText(column))}) is left out of the state.`);
         }
       } else if (named.has(name)) {
         if (warn) {
@@ -6977,7 +6979,7 @@ export class DataGrid extends LitElement {
 
       // A resposta chegou com o foco em outra célula: anuncia com contexto.
       if (outcome && !this.#isActiveCell(pending.rowKey, column)) {
-        this.#announce(`${column.label ?? ''}: ${outcome.message}`);
+        this.#announce(`${columnText(column)}: ${outcome.message}`);
       }
 
       return outcome;
@@ -7699,13 +7701,13 @@ export class DataGrid extends LitElement {
       const [entry] = pending.errors;
 
       if (entry) {
-        return `${entry[0].label ?? ''}: ${entry[1]}`;
+        return `${columnText(entry[0])}: ${entry[1]}`;
       }
 
       const [unparsed] = pending.unparsed;
 
       if (unparsed) {
-        return unparsed[0].label ?? '';
+        return columnText(unparsed[0]);
       }
     }
 
@@ -8162,8 +8164,10 @@ export class DataGrid extends LitElement {
     const column = editor.column;
     const error = pending && column ? pending.errors.get(column) : undefined;
 
-    if (column?.label && !target.hasAttribute('aria-label') && !target.hasAttribute('aria-labelledby')) {
-      target.setAttribute('aria-label', column.label);
+    const name = column ? columnText(column) : '';
+
+    if (name && !target.hasAttribute('aria-label') && !target.hasAttribute('aria-labelledby')) {
+      target.setAttribute('aria-label', name);
     }
 
     const ids = (target.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
@@ -8338,7 +8342,7 @@ export class DataGrid extends LitElement {
         const parts = this.showGroupCount ? [countFormat.format(node.items.length), ...extra] : [...extra];
         const info = parts.length ? ` ${formatMessage(translation.groupInfoText, { info: parts.join(listSeparator) })}` : '';
 
-        return `${node.column.label ?? ''}${translation.groupLabelSeparator}${valueText}${info}`;
+        return `${columnText(node.column)}${translation.groupLabelSeparator}${valueText}${info}`;
       },
     };
   }
@@ -8416,7 +8420,7 @@ export class DataGrid extends LitElement {
     return {
       info: {
         column,
-        label: column.label ?? '',
+        label: columnText(column),
         dataType,
         alignment: resolveAlignment(column, dataType),
         width: this.#widthOf(column) ?? this.#renderedWidths.get(column),
@@ -9511,7 +9515,7 @@ export class DataGrid extends LitElement {
   /** Coluna sem valor exportável (só `renderer`): célula vazia na cópia. */
   #emptyExportColumn(column: GridColumnDef): ExportColumnSource {
     return {
-      info: { column, label: column.label ?? '', dataType: this.#dataTypeOf(column), alignment: 'start' },
+      info: { column, label: columnText(column), dataType: this.#dataTypeOf(column), alignment: 'start' },
       read: () => '',
       text: () => '',
       builtIn: true,
@@ -9937,6 +9941,37 @@ export class DataGrid extends LitElement {
     this.#syncColumns();
   };
 
+  /** Colunas com `headerRenderer` sem `label` já avisadas, pelo nome em texto (o host pode recriar os objetos a cada render). */
+  readonly #warnedUnlabeled = new Set<string>();
+
+  /**
+   * `headerRenderer` sem `label`: o renderer só vale para o cabeçalho; menus,
+   * chip, seletor, anúncios e exportação usam o `path`/`name` cru, e um
+   * renderer só de ícone deixa o cabeçalho sem nome. Avisa uma vez por
+   * coluna e instância (spec 00).
+   */
+  #warnUnlabeledColumns(tree: ColumnTree<GridColumnDef>): void {
+    for (const column of [...tree.leaves, ...tree.bands]) {
+      if (!column.headerRenderer || column.label) {
+        continue;
+      }
+
+      const name = columnText(column);
+      const band = tree.childrenOf.has(column);
+      const key = `${band ? 'band' : 'column'}:${name}`;
+
+      if (this.#warnedUnlabeled.has(key)) {
+        continue;
+      }
+
+      this.#warnedUnlabeled.add(key);
+      const which = name ? `${band ? 'band' : 'column'} "${name}"` : band ? 'a band' : 'a column';
+      const used = name ? `"${name}" names it` : 'it has no name';
+      console.warn(`<u-grid>: ${which} has a "headerRenderer" but no "label" (with <u-grid-column>, its text content); `
+        + `${used} in menus, the column chooser, announcements and export.`);
+    }
+  }
+
   /**
    * Concilia as definições com a ordem atual: colunas já conhecidas mantêm a
    * posição e o agrupamento escolhidos pelo usuário; novas entram pelo
@@ -9945,6 +9980,7 @@ export class DataGrid extends LitElement {
   #syncColumns(): void {
     const tree = buildColumnTree<GridColumnDef>(this.columns);
     this.#columnTree = tree;
+    this.#warnUnlabeledColumns(tree);
     this.#visibleBands = undefined;
     // Só as folhas têm células; as bandas são só cabeçalho.
     const definitions = tree.leaves;
@@ -10334,7 +10370,7 @@ export class DataGrid extends LitElement {
       return translation.noAdaptiveColumnsAnnouncement;
     }
 
-    const names = columns.length <= ADAPTIVE_ANNOUNCE_NAMES ? this.#formatList(columns.map(column => column.label ?? '')) : String(columns.length);
+    const names = columns.length <= ADAPTIVE_ANNOUNCE_NAMES ? this.#formatList(columns.map(column => columnText(column))) : String(columns.length);
     return formatMessage(translation.adaptiveColumnsAnnouncement, { columns: names });
   }
 
@@ -10354,7 +10390,7 @@ export class DataGrid extends LitElement {
         ...hasColumnCondition(filterValue, column) ? [translation.columnFiltered] : [],
       ];
 
-      return parts.length ? [`${column.label ?? ''}${translation.adaptiveLabelSeparator}${parts.join(', ')}`] : [];
+      return parts.length ? [`${columnText(column)}${translation.adaptiveLabelSeparator}${parts.join(', ')}`] : [];
     });
 
     return [this.#adaptiveAnnouncementText(), ...states].join('. ');
@@ -11430,7 +11466,8 @@ export class DataGrid extends LitElement {
 
   /** Resolve a coluna de um resumo: `path` (1ª coluna com ele) ou a própria coluna, se definida. */
   #resolveColumn(columnRef: GridColumnRef | undefined): GridColumnDef | undefined {
-    const columns = this.columns;
+    // Folhas, não só o nível de cima: coluna dentro de banda também é referência válida.
+    const columns = this.#columnTree.leaves;
 
     if (typeof columnRef === 'string') {
       return columns.find(column => column.name === columnRef) ?? columns.find(column => column.path === columnRef);
@@ -12443,7 +12480,7 @@ export class DataGrid extends LitElement {
   #announceSorting(column: GridColumnDef): void {
     const translation = this.#translation;
     const order = this.#orderOf(column);
-    const params = { column: column.label ?? '' };
+    const params = { column: columnText(column) };
 
     const rowSorting = this.#sorting.filter(spec => !this.#isGrouped(spec.column));
     const priority = rowSorting.findIndex(spec => spec.column === column) + 1;
@@ -12574,7 +12611,7 @@ export class DataGrid extends LitElement {
     const translation = this.#translation;
     const valueText = formatSummaryValue(value, spec, item.format, this.#summaryFormatContext);
     const type = this.#summaryTypeName(item);
-    const column = spec.column?.label ?? '';
+    const column = spec.column ? columnText(spec.column) : '';
     const text = type ? formatMessage(translation.summaryText, { type, value: valueText }) : valueText;
 
     if (!column) {
@@ -12589,30 +12626,20 @@ export class DataGrid extends LitElement {
     };
   }
 
-  /** Resumos agrupados pela coluna onde aparecem. */
+  /**
+   * Resumos agrupados pela coluna onde aparecem. Coluna oculta por falta de
+   * espaço (spec 21) não mostra o resumo no rodapé, como as células dela (o
+   * DevExtreme faz o mesmo); o valor segue no `getSummaryValues`.
+   */
   #textsByColumn(summaries: readonly ResolvedSummary[], values: readonly unknown[], include: (summary: ResolvedSummary, index: number) => boolean): Map<GridColumnDef, SummaryText[]> {
     const texts = new Map<GridColumnDef, SummaryText[]>();
-
     const adaptive = this.#adaptiveColumns;
-    const lastShown = this._visibleColumns[this._visibleColumns.length - 1];
 
     summaries.forEach((summary, index) => {
-      let { column } = summary.spec;
+      const { column } = summary.spec;
 
-      if (!column || !include(summary, index)) {
+      if (!column || !include(summary, index) || adaptive.includes(column)) {
         return;
-      }
-
-      let text = this.#summaryText(summary, values[index]);
-
-      // Coluna oculta por falta de espaço (spec 21): o resumo vai à última exibida, com o texto completo.
-      if (adaptive.length && adaptive.includes(column)) {
-        if (!lastShown) {
-          return;
-        }
-
-        column = lastShown;
-        text = { text: text.label, label: text.label };
       }
 
       let list = texts.get(column);
@@ -12622,25 +12649,10 @@ export class DataGrid extends LitElement {
         texts.set(column, list);
       }
 
-      list.push(text);
+      list.push(this.#summaryText(summary, values[index]));
     });
 
     return texts;
-  }
-
-  /**
-   * Rodapé de totais com colunas ocultas por falta de espaço (spec 21): a
-   * última exibida recebe os resumos delas e quebra linha (WCAG 1.4.10). O
-   * rodapé de grupo está no virtualizador (altura fixa): lá ela não quebra.
-   */
-  #summaryLayout(layout: ColumnLayout[]): ColumnLayout[] {
-    const last = this._visibleColumns[this._visibleColumns.length - 1];
-
-    if (!this.#adaptiveColumns.length || !last) {
-      return layout;
-    }
-
-    return layout.map(cell => cell.column === last ? { ...cell, className: `${cell.className} adaptive-summaries` } : cell);
   }
 
   /** Separador de lista do idioma (sem "e"/"and"), calculado uma vez por idioma. */
@@ -14222,7 +14234,7 @@ export class DataGrid extends LitElement {
 
       // `groupable: false` recusa: nada a anunciar (spec 17).
       if (this._groupColumns.includes(column)) {
-        this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+        this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: columnText(column) }));
       }
 
       this.#focusPending = true;
@@ -14566,7 +14578,7 @@ export class DataGrid extends LitElement {
     const visibleAfter = this.#siblingsOf(column).filter(sibling => this._isColumnVisible(sibling));
 
     this.#announce(formatMessage(this.#translation.columnMovedAnnouncement, {
-      column: column.label ?? '',
+      column: columnText(column),
       position: String(visibleAfter.indexOf(column) + 1),
       count: String(visibleAfter.length),
     }));
@@ -14614,7 +14626,7 @@ export class DataGrid extends LitElement {
   /** Novo nível de uma coluna agrupada (Alt+Shift+←/→ no chip ou menu do painel). */
   #announceGroupLevel(column: GridColumnDef): void {
     this.#announce(formatMessage(this.#translation.groupLevelChangedAnnouncement, {
-      column: column.label ?? '',
+      column: columnText(column),
       level: String(this._groupColumns.indexOf(column) + 1),
       count: String(this._groupColumns.length),
     }));
@@ -14623,7 +14635,7 @@ export class DataGrid extends LitElement {
   /** Largura da coluna depois de redimensionar pelo cabeçalho (teclado: com espera; menu: na hora). */
   #announceWidth(column: GridColumnDef, delay: number): void {
     const announce = () => this.#announce(formatMessage(this.#translation.columnResizedAnnouncement, {
-      column: column.label ?? '',
+      column: columnText(column),
       width: String(Math.round(this.#widthOf(column) ?? this._boundsOf(column).width)),
     }));
 
@@ -14638,7 +14650,7 @@ export class DataGrid extends LitElement {
   /** Desagrupa pelo teclado (chip ou linha de grupo): anuncia e leva o foco ao cabeçalho da coluna devolvida. */
   #userUngroup(column: GridColumnDef): void {
     this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
-    this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
+    this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: columnText(column) }));
     // O foco vai ao cabeçalho da coluna devolvida (fim das comuns); sem cabeçalho, a guarda de foco acha a célula ativa.
     void this.updateComplete.then(() => {
       const col = this.#currentNavColumns().indexOf(column);
@@ -15090,15 +15102,15 @@ export class DataGrid extends LitElement {
           }
         }
         : undefined,
-      trailing: cell.resizable ? this.#renderResizeHandle(cell) : nothing,
+      trailing: cell.resizable ? this.#renderResizeHandle(cell, idSuffix) : nothing,
       filterButton: this.headerFilter && isColumnFilterable(column)
-        ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${idSuffix}`)
+        ? renderHeaderFilterButton(this.#headerFilterPopover, column, filterValue, this.#translation, `header-description-${idSuffix}`, idSuffix, this.#textLanguage)
         : nothing,
-      menuButton: this.#renderColumnMenuButton(column),
+      menuButton: this.#renderColumnMenuButton(column, idSuffix),
       filtered: hasColumnCondition(filterValue, column),
       description: this.#headerDescription(column, rowSorting[position]?.order, position + 1, showIndex, hasColumnCondition(filterValue, column)),
       keyShortcuts: this.#headerKeyShortcuts(column, cell.resizable),
-      label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : column.label,
+      label: column.headerRenderer ? this.#renderHeaderContent(column, cell.id) : headerText(column),
     });
   }
 
@@ -15150,7 +15162,7 @@ export class DataGrid extends LitElement {
         // F2 só leva a algum lugar com conteúdo do \`headerRenderer\` (o botão "⋮" saiu: menu de contexto).
         ...column.headerRenderer ? ['F2'] : [],
       ].join(' '),
-      label: column.headerRenderer ? this.#renderHeaderContent(column, id) : column.label,
+      label: column.headerRenderer ? this.#renderHeaderContent(column, id) : headerText(column),
     });
   }
 
@@ -15228,7 +15240,7 @@ export class DataGrid extends LitElement {
    * com o rótulo da coluna no idioma do conteúdo. Fora do `.header-text`: o
    * nome do `columnheader` não o inclui.
    */
-  #renderColumnMenuButton(column: GridColumnDef) {
+  #renderColumnMenuButton(column: GridColumnDef, idSuffix: string) {
     if (!this.#showsColumnMenuButton(column)) {
       return nothing;
     }
@@ -15237,8 +15249,9 @@ export class DataGrid extends LitElement {
     const at = template.indexOf('{column}');
     const before = at >= 0 ? template.slice(0, at) : template;
     const after = at >= 0 ? template.slice(at + '{column}'.length) : '';
-    const columnLabel = column.label ?? '';
+    const columnLabel = columnText(column);
     const open = this.#contextMenuOpenFor('header', column);
+    const named = column.headerRenderer ? labelledByHeader(template, 'header-menu-name', idSuffix) : undefined;
 
     const openMenu = (button: HTMLElement, focusLast: boolean) => {
       this.#openHeaderMenu(column, button.closest('th')!, { opener: button, focusLast }, null);
@@ -15251,7 +15264,9 @@ export class DataGrid extends LitElement {
       tabindex="-1"
       aria-haspopup="menu"
       aria-expanded=${open ? 'true' : 'false'}
-      title=${formatMessage(template, { column: columnLabel })}
+      aria-labelledby=${ifDefined(named?.labelledBy)}
+      lang=${ifDefined(named ? this.#textLanguage : undefined)}
+      title=${ifDefined(named && !column.label ? undefined : formatMessage(template, { column: columnLabel }))}
       @pointerdown=${(event: PointerEvent) => {
         // Não ordena nem começa a seleção de intervalo pelo cabeçalho.
         event.stopPropagation();
@@ -15285,18 +15300,22 @@ export class DataGrid extends LitElement {
             openMenu(event.currentTarget as HTMLElement, event.key === 'ArrowUp');
           }
         }
-      }}><span
+      }}>${named?.parts ?? html`<span
         class="visually-hidden"
-        lang=${this.#textLanguage}>${before}<span lang=${this.#contentLanguage}>${columnLabel}</span>${after}</span></button>`;
+        lang=${this.#textLanguage}>${before}<span lang=${this.#contentLanguage}>${columnLabel}</span>${after}</span>`}</button>`;
   }
 
-  #renderResizeHandle({ column, bounds, width }: ColumnLayout) {
+  #renderResizeHandle({ column, bounds, width }: ColumnLayout, idSuffix: string) {
+    const named = column.headerRenderer ? labelledByHeader(this.#translation.resizeHandleLabel, 'resize-handle-name', idSuffix) : undefined;
+
     // Fora da ordem de Tab (o grid tem um ponto só): F2 no cabeçalho chega aqui, Esc volta.
     return html`<div
       class="resize-handle"
       role="separator"
       aria-orientation="vertical"
-      aria-label=${formatMessage(this.#translation.resizeHandleLabel, { column: column.label ?? '' })}
+      aria-label=${ifDefined(named ? undefined : formatMessage(this.#translation.resizeHandleLabel, { column: columnText(column) }))}
+      aria-labelledby=${ifDefined(named?.labelledBy)}
+      lang=${this.#textLanguage}
       aria-valuenow=${ifDefined(width === undefined ? undefined : Math.round(width))}
       aria-valuemin=${bounds.min}
       aria-valuemax=${ifDefined(Number.isFinite(bounds.max) ? bounds.max : undefined)}
@@ -15320,7 +15339,7 @@ export class DataGrid extends LitElement {
         } else {
           this.#resize.keyDown(event, column, false);
         }
-      }}></div>`;
+      }}>${named?.parts ?? nothing}</div>`;
   }
 
   #renderBody(window: VirtualWindow, headerRows: number, layout: ColumnLayout[]) {
@@ -15772,7 +15791,7 @@ export class DataGrid extends LitElement {
       const id = columnIdOf(column);
       const labelId = `adaptive-${index}-${id}`;
       const textId = `${labelId}-value`;
-      const bands = this._bandChainOf(column).map(band => band.label ?? '')
+      const bands = this._bandChainOf(column).map(band => columnText(band))
         .filter(Boolean);
       const sortPosition = sorting.findIndex(spec => spec.column === column);
       const order = sorting[sortPosition]?.order;
@@ -15807,7 +15826,7 @@ export class DataGrid extends LitElement {
       return html`<div class="adaptive-field" part="adaptive-field"><dt
           class="adaptive-label"
           part="adaptive-label"
-          id=${labelId}>${bands.length ? html`<span class="adaptive-band">${bands.join(' ')}</span> ` : nothing}<span class="adaptive-label-text">${column.label ?? ''}</span>${order
+          id=${labelId}>${bands.length ? html`<span class="adaptive-band">${bands.join(' ')}</span> ` : nothing}<span class="adaptive-label-text">${columnText(column)}</span>${order
             ? html`${adaptiveMark(`adaptive-sort ${order}`, SORT_ARROW_PATH)}<span class="visually-hidden"> ${sortText}</span>`
             : nothing}${filtered
             ? html`${adaptiveMark('adaptive-filter', FILTER_MARK_PATH)}<span class="visually-hidden"> ${translation.columnFiltered}</span>`
@@ -15853,7 +15872,7 @@ export class DataGrid extends LitElement {
 
     const modified = pending.type !== 'add' && adaptive.some(column => pending.modified.has(column));
     const invalid = adaptive.find(column => pending.errors.has(column));
-    const error = invalid ? `${invalid.label ?? ''}: ${pending.errors.get(invalid)}` : '';
+    const error = invalid ? `${columnText(invalid)}: ${pending.errors.get(invalid)}` : '';
 
     return modified || error ? { modified, error } : undefined;
   }
@@ -16015,7 +16034,7 @@ export class DataGrid extends LitElement {
     const rowIndex = this.#rows.length;
 
     return renderTotalFooter({
-      layout: this.#summaryLayout(layout),
+      layout,
       texts: this.#textsByColumn(this.#totalSpecs, this.#totals, () => true),
       groupColumns: this._groupColumns.length,
       groupColumnWidth: GROUP_COLUMN_WIDTH,
@@ -16301,7 +16320,7 @@ export class DataGrid extends LitElement {
 
     for (const [column, message] of pending.errors) {
       if (!this._visibleColumns.includes(column)) {
-        parts.push(`${column.label ?? ''}: ${message}`);
+        parts.push(`${columnText(column)}: ${message}`);
       }
     }
 
@@ -16315,7 +16334,7 @@ export class DataGrid extends LitElement {
     const current = editor.drafts.has(column)
       ? editor.drafts.get(column)
       : pending ? this.#pendingValue(pending, column) : getCellValue(row.item, column);
-    const label = column.label ?? '';
+    const label = columnText(column);
     const error = pending?.errors.get(column) ?? '';
     const renderer = column.editorRenderer;
 
@@ -17603,13 +17622,13 @@ export class DataGrid extends LitElement {
         aria-haspopup=${ifDefined(opensMenu ? 'menu' : undefined)}
         aria-expanded=${ifDefined(opensMenu ? this.#contextMenuOpenFor('group-panel', column) ? 'true' : 'false' : undefined)}
         aria-keyshortcuts=${`${menu && sortable ? 'Shift+F10 ' : ''}Alt+Shift+ArrowLeft Alt+Shift+ArrowRight Delete Control+G Meta+G`}
-        aria-label=${sortable ? `${column.label ?? ''}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : column.label ?? ''}
+        aria-label=${sortable ? `${columnText(column)}, ${order === 'asc' ? translation.sortAscending : translation.sortDescending}` : columnText(column)}
         @pointerdown=${sortable ? this.#onSortPointerDown : nothing}
         @click=${sortable
           ? (event: MouseEvent) => this.#onGroupChipActivate(column, event)
           : opensMenu ? (event: MouseEvent) => this.#onMenuChipClick(column, event) : nothing}
         @keydown=${(event: KeyboardEvent) => this.#onChipKeyDown(column, index, event)}>
-        <span class="group-label">${column.label}</span>${renderSortIndicator(order)}
+        <span class="group-label">${columnText(column)}</span>${renderSortIndicator(order)}
       </div>`;
   }
 
@@ -17979,7 +17998,7 @@ export class DataGrid extends LitElement {
     return [
       ...index >= 0
         ? [
-          { name: 'ungroupColumn' as const, text: translation.ungroupColumn, hiddenSuffix: column!.label ?? '' },
+          { name: 'ungroupColumn' as const, text: translation.ungroupColumn, hiddenSuffix: columnText(column!) },
           { name: 'moveLeft' as const, text: translation.moveLeft, disabled: !towardLeft },
           { name: 'moveRight' as const, text: translation.moveRight, disabled: !towardRight },
         ]
@@ -18200,7 +18219,7 @@ export class DataGrid extends LitElement {
       row.expanded ? { name: 'collapseGroup', text: translation.collapseGroup } : { name: 'expandGroup', text: translation.expandGroup },
       { name: 'expandAllGroups', text: translation.expandAllGroups },
       { name: 'collapseAllGroups', text: translation.collapseAllGroups },
-      { name: 'ungroupColumn', text: translation.ungroupColumn, hiddenSuffix: row.column.label ?? '', separatorBefore: true },
+      { name: 'ungroupColumn', text: translation.ungroupColumn, hiddenSuffix: columnText(row.column), separatorBefore: true },
     ];
   }
 
@@ -18251,7 +18270,7 @@ export class DataGrid extends LitElement {
 
     switch (request.target) {
       case 'header':
-        label = formatMessage(translation.columnHeaderMenuLabel, { column: request.column?.label ?? '' });
+        label = formatMessage(translation.columnHeaderMenuLabel, { column: request.column ? columnText(request.column) : '' });
         kind = 'column-header-menu';
         break;
       case 'group-panel':
@@ -18465,7 +18484,7 @@ export class DataGrid extends LitElement {
         this._userGroupColumn(column, this._groupColumns.length);
 
         if (this._groupColumns.includes(column)) {
-          this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: column.label ?? '' }));
+          this.#announce(formatMessage(this.#translation.groupedAnnouncement, { column: columnText(column) }));
         }
 
         this.#focusPending = true;
@@ -18537,7 +18556,7 @@ export class DataGrid extends LitElement {
 
     const translation = this.#translation;
     const message = fixed === 'start' ? translation.columnFixedStartAnnouncement : fixed === 'end' ? translation.columnFixedEndAnnouncement : translation.columnUnfixedAnnouncement;
-    this.#announce(formatMessage(message, { column: column.label ?? '' }));
+    this.#announce(formatMessage(message, { column: columnText(column) }));
   }
 
   #runGroupPanelMenuItem(name: GridContextMenuItemName, column: GridColumnDef | null): void {
@@ -18572,7 +18591,7 @@ export class DataGrid extends LitElement {
       case 'ungroupColumn':
         if (column && this._groupColumns.includes(column)) {
           this.#moveColumnTo(false, column, this._regularColumns.length, 'user');
-          this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: column.label ?? '' }));
+          this.#announce(formatMessage(this.#translation.ungroupedAnnouncement, { column: columnText(column) }));
         }
 
         break;
@@ -19037,7 +19056,7 @@ export class DataGrid extends LitElement {
     if (!this._canDropColumn(column, target)) {
       // Recusado (fixa × livre, outra banda): pelo teclado, diz por que nada mudou (WCAG 4.1.3).
       if (keyboard) {
-        this.#announce(formatMessage(this.#translation.columnMoveRefusedAnnouncement, { column: column.label ?? '', target: target.label ?? '' }));
+        this.#announce(formatMessage(this.#translation.columnMoveRefusedAnnouncement, { column: columnText(column), target: columnText(target) }));
       }
 
       return false;
@@ -19055,7 +19074,7 @@ export class DataGrid extends LitElement {
       .filter(sibling => sibling.showInChooser !== false);
 
     this.#announce(formatMessage(this.#translation.columnMovedAnnouncement, {
-      column: column.label ?? '',
+      column: columnText(column),
       position: String(listed.indexOf(column) + 1),
       count: String(listed.length),
     }));

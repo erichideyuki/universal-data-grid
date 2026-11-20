@@ -105,6 +105,8 @@ corrigir · 📌 pendente sem mudança de API (fora deste lote).
 | Zoom só de texto | 1.4.4 | virtualizador assume `rowHeight` sem `wrap` | medir uma linha de amostra | não | BAIXA | 📌 |
 | Textos cortados nos popovers | 1.4.12 | reticências sem como ler tudo | `white-space: normal` nas listas | não | BAIXA | 📌 |
 | Busca dentro de `role=toolbar` | 1.3.1 | campo de texto numa barra sem nome | o `role=toolbar` passou ao painel de grupos, com nome (`groupPanelLabel`); a busca fica fora | não | BAIXA | ✅ |
+| Totais de coluna oculta (`autoHideColumns`) | 1.3.1 / 1.4.10 | antes: o total da coluna X ia para a célula da Y (célula crescia); agora sai do rodapé, como no DevExtreme 24.2.3 | decidido com o usuário: paridade com o oráculo, recurso opt-in, valor no `getSummaryValues()`; detalhe adaptativo do rodapé fica como ideia | sim (aval) | MÉDIA | ➖ |
+| Coluna sem `label` | 4.1.2 / 2.4.6 / 3.2.4 | ⋮, funil, alça, chip, seletor, anúncios sem nome | `columnText` (`label \|\| path \|\| name`); com `headerRenderer` os controles do cabeçalho usam `aria-labelledby` com o `.header-text`; aviso no console | sim (aval) | MÉDIA | ✅ |
 
 ## Testes
 `src/accessibility.browser.test.ts` (21 casos): foco (linha filtrada,

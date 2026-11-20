@@ -11,6 +11,7 @@ import type {
   GridFilterOperation,
 } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
+import { columnText } from '../row-model/columns.js';
 import { type ColumnFilterKind, findColumnCondition } from '../row-model/filter.js';
 import { toDate } from '../row-model/format.js';
 import { Debouncer, searchIcon } from './search.js';
@@ -523,7 +524,7 @@ export const renderFilterCell = ({
   const operation = controller.operationOf(column);
   const operations = operationsOf(column, dataType);
   const texts = controller.textsOf(column);
-  const label = formatMessage(translation.filterEditorLabel, { column: column.label || column.path || '' });
+  const label = formatMessage(translation.filterEditorLabel, { column: columnText(column) });
   const isDate = dataType === 'date' || dataType === 'datetime';
 
   const editor = (index: number, ariaLabel: string) => html`
@@ -579,7 +580,7 @@ export const renderFilterCell = ({
   }
 
   const operationLabel = formatMessage(translation.filterOperationButtonLabel, {
-    column: column.label || column.path || '',
+    column: columnText(column),
     operation: operationName(operation, translation),
   });
 
@@ -621,7 +622,7 @@ export const renderFilterMenu = (
         class="filter-menu"
         .popover=${'manual'}
         role="menu"
-        aria-label=${formatMessage(translation.filterEditorLabel, { column: column.label || column.path || '' })}
+        aria-label=${formatMessage(translation.filterEditorLabel, { column: columnText(column) })}
         @keydown=${controller.onMenuKeyDown}>
         ${map(['', 'true', 'false'], text => html`
           <button

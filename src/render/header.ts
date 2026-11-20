@@ -4,6 +4,7 @@ import { ifDefined } from 'lit/directives/if-defined.js';
 import { type StyleInfo, styleMap } from 'lit/directives/style-map.js';
 
 import type { GridColumnDef, GridSortOrder } from '../grid-column-def.js';
+import { headerText } from '../row-model/columns.js';
 
 export type SortActivation = (column: GridColumnDef, event: MouseEvent | KeyboardEvent) => void;
 
@@ -40,7 +41,7 @@ export interface HeaderCellContext {
   keyShortcuts?: string;
   /** Clique direito: menu do cabeçalho (spec 17, A1). */
   onContextMenu?: (event: MouseEvent) => void;
-  /** Conteúdo do rótulo (`headerRenderer`); padrão: `column.label`. */
+  /** Conteúdo do rótulo (`headerRenderer`); padrão: `headerText(column)`. */
   label?: unknown;
   /** Nível de baixo coberto pela célula (`data-level`, frente 13). */
   level?: number;
@@ -145,7 +146,7 @@ export const renderBandHeaderCell = ({
   description = '',
   keyShortcuts,
   onContextMenu,
-  label = column.label,
+  label = headerText(column),
 }: BandHeaderCellContext): TemplateResult => html`
   <th
     class="band-header ${classMap(classes)}"
@@ -166,6 +167,38 @@ export const renderBandHeaderCell = ({
       renderDescription(idSuffix, description)}
   </th>`;
 
+/** Nome de um controle do cabeçalho que segue o texto renderizado dele (ver `labelledByHeader`). */
+export interface HeaderControlName {
+  /** Valor do `aria-labelledby` do controle. */
+  labelledBy: string;
+  /** Pedaços do modelo antes e depois de `{column}`, escondidos, dentro do controle. */
+  parts: TemplateResult;
+}
+
+/**
+ * Com `headerRenderer` o nome em texto da coluna (`columnText`) pode não
+ * ser o que se vê no cabeçalho: o botão ⋮, o funil e a alça tiram o nome do
+ * modelo traduzido ("Options for {column}") com `{column}` trocado pelo
+ * próprio `.header-text` renderizado (`aria-labelledby`), como o
+ * `columnheader` (WCAG 4.1.2, 2.4.6, 3.2.4). Os ids são da mesma célula e do
+ * mesmo render; funcionam sem JS no SSR.
+ */
+export const labelledByHeader = (template: string, idPrefix: string, idSuffix: string): HeaderControlName => {
+  const at = template.indexOf('{column}');
+  const before = at >= 0 ? template.slice(0, at) : template;
+  const after = at >= 0 ? template.slice(at + '{column}'.length) : '';
+
+  // Parte vazia (o `{column}` no começo ou no fim do modelo) não vira span nem id.
+  const part = (side: string, text: string) =>
+    text ? html`<span class="visually-hidden" id="${idPrefix}-${side}-${idSuffix}">${text}</span>` : nothing;
+
+  return {
+    labelledBy: [before && `${idPrefix}-before-${idSuffix}`, `header-text-${idSuffix}`, after && `${idPrefix}-after-${idSuffix}`]
+      .filter(Boolean).join(' '),
+    parts: html`${part('before', before)}${part('after', after)}`,
+  };
+};
+
 export const renderHeaderCell = ({
   column,
   classes,
@@ -185,7 +218,7 @@ export const renderHeaderCell = ({
   description = '',
   keyShortcuts,
   onContextMenu,
-  label = column.label,
+  label = headerText(column),
   level,
   rowSpan,
   idSuffix = String(colIndex),

@@ -268,7 +268,7 @@ interface GridColumnDef<TItem = any> {
   path?: string;
   /** Stable id in the saved state and in string column references (summaries). Default: `path`. */
   name?: string;
-  /** Header text. With <u-grid-column>, this is the element's text content. */
+  /** The column's name as text: header text (unless headerRenderer; empty: path) and its name in menus, chips, chooser, announcements and export (empty: path, then name, as is). With <u-grid-column>, the element's text content. */
   label?: string;
   /** Fixed column width in pixels. Omit for auto width (under virtual column rendering: auto-size width or max(minWidth, 150) px). */
   width?: number | null;
@@ -765,7 +765,7 @@ virtualization keep working; a million nodes expand, filter and scroll without f
 | `parentKeyExpr` | `parent-key-expr` | `string \| (item) => GridRowKey \| null` | `null` | Key of the parent (`flat`). |
 | `rootParentKey` | `root-parent-key` | `GridRowKey \| null` | `null` | Parent key of the root nodes, compared by text (`"0"` matches `0`). `null`, `undefined` and a key with no item are roots too. |
 | `hasChildrenExpr` | `has-children-expr` | `string \| (item) => boolean \| null` | `null` | With `dataSource`: the node has children to load. |
-| `treeColumn` | `tree-column` | `GridColumnRef \| null` | `null` | Column with the indent and the button (`name` or `path`); default the first visible data column. |
+| `treeColumn` | `tree-column` | `GridColumnRef \| null` | `null` | Column with the indent and the button (`name` or `path`; any leaf column, also inside a band); default the first visible data column. |
 | `treeFilterMode` | `tree-filter-mode` | `'with-ancestors' \| 'full-branch' \| 'match-only'` | `'with-ancestors'` | What filtering shows: the matching nodes and their ancestors; also all their descendants; or only the matching nodes (each under its nearest shown ancestor). |
 | `autoExpandNodes` | `auto-expand-nodes` | `boolean` | `false` | Nodes start expanded (initial default, like `auto-expand-groups`). |
 | `recursiveSelection` | `recursive-selection` | `boolean` | `false` | Checking a node checks its descendants; a parent is checked when all its children are and mixed when some are. Needs `selection-mode="multiple"` and `show-checkboxes`. |
@@ -1449,9 +1449,9 @@ to the row details — an expandable row below each row, the same one as
   columns leave. Fixed rows expand too.
 - **Layout only:** a hidden column stays visible for everything else — the column chooser (checked,
   with "In row details" below it), `getState()`, exports, row copies, the search and the filters
-  (its filter keeps applying; its filter-row cell and funnel leave with it). Totals of a hidden
-  column move to the last column of the totals footer with the full text ("Sum of Amount: 47");
-  aligned group summaries join the group row text.
+  (its filter keeps applying; its filter-row cell and funnel leave with it). Totals and group
+  footer summaries of a hidden column leave the footer with its cells (the footer keeps one line;
+  `getSummaryValues()` still returns them); aligned group summaries join the group row text.
 - **Keyboard:** the toggle cell and the details row work as in master-detail (`Enter`/`Space`
   toggle, `↓` enters the details row, `↑` leaves). `Enter`/`F2` on it reach the values: every value
   is a stop for `Tab`/`Shift+Tab` (they cycle) and `Esc` returns to the cell. On a value,
@@ -1976,9 +1976,16 @@ col.renderer = (item) => html`<b>${item.name}</b>`;
 
 - `headerRenderer(ctx)` (column) replaces the header label (`ctx`: `column`, `grid`, `signal`).
   The sort arrow, the header filter button and the resize handle stay; clicks and keys on
-  interactive content of the template (buttons, links, inputs) do not sort. `label` is still
-  required: the column chooser, group chips, announcements and filter labels use it. The header's
-  accessible name comes from the rendered content.
+  interactive content of the template (buttons, links, inputs) do not sort. Set `label` too (with
+  `<u-grid-column>`, keep the text content): the column chooser, group chips, the row details,
+  announcements, filter labels and export use it, and one name per column keeps them consistent
+  (WCAG 3.2.4). Without it the grid logs one `console.warn` per column and uses `path`, then
+  `name`, as is. The header's accessible name comes from the rendered content, and so do the names
+  of its "⋮" menu button, filter button and resize handle ("Options for {rendered text}"); an
+  icon-only template needs its own text alternative (`aria-label` or visually hidden text).
+  For a header that looks empty (an actions column), set `label: 'Actions'` and a `headerRenderer`
+  that returns the label as visually hidden text; a column with neither `label` nor `path` (only
+  `name` and `renderer`) keeps an empty header.
 - `groupRenderer(ctx)` (column) replaces the label and count of the group rows of that column
   (`ctx`: `column`, `value`, `text` — the formatted value —, `groupPath`, `groupIndex`, `itemCount`,
   `expanded`, `summaries` — the inline ones —, `defaultText` — the label the grid would show —,
@@ -2639,7 +2646,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `stateStorage`     | `state-storage`       | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Save and restore the user state. See [State persistence](#state-persistence). |
 | `stateStorageKey`  | `state-storage-key`   | `string`  | `''`    | Key in `localStorage`/`sessionStorage`. |
 | `stateChangeDelay` | `state-change-delay`  | `number`  | `500`   | Delay (ms) of `u-grid-state-change` and of the save. |
-| `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels. |
+| `rowHeight`        | `row-height`          | `number`  | `48`    | Row height in pixels (the cell padding fits inside it). Content taller than that — e.g. a 40px button with the default 13px block padding — makes the row grow; the virtualizer measures it. |
 | `striped`          | `striped`             | `boolean` | `false` | Zebra striping on alternating rows. |
 | `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the group panel in the toolbar (where columns are dropped to group). |
 | `showColumnHeaders`| `show-column-headers` | `boolean` | `true`  | Show the column header row. |
@@ -2722,7 +2729,7 @@ tint derive from it.
 | `--u-grid-header-cell-height` | `46px` | Column header height. |
 | `--u-grid-header-cell-padding` | `13px 16px` | Header cell padding. |
 | `--u-grid-header-cell-font-size` / `--u-grid-header-cell-font-weight` | `0.8125rem` / inherited | Header text. |
-| `--u-grid-cell-padding` | `13px 16px` | Data cell padding. `--u-grid-cell-block-padding` / `--u-grid-cell-inline-padding` set both data and header cells. |
+| `--u-grid-cell-padding` | `13px 16px` | Data cell padding (shorthand; wins over the longhands). `--u-grid-cell-block-padding` (`13px`) / `--u-grid-cell-inline-padding` (`16px`) set one axis of both data and header cells (unless `--u-grid-cell-padding` / `--u-grid-header-cell-padding` is set). |
 | `--u-grid-cell-font-size` / `--u-grid-cell-font-weight` | `0.875rem` / inherited | Data cell text. |
 | `--u-grid-line-opacity` | `20%` | Opacity of row/column lines (derived from the text color). |
 | `--u-grid-line-width` | `1px` | Base line thickness. |
@@ -3280,9 +3287,12 @@ They will be removed in the next major version.
 | `--u-grid-toggle-color`, `--u-grid-toggle-shape` | `--u-grid-group-toggle-color`, `--u-grid-group-toggle-shape` |
 | `--u-grid-grouping-cell-emphasis` | `--u-grid-group-row-emphasis` |
 
-When migrating CSS, remove the old names: an old **shorthand** (`--u-table-cell-padding`,
-`--u-table-header-padding`, `--u-grid-data-cell-padding`) still wins over the new block/inline
-longhands.
+When migrating CSS, remove the old names. The new cell padding longhands
+(`--u-grid-cell-block-padding`, `--u-grid-cell-inline-padding`) win over the old cell shorthands
+(`--u-table-cell-padding`, `--u-grid-data-cell-padding` — the Universal Material theme sets
+`--u-table-cell-padding` on `:root`); the other axis then comes from its own longhand or the
+default, not from the old shorthand. The old toolbar shorthand `--u-table-header-padding` still
+wins over the new toolbar longhands.
 
 Also changed (not deprecations): `::part(cell)` now matches every data cell (the empty-state cell
 is only `::part(no-data)`); data rows and column headers get a hover tint
@@ -3291,6 +3301,12 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Since 0.1.0: a column without `label` shows its `path` as the header text and uses `path`, then
+`name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;
+totals of a column hidden by `autoHideColumns` are no longer shown in the last visible column; the
+cell padding longhands win over the old shorthands (the other axis comes from its own longhand or
+the default, so if you customized an old shorthand, set both longhands).
 
 **Header menu and column chooser (behavior changes, modeled on AG Grid):**
 

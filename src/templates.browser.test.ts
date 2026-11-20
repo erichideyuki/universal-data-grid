@@ -629,3 +629,86 @@ describe('acessibilidade dos templates e do master-detail (spec 17)', () => {
     expect(root(grid).getElementById(ids[1])!.textContent).toMatch(/Age/);
   });
 });
+
+// Regressão: coluna com `headerRenderer` e sem `label` deixava os botões do cabeçalho ("Options for "), o chip e o seletor sem nome.
+describe('coluna sem label', () => {
+  /** Nome acessível simplificado: `aria-labelledby` (ids no shadow root), senão `aria-label`, senão o texto. */
+  const accName = (grid: DataGrid, element: Element): string => {
+    const ids = element.getAttribute('aria-labelledby');
+
+    if (ids) {
+      return ids.split(/\s+/).map(id => root(grid).getElementById(id)?.textContent ?? '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    return (element.getAttribute('aria-label') ?? element.textContent).replace(/\s+/g, ' ').trim();
+  };
+
+  it('nomeia pelo texto renderizado no cabeçalho e pelo path no resto; avisa uma vez', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const cols: GridColumnDef<Person>[] = [
+      { path: 'name', label: 'Name', width: 150 },
+      { path: 'team', width: 120 },
+      { path: 'age', width: 120, headerRenderer: () => html`<b>Years</b>` },
+      { name: 'actions', width: 80, renderer: () => html`<button>Edit</button>` },
+    ];
+    const grid = await createGrid({
+      columns: cols,
+      items: people(4),
+      configure: g => {
+        g.language = 'en';
+        g.headerFilter = true;
+        g.columnResizing = true;
+      },
+    });
+
+    try {
+      const th = (label: number) => root(grid).querySelectorAll('th.header-column')[label];
+
+      // Sem headerRenderer: o cabeçalho mostra o path (antes ficava vazio).
+      expect(th(1).querySelector('.header-text')!.textContent.trim()).toBe('team');
+      // Coluna só de `renderer` (sem path): cabeçalho continua vazio.
+      expect(th(3).querySelector('.header-text')!.textContent.trim()).toBe('');
+
+      // Com headerRenderer: os controles do cabeçalho seguem o texto renderizado.
+      expect(accName(grid, th(2).querySelector('.column-header-menu-button')!)).toBe('Options for Years');
+      expect(accName(grid, th(2).querySelector('.header-filter-button')!)).toBe('Filter options for Years');
+      expect(accName(grid, th(2).querySelector('.resize-handle')!)).toBe('Resize Years');
+      expect(accName(grid, th(1).querySelector('.column-header-menu-button')!)).toBe('Options for team');
+      // Sem `label`, o `title` (descrição) não repete outro nome da coluna; a interface fala no idioma da i18n.
+      expect(th(2).querySelector('.column-header-menu-button')!.hasAttribute('title')).toBe(false);
+      expect(th(2).querySelector('.header-filter-button')!.hasAttribute('title')).toBe(false);
+      expect(th(1).querySelector('.header-filter-button')!.getAttribute('title')).toBe('Filter options for team');
+      expect(th(2).querySelector('.header-filter-button')!.getAttribute('lang')).toBe('en');
+      expect(th(2).querySelector('.resize-handle')!.getAttribute('lang')).toBe('en');
+
+      const gridWarnings = () => warn.mock.calls.map(call => String(call[0])).filter(text => text.startsWith('<u-grid>'));
+      expect(gridWarnings()).toHaveLength(1);
+      expect(gridWarnings()[0]).toContain('"age"');
+
+      // Fora do cabeçalho: path cru (chip do painel de grupo e seletor de colunas).
+      grid.openColumnChooser();
+      await settle(grid);
+      const chooser = [...root(grid).querySelectorAll('[id^="column-chooser-label-"]')].map(label => label.textContent.trim());
+      expect(chooser).toEqual(['Name', 'team', 'age', 'actions']);
+
+      grid.groupColumn(cols[2]);
+      await settle(grid);
+      expect(root(grid).querySelector('[part~="group-chip"] .group-label')!.textContent.trim()).toBe('age');
+
+      // A mesma coluna não avisa de novo, nem com objetos recriados (React/Vue a cada render).
+      grid.columns = cols.map(column => ({ ...column }));
+      await settle(grid);
+      expect(gridWarnings()).toHaveLength(1);
+
+      grid.ungroupColumn(grid.columns[2]);
+      await settle(grid);
+      const result = await axe.run(grid as unknown as Element);
+      expect(result.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

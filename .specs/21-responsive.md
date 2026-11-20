@@ -153,7 +153,7 @@ fixas ficam inalcançáveis. Vale também para `detailRenderer`.
   - Coluna da célula ativa sai → célula de expansão da mesma linha; no
     cabeçalho → coluna exibida anterior (ou próxima); na linha de filtro
     → célula de filtro exibida anterior; nos rodapés → célula da última
-    coluna exibida (que recebe o resumo).
+    coluna exibida.
   - Valor focado na linha adaptativa cuja coluna volta → célula dessa
     coluna na mestre.
   - Coluna de expansão some (todas voltaram, sem `detailRenderer`) com o
@@ -181,11 +181,14 @@ fixas ficam inalcançáveis. Vale também para `detailRenderer`.
 - **Filtro (04)**: o filtro de coluna oculta continua valendo; a célula da
   linha de filtro e o funil saem com a coluna (limpar pelo menu/barra ou
   `clearFilter`); o `<dt>` mostra o filtro ativo.
-- **Resumos (07)**: total de rodapé e resumo alinhado (`display:
-  'column'`/`'footer'`) de coluna oculta vão para a célula da última
-  coluna exibida com o texto completo ("Sum of Amount: 47"); essa célula
-  quebra linha (`white-space: normal`, altura pelo conteúdo). Na linha de
-  grupo entram no texto como os `inline`.
+- **Resumos (07)**: total de rodapé e resumo de rodapé de grupo
+  (`display: 'footer'`) de coluna oculta saem do rodapé junto com as
+  células dela, como no DevExtreme (medido na 24.2.3: o rodapé fica com uma
+  linha e o detalhe adaptativo não mostra totais); o valor segue no
+  `getSummaryValues`. Antes iam para a última coluna exibida, que crescia
+  (relato de uso: 214px com 5 colunas ocultas). Resumo alinhado
+  (`display: 'column'`) na linha de grupo entra no texto como os
+  `inline`.
 - **Seletor (06)**: coluna oculta por espaço continua marcada; a dica
   `adaptiveColumnDescription` vai em linha própria sob o rótulo, FORA do
   `<label>`, e entra no `aria-describedby` junto da descrição que já
@@ -337,8 +340,8 @@ resumos, foco, anúncio), `grid-column-def.ts`, `grid-column.ts`,
 - Valores da linha adaptativa são alvos de foco do grid
   (`.focus-target[tabindex=-1]`, reconhecidos pelo `cell-content-focus`);
   foco perdido num valor (linha recriada ao salvar) volta ao mesmo valor.
-- Resumo de coluna oculta no rodapé de GRUPO não quebra linha (a linha está
-  no virtualizador, altura fixa): só o rodapé de totais quebra.
+- (Revogado: resumo de coluna oculta não vai mais para a última coluna —
+  ver "Resumos (07)".)
 - Linha inteira (`rowRenderer`) sem `detailRenderer` não tem botão (não há
   colunas para mostrar).
 - Desempenho (`responsive-1m`, perfil fraco): estreitar ~13 ms, alargar
@@ -368,9 +371,7 @@ resumos, foco, anúncio), `grid-column-def.ts`, `grid-column.ts`,
   chave com contagem própria (`adaptiveColumnsCountAnnouncement`) leria
   melhor; (2) quando todas as colunas voltam com o foco na célula de
   expansão, o foco vai à 1ª célula de dados, não à coluna em que o usuário
-  estava antes de ela sair. Justificado: resumo de coluna oculta no rodapé
-  de GRUPO pode ficar cortado (linha virtual de altura fixa); o nome
-  acessível tem o texto inteiro.
+  estava antes de ela sair.
 
 ## Critério de pronto
 `npm test`, `npm run test:perf`, `npm run typecheck`, `npm run lint`

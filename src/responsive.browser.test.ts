@@ -368,12 +368,25 @@ describe('linha adaptativa: linhas fixas, resumos, exportação', () => {
     expect((focused(grid) as HTMLElement).textContent).toContain('$999.00');
   });
 
-  it('total de coluna oculta vai para a última exibida, com o texto completo', async () => {
-    const grid = await createResponsive(500, g => {
-      g.summary = { total: [{ column: 'amount', type: 'sum' }, { column: 'invoice', type: 'count' }] };
-    }, sales(3));
-    const cells = [...root(grid).querySelectorAll('tfoot td.summary-cell')].map(td => td.textContent?.replace(/\s+/g, ' ').trim());
-    expect(cells.some(text => text?.includes('Sum of Amount: $303.00'))).toBe(true);
+  // Regressão: os totais das ocultas iam todos para a última exibida, que crescia (214px com 5 colunas).
+  it('total de coluna oculta sai do rodapé, como a célula (DevExtreme), e o rodapé fica com uma linha', async () => {
+    const plain = columns().map(column => ({ ...column, format: undefined }));
+    const grid = await createResponsive(390, g => {
+      g.summary = { total: plain.map(column => ({ column: column.path!, type: 'count' as const })) };
+    }, sales(3), plain.map((column, index) => ({ ...column, hidingPriority: index })));
+
+    const hidden = grid.getAdaptiveColumns().map(column => column.label);
+    expect(hidden.length).toBeGreaterThan(1);
+
+    const footer = root(grid).querySelector<HTMLElement>('tfoot tr.total-row')!;
+    const texts = [...footer.querySelectorAll('td.summary-cell')].map(td => td.textContent?.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    expect(texts).toHaveLength(plain.length - hidden.length);
+    expect(texts.some(text => hidden.some(label => text.includes(`of ${label}`)))).toBe(false);
+
+    const row = bodyRows(grid)[0];
+    expect(footer.getBoundingClientRect().height).toBeLessThanOrEqual(row.getBoundingClientRect().height + 1);
+    // O valor segue disponível pela API.
+    expect(grid.getSummaryValues().map(value => value.value)).toEqual(plain.map(() => 3));
   });
 
   it('exportação e cópia de linhas incluem as ocultas', async () => {
