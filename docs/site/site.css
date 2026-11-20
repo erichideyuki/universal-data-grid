@@ -94,8 +94,10 @@ code {
 /* ------------------------------------------------------------- topo */
 
 .topbar {
-  position: sticky;
+  /* Fixa (não sticky): numa página mais larga que a janela (grid que rola com a página) ela não rola para o lado. */
+  position: fixed;
   top: 0;
+  inset-inline: 0;
   z-index: 50;
   display: flex;
   align-items: center;
@@ -250,6 +252,8 @@ code {
 .layout {
   display: grid;
   grid-template-columns: var(--site-sidebar-width) minmax(0, 1fr);
+  /* Espaço da barra fixa. */
+  padding-top: var(--site-topbar-height);
 }
 
 .sidebar {
@@ -625,6 +629,12 @@ code {
 
 .demo u-grid {
   border-radius: 8px;
+}
+
+/* Página sem cartão: a demo no fluxo da página, sem padding nem altura própria. */
+.demo.bare {
+  margin-top: 24px;
+  padding: 0;
 }
 
 .example-actions {

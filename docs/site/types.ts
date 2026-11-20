@@ -18,6 +18,11 @@ export interface DocPage {
   readme?: string;
   /** Ids dos exemplos, na ordem (arquivos em `docs/examples/<página>/`). */
   examples: readonly string[];
+  /**
+   * Exemplos no fluxo da página, sem o cartão (a demo não fica num bloco de
+   * altura própria): para o grid que rola com a página (`scroll-container`).
+   */
+  bare?: boolean;
 }
 
 export interface ExampleMeta {

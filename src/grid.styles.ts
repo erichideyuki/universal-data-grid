@@ -7,6 +7,14 @@ export const styles = css`
 
   :host {
     display: block;
+    /*
+     * Bloco de contenção dos absolutos internos (região aria-live, textos só
+     * para leitor de tela): sem isso, com a rolagem num contêiner externo
+     * (spec 27), eles se posicionam num ancestral fora dele, escapam do
+     * overflow e esticam a página até a altura do grid. O hospedeiro pode
+     * trocar (\`u-grid { position: absolute }\` vence o \`:host\`).
+     */
+    position: relative;
     height: 100%;
     /* Cor do texto própria (spec 17, A4): numa página escura sem tema, não herda texto claro sobre o fundo claro do grid. */
     color: var(--u-grid-color, var(--u-color-on-surface, rgb(29, 27, 32)));

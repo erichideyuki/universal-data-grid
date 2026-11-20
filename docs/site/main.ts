@@ -219,7 +219,7 @@ const codeBlock = (source: string) => {
   return el('div', { className: 'code-wrap' }, copy, pre);
 };
 
-const exampleCard = async (pageId: string, id: string) => {
+const exampleCard = async (pageId: string, id: string, bare = false) => {
   const key = exampleKey(pageId, id);
   const loader = exampleModules[key];
 
@@ -229,7 +229,7 @@ const exampleCard = async (pageId: string, id: string) => {
 
   const module = await loader();
   const anchor = `#/${pageId}/${id}`;
-  const host = el('div', { className: 'demo' });
+  const host = el('div', { className: bare ? 'demo bare' : 'demo' });
   const codeHost = el('div', { className: 'code-host' });
   const toggleLabel = el('span', {}, 'Show code');
   const toggle = el('button', { className: 'code-toggle', type: 'button', ariaExpanded: 'false' }, icon('code'), toggleLabel);
@@ -249,14 +249,15 @@ const exampleCard = async (pageId: string, id: string) => {
   });
   codeHost.hidden = true;
 
-  const card = el('section', { className: 'example', id: `${pageId}--${id}` },
+  const actions = el('div', { className: 'example-actions' }, toggle,
+    el('a', { className: 'source-link', href: `${REPO}/blob/main/docs/examples/${pageId}/${id}.ts`, target: '_blank', rel: 'noopener' }, 'Source on GitHub', icon('open_in_new')));
+  // Sem cartão: o código fica acima e a demo segue no fluxo da página (o grid cresce e a página rola).
+  const card = el('section', { className: bare ? 'example bare' : 'example', id: `${pageId}--${id}` },
     el('h2', {}, el('a', { href: anchor, className: 'anchor' }, module.meta.title)),
     el('p', { className: 'description' }, inline(module.meta.description)),
-    el('div', { className: 'example-block' },
-      host,
-      el('div', { className: 'example-actions' }, toggle,
-        el('a', { className: 'source-link', href: `${REPO}/blob/main/docs/examples/${pageId}/${id}.ts`, target: '_blank', rel: 'noopener' }, 'Source on GitHub', icon('open_in_new'))),
-      codeHost));
+    ...bare
+      ? [el('div', { className: 'example-block' }, actions, codeHost), host]
+      : [el('div', { className: 'example-block' }, host, actions, codeHost)]);
 
   let mounted = false;
 
@@ -329,7 +330,7 @@ const render = async () => {
   }
 
   const page = (await loader()).default;
-  const cards = await Promise.all(page.examples.map(id => exampleCard(pageId, id)));
+  const cards = await Promise.all(page.examples.map(id => exampleCard(pageId, id, page.bare)));
 
   if (token !== renderToken) {
     return;

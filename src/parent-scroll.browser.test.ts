@@ -608,3 +608,30 @@ describe('parent scroll (spec 27)', () => {
     });
   }
 });
+
+// Regressão: a região `aria-live` (absoluta, no fim do grid) tinha como bloco de contenção um
+// ancestral posicionado FORA do contêiner externo e esticava a página até a altura do grid
+// (15 milhões de px com 1 milhão de linhas no exemplo do site).
+describe('nada do grid escapa do contêiner externo', () => {
+  it('ancestral posicionado em volta do contêiner: a página não cresce com o grid', async () => {
+    const card = document.createElement('div');
+    card.style.position = 'relative';
+    const parent = document.createElement('div');
+    parent.id = 'escape-scroller';
+    parent.style.cssText = 'height:300px;overflow:auto';
+    const grid = document.createElement('u-grid');
+    grid.setAttribute('scroll-container', 'escape-scroller');
+    grid.columns = [{ path: 'a', label: 'A' }];
+    grid.items = Array.from({ length: 100_000 }, (_, a) => ({ a }));
+    parent.append(grid);
+    card.append(parent);
+    document.body.append(card);
+    cleanups.push(() => card.remove());
+    await settle(grid);
+    await settle(grid);
+
+    expect(parent.scrollHeight).toBeGreaterThan(1_000_000);
+    expect(card.scrollHeight).toBeLessThanOrEqual(card.clientHeight + 1);
+    expect(document.documentElement.scrollHeight).toBeLessThan(5_000);
+  });
+});

@@ -3426,7 +3426,9 @@ no longer touches the group panel), and the search panel and host content lost t
 start margin; the column chooser icon is `24px`; the header "⋮" and filter buttons sit side by side
 and reach into the end padding up to the resize handle (about `10px` more for the label); the group
 panel hint is shorter in every language; `GridColumnBooleanDisplay` gained `'check'` (an exhaustive
-`switch` over it needs the new case).
+`switch` over it needs the new case); `u-grid` is now `position: relative` (the containing block of its own
+visually hidden parts — with `scroll-container` they made the page as tall as the grid; your own
+`position` on `u-grid` still wins).
 
 In 0.2.0: a column without `label` shows its `path` as the header text and uses `path`, then
 `name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;
