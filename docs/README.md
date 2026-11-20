@@ -54,3 +54,11 @@ só o site já construído; a raiz é o build Angular de
 Visual: segue o site do Universal Material (Roboto, Material Symbols, paleta
 padrão em `site/tokens.css`). Fontes e ícones vêm do Google Fonts; o exemplo
 de Excel carrega o ExcelJS do jsDelivr na hora do clique.
+
+## GIFs do README
+
+Os GIFs de `.github/readme/` saem do próprio site: com `npm run docs:dev`
+rodando, `node docs/record-readme-gifs.mjs [cena...]` (Playwright + `ffmpeg`
+no PATH). As cenas e o recorte ficam no script. O README aponta para eles por
+URL absoluta do raw.githubusercontent (o npm não resolve caminho relativo),
+então só aparecem depois do push.

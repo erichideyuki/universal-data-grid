@@ -13,7 +13,7 @@ Vue or Svelte.
 &nbsp;·&nbsp; [Full API reference](https://github.com/universal-material/data-grid/blob/main/API.md)
 &nbsp;·&nbsp; [GitHub](https://github.com/universal-material/data-grid)
 
-![A <u-grid> grouped by year](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/overview.webp)
+![Grouping by dragging a column header into the group panel](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/grouping.gif)
 
 ---
 
@@ -45,6 +45,16 @@ Vue or Svelte.
 - **Also included:** cell-range selection with copy and paste, column resize, pin, hide, bands and
   responsive auto-hide, a toolbar and context menus, state persistence, and export to CSV, Excel
   and tagged PDF.
+
+## See it in action
+
+| A million rows | Search and filter |
+| --- | --- |
+| ![Scrolling through a million rows, then grouping them by country](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/big-data.gif) | ![Typing in the search panel highlights matches, ignoring case and accents](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/filtering.gif) |
+| **Real-time updates** | **Batch editing** |
+| ![A stock ticker updating prices many times per second](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/real-time.gif) | ![Editing cells in batch mode; changed cells stay marked until saved](https://raw.githubusercontent.com/universal-material/data-grid/main/.github/readme/editing.gif) |
+
+Every GIF is recorded from the [live documentation](https://universal-material.github.io/data-grid/), where you can try each feature yourself.
 
 ## Install
 
