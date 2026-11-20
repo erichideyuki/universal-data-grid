@@ -167,10 +167,10 @@ bundler later and nothing else changes.
 
 | CDN | URL |
 | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.1/dist/grid.min.js` |
-| unpkg | `https://unpkg.com/@universal-material/data-grid@0.1/dist/grid.min.js` |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js` |
+| unpkg | `https://unpkg.com/@universal-material/data-grid@0.2/dist/grid.min.js` |
 
-Pin a version (`@0.1`, `@0.1.0`) in production so a breaking release can't change the page under you (before 1.0, a new minor version may break).
+Pin a version (`@0.2`, `@0.2.0`) in production so a breaking release can't change the page under you (before 1.0, a new minor version may break).
 
 ```html
 <!doctype html>
@@ -182,7 +182,7 @@ Pin a version (`@0.1`, `@0.1.0`) in production so a breaking release can't chang
     <script type="importmap">
       {
         "imports": {
-          "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.1/dist/grid.min.js"
+          "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js"
         }
       }
     </script>
@@ -219,7 +219,12 @@ Notes:
 - **Import map alias** — mapping `@universal-material/data-grid` → the bundle URL lets you write the
   exact same `import` statements as in a bundler/npm setup. If you only need the elements (no named
   exports), you can skip the import map and just load the bundle for its side effects:
-  `<script type="module" src="https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.1/dist/grid.min.js"></script>`.
+  `<script type="module" src="https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js"></script>`.
+- **Templates (`html`)** — the bundle keeps its copy of Lit to itself and does not export `html`.
+  Renderers that return strings or elements need nothing else; for Lit templates, add `lit` (any
+  3.x) to the import map — e.g. `"lit": "https://cdn.jsdelivr.net/npm/lit@3/+esm"` — and
+  `import { html } from 'lit'`. A `TemplateResult` from that copy renders in the grid like one from
+  the bundled copy (bindings, `@click` listeners, row data as text).
 - **Self-hosting** — prefer not to depend on a CDN? After `npm i`, the same file is at
   `@universal-material/data-grid/grid.min.js` (`node_modules/@universal-material/data-grid/dist/grid.min.js`);
   copy it into your `public/`/static folder and point the import map at it.
@@ -3354,7 +3359,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Since 0.1.0: a column without `label` shows its `path` as the header text and uses `path`, then
+In 0.2.0: a column without `label` shows its `path` as the header text and uses `path`, then
 `name`, as its name elsewhere (it was empty); summaries and `treeColumn` find columns inside bands;
 totals of a column hidden by `autoHideColumns` are no longer shown in the last visible column; the
 cell padding longhands win over the old shorthands (the other axis comes from its own longhand or

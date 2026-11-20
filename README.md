@@ -79,7 +79,7 @@ A self-contained bundle (Lit included) is published for CDNs. An import map lets
 <script type="importmap">
   {
     "imports": {
-      "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.1/dist/grid.min.js"
+      "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js"
     }
   }
 </script>
