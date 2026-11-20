@@ -3417,7 +3417,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): `header-wrap` breaks only between words (it used to split words at
+In 0.3.1: `header-wrap` breaks only between words (it used to split words at
 any letter); a word longer than the column ends in an ellipsis, `--u-grid-header-cell-max-lines`
 limits the lines, and a cut default header label shows its full text as a hover tooltip; with
 `column-auto-width`, web fonts that load after the first measure trigger a new measure (a label
