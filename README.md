@@ -2608,7 +2608,8 @@ interface GridI18n {
 ```
 
 `{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}`,
-`{cells}`, `{rows}`, `{columns}`, `{max}`, `{skipped}` and `{shown}` are placeholders filled by the grid (`{order}` with `sortAscending` /
+`{cells}`, `{rows}`, `{columns}`, `{max}`, `{skipped}`, `{shown}`, `{target}`, `{percent}`, `{format}`, `{page}` and
+`{pageCount}` are placeholders filled by the grid (`{order}` with `sortAscending` /
 `sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` and `groupPanelMenu` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
@@ -2636,8 +2637,9 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `columnFixing`     | `column-fixing`       | `boolean` | `true`  | "Pin column ▸" in the column header menu (pin to start/end, unpin). `"false"` removes it; `fixed` columns stay pinned. |
 | `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). With `cell-selection-mode`, the cell menu also opens with the range items. |
 | `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
-| `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`; attribute `"csv xlsx"`). See [Export button](#export-button). |
+| `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`, `'pdf'`; attribute `"csv xlsx pdf"`). See [Export button](#export-button). |
 | `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter(ExcelJS)`). |
+| `pdfExporter`      | *(property only)*     | `GridExporter \| null` | `null` | PDF exporter of the export UI (`createPdfExporter({ fonts })`). See [PDF](#pdf-export-pdf). |
 | `csvExportOptions` | *(property only)*     | `Omit<GridCsvDownloadOptions, 'selectedOnly' \| 'signal'> \| null` | `null` | Options of the CSV exported from the UI. |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
 | `stateStorage`     | `state-storage`       | `'local' \| 'session' \| GridStateStorage \| null` | `null` | Save and restore the user state. See [State persistence](#state-persistence). |

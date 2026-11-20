@@ -16,6 +16,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@universal-material\/data-grid\/export-xlsx$/, replacement: src('export-xlsx/index.ts') },
+      { find: /^@universal-material\/data-grid\/export-pdf$/, replacement: src('export-pdf/index.ts') },
       { find: /^@universal-material\/data-grid$/, replacement: src('grid.ts') },
     ],
   },

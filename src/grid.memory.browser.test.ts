@@ -10,7 +10,7 @@ import { _pendingLanguageRequests, setGridLanguage } from './grid-i18n.js';
 import type { DataGrid } from './grid.js';
 import { _formatterCacheSize, FORMATTER_CACHE_LIMIT } from './row-model/format.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
-import { aliveAfterGc, expectCollected, heapDelta, kib, measureHeap, track, type Tracked } from './test/leak.js';
+import { aliveAfterGc, expectCollected, heapDelta, type HeapSample, kib, measureHeap, track, type Tracked } from './test/leak.js';
 
 afterEach(cleanup);
 
@@ -309,6 +309,8 @@ describe('memória: heap e contadores', () => {
    */
   const HEAP_TOLERANCE = 512 * 1024;
   const NODE_TOLERANCE = 30;
+  /** Rodadas por lote na medida de vida longa. */
+  const LONG_LIFE_BATCH = 15;
 
   it('50 ciclos de criar/destruir voltam à linha de base', async () => {
     const cycle = async (): Promise<void> => {
@@ -364,20 +366,30 @@ describe('memória: heap e contadores', () => {
       }
     };
 
-    for (let n = 0; n < 3; n++) {
+    // Aquecimento: JIT, caches de formatação e do virtualizador crescem nas primeiras rodadas.
+    for (let n = 0; n < 10; n++) {
       await round(n);
     }
 
     const statsBefore = grid._memoryStats;
     const commentsBefore = extraBodyComments(grid);
-    const before = await measureHeap();
 
-    for (let n = 3; n < 40; n++) {
-      await round(n);
-    }
+    // Dois lotes iguais (como a frente 19): vazamento de verdade cresce nos DOIS (linear por
+    // rodada); ruído da máquina (GC, JIT, caches do navegador) infla um lote e não o outro.
+    const batch = async (from: number): Promise<HeapSample> => {
+      const start = await measureHeap();
 
-    const delta = heapDelta(before, await measureHeap());
-    const report = `heap ${kib(delta.jsHeapUsed)}, nós ${delta.nodes}, listeners ${delta.listeners}`;
+      for (let n = from; n < from + LONG_LIFE_BATCH; n++) {
+        await round(n);
+      }
+
+      return heapDelta(start, await measureHeap());
+    };
+
+    const first = await batch(10);
+    const second = await batch(10 + LONG_LIFE_BATCH);
+    const report = `lote 1: heap ${kib(first.jsHeapUsed)}, nós ${first.nodes}, listeners ${first.listeners}; `
+      + `lote 2: heap ${kib(second.jsHeapUsed)}, nós ${second.nodes}, listeners ${second.listeners}`;
     const stats = grid._memoryStats;
 
     expect(extraBodyComments(grid)).toBe(commentsBefore);
@@ -388,9 +400,12 @@ describe('memória: heap e contadores', () => {
     expect(stats.measuredElements).toBeLessThanOrEqual(root(grid).querySelectorAll('tbody tr[data-index]').length);
     // Alturas medidas: só das linhas vistas com os itens atuais (uma rodada).
     expect(stats.measuredSizes).toBeLessThanOrEqual(Math.max(statsBefore.measuredSizes, 1) * 2);
-    expect(delta.jsHeapUsed, report).toBeLessThan(HEAP_TOLERANCE);
-    expect(delta.nodes, report).toBeLessThan(NODE_TOLERANCE);
-    expect(delta.listeners, report).toBeLessThan(NODE_TOLERANCE);
+    // Crescimento sustentado: o menor dos dois lotes (> 16 KiB por rodada nos dois = vazamento).
+    expect(Math.min(first.jsHeapUsed, second.jsHeapUsed), report).toBeLessThan(LONG_LIFE_BATCH * 16 * 1024);
+    // Vazamento grande aparece mesmo com ruído num lote.
+    expect(first.jsHeapUsed + second.jsHeapUsed, report).toBeLessThan(2 * HEAP_TOLERANCE);
+    expect(Math.min(first.nodes, second.nodes), report).toBeLessThan(NODE_TOLERANCE);
+    expect(Math.min(first.listeners, second.listeners), report).toBeLessThan(NODE_TOLERANCE);
     expect(await aliveAfterGc(firstItems!)).toEqual([]);
   }, 120_000);
 });

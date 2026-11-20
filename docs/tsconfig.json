@@ -4,7 +4,8 @@
     "types": ["vite/client"],
     "paths": {
       "@universal-material/data-grid": ["../src/grid.ts"],
-      "@universal-material/data-grid/export-xlsx": ["../src/export-xlsx/index.ts"]
+      "@universal-material/data-grid/export-xlsx": ["../src/export-xlsx/index.ts"],
+      "@universal-material/data-grid/export-pdf": ["../src/export-pdf/index.ts"]
     }
   },
   "include": ["./**/*.ts"],

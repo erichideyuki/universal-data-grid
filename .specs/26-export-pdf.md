@@ -380,6 +380,17 @@ nova; `npm audit --omit=dev` zerado; revisores na entrega.
   botão por "parar" enquanto ele cancela. Checagens de `Tabs`, `OBJR` e
   `ParentTree`↔MCID no PDF lido de volta: com o veraPDF.
 
+### Integração na main (rebase sobre 65ba65c)
+- Exemplo no site (`docs/examples/export/pdf.ts`, fontes Noto em
+  `docs/examples/shared/fonts/`): barra com "Exportar para PDF" e
+  `downloadPdf` com layout, papel, `customizeCell`, `signal` e progresso
+  (sem região viva). O build do site empacota o worker e o `.wasm`.
+- Revisores sobre a integração: o texto de progresso saiu da barra rolável
+  (não entra na medida dos itens) e a assinatura da barra inclui a
+  exportação em curso (o rótulo "Cancelar exportação" é medido de novo).
+- Fatia de serialização do PDF na thread principal: 4 ms (o CSV usa 6):
+  no `test:perf` completo o agrupado de 100 mil passava de 50 ms com 6.
+
 ### Achados dos revisores recusados
 - Chave `exportErrorFontAnnouncement` (a11y): a causa vai no
   `detail.error` e no console; o anúncio curto continua igual aos outros

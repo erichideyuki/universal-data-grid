@@ -84,6 +84,8 @@ const MIN_CONTRAST = 4.5;
 const MARGIN = 36;
 const BATCH_ROWS = 2000;
 const PROGRESS_MS = 250;
+/** Orçamento de uma fatia de serialização na thread principal (ms de relógio). */
+const PDF_SLICE_MS = 4;
 /** Tamanho da fonte do grid quando não há grid (px). */
 const GRID_FONT_PX = 14;
 /** Largura de coluna sem largura conhecida (px), como a regra da spec 21. */
@@ -626,7 +628,9 @@ export const exportPdf = async (source: DataGrid | GridExportData, options: Grid
     count++;
 
     const groupText: string[] = [];
-    const slicer = createSlicer();
+    // fatia menor que a do CSV: a thread principal também recebe os blocos do worker (Blobs,
+    // repasse ao montador) e o GC desses objetos cai nas mesmas tarefas
+    const slicer = createSlicer(PDF_SLICE_MS);
     let next = ctx.rows.next();
 
     while (!next.done) {

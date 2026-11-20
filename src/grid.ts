@@ -16805,6 +16805,13 @@ export class DataGrid extends LitElement {
   }
 
   #exporting: AbortController | null = null;
+  /** "Exportando… N%" (descrição do botão de exportar) quando o exportador informa; senão `''`. */
+  #exportProgressText(): string {
+    return this.#exporting && this.#exportProgress !== null
+      ? formatMessage(this.#translation.exportProgress, { percent: getNumberFormat(this.#textLanguage, { maximumFractionDigits: 0 }).format(this.#exportProgress) })
+      : '';
+  }
+
   /** Início da exportação da interface (o cancelar da interface ignora os primeiros 500 ms). */
   #exportStartedAt = 0;
   /**
@@ -17007,7 +17014,8 @@ export class DataGrid extends LitElement {
 
     this.#toolbarActiveKey = active;
     this.#toolbarActiveIndex = active ? keys.indexOf(active) : 0;
-    this.#toolbarSignature = `${roving.map(entry => entry.key).join()}|${this.#textLanguage}|${status}|${this.#translation === resolveGridTranslation(this.#textLanguage)}`;
+    // a exportação em curso troca o rótulo do botão ("Cancelar exportação"): mede de novo
+    this.#toolbarSignature = `${roving.map(entry => entry.key).join()}|${this.#textLanguage}|${status}|${!!this.#exporting}|${this.#translation === resolveGridTranslation(this.#textLanguage)}`;
 
     const toolbarRole = keys.length >= 2;
     const hostName = this.#hostLabel.name;
@@ -17017,7 +17025,10 @@ export class DataGrid extends LitElement {
         <span hidden id="u-grid-toolbar-host-name" lang=${this.#contentLanguage}>${hostName}</span><span
           hidden
           id="u-grid-toolbar-name"
-          lang=${this.#textLanguage}>${this.#translation.toolbarLabel}</span>
+          lang=${this.#textLanguage}>${this.#translation.toolbarLabel}</span>${this.#exportProgressText()
+          // fora da barra rolável: não entra na medida dos itens
+            ? html`<span hidden id="u-grid-export-progress" lang=${this.#textLanguage}>${this.#exportProgressText()}</span>`
+            : nothing}
         ${map(resolved.leading, entry => this.#renderStandalone(entry))}
         <div
           class="toolbar-roving"
@@ -17136,9 +17147,7 @@ export class DataGrid extends LitElement {
         // Ocupado com um formato só: o botão vira "Cancelar exportação"; com menu, o menu ganha o item.
         const cancels = busy && !!single;
         const label = cancels ? translation.exportCancel : single ? single.label : text;
-        const progress = busy && this.#exportProgress !== null
-          ? formatMessage(translation.exportProgress, { percent: getNumberFormat(this.#textLanguage, { maximumFractionDigits: 0 }).format(this.#exportProgress) })
-          : '';
+        const progress = this.#exportProgressText();
 
         return html`<button
           class="export-button toolbar-button ${withText ? '' : 'icon-only'}"
@@ -17177,9 +17186,7 @@ export class DataGrid extends LitElement {
               event.preventDefault();
               this.#openToolbarMenu('export', event.currentTarget as HTMLElement, event.key === 'ArrowUp');
             }
-          }}>${exportIcon}${withText ? html`<span>${cancels ? translation.exportCancel : text}</span>` : nothing}</button>${progress
-            ? html`<span id="u-grid-export-progress" lang=${lang} hidden>${progress}</span>`
-            : nothing}`;
+          }}>${exportIcon}${withText ? html`<span>${cancels ? translation.exportCancel : text}</span>` : nothing}</button>`;
       }
 
       case 'addRowButton': {
