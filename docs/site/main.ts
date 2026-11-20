@@ -1,4 +1,4 @@
-import '../../docs/index.css';
+import './tokens.css';
 import './site.css';
 
 import { highlight, inline } from './highlight.js';
@@ -26,23 +26,62 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   return node;
 };
 
+// ------------------------------------------------------------------ ícones
+
+/** Ícone da fonte Material Symbols (a mesma do site do Universal Material). */
+const icon = (name: string) => el('span', { className: 'icon', ariaHidden: 'true' }, name);
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+const svg = (viewBox: string, ...paths: Record<string, string>[]) => {
+  const node = document.createElementNS(SVG, 'svg');
+  node.setAttribute('viewBox', viewBox);
+  node.setAttribute('aria-hidden', 'true');
+
+  for (const attributes of paths) {
+    const path = document.createElementNS(SVG, 'path');
+    Object.entries(attributes).forEach(([name, value]) => path.setAttribute(name, value));
+    node.append(path);
+  }
+
+  return node;
+};
+
+// Marca do Universal Material (o "U" do site principal).
+const logo = () => el('span', { className: 'brand-logo' }, svg('0 0 24 24',
+  { d: 'M5 5L5 17C5 19.7614 7.23858 22 10 22L14 22C16.7614 22 19 19.7614 19 17L19 5', stroke: 'white', 'stroke-opacity': '0.4', 'stroke-width': '3', 'stroke-linecap': 'round', fill: 'none' },
+  { d: 'M4 4V16C4 18.7614 6.23858 21 9 21L15 21C17.7614 21 20 18.7614 20 16V6L17 4V16C17 17.1046 16.1046 18 15 18L9 18C7.89543 18 7 17.1046 7 16V4H4Z', fill: 'white' },
+  { d: 'M17 4L20 6L17 8V4Z', fill: 'white', 'fill-opacity': '0.5' }));
+
+const githubMark = () => svg('0 0 24 24', {
+  fill: 'currentColor',
+  d: 'M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-1.93c-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.28-1.67-1.28-1.67-1.04-.72.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.97 10.97 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.73.8 1.18 1.82 1.18 3.08 0 4.42-2.7 5.39-5.27 5.68.41.35.78 1.04.78 2.11v3.13c0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z',
+});
+
 // ------------------------------------------------------------------ tema
 
 const THEME_KEY = 'u-grid-docs-theme';
+const themeButton = el('button', { className: 'icon-button', type: 'button' });
+
 const applyTheme = (theme: string) => {
   document.documentElement.dataset['theme'] = theme;
   document.documentElement.style.colorScheme = theme;
+  const label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+  themeButton.replaceChildren(icon(theme === 'dark' ? 'light_mode' : 'dark_mode'));
+  themeButton.title = label;
+  themeButton.ariaLabel = label;
 };
 
 applyTheme(localStorage.getItem(THEME_KEY) ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 
 // ------------------------------------------------------------------ layout
 
+const API = `${REPO}/blob/main/API.md`;
 const nav = el('nav', { className: 'nav', ariaLabel: 'Documentation' });
 const content = el('main', { className: 'content', id: 'content', tabIndex: -1 });
 const filter = el('input', { type: 'search', className: 'nav-filter', placeholder: 'Filter pages…', ariaLabel: 'Filter pages' });
-const themeButton = el('button', { className: 'icon-button', type: 'button', title: 'Toggle dark theme', ariaLabel: 'Toggle dark theme' }, '◐');
-const menuButton = el('button', { className: 'icon-button menu-button', type: 'button', ariaLabel: 'Menu', ariaExpanded: 'false' }, '☰');
+const menuButton = el('button', { className: 'icon-button menu-button', type: 'button', ariaLabel: 'Menu', ariaExpanded: 'false' }, icon('menu'));
+const scrim = el('div', { className: 'scrim' });
 
 themeButton.addEventListener('click', () => {
   const next = document.documentElement.dataset['theme'] === 'dark' ? 'light' : 'dark';
@@ -50,28 +89,53 @@ themeButton.addEventListener('click', () => {
   applyTheme(next);
 });
 
-menuButton.addEventListener('click', () => {
-  const open = document.body.classList.toggle('nav-open');
+const setMenu = (open: boolean) => {
+  document.body.classList.toggle('nav-open', open);
   menuButton.ariaExpanded = String(open);
-});
+};
+
+menuButton.addEventListener('click', () => setMenu(!document.body.classList.contains('nav-open')));
+scrim.addEventListener('click', () => setMenu(false));
 
 document.body.append(
   el('a', { className: 'skip-link', href: '#content' }, 'Skip to content'),
   el('header', { className: 'topbar' },
     menuButton,
-    el('a', { className: 'brand', href: '#/overview' }, el('span', { className: 'brand-mark' }, 'u'), 'u-grid'),
-    el('span', { className: 'brand-sub' }, '@universal-material/data-grid'),
+    el('a', { className: 'brand', href: '#/overview', ariaLabel: 'Universal Material Data Grid — overview' },
+      logo(),
+      el('span', { className: 'brand-text' },
+        el('span', { className: 'brand-name' }, 'Universal'),
+        el('span', { className: 'brand-name brand-accent' }, 'Material')),
+      el('span', { className: 'brand-product' }, 'Data Grid')),
     el('span', { className: 'spacer' }),
-    el('a', { className: 'top-link', href: `${REPO}#readme`, target: '_blank', rel: 'noopener' }, 'API reference'),
-    el('a', { className: 'top-link', href: REPO, target: '_blank', rel: 'noopener' }, 'GitHub'),
-    themeButton),
-  el('div', { className: 'layout' }, el('aside', { className: 'sidebar' }, filter, nav), content),
+    el('a', { className: 'top-link', href: API, target: '_blank', rel: 'noopener' }, 'API reference'),
+    themeButton,
+    el('a', { className: 'icon-button', href: REPO, target: '_blank', rel: 'noopener', title: 'View on GitHub', ariaLabel: 'View on GitHub' }, githubMark())),
+  el('div', { className: 'layout' },
+    el('aside', { className: 'sidebar' },
+      el('div', { className: 'filter-field' }, icon('search'), filter),
+      nav,
+      el('a', { className: 'sidebar-footer', href: 'https://universal-material.github.io/', target: '_blank', rel: 'noopener' },
+        icon('auto_awesome'),
+        el('span', { className: 'sidebar-footer-text' },
+          el('span', { className: 'sidebar-footer-title' }, 'Universal Material'),
+          el('span', { className: 'sidebar-footer-sub' }, `data-grid v${__GRID_VERSION__} · MIT`)),
+        icon('arrow_outward'))),
+    scrim,
+    content),
 );
 
-// O cliente em "Skip to content" não pode virar rota.
+// O clique em "Skip to content" não pode virar rota.
 document.querySelector('.skip-link')!.addEventListener('click', event => {
   event.preventDefault();
   content.focus();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && document.body.classList.contains('nav-open')) {
+    setMenu(false);
+    menuButton.focus();
+  }
 });
 
 const titles = new Map<string, string>();
@@ -135,11 +199,12 @@ const codeBlock = (source: string) => {
   code.append(highlight(source));
   pre.append(code);
 
-  const copy = el('button', { className: 'copy-button', type: 'button' }, 'Copy');
+  const label = el('span', {}, 'Copy');
+  const copy = el('button', { className: 'copy-button', type: 'button' }, icon('content_copy'), label);
   copy.addEventListener('click', async () => {
     await navigator.clipboard.writeText(source);
-    copy.textContent = 'Copied';
-    setTimeout(() => (copy.textContent = 'Copy'), 1500);
+    label.textContent = 'Copied';
+    setTimeout(() => (label.textContent = 'Copy'), 1500);
   });
 
   return el('div', { className: 'code-wrap' }, copy, pre);
@@ -157,13 +222,14 @@ const exampleCard = async (pageId: string, id: string) => {
   const anchor = `#/${pageId}/${id}`;
   const host = el('div', { className: 'demo' });
   const codeHost = el('div', { className: 'code-host' });
-  const toggle = el('button', { className: 'code-toggle', type: 'button', ariaExpanded: 'false' }, 'Show code');
+  const toggleLabel = el('span', {}, 'Show code');
+  const toggle = el('button', { className: 'code-toggle', type: 'button', ariaExpanded: 'false' }, icon('code'), toggleLabel);
   let codeLoaded = false;
 
   toggle.addEventListener('click', async () => {
     const open = toggle.ariaExpanded !== 'true';
     toggle.ariaExpanded = String(open);
-    toggle.textContent = open ? 'Hide code' : 'Show code';
+    toggleLabel.textContent = open ? 'Hide code' : 'Show code';
 
     if (open && !codeLoaded) {
       codeLoaded = true;
@@ -177,10 +243,11 @@ const exampleCard = async (pageId: string, id: string) => {
   const card = el('section', { className: 'example', id: `${pageId}--${id}` },
     el('h2', {}, el('a', { href: anchor, className: 'anchor' }, module.meta.title)),
     el('p', { className: 'description' }, inline(module.meta.description)),
-    host,
-    el('div', { className: 'example-actions' }, toggle,
-      el('a', { className: 'source-link', href: `${REPO}/blob/main/docs/examples/${pageId}/${id}.ts`, target: '_blank', rel: 'noopener' }, 'Source on GitHub')),
-    codeHost);
+    el('div', { className: 'example-block' },
+      host,
+      el('div', { className: 'example-actions' }, toggle,
+        el('a', { className: 'source-link', href: `${REPO}/blob/main/docs/examples/${pageId}/${id}.ts`, target: '_blank', rel: 'noopener' }, 'Source on GitHub', icon('open_in_new'))),
+      codeHost));
 
   let mounted = false;
 
@@ -236,8 +303,7 @@ const render = async () => {
   const loader = pageModules[pageKey(pageId)];
 
   unmountAll();
-  document.body.classList.remove('nav-open');
-  menuButton.ariaExpanded = 'false';
+  setMenu(false);
 
   nav.querySelectorAll<HTMLAnchorElement>('a').forEach(link => {
     if (link.dataset['page'] === pageId) {
@@ -248,7 +314,8 @@ const render = async () => {
   });
 
   if (!loader) {
-    content.replaceChildren(el('h1', {}, 'Page not found'), el('p', {}, el('a', { href: '#/overview' }, 'Back to the overview')));
+    content.replaceChildren(el('div', { className: 'page' }, el('article', { className: 'article' },
+      el('h1', {}, 'Page not found'), el('p', {}, el('a', { href: '#/overview' }, 'Back to the overview')))));
     return;
   }
 
@@ -267,13 +334,17 @@ const render = async () => {
     el('p', { className: 'intro' }, inline(page.intro)));
 
   if (page.readme) {
-    header.append(el('p', { className: 'readme-link' }, el('a', { href: `${REPO}${page.readme}`, target: '_blank', rel: 'noopener' }, 'Full API in the README →')));
+    header.append(el('p', { className: 'readme-link' },
+      el('a', { href: `${API}${page.readme}`, target: '_blank', rel: 'noopener' }, 'Full API reference', icon('arrow_outward'))));
   }
 
-  const toc = el('nav', { className: 'toc', ariaLabel: 'On this page' }, el('h2', {}, 'On this page'),
+  // Sumário: coluna à direita em telas largas, bloco no topo nas estreitas.
+  const toc = el('nav', { className: 'toc', ariaLabel: 'On this page' }, el('h2', {}, icon('toc'), 'On this page'),
     el('ul', {}, ...cards.map(card => el('li', {}, el('a', { href: `#/${pageId}/${card.id.split('--')[1]}` }, card.querySelector('h2')!.textContent!)))));
 
-  content.replaceChildren(header, ...(cards.length > 1 ? [toc] : []), ...cards, pager(pageId));
+  content.replaceChildren(el('div', { className: 'page' },
+    el('article', { className: 'article' }, header, ...cards, pager(pageId)),
+    ...(cards.length > 1 ? [toc] : [])));
 
   observer = new IntersectionObserver(entries => {
     for (const entry of entries) {
@@ -295,8 +366,8 @@ const pager = (pageId: string) => {
   const next = order[index + 1];
 
   return el('nav', { className: 'pager', ariaLabel: 'Pages' },
-    prev ? el('a', { href: `#/${prev}`, className: 'prev' }, el('small', {}, 'Previous'), titles.get(prev) ?? prev) : el('span'),
-    next ? el('a', { href: `#/${next}`, className: 'next' }, el('small', {}, 'Next'), titles.get(next) ?? next) : el('span'));
+    prev ? el('a', { href: `#/${prev}`, className: 'prev' }, icon('arrow_back'), el('span', {}, el('small', {}, 'Previous'), titles.get(prev) ?? prev)) : el('span'),
+    next ? el('a', { href: `#/${next}`, className: 'next' }, el('span', {}, el('small', {}, 'Next'), titles.get(next) ?? next), icon('arrow_forward')) : el('span'));
 };
 
 window.addEventListener('hashchange', () => void render());

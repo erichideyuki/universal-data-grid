@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "docs:dev"],
       "port": 5174
+    },
+    {
+      "name": "pages",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5175", "--bind", "localhost", "--directory", "../universal-material.github.io"],
+      "port": 5175
     }
   ]
 }

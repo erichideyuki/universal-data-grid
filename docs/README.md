@@ -8,6 +8,7 @@ o que o usuário lê.
 npm run docs:dev      # http://localhost:5174
 npm run docs:build    # gera dist-docs/ (base relativa: serve em qualquer subpasta, ex. GitHub Pages)
 npm run docs:preview  # serve o dist-docs/
+npm run docs:publish  # build + cópia para ../universal-material.github.io/data-grid
 ```
 
 ## Estrutura
@@ -15,7 +16,7 @@ npm run docs:preview  # serve o dist-docs/
 - `site/` — casca: menu (`nav.ts`), rotas por hash (`#/página/exemplo`),
   realce de código, estilos. Os exemplos montam quando chegam perto da tela e
   desmontam ao trocar de página.
-- `pages/<id>.ts` — uma página: título, introdução, âncora do README e a
+- `pages/<id>.ts` — uma página: título, introdução, âncora do `API.md` e a
   lista ordenada de exemplos (`DocPage` em `site/types.ts`).
 - `examples/<página>/<exemplo>.ts` — `export const meta = { title, description };`
   (o site tira esse bloco do código exibido; manter o `};` na coluna 0) e
@@ -34,5 +35,22 @@ npm run docs:preview  # serve o dist-docs/
   (`setGridLanguage`, `setGridTranslation`) devolve a limpeza — o site a chama
   ao sair da página.
 - Nada de `innerHTML`/`unsafeHTML` com dado.
-- API nova entra com exemplo aqui na mesma entrega (além do README).
+- API nova entra com exemplo aqui na mesma entrega (além do `API.md`).
 - `npm run typecheck` cobre o `docs/` (`tsc -p docs`).
+
+## Publicação
+
+O site é publicado em <https://universal-material.github.io/data-grid/>, uma
+subpasta do GitHub Pages do Universal Material (repositório
+`universal-material/universal-material.github.io`, branch `master`, que guarda
+só o site já construído; a raiz é o build Angular de
+`universal-material-web/docs`).
+
+1. `npm run docs:publish` — constrói e copia `dist-docs/` para
+   `../universal-material.github.io/data-grid/` (ou para a pasta passada
+   depois de `--`; o destino é substituído e precisa se chamar `data-grid`).
+2. No repositório do Pages: commit da pasta `data-grid/` e push.
+
+Visual: segue o site do Universal Material (Roboto, Material Symbols, paleta
+padrão em `site/tokens.css`). Fontes e ícones vêm do Google Fonts; o exemplo
+de Excel carrega o ExcelJS do jsDelivr na hora do clique.

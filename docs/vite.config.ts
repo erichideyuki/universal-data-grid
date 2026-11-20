@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 const src = (path: string) => fileURLToPath(new URL(`../src/${path}`, import.meta.url));
 
 /**
@@ -12,7 +14,12 @@ const src = (path: string) => fileURLToPath(new URL(`../src/${path}`, import.met
  */
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
+  // Base relativa: o build funciona em qualquer subpasta (no GitHub Pages do
+  // Universal Material ele fica em /data-grid/).
   base: './',
+  define: {
+    __GRID_VERSION__: JSON.stringify(version),
+  },
   resolve: {
     alias: [
       { find: /^@universal-material\/data-grid\/export-xlsx$/, replacement: src('export-xlsx/index.ts') },

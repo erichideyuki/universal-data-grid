@@ -14,7 +14,7 @@ export interface DocPage {
   title: string;
   /** Uma ou duas frases no topo da página. */
   intro: string;
-  /** Âncora da seção no README (`#sorting`). */
+  /** Âncora da seção no API.md, a referência completa (`#sorting`). */
   readme?: string;
   /** Ids dos exemplos, na ordem (arquivos em `docs/examples/<página>/`). */
   examples: readonly string[];
