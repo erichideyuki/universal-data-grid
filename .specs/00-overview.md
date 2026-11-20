@@ -67,4 +67,4 @@ chave — nunca pelo índice (causa do B1).
 - Teclado e leitor de tela cobrem o recurso (sem gesto só de mouse).
 - 100 mil linhas no demo continuam rolando sem travar (medir no DevTools:
   nenhum frame longo > 50 ms ao rolar).
-- README + `custom-elements.json` atualizados.
+- `API.md` + `custom-elements.json` atualizados.

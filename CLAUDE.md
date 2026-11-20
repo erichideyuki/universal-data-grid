@@ -12,8 +12,11 @@ reordenação por arrasto (`interactjs`), i18n por Lit context e SSR
 - **Specs**: `.specs/NN-*.md` — uma por frente. `00-overview.md` tem as
   convenções; `01-foundation.md` é a fase 0 (obrigatória antes das outras);
   `90-audit.md` é a auditoria de bugs e segurança.
-- **README.md**: vitrine pública e referência da API, em inglês. API nova
-  entra lá na mesma entrega.
+- **README.md**: vitrine pública (página do npm e do GitHub), em inglês e
+  curta: o que é, destaques, instalação, início rápido, links. Links sempre
+  absolutos (o npm quebra links relativos).
+- **API.md**: guia completo e referência da API, em inglês (era o corpo do
+  README). API nova entra lá na mesma entrega.
 - **Site de documentação**: `docs/` (`npm run docs:dev`), um exemplo ao vivo
   por recurso; regras em `docs/README.md`. Recurso novo ganha exemplo lá na
   mesma entrega.

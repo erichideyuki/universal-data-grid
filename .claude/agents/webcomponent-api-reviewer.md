@@ -27,7 +27,7 @@ Uma de duas:
   `GridColumnDef` e tipos exportados; `src/grid-i18n.ts` — i18n exportado.
 - `src/grid.styles.ts` — custom properties e `part=`; `src/render/` — onde
   os `part` e as classes aparecem.
-- `README.md` (referência pública), `custom-elements.json` (CEM),
+- `API.md` (referência pública; o `README.md` é só a vitrine), `custom-elements.json` (CEM),
   `package.json` (`exports`, `types`), `.specs/00-overview.md` (convenções),
   `.specs/15-api-review.md` (decisões de nomenclatura já tomadas — siga-as).
 
@@ -76,7 +76,7 @@ Uma de duas:
 10. **Compatibilidade**: renomeação = novo nome + alias antigo com aviso de
     deprecação no console uma vez por instância (`.specs/00-overview.md`),
     `@deprecated` no JSDoc e no CEM, remoção só numa major.
-11. **Docs**: README e `custom-elements.json` batem com o código (nome,
+11. **Docs**: `API.md` e `custom-elements.json` batem com o código (nome,
     atributo, tipo, padrão, eventos, parts, custom properties); JSDoc em
     inglês na API pública (vira o CEM).
 12. **Frameworks**: React 19 (propriedades vs atributos, eventos com hífen

@@ -1,6 +1,6 @@
 {
   "name": "@universal-material/data-grid",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A high-performance data grid Web Component (<u-grid>) built with Lit: row virtualization, drag-and-drop grouping, column reordering, custom cells, SSR and i18n.",
   "keywords": [
     "web-components",
@@ -14,7 +14,7 @@
     "universal-material",
     "material-design"
   ],
-  "homepage": "https://github.com/universal-material/data-grid#readme",
+  "homepage": "https://universal-material.github.io/data-grid/",
   "bugs": {
     "url": "https://github.com/universal-material/data-grid/issues"
   },
@@ -72,6 +72,7 @@
     "docs:dev": "vite --config docs/vite.config.ts",
     "docs:build": "vite build --config docs/vite.config.ts",
     "docs:preview": "vite preview --config docs/vite.config.ts",
+    "docs:publish": "npm run docs:build && node docs/publish.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p src && node -e \"require('fs').copyFileSync('src/export-pdf/grid-pdf.wasm','dist/export-pdf/grid-pdf.wasm')\"",
     "build:pdf": "cargo build --manifest-path pdf/Cargo.toml --release --lib --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('pdf/target/wasm32-unknown-unknown/release/grid_pdf.wasm','src/export-pdf/grid-pdf.wasm')\"",
