@@ -167,10 +167,10 @@ bundler later and nothing else changes.
 
 | CDN | URL |
 | --- | --- |
-| jsDelivr | `https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js` |
-| unpkg | `https://unpkg.com/@universal-material/data-grid@0.2/dist/grid.min.js` |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/grid.min.js` |
+| unpkg | `https://unpkg.com/@universal-material/data-grid@0.3/dist/grid.min.js` |
 
-Pin a version (`@0.2`, `@0.2.0`) in production so a breaking release can't change the page under you (before 1.0, a new minor version may break).
+Pin a version (`@0.3`, `@0.3.0`) in production so a breaking release can't change the page under you (before 1.0, a new minor version may break).
 
 ```html
 <!doctype html>
@@ -182,7 +182,7 @@ Pin a version (`@0.2`, `@0.2.0`) in production so a breaking release can't chang
     <script type="importmap">
       {
         "imports": {
-          "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js"
+          "@universal-material/data-grid": "https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/grid.min.js"
         }
       }
     </script>
@@ -219,7 +219,7 @@ Notes:
 - **Import map alias** — mapping `@universal-material/data-grid` → the bundle URL lets you write the
   exact same `import` statements as in a bundler/npm setup. If you only need the elements (no named
   exports), you can skip the import map and just load the bundle for its side effects:
-  `<script type="module" src="https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.2/dist/grid.min.js"></script>`.
+  `<script type="module" src="https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/grid.min.js"></script>`.
 - **Templates (`html`)** — the bundle keeps its copy of Lit to itself and does not export `html`.
   Renderers that return strings or elements need nothing else; for Lit templates, add `lit` (any
   3.x) to the import map — e.g. `"lit": "https://cdn.jsdelivr.net/npm/lit@3/+esm"` — and
@@ -3416,12 +3416,12 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): computed columns (a `valueGetter` and a `name`, no `path`) are
+In 0.3.0: computed columns (a `valueGetter` and a `name`, no `path`) are
 filterable by default — they get a filter row editor and a header filter button, and the search
 also matches their displayed text (set `filterable: false` to keep the old behavior); a computed
 column without `label` shows its `name` as the header text instead of an empty header.
 
-Also in the next release: the bar has `8px` between its items (`--u-grid-toolbar-gap`; host content
+Also in 0.3.0: the bar has `8px` between its items (`--u-grid-toolbar-gap`; host content
 no longer touches the group panel), and the search panel and host content lost their own `8px`
 start margin; the column chooser icon is `24px`; the header "⋮" and filter buttons sit side by side
 and reach into the end padding up to the resize handle (about `10px` more for the label); the group
