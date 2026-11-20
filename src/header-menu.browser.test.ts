@@ -204,10 +204,10 @@ describe('layout do cabeçalho pelo alinhamento lógico', () => {
     expect(start.sort.left).toBeGreaterThanOrEqual(start.text.right - 1);
     expect(start.filter.left).toBeGreaterThan(start.sort.right + 20);
     expect(start.menu.left).toBeGreaterThanOrEqual(start.filter.right - 1);
-    // ⋮ na ponta do fim, no limite do padding (16px); a alça fica só sobre o padding.
+    // ⋮ na ponta do fim, avançando sobre o padding até a alça (8px); a alça fica só sobre o resto do padding.
     const handle = headerCell(grid, 'Name').querySelector('.resize-handle')!.getBoundingClientRect();
-    expect(start.menu.right).toBeLessThanOrEqual(start.cell.right - 16 + 0.5);
-    expect(start.menu.right).toBeGreaterThan(start.cell.right - 16 - 4);
+    expect(start.menu.right).toBeLessThanOrEqual(start.cell.right - 8 + 0.5);
+    expect(start.menu.right).toBeGreaterThan(start.cell.right - 8 - 4);
     expect(handle.left).toBeGreaterThanOrEqual(start.menu.right - 0.5);
     expect(Math.round(start.menu.width)).toBe(24);
     expect(Math.round(start.filter.width)).toBe(24);
@@ -225,7 +225,7 @@ describe('layout do cabeçalho pelo alinhamento lógico', () => {
 
     expect(start.sort.right).toBeLessThanOrEqual(start.text.left + 1);
     expect(start.menu.right).toBeLessThanOrEqual(start.filter.left + 1);
-    expect(start.menu.left).toBeGreaterThanOrEqual(start.cell.left + 16 - 0.5);
+    expect(start.menu.left).toBeGreaterThanOrEqual(start.cell.left + 8 - 0.5);
 
     const end = positions(grid, 'Age');
     expect(end.menu.left).toBeGreaterThanOrEqual(end.filter.right - 1);
@@ -776,5 +776,53 @@ describe('seletor de colunas como o do AG Grid', () => {
     grid.openColumnChooser();
     await settle(grid);
     expect(await axeRun(grid)).toEqual([]);
+  });
+});
+
+// Relato de uso (0.2.0): "Versão" virava "Ver…" numa coluna de 110px com funil e "⋮".
+describe('espaço dos botões do cabeçalho', () => {
+  it('funil e ⋮ juntos e sobre o padding do fim, sem cobrir a alça; o rótulo ganha o espaço', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'v', label: 'Versão', width: 110 },
+        { path: 'n', label: 'Número', width: 110, dataType: 'number' },
+        { path: 'x', label: 'X' },
+      ],
+      items: [{ v: 'a', n: 1, x: 1 }],
+      configure: g => {
+        g.headerFilter = true;
+        g.columnResizing = true;
+      },
+    });
+    const [start, end] = [...grid.shadowRoot!.querySelectorAll<HTMLElement>('th.header-column')];
+
+    const box = (th: HTMLElement, selector: string) => {
+      const cell = th.getBoundingClientRect();
+      const rect = th.querySelector(selector)!.getBoundingClientRect();
+      return { left: Math.round(rect.left - cell.left), right: Math.round(rect.right - cell.left), width: Math.round(rect.width) };
+    };
+
+    // Alvos de 24px (WCAG 2.5.8) lado a lado; o "⋮" termina onde começa a alça (8px do fim).
+    const funnel = box(start, '.header-filter-button');
+    const button = box(start, '.column-header-menu-button');
+    const handle = box(start, '.resize-handle');
+
+    expect([funnel.width, button.width]).toEqual([24, 24]);
+    expect(funnel.right).toBe(button.left);
+    expect(button.right).toBe(handle.left);
+    expect(handle.right).toBe(110);
+    // 110 − 16 (padding do começo) − 4 (espaço até os botões) − 48 − 8 (alça) = 34 (era 24).
+    expect(box(start, '.header-text').width).toBe(34);
+
+    // Alinhada no fim: os botões vão para o começo e avançam o mesmo sobre o padding.
+    expect(box(end, '.column-header-menu-button').left).toBe(8);
+
+    // RTL: espelhado — o "⋮" termina (à esquerda) onde começa a alça.
+    grid.dir = 'rtl';
+    await settle(grid);
+    const [rtlStart, rtlEnd] = [...grid.shadowRoot!.querySelectorAll<HTMLElement>('th.header-column')];
+    expect(box(rtlStart, '.column-header-menu-button').left).toBe(box(rtlStart, '.resize-handle').right);
+    expect(box(rtlStart, '.resize-handle').left).toBe(0);
+    expect(110 - box(rtlEnd, '.column-header-menu-button').right).toBe(8);
   });
 });

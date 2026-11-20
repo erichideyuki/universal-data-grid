@@ -629,3 +629,87 @@ describe('com ordenação (frente 03)', () => {
     expect(grid.getSorting().map(s => s.column.label)).toEqual(['Name']);
   });
 });
+
+// Rótulos longos (colunas de documento do pivô): quebrar em várias linhas em vez de reticências.
+describe('headerWrap', () => {
+  const longLabel = 'Documento de treinamento obrigatório';
+  const items = Array.from({ length: 40 }, (_, i) => ({ a: `a${i}`, b: `b${i}`, c: '' }));
+  const header = (grid: DataGrid, index: number) => grid.shadowRoot!.querySelectorAll<HTMLElement>('th.header-column')[index];
+
+  const truncated = (th: HTMLElement) => {
+    const text = th.querySelector<HTMLElement>('.header-text')!;
+    return text.scrollWidth > text.clientWidth;
+  };
+
+  it('quebra o rótulo e o cabeçalho cresce; a coluna pode desligar; auto-size mede numa linha', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: longLabel, width: 110 }, { path: 'b', label: longLabel, width: 110, headerWrap: false }, { path: 'c', label: 'C' }],
+      items,
+      configure: g => g.headerWrap = true,
+    });
+
+    expect(header(grid, 0).classList.contains('header-wrap')).toBe(true);
+    expect(truncated(header(grid, 0))).toBe(false);
+    const wrapped = header(grid, 0).getBoundingClientRect().height;
+    expect(wrapped).toBeGreaterThan(60);
+    expect(header(grid, 1).classList.contains('header-wrap')).toBe(false);
+    expect(truncated(header(grid, 1))).toBe(true);
+
+    // Auto-size: largura do rótulo inteiro numa linha (não encolhe até a maior palavra).
+    grid.autoSizeColumn(grid.columns[0]);
+    await settle(grid);
+    expect(truncated(header(grid, 0))).toBe(false);
+    expect(header(grid, 0).querySelector('.header-text')!.getClientRects().length).toBe(1);
+    // Uma linha só: a altura da linha do cabeçalho volta à das outras colunas.
+    expect(header(grid, 0).getBoundingClientRect().height).toBeLessThan(wrapped);
+  });
+
+  it('<u-grid-column header-wrap> e header-wrap="false" contra o padrão do grid', async () => {
+    const grid = document.createElement('u-grid');
+    grid.style.cssText = 'display:block;height:300px';
+    grid.setAttribute('header-wrap', '');
+    grid.innerHTML = `<u-grid-column path="a" width="110">${longLabel}</u-grid-column>`
+      + `<u-grid-column path="b" width="110" header-wrap="false">${longLabel}</u-grid-column><u-grid-column path="c">C</u-grid-column>`;
+    grid.items = items;
+    document.body.append(grid);
+    await settle(grid);
+
+    expect(grid.headerWrap).toBe(true);
+    expect(truncated(header(grid, 0))).toBe(false);
+    expect(truncated(header(grid, 1))).toBe(true);
+  });
+
+  it('cabeçalho alto demais (> 50% da altura visível) deixa de grudar; foco não fica sob ele', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: `${longLabel} ${longLabel} ${longLabel}`, width: 90 }, { path: 'b', label: 'B', width: 90 }],
+      items,
+      height: '320px',
+      configure: g => g.headerWrap = true,
+    });
+    const container = grid.shadowRoot!.querySelector('.container')!;
+    const thead = grid.shadowRoot!.querySelector('thead')!;
+
+    expect(thead.getBoundingClientRect().height).toBeGreaterThan(160);
+    expect(container.classList.contains('header-rows-scroll')).toBe(true);
+    expect(getComputedStyle(thead).position).toBe('static');
+
+    // O cabeçalho solto não conta como área coberta: PageDown anda uma página de verdade (APG).
+    grid.focusCell(items[0], 'b');
+    await settle(grid);
+    const activeRow = () => Number((grid.shadowRoot!.activeElement as HTMLElement).closest('tr')!.getAttribute('aria-rowindex'));
+    const before = activeRow();
+    await userEvent.keyboard('{PageDown}');
+    await settle(grid);
+    expect(activeRow() - before).toBeGreaterThanOrEqual(4);
+
+    // Grid mais alto: volta a grudar, e a célula focada fica abaixo do cabeçalho.
+    grid.style.height = '900px';
+    await settle(grid);
+    await settle(grid);
+    expect(container.classList.contains('header-rows-scroll')).toBe(false);
+    grid.focusCell(items[30], 'b');
+    await settle(grid);
+    const cell = grid.shadowRoot!.activeElement as HTMLElement;
+    expect(cell.getBoundingClientRect().top).toBeGreaterThanOrEqual(Math.floor(thead.getBoundingClientRect().bottom));
+  });
+});

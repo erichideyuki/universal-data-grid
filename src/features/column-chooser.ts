@@ -96,7 +96,7 @@ const dragHandle = html`
   </svg>`;
 
 export const columnChooserIcon = html`
-  <svg xmlns="http://www.w3.org/2000/svg" height="1em" width="1em" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true">
+  <svg xmlns="http://www.w3.org/2000/svg" height="24" width="24" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true">
     <path d="M3 5h18v14H3zM5 7v10h3.5V7zm5.5 0v10h3V7zm5 0v10H19V7z"/>
   </svg>`;
 

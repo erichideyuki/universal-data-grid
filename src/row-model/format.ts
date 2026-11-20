@@ -279,7 +279,7 @@ export const formatCellValue = (
  */
 export const booleanIconValue = (value: unknown, column: GridColumnDef, context: FormatContext): boolean | undefined => {
 
-  if (column.booleanDisplay !== 'icon' || context.dataType !== 'boolean' || column.displayValue || typeof column.format === 'function') {
+  if ((column.booleanDisplay !== 'icon' && column.booleanDisplay !== 'check') || context.dataType !== 'boolean' || column.displayValue || typeof column.format === 'function') {
     return undefined;
   }
 

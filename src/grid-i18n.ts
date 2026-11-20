@@ -515,7 +515,7 @@ export const DEFAULT_GRID_LANGUAGE = 'en';
 export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.create(null) as Record<string, GridI18n>, {
   en: {
     noData: 'No data',
-    dragToGroup: 'Drag a column header here, or press Ctrl+G on a header, to group by it',
+    dragToGroup: 'Drag a column header here, or press Ctrl+G on one, to group',
     groupLabelSeparator: ': ',
     sortAscending: 'ascending',
     sortDescending: 'descending',
@@ -730,7 +730,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   es: {
     noData: 'Sin datos',
-    dragToGroup: 'Arrastre aquí el encabezado de una columna, o pulse Ctrl+G en un encabezado, para agrupar',
+    dragToGroup: 'Arrastre un encabezado aquí o pulse Ctrl+G en él para agrupar',
     groupLabelSeparator: ': ',
     sortAscending: 'ascendente',
     sortDescending: 'descendente',
@@ -945,7 +945,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   pt: {
     noData: 'Sem dados',
-    dragToGroup: 'Arraste o cabeçalho de uma coluna aqui, ou pressione Ctrl+G num cabeçalho, para agrupar',
+    dragToGroup: 'Arraste um cabeçalho aqui ou pressione Ctrl+G nele para agrupar',
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
@@ -1160,7 +1160,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   fr: {
     noData: 'Aucune donnée',
-    dragToGroup: 'Faites glisser l’en-tête d’une colonne ici, ou appuyez sur Ctrl+G sur un en-tête, pour regrouper',
+    dragToGroup: 'Glissez un en-tête ici ou appuyez sur Ctrl+G dessus pour regrouper',
     groupLabelSeparator: ' : ',
     sortAscending: 'croissant',
     sortDescending: 'décroissant',
@@ -1375,7 +1375,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   de: {
     noData: 'Keine Daten',
-    dragToGroup: 'Ziehen Sie eine Spaltenüberschrift hierher oder drücken Sie Strg+G auf einer Überschrift, um zu gruppieren',
+    dragToGroup: 'Spaltenüberschrift hierher ziehen oder Strg+G darauf drücken, um zu gruppieren',
     groupLabelSeparator: ': ',
     sortAscending: 'aufsteigend',
     sortDescending: 'absteigend',
@@ -1590,7 +1590,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   it: {
     noData: 'Nessun dato',
-    dragToGroup: 'Trascina qui l’intestazione di una colonna, o premi Ctrl+G su un’intestazione, per raggruppare',
+    dragToGroup: 'Trascina qui un’intestazione o premi Ctrl+G su di essa per raggruppare',
     groupLabelSeparator: ': ',
     sortAscending: 'crescente',
     sortDescending: 'decrescente',
@@ -1805,7 +1805,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   nl: {
     noData: 'Geen gegevens',
-    dragToGroup: 'Sleep een kolomkop hierheen, of druk op Ctrl+G op een kolomkop, om te groeperen',
+    dragToGroup: 'Sleep een kolomkop hierheen of druk erop op Ctrl+G om te groeperen',
     groupLabelSeparator: ': ',
     sortAscending: 'oplopend',
     sortDescending: 'aflopend',
@@ -2020,7 +2020,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   ru: {
     noData: 'Нет данных',
-    dragToGroup: 'Перетащите сюда заголовок столбца или нажмите Ctrl+G на заголовке для группировки',
+    dragToGroup: 'Перетащите сюда заголовок или нажмите на нём Ctrl+G для группировки',
     groupLabelSeparator: ': ',
     sortAscending: 'по возрастанию',
     sortDescending: 'по убыванию',
@@ -2235,7 +2235,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   pl: {
     noData: 'Brak danych',
-    dragToGroup: 'Przeciągnij tutaj nagłówek kolumny lub naciśnij Ctrl+G na nagłówku, aby pogrupować',
+    dragToGroup: 'Przeciągnij tu nagłówek lub naciśnij na nim Ctrl+G, aby pogrupować',
     groupLabelSeparator: ': ',
     sortAscending: 'rosnąco',
     sortDescending: 'malejąco',
@@ -2450,7 +2450,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   tr: {
     noData: 'Veri yok',
-    dragToGroup: 'Gruplamak için bir sütun başlığını buraya sürükleyin veya bir başlıkta Ctrl+G tuşlarına basın',
+    dragToGroup: 'Gruplamak için bir başlığı buraya sürükleyin veya üzerinde Ctrl+G’ye basın',
     groupLabelSeparator: ': ',
     sortAscending: 'artan',
     sortDescending: 'azalan',
@@ -2665,7 +2665,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   ja: {
     noData: 'データがありません',
-    dragToGroup: '列ヘッダーをここにドラッグするか、ヘッダーで Ctrl+G を押してグループ化します',
+    dragToGroup: '列ヘッダーをここにドラッグするか、ヘッダーで Ctrl+G を押してグループ化',
     groupLabelSeparator: '：',
     sortAscending: '昇順',
     sortDescending: '降順',
@@ -2880,7 +2880,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   ko: {
     noData: '데이터 없음',
-    dragToGroup: '열 머리글을 여기로 끌거나 머리글에서 Ctrl+G를 눌러 그룹화하세요',
+    dragToGroup: '머리글을 여기로 끌거나 머리글에서 Ctrl+G를 눌러 그룹화',
     groupLabelSeparator: ': ',
     sortAscending: '오름차순',
     sortDescending: '내림차순',
@@ -3095,7 +3095,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   zh: {
     noData: '无数据',
-    dragToGroup: '将列标题拖到此处，或在列标题上按 Ctrl+G 进行分组',
+    dragToGroup: '将列标题拖到此处，或在列标题上按 Ctrl+G 分组',
     groupLabelSeparator: '：',
     sortAscending: '升序',
     sortDescending: '降序',
@@ -3310,7 +3310,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
   },
   ar: {
     noData: 'لا توجد بيانات',
-    dragToGroup: 'اسحب عنوان عمود إلى هنا، أو اضغط Ctrl+G على عنوان، للتجميع حسبه',
+    dragToGroup: 'اسحب عنوانًا إلى هنا أو اضغط Ctrl+G عليه للتجميع',
     groupLabelSeparator: ': ',
     sortAscending: 'تصاعدي',
     sortDescending: 'تنازلي',

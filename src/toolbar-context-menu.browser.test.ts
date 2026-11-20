@@ -871,3 +871,26 @@ describe('ajustes aprovados depois da entrega', () => {
     expect((await axe.run(grid, { resultTypes: ['violations'] })).violations.map(v => v.id)).toEqual([]);
   });
 });
+
+// Relato de uso (0.2.0): conteúdo do hospedeiro colado no painel de grupos; ícone do seletor pequeno.
+describe('espaço e ícones da barra', () => {
+  it('gap entre os itens (--u-grid-toolbar-gap) e ícone de 24px no seletor de colunas', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: 'A' }],
+      items: [{ a: 1 }],
+      configure: g => {
+        g.columnChooser = true;
+        g.toolbarItems = ['groupPanel', { renderer: () => html`<span class="app-chip">Chip</span>`, location: 'start' }, 'columnChooserButton'];
+      },
+    });
+    const rect = (selector: string) => grid.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+    const gap = () => Math.round(rect('.group-container').left - rect('.app-chip').right);
+
+    expect(gap()).toBe(8);
+    expect(rect('.column-chooser-button svg').width).toBe(24);
+
+    grid.style.setProperty('--u-grid-toolbar-gap', '20px');
+    await settle(grid);
+    expect(gap()).toBe(20);
+  });
+});

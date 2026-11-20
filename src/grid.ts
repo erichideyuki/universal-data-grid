@@ -232,6 +232,7 @@ import {
 import {
   ancestorsOf,
   buildColumnTree,
+  booleanTexts,
   buildHeaderRows,
   type ColumnTree,
   columnText,
@@ -1532,6 +1533,9 @@ interface RowRenderEntry {
   dead: boolean;
 }
 
+/** Linhas de esqueleto do `loading` antes de medir a altura (servidor e 1º render). */
+const LOADING_PLACEHOLDER_ROWS = 10;
+
 /** `rowRenderer` que já lançou ou devolveu valor inválido (um `console.error` por função). */
 const reportedRowRenderers = new WeakSet();
 
@@ -1612,7 +1616,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-toolbar-padding - Padding of the bar. Default `8px 16px`.
  * @cssprop --u-grid-toolbar-block-padding - Block padding of the bar. Default `8px`.
  * @cssprop --u-grid-toolbar-inline-padding - Inline padding of the bar. Default: the cell inline padding.
- * @cssprop --u-grid-header-cell-height - Height of the column header cells. Default `46px`.
+ * @cssprop --u-grid-toolbar-gap - Space between the bar items and between its lines (a `gap` value). Default `8px`. A change at runtime applies at the next toolbar layout (resize or item change).
+ * @cssprop --u-grid-header-cell-height - Minimum height of the column header cells (rows with `header-wrap` grow). Default `46px`.
  * @cssprop --u-grid-header-cell-padding - Header cell padding.
  * @cssprop --u-grid-header-cell-font-size - Header cell font size. Default `0.8125rem`.
  * @cssprop --u-grid-header-cell-font-weight - Header cell font weight.
@@ -1647,8 +1652,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-sort-indicator-size - Size of the sort arrow. Default `1.125em`.
  * @cssprop --u-grid-drop-indicator-color - Drag-and-drop drop indicator color.
  * @cssprop --u-grid-drop-indicator-width - Drop indicator thickness. Default `3px`.
- * @cssprop --u-grid-resize-handle-width - Invisible resize hit area at the end of each header cell (over the end padding, capped to it; the cursor changes on hover). Default `8px`.
- * @cssprop --u-grid-column-header-menu-button-size - Size of the "⋮" column header menu button and of the header filter button. Default `24px` (WCAG 2.5.8).
+ * @cssprop --u-grid-resize-handle-width - Invisible resize area at the end of each header cell, over its end padding (the header buttons reach up to it). Default `8px`.
+ * @cssprop --u-grid-column-header-menu-button-size - Size of the header "⋮" and filter buttons, side by side. Default `24px` (WCAG 2.5.8; below it, add spacing).
  * @cssprop --u-grid-resize-handle-color - Color of the separator shown at the column edge while dragging to resize. Default: `--u-grid-drop-indicator-color`.
  * @cssprop --u-grid-fixed-shadow-color - Shadow at the edge of fixed columns while scrolling.
  * @cssprop --u-grid-column-chooser-background-color - Column chooser background.
@@ -1664,7 +1669,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @cssprop --u-grid-header-filter-background-color - Header filter popover background.
  * @cssprop --u-grid-header-filter-shape - Header filter popover corner radius. Default `12px`.
  * @cssprop --u-grid-load-panel-background-color - Background of the load panel.
- * @cssprop --u-grid-skeleton-row-color - Color of the placeholders in rows still loading.
+ * @cssprop --u-grid-skeleton-row-color - Color of the placeholders in rows still loading (remote rows, or `loading` with no rows).
  * @cssprop --u-grid-pager-height - Minimum height of the pager. Default `56px`.
  * @cssprop --u-grid-modified-cell-background-color - Background of edited, unsaved cells (`editMode="batch"`). Default: primary color at 10%.
  * @cssprop --u-grid-modified-cell-indicator-color - Corner mark of edited, unsaved cells (not shown by color alone). Default: primary color.
@@ -1687,7 +1692,7 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart cell - Data cells (`<td>`).
  * @csspart selection-cell - Cells and header of the selection checkbox column.
  * @csspart selection-checkbox - The selection checkboxes (rows and "select all").
- * @csspart no-data - The cell rendered in the empty state.
+ * @csspart no-data - The cell rendered in the empty state, or the "Loading…" cell while `loading` has no rows.
  * @csspart header-cell - Column header cells (`<th>`), bands included.
  * @csspart band-header-cell - Band header cells (multi-level headers); they also match `header-cell`.
  * @csspart sort-indicator - The sort arrow (and priority number) in headers and group chips.
@@ -1743,8 +1748,8 @@ type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } |
  * @csspart pager-button - Pager buttons (first, previous, page numbers, next, last).
  * @csspart page-size-select - The page size `<select>` of the pager.
  * @csspart page-info - The "Page x of y (n items)" text of the pager.
- * @csspart load-panel - The load panel shown while a data source loads.
- * @csspart skeleton-row - Rows of a remote source not loaded yet (with `row`).
+ * @csspart load-panel - The load panel shown while a data source loads or `loading` is set (with rows).
+ * @csspart skeleton-row - Rows of a remote source not loaded yet (with `row`), or placeholder rows while `loading` has no rows.
  * @csspart error-row - The bar shown when the data source failed.
  * @csspart retry-button - The "Retry" button of the error bar.
  * @csspart search-highlight - Search matches (`<mark>`) in native cells (not in `renderer` cells).
@@ -1804,6 +1809,29 @@ export class DataGrid extends LitElement {
    * the translated "No data" text.
    */
   @property({ attribute: false }) noDataRenderer: GridNoDataRenderer | null = null;
+
+  /**
+   * Shows the grid as loading, for `items` you are still fetching. With rows
+   * on screen, the load panel (`::part(load-panel)`) covers them; with no rows
+   * yet, a "Loading…" row and placeholder rows (`::part(skeleton-row)`) take
+   * the place of the empty state (`noDataRenderer` is not called). Placeholder
+   * rows are never data: not exported, selected, counted or focusable by API.
+   * Does not fire `u-grid-loading`/`u-grid-load`; with `dataSource`, it adds
+   * to the source's own loading state (the getter returns only what you set).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false) }) loading = false;
+
+  /**
+   * Wraps the column header labels in several lines instead of an ellipsis
+   * (the header row grows; `--u-grid-header-cell-height` is its minimum). A
+   * column's `headerWrap` wins. Auto-size measures the label in one line. If
+   * the toolbar and the headers take more than half of the visible height,
+   * the headers stop sticking (WCAG 2.4.11).
+   */
+  @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'header-wrap' }) headerWrap = false;
+
+  /** Linhas de esqueleto do `loading` sem linhas: fixo no servidor e no 1º render (hidratação); depois, o que cabe. */
+  #placeholderRows = LOADING_PLACEHOLDER_ROWS;
 
   /**
    * Builds the detail of a row (master-detail; property only). With it, a
@@ -2145,6 +2173,8 @@ export class DataGrid extends LitElement {
   #flushTimer: ReturnType<typeof setTimeout> | undefined;
   #loadingTimer: ReturnType<typeof setTimeout> | undefined;
   #loadingAnnounced = false;
+  /** O "Carregando…" anunciado veio do \`loading\` (o fim é anunciado; a espera do estado não). */
+  #loadingByProperty = false;
   readonly #warnedColumns = new Set<string>();
 
   /** Fonte remota com linhas sob demanda (paginação ou agrupamento no servidor). */
@@ -4992,7 +5022,8 @@ export class DataGrid extends LitElement {
     const observer = this.#resizeObserver;
     const wanted = new Set<Element>();
 
-    if (table && observer && (this.#fixedTopItems.length || this.#fixedBottomItems.length)) {
+    if (table && observer && (this.#fixedTopItems.length || this.#fixedBottomItems.length || this.#anyHeaderWrap)) {
+      // Rótulos que quebram linha: a altura do cabeçalho muda sem o host mudar (zoom de texto, largura).
       for (const element of [table.tHead, table.tFoot, ...table.querySelectorAll(':scope > tbody.fixed-rows')]) {
         if (element) {
           wanted.add(element);
@@ -5040,8 +5071,11 @@ export class DataGrid extends LitElement {
     const height = port ? port.clientHeight : scroller.clientHeight;
     const covered = toolbar + head + foot + (top?.offsetHeight ?? 0) + (bottom?.offsetHeight ?? 0) + inset.top + inset.bottom;
     const sticky = !(top || bottom) || covered <= height * 0.5 || !height;
+    // Rótulos quebrados: barra + cabeçalho acima da metade da altura visível deixam de grudar (WCAG 2.4.11).
+    const headerSticky = !this.#anyHeaderWrap || toolbar + head + inset.top <= height * 0.5 || !height;
 
-    container.style.setProperty('--_fixed-top-offset', `${toolbar + head}px`);
+    container.classList.toggle('header-rows-scroll', !headerSticky);
+    container.style.setProperty('--_fixed-top-offset', `${headerSticky ? toolbar + head : toolbar}px`);
     container.style.setProperty('--_fixed-bottom-offset', `${foot}px`);
 
     if (sticky !== this.#stickyFixed) {
@@ -6030,7 +6064,7 @@ export class DataGrid extends LitElement {
   }
 
   #summaryValue({ item, spec }: ResolvedSummary, value: unknown): GridSummaryValue {
-    return { item, value: value ?? null, text: formatSummaryValue(value, spec, item.format, this.#summaryFormatContext) };
+    return { item, value: value ?? null, text: formatSummaryValue(value, spec, item.format, this.#summaryFormatContext(spec.column)) };
   }
 
   #findGroup(groupPath: GridGroupPath): GroupNode | undefined {
@@ -9797,9 +9831,20 @@ export class DataGrid extends LitElement {
     if (kind === 'boolean') {
       const value = text.trim().toLowerCase();
       const translation = this.#translation;
+      const own = booleanTexts(column, translation);
 
       if (!value) {
         return null;
+      }
+
+      // Aceita o texto da coluna e o do idioma (a cópia gera o da coluna); os da coluna primeiro:
+      // um `falseText: 'Sim'` não pode virar `true` pelo `trueText` do idioma.
+      if (value === own.trueText.toLowerCase()) {
+        return true;
+      }
+
+      if (value === own.falseText.toLowerCase()) {
+        return false;
       }
 
       if (['true', '1', 'yes', '✓', translation.trueText.toLowerCase()].includes(value)) {
@@ -11365,6 +11410,21 @@ export class DataGrid extends LitElement {
     return changed;
   }
 
+  /** Linhas de esqueleto que cabem abaixo do cabeçalho (uma a menos: a linha "Carregando…"). */
+  #measurePlaceholderRows(scroller: HTMLElement): void {
+    const body = scroller.querySelector<HTMLElement>('tbody.body-rows');
+
+    if (!body || this.#scrollPort.port) {
+      return;
+    }
+
+    const top = body.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    const footer = scroller.querySelector<HTMLElement>('tfoot')?.offsetHeight ?? 0;
+    const fits = Math.floor((scroller.clientHeight - top - footer) / this.rowHeight) - 1;
+
+    this.#placeholderRows = Math.min(20, Math.max(1, fits));
+  }
+
   #observeScrollContainer(): void {
     const scroller = this._scrollContainerRef.value;
 
@@ -11384,6 +11444,7 @@ export class DataGrid extends LitElement {
         // Largura visível: o conteúdo do detalhe e da linha inteira não passa dela (WCAG 1.4.10).
         // No contêiner: o \`style\` do \`.scroll-container\` é do template (o render o sobrescreve).
         this.#layoutRef.value?.style.setProperty('--_fill-inline-size', `${width}px`);
+        this.#measurePlaceholderRows(scroller);
 
         // Porta externa (spec 27): a parte visível, medida na rolagem.
         if (this.#scrollPort.port) {
@@ -11400,6 +11461,8 @@ export class DataGrid extends LitElement {
 
       if (this.#observedFixedSections.size) {
         this.#syncFixedRows();
+        // Cabeçalho mais alto (rótulos quebrados): a margem de revelar o foco acompanha (WCAG 2.4.11).
+        this.#syncRevealMargins();
       }
     });
 
@@ -11625,7 +11688,7 @@ export class DataGrid extends LitElement {
         insetInlineStart: side === 'start' ? `${offsets[index]}px` : undefined,
         insetInlineEnd: side === 'end' ? `${offsets[index]}px` : undefined,
       };
-      const truncate = !column.wrap && !column.renderer && column.booleanDisplay !== 'icon';
+      const truncate = !column.wrap && !column.renderer && column.booleanDisplay !== 'icon' && column.booleanDisplay !== 'check';
       const bounds = this._boundsOf(column);
       const resizable = this.#isResizable(column) && (!nextColumnMode || !!this._resizeNeighbor(column));
 
@@ -12235,21 +12298,38 @@ export class DataGrid extends LitElement {
     this.#loadingAnnounced = false;
   }
 
-  /** Esperando o estado sem fonte de dados: "Carregando…" aos 300 ms, uma vez (com fonte, `#afterRenderLoad` cuida). */
+  /**
+   * Esperando o estado ou com `loading`, sem fonte de dados: "Carregando…"
+   * aos 300 ms, uma vez (com fonte, `#afterRenderLoad` cuida). Ao terminar
+   * uma carga anunciada, diz quantas linhas vieram (ou "sem dados"): quem
+   * ouviu o começo fica sabendo do fim (WCAG 4.1.3).
+   */
   #announceStateLoading(): void {
     if (this.#dataSource) {
       return;
     }
 
-    if (!this.#stateWaiting) {
+    const waiting = this.#stateWaiting || this.loading;
+
+    if (!waiting) {
       clearTimeout(this.#loadingTimer);
       this.#loadingTimer = undefined;
+      // Só o \`loading\` anuncia o fim (a espera do estado salvo segue como antes: limpa e pronto).
+      const announced = this.#loadingAnnounced && this.#loadingByProperty;
+      this.#loadingByProperty = false;
       this.#clearLoadingAnnouncement();
+
+      if (announced) {
+        this.#announce(this.#rows.length
+          ? formatMessage(this.#translation.filteredAnnouncement, { count: String(this.#totalCount) })
+          : this.#translation.noData);
+      }
     } else if (!this.#loadingTimer && !this.#loadingAnnounced && this.isConnected) {
       this.#loadingTimer = setTimeout(() => {
         this.#loadingTimer = undefined;
 
-        if (this.#stateWaiting) {
+        if (this.#stateWaiting || this.loading) {
+          this.#loadingByProperty = this.loading;
           this.#loadingAnnounced = true;
           this.#announce(this.#translation.loading);
         }
@@ -12518,7 +12598,7 @@ export class DataGrid extends LitElement {
     const columns = [...this._regularColumns, ...this._groupColumns];
     const known = new Set(columns);
     const contexts = new Map<GridColumnDef, FormatContext>();
-    const { trueText, falseText } = this.#translation;
+    const translation = this.#translation;
     const language = this.language;
     const dataTypeOf = (column: GridColumnDef) => known.has(column)
       ? this.#dataTypeOf(column)
@@ -12528,7 +12608,7 @@ export class DataGrid extends LitElement {
       let context = contexts.get(column);
 
       if (!context) {
-        context = { language, dataType: dataTypeOf(column), trueText, falseText };
+        context = { language, dataType: dataTypeOf(column), ...booleanTexts(column, translation) };
         contexts.set(column, context);
       }
 
@@ -12754,9 +12834,7 @@ export class DataGrid extends LitElement {
   }
 
   #formatContext(column: GridColumnDef): FormatContext {
-    const { trueText, falseText } = this.#translation;
-
-    return { language: this.language, dataType: this.#dataTypeOf(column), trueText, falseText };
+    return { language: this.language, dataType: this.#dataTypeOf(column), ...booleanTexts(column, this.#translation) };
   }
 
   #groupValueText(row: Pick<GroupRow, 'column' | 'value' | 'firstItem'>): string {
@@ -12785,10 +12863,9 @@ export class DataGrid extends LitElement {
 
   // ---------------------------------------------------------------- resumos
 
-  get #summaryFormatContext(): SummaryFormatContext {
-    const { trueText, falseText } = this.#translation;
-
-    return { language: this.language, trueText, falseText };
+  /** Contexto dos resumos; os textos de `true`/`false` são os da coluna do resumo. */
+  #summaryFormatContext(column: GridColumnDef | undefined): SummaryFormatContext {
+    return { language: this.language, ...booleanTexts(column, this.#translation) };
   }
 
   #summaryTypeName(item: GridSummaryItem): string | undefined {
@@ -12817,7 +12894,7 @@ export class DataGrid extends LitElement {
   /** Texto da célula (`"Sum: 1,234"`) e rótulo completo (`"Sum of Population: 1,234"`). */
   #summaryText({ item, spec }: ResolvedSummary, value: unknown): SummaryText {
     const translation = this.#translation;
-    const valueText = formatSummaryValue(value, spec, item.format, this.#summaryFormatContext);
+    const valueText = formatSummaryValue(value, spec, item.format, this.#summaryFormatContext(spec.column));
     const type = this.#summaryTypeName(item);
     const column = spec.column ? columnText(spec.column) : '';
     const text = type ? formatMessage(translation.summaryText, { type, value: valueText }) : valueText;
@@ -13968,7 +14045,10 @@ export class DataGrid extends LitElement {
     const toolbar = root.querySelector<HTMLElement>('.header');
 
     // Com a barra, o cabeçalho prende logo abaixo dela (\`.header + table thead\`); as fixas do topo, abaixo dele.
-    return (thead?.offsetHeight ?? 0) + (toolbar?.offsetHeight ?? 0) + this.#fixedHeight('top');
+    // Cabeçalho alto demais (\`headerWrap\`, regra dos 50%): ele rola com o conteúdo e não cobre nada.
+    const head = this._containerRef.value?.classList.contains('header-rows-scroll') ? 0 : thead?.offsetHeight ?? 0;
+
+    return head + (toolbar?.offsetHeight ?? 0) + this.#fixedHeight('top');
   }
 
   /** Altura do rodapé de totais e das fixas do fundo (presos no fim da rolagem). */
@@ -15145,10 +15225,10 @@ export class DataGrid extends LitElement {
             class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}
             role=${this._groupColumns.length || this.#treeOn ? 'treegrid' : 'grid'}
             aria-label=${ifDefined(this.#hostLabel.name || undefined)}
-            aria-rowcount="${waiting || this.#unknownRowCount ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
+            aria-rowcount="${waiting || this.#unknownRowCount || this.#loadingPlaceholders ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
             aria-colcount="${navColumns.length}"
             aria-multiselectable=${ifDefined(selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined)}
-            aria-busy=${ifDefined(waiting || (this.#isLoading && !this.#reshapeLoading) || this.#filtering.pending ? 'true' : undefined)}
+            aria-busy=${ifDefined(waiting || (this.#isLoading && !this.#reshapeLoading) || this.#filtering.pending || this.#loadingPlaceholders ? 'true' : undefined)}
             ${ref(this.#tableRef)}
             @pointerover=${this.#updateCellHint}
             @keydown=${this.#onGridKeyDown}
@@ -15493,8 +15573,12 @@ export class DataGrid extends LitElement {
 
     return renderHeaderCell({
       column,
-      // Cabeçalho multinível: a folha que fecha a última posição não leva a linha do fim (é a borda do grid).
-      classes: header.start + header.span === cells.length ? { ...cell.headerClasses, 'last-column': true } : cell.headerClasses,
+      classes: {
+        ...cell.headerClasses,
+        // Cabeçalho multinível: a folha que fecha a última posição não leva a linha do fim (é a borda do grid).
+        'last-column': header.start + header.span === cells.length,
+        'header-wrap': this.#wrapsHeader(column),
+      },
       styles: cell.headerStyles,
       colIndex: cell.col + 1,
       tabIndex: active === column ? 0 : -1,
@@ -15756,6 +15840,45 @@ export class DataGrid extends LitElement {
       }}>${named?.parts ?? nothing}</div>`;
   }
 
+  /** Rótulo do cabeçalho quebra linha: o da coluna ou o padrão do grid. */
+  #wrapsHeader(column: GridColumnDef): boolean {
+    return column.headerWrap ?? this.headerWrap;
+  }
+
+  /** Alguma coluna visível quebra o rótulo: o cabeçalho tem altura variável (observado). */
+  get #anyHeaderWrap(): boolean {
+    return this.headerWrap || this._visibleColumns.some(column => column.headerWrap);
+  }
+
+  /** `loading` sem linhas: a contagem de linhas fica desconhecida e o esqueleto é só visual. */
+  get #loadingPlaceholders(): boolean {
+    return this.loading && !this.#rows.length && !this.#waitingForState;
+  }
+
+  /**
+   * Linha do estado vazio: "sem dados" ou, com `loading`, "Carregando…" e
+   * linhas de esqueleto só visuais (`aria-hidden`, sem papel nem foco; spec
+   * 17), no lugar do que caberia na tela. Um template só: ao terminar a carga
+   * o mesmo `<td>` fica e só o conteúdo muda.
+   */
+  #renderEmptyRow(layout: ColumnLayout[]) {
+    const columns = Math.max(this.#totalColumns(layout), 1);
+    const loading = this.loading;
+
+    return html`
+      <tr role="row" class=${loading ? 'no-data-row loading-row' : 'no-data-row'}>
+        <td role="gridcell" part="no-data" lang=${ifDefined(this.noDataRenderer && !loading ? undefined : this.#textLanguage)} colspan="${columns}">${loading
+          ? this.#translation.loading
+          : this.noDataRenderer ? this.#renderNoDataContent(this.noDataRenderer) : this.#translation.noData}</td>
+      </tr>
+      ${loading
+        ? map(Array.from({ length: this.#placeholderRows }), () => html`
+        <tr class="skeleton-row loading-placeholder" part="row skeleton-row" aria-hidden="true">
+          ${map(Array.from({ length: columns }), () => html`<td><span class="skeleton"></span></td>`)}
+        </tr>`)
+        : nothing}`;
+  }
+
   #renderBody(window: VirtualWindow, headerRows: number, layout: ColumnLayout[]) {
 
     if (!this.#rows.length) {
@@ -15764,13 +15887,7 @@ export class DataGrid extends LitElement {
         return nothing;
       }
 
-      return html`
-        <tr role="row" class="no-data-row">
-          <td role="gridcell" part="no-data" lang=${ifDefined(this.noDataRenderer ? undefined : this.#textLanguage)} colspan="${Math.max(this.#totalColumns(layout), 1)}">${this.noDataRenderer
-            ? this.#renderNoDataContent(this.noDataRenderer)
-            : this.#translation.noData}</td>
-        </tr>
-      `;
+      return this.#renderEmptyRow(layout);
     }
 
     // As linhas ficam no fluxo da tabela, uma após a outra, depois de uma
@@ -15862,8 +15979,10 @@ export class DataGrid extends LitElement {
   /** Painel de carregamento (consulta inteira) e barra de erro com "tentar de novo". */
   #renderLoadState() {
     const waiting = this.#waitingForState;
+    // `loading` com linhas na tela: o painel por cima, sem `aria-busy` (as células seguem legíveis).
+    const localLoading = this.loading && this.#rows.length > 0;
 
-    if (!this.#dataSource && !waiting) {
+    if (!this.#dataSource && !waiting && !localLoading) {
       return nothing;
     }
 
@@ -15871,7 +15990,7 @@ export class DataGrid extends LitElement {
     const failure = this.#dataSource ? this.#loader.error : undefined;
 
     return html`
-      ${waiting || this.#isLoading
+      ${waiting || this.#isLoading || localLoading
         ? html`<div class="load-panel" part="load-panel" aria-hidden=${ifDefined(waiting ? undefined : 'true')}>
           <span class="load-spinner" aria-hidden="true"></span><span>${translation.loading}</span>
         </div>`
@@ -16973,7 +17092,7 @@ export class DataGrid extends LitElement {
     return rendererContent({
       host: this,
       slotName: `u-grid-internal:group:${row.key}`,
-      deps: [row.groupKey, column, renderer, this.#renderEpoch(), row.value, row.expanded, row.itemCount, row.summaries, defaultText],
+      deps: [row.groupKey, column, renderer, this.#renderEpoch(), row.value, row.expanded, row.itemCount, row.summaries, defaultText, row.firstItem],
       renderer,
       invoke: signal => renderer.call(column, {
         column,
@@ -16983,6 +17102,7 @@ export class DataGrid extends LitElement {
         groupIndex: row.level,
         itemCount: row.itemCount,
         expanded: row.expanded,
+        firstItem: row.firstItem,
         get summaries() {
           return summaries();
         },

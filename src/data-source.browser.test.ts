@@ -810,3 +810,67 @@ describe('acessibilidade de esqueleto e detalhe juntos', () => {
     expect(grid.focusedRowKey).toBe(1999);
   });
 });
+
+// Relato de uso (0.2.0): `items` locais sem estado de carregamento (o app simulava com uma fonte que nunca resolve).
+describe('loading com items locais', () => {
+  const status = (grid: DataGrid) => root(grid).querySelector('[role=status]')!.textContent.trim();
+  const loadColumns = (): GridColumnDef[] => [{ path: 'name', label: 'Name' }, { path: 'n', label: 'N' }];
+
+  it('sem linhas: linha "Loading…" + esqueleto só visual; contagem desconhecida; fim anunciado', async () => {
+    const noData = vi.fn(() => 'nothing');
+    const grid = await createGrid({
+      columns: loadColumns(),
+      items: [],
+      configure: g => {
+        g.language = 'en';
+        g.loading = true;
+        g.noDataRenderer = noData;
+      },
+    });
+    const table = root(grid).querySelector('[role=grid]')!;
+    const message = root(grid).querySelector('tr.loading-row td[role=gridcell]')!;
+    const placeholders = [...root(grid).querySelectorAll('tr.loading-placeholder')];
+
+    expect(message.textContent.trim()).toBe('Loading…');
+    expect(placeholders.length).toBeGreaterThan(0);
+    expect(placeholders.every(tr => tr.getAttribute('aria-hidden') === 'true' && !tr.hasAttribute('role') && !tr.querySelector('[tabindex]'))).toBe(true);
+    expect(table.getAttribute('aria-rowcount')).toBe('-1');
+    expect(table.getAttribute('aria-busy')).toBe('true');
+    expect(noData).not.toHaveBeenCalled();
+    expect(root(grid).querySelector('[part~="load-panel"]')).toBeNull();
+    // Esqueleto não é dado.
+    expect((await grid.getExportData()).rows).toEqual([]);
+
+    const { default: axe } = await import('axe-core');
+    const result = await axe.run(grid as unknown as Element);
+    expect(result.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+
+    // "Carregando…" aos 300 ms; ao terminar, quantas linhas vieram.
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await settle(grid);
+    expect(status(grid)).toBe('Loading…');
+
+    grid.items = [{ name: 'a', n: 1 }, { name: 'b', n: 2 }, { name: 'c', n: 3 }];
+    grid.loading = false;
+    await settle(grid);
+    expect(dataRows(grid)).toHaveLength(3);
+    expect(root(grid).querySelector('tr.loading-placeholder')).toBeNull();
+    expect(table.getAttribute('aria-busy')).toBeNull();
+    expect(status(grid)).toBe('Rows: 3');
+  });
+
+  it('com linhas na tela: o painel por cima, sem aria-busy; o atributo liga e desliga', async () => {
+    const grid = await createGrid({ columns: loadColumns(), items: [{ name: 'a', n: 1 }] });
+
+    grid.setAttribute('loading', '');
+    await settle(grid);
+    expect(grid.loading).toBe(true);
+    expect(root(grid).querySelector('[part~="load-panel"]')).not.toBeNull();
+    expect(root(grid).querySelector('[role=grid]')!.hasAttribute('aria-busy')).toBe(false);
+    expect(dataRows(grid)).toHaveLength(1);
+
+    grid.removeAttribute('loading');
+    await settle(grid);
+    expect(root(grid).querySelector('[part~="load-panel"]')).toBeNull();
+  });
+});

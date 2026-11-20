@@ -11,7 +11,7 @@ import type {
   GridFilterOperation,
 } from '../grid-column-def.js';
 import type { GridI18n } from '../grid-i18n.js';
-import { columnText } from '../row-model/columns.js';
+import { booleanTexts, columnText } from '../row-model/columns.js';
 import { type ColumnFilterKind, findColumnCondition } from '../row-model/filter.js';
 import { toDate } from '../row-model/format.js';
 import { Debouncer, searchIcon } from './search.js';
@@ -502,8 +502,10 @@ export interface FilterCellContext {
 const inputType = (dataType: GridColumnDataType | undefined): 'number' | 'date' | 'text' =>
   dataType === 'number' ? 'number' : dataType === 'date' || dataType === 'datetime' ? 'date' : 'text';
 
-const booleanValueText = (text: string, translation: GridI18n): string =>
-  text === 'true' ? translation.trueText : text === 'false' ? translation.falseText : translation.filterAll;
+const booleanValueText = (text: string, translation: GridI18n, column: GridColumnDef): string => {
+  const { trueText, falseText } = booleanTexts(column, translation);
+  return text === 'true' ? trueText : text === 'false' ? falseText : translation.filterAll;
+};
 
 /** Célula da linha de filtro: botão de operação + editor(es) pelo `dataType`. */
 export const renderFilterCell = ({
@@ -552,7 +554,7 @@ export const renderFilterCell = ({
   if (dataType === 'boolean') {
     // Botão de menu (APG Menu Button) no lugar do <select> nativo, que não
     // aceita estilo (tema escuro, altura): o valor é um menuitemradio.
-    const valueText = booleanValueText(texts[0] ?? '', translation);
+    const valueText = booleanValueText(texts[0] ?? '', translation, column);
 
     editors = html`
       <button
@@ -633,7 +635,7 @@ export const renderFilterMenu = (
             aria-checked=${text === value ? 'true' : 'false'}
             @click=${() => controller.selectValue(column, text)}>
             <span class="filter-menu-glyph" aria-hidden="true">${text === value ? '✓' : ''}</span>
-            <span>${booleanValueText(text, translation)}</span>
+            <span>${booleanValueText(text, translation, column)}</span>
           </button>`)}
       </div>`;
   }

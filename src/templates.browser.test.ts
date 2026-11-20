@@ -255,6 +255,22 @@ describe('headerRenderer, groupRenderer e noDataRenderer', () => {
     expect(root(grid).querySelector('.grouping-cell .g')!.textContent).toBe('T0|2|0|false|Team: T0 (2)');
   });
 
+  it('linha de grupo: ctx.firstItem é o 1º item do grupo na ordem atual', async () => {
+    const columns: GridColumnDef<Person>[] = [
+      { path: 'team', label: 'Team', groupIndex: 0, groupRenderer: ctx => html`<span class="g">${ctx.text}:${ctx.firstItem?.name}</span>` },
+      { path: 'name', label: 'Name' },
+    ];
+    const grid = await createGrid({ columns, items: people(6) });
+    const labels = () => [...root(grid).querySelectorAll('.grouping-cell .g')].map(span => span.textContent);
+
+    expect(labels()).toEqual(['T0:Name 0', 'T1:Name 1', 'T2:Name 2']);
+
+    // A ordem dentro do grupo muda o 1º item (e o renderer roda de novo).
+    grid.sortColumn(columns[1], 'desc');
+    await settle(grid);
+    expect(labels()).toEqual(['T0:Name 3', 'T1:Name 4', 'T2:Name 5']);
+  });
+
   it('vazio: conteúdo próprio e `filtered`', async () => {
     const grid = await createGrid({
       columns: [{ path: 'name', label: 'Name' }],

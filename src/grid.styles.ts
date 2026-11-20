@@ -857,6 +857,28 @@ export const styles = css`
   }
 
   /* Auto-ajuste (medição): o conteúdo no tamanho natural, sem a sobra entre o texto e os botões. */
+  /* \`headerWrap\`: o rótulo quebra linha e a linha do cabeçalho cresce (WCAG 1.4.12, sem corte). */
+  .header-column.header-wrap {
+    white-space: normal;
+  }
+
+  .header-column.header-wrap > .header-content > .header-text {
+    white-space: normal;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    text-overflow: clip;
+  }
+
+  /* Auto-size mede o rótulo numa linha só (como o DevExtreme): senão a coluna encolhe até a maior palavra. */
+  .header-column.measuring > .header-content > .header-text {
+    white-space: nowrap;
+  }
+
+  /* Barra + cabeçalho acima da metade da altura visível: o cabeçalho rola com o conteúdo. */
+  .header-rows-scroll thead:where(.grid-table > *) {
+    position: static;
+  }
+
   .header-column.measuring > .header-content {
     display: inline-flex;
     width: max-content;
@@ -868,17 +890,24 @@ export const styles = css`
     min-width: 0;
   }
 
+  /*
+   * Funil e "⋮" lado a lado, sem espaço entre os alvos (cada um já tem 24px,
+   * WCAG 2.5.8), e avançando sobre o padding do fim até a alça de
+   * redimensionar (que fica sobre esse padding): ~10px a mais para o rótulo.
+   */
   .header-buttons {
     display: flex;
     flex: none;
     align-items: center;
-    gap: 2px;
+    gap: 0;
     margin-inline-start: auto;
+    margin-inline-end: calc(min(var(--_resize-handle-width), var(--_cell-inline-padding)) - var(--_cell-inline-padding));
   }
 
+  /* Botões no começo: o mesmo avanço sobre o padding do começo (lá não há alça). */
   .header-column.align-end .header-buttons {
     flex-direction: row-reverse;
-    margin-inline: 0 auto;
+    margin-inline: calc(min(var(--_resize-handle-width), var(--_cell-inline-padding)) - var(--_cell-inline-padding)) auto;
   }
 
   /* Centro: texto e seta no meio do espaço que sobra antes dos botões. */
@@ -1027,7 +1056,8 @@ export const styles = css`
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px 0;
+    /* Entre itens e entre linhas da barra (o conteúdo do hospedeiro não encosta no painel de grupos). */
+    gap: var(--u-grid-toolbar-gap, 8px);
     padding: var(--_header-padding);
     /* \`--u-grid-toolbar-height\` é a altura mínima: a barra cresce ao quebrar linha. */
     min-height: var(--_header-height);
@@ -1086,7 +1116,7 @@ export const styles = css`
     flex: 1 1 200px;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: var(--u-grid-toolbar-gap, 8px);
     min-width: min(200px, 100%);
   }
 
@@ -1094,7 +1124,6 @@ export const styles = css`
     display: flex;
     align-items: center;
     flex: none;
-    margin-inline-start: 8px;
   }
 
   .toolbar-button {
@@ -1553,7 +1582,6 @@ export const styles = css`
     gap: 8px;
     min-width: 120px;
     height: 40px;
-    margin-inline-start: 8px;
     padding-inline: 12px;
     border-radius: 20px;
     background-color: color-mix(in srgb, currentColor 6%, transparent);

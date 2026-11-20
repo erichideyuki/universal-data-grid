@@ -340,6 +340,64 @@ describe('booleanDisplay: icon', () => {
   });
 });
 
+describe('booleanDisplay: check e textos por coluna', () => {
+  it('check: ✓ no verdadeiro, falso sem nada visível e com o texto para o leitor de tela', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Name' },
+        { path: 'ok', label: 'OK', booleanDisplay: 'check', trueText: 'Sim', falseText: 'Não' },
+      ],
+      items: [{ name: 'a', ok: true }, { name: 'b', ok: false }],
+      configure: g => g.language = 'pt',
+    });
+    const [yes, no] = dataRows(grid).map(tr => tr.cells[1]);
+
+    expect(yes.querySelector('[role=img]')!.getAttribute('aria-label')).toBe('Sim');
+    expect(yes.querySelector('svg path')).not.toBeNull();
+    expect(no.querySelector('svg')).toBeNull();
+    // O texto existe, mas fora da tela (visualmente escondido): a célula não é lida como vazia.
+    const hidden = no.querySelector<HTMLElement>('.visually-hidden')!;
+    expect(hidden.textContent).toBe('Não');
+    expect(hidden.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+
+    const { default: axe } = await import('axe-core');
+    const result = await axe.run(grid as unknown as Element);
+    expect(result.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+
+    // Cópia/exportação seguem o texto.
+    const data = await grid.getExportData();
+    expect(data.rows.map(row => row.rowType === 'data' ? row.texts[1] : null)).toEqual(['Sim', 'Não']);
+  });
+
+  it('trueText/falseText da coluna em texto, grupo, filtro e colar; vazio cai no idioma', async () => {
+    const columns: GridColumnDef[] = [
+      { path: 'ok', label: 'Ativo', dataType: 'boolean', trueText: 'Ativo', falseText: 'Inativo', groupIndex: 0 },
+      { path: 'flag', label: 'Flag', dataType: 'boolean', trueText: '', falseText: null },
+      { path: 'name', label: 'Name' },
+    ];
+    const grid = await createGrid({
+      columns,
+      items: [{ name: 'a', ok: true, flag: true }, { name: 'b', ok: false, flag: false }],
+      configure: g => {
+        g.language = 'pt';
+        g.autoExpandGroups = true;
+      },
+    });
+
+    expect(groupLabels(grid)).toEqual(['Ativo: Inativo', 'Ativo: Ativo']);
+    expect(dataRows(grid).map(tr => cellText(tr.cells[1]))).toEqual(['Falso', 'Verdadeiro']);
+
+    // <u-grid-column true-text/false-text>
+    const element = document.createElement('u-grid');
+    element.style.cssText = 'display:block;height:200px';
+    element.innerHTML = '<u-grid-column path="ok" type="boolean" true-text="Sim" false-text="Não">OK</u-grid-column>';
+    element.items = [{ ok: true }, { ok: false }];
+    document.body.append(element);
+    await settle(element);
+    expect(dataRows(element).map(tr => cellText(tr.cells[0]))).toEqual(['Sim', 'Não']);
+  });
+});
+
 describe('memória (spec 14)', () => {
   it('grid com ícone booleano, trocas de idioma/direção/modo e removido é coletado', async () => {
     const scenario = async (): Promise<Tracked> => {

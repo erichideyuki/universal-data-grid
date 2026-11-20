@@ -160,11 +160,30 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** Displayed text (cell and group row); wins over `format` (property only). */
   @property({ attribute: false }) displayValue: ((value: unknown, item: any) => string) | null = null;
 
-  /** `text` (default) or `icon` (read-only check icon) for boolean columns. */
+  /**
+   * `text` (default), `icon` (read-only check/cross icon) or `check` (check
+   * icon for `true`, nothing visible for `false`) for boolean columns.
+   */
   @property({ attribute: 'boolean-display' }) booleanDisplay: GridColumnBooleanDisplay | null = null;
+
+  /**
+   * Text of `true` in this boolean column (cell, icon name, group row, filters,
+   * copy/paste, summaries, export). Empty or unset: the language's `trueText`;
+   * a fixed text, it does not follow `language`.
+   */
+  @property({ attribute: 'true-text' }) trueText: string | null = null;
+
+  /** Text of `false` in this boolean column, like `trueText`. Empty or unset: the language's `falseText`. */
+  @property({ attribute: 'false-text' }) falseText: string | null = null;
 
   /** Wraps the text in several lines instead of an ellipsis (`wrap="false"` turns it off). */
   @property({ type: Boolean, converter: booleanAttribute(false) }) wrap = false;
+
+  /**
+   * Wraps the header label in several lines (`header-wrap`); `header-wrap="false"`
+   * turns off the grid's `header-wrap` for this column. Unset: the grid's.
+   */
+  @property({ converter: optionalBoolean, attribute: 'header-wrap' }) headerWrap: boolean | null = null;
 
   /** Minimum width in px (also when resizing and auto-sizing). */
   @property({ type: Number, attribute: 'min-width' }) minWidth: number | null = null;

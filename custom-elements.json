@@ -57,7 +57,11 @@
               "name": "--u-grid-toolbar-inline-padding"
             },
             {
-              "description": "Height of the column header cells. Default `46px`.",
+              "description": "Space between the bar items and between its lines (a `gap` value). Default `8px`. A change at runtime applies at the next toolbar layout (resize or item change).",
+              "name": "--u-grid-toolbar-gap"
+            },
+            {
+              "description": "Minimum height of the column header cells (rows with `header-wrap` grow). Default `46px`.",
               "name": "--u-grid-header-cell-height"
             },
             {
@@ -197,11 +201,11 @@
               "name": "--u-grid-drop-indicator-width"
             },
             {
-              "description": "Invisible resize hit area at the end of each header cell (over the end padding, capped to it; the cursor changes on hover). Default `8px`.",
+              "description": "Invisible resize area at the end of each header cell, over its end padding (the header buttons reach up to it). Default `8px`.",
               "name": "--u-grid-resize-handle-width"
             },
             {
-              "description": "Size of the \"⋮\" column header menu button and of the header filter button. Default `24px` (WCAG 2.5.8).",
+              "description": "Size of the header \"⋮\" and filter buttons, side by side. Default `24px` (WCAG 2.5.8; below it, add spacing).",
               "name": "--u-grid-column-header-menu-button-size"
             },
             {
@@ -265,7 +269,7 @@
               "name": "--u-grid-load-panel-background-color"
             },
             {
-              "description": "Color of the placeholders in rows still loading.",
+              "description": "Color of the placeholders in rows still loading (remote rows, or `loading` with no rows).",
               "name": "--u-grid-skeleton-row-color"
             },
             {
@@ -355,7 +359,7 @@
               "name": "selection-checkbox"
             },
             {
-              "description": "The cell rendered in the empty state.",
+              "description": "The cell rendered in the empty state, or the \"Loading…\" cell while `loading` has no rows.",
               "name": "no-data"
             },
             {
@@ -579,11 +583,11 @@
               "name": "page-info"
             },
             {
-              "description": "The load panel shown while a data source loads.",
+              "description": "The load panel shown while a data source loads or `loading` is set (with rows).",
               "name": "load-panel"
             },
             {
-              "description": "Rows of a remote source not loaded yet (with `row`).",
+              "description": "Rows of a remote source not loaded yet (with `row`), or placeholder rows while `loading` has no rows.",
               "name": "skeleton-row"
             },
             {
@@ -684,6 +688,26 @@
               },
               "default": "null",
               "description": "Builds the empty state (property only) shown when there are no rows to\nshow; `ctx.filtered` tells a filter/search hid every item. Without it,\nthe translated \"No data\" text."
+            },
+            {
+              "kind": "field",
+              "name": "loading",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the grid as loading, for `items` you are still fetching. With rows\non screen, the load panel (`::part(load-panel)`) covers them; with no rows\nyet, a \"Loading…\" row and placeholder rows (`::part(skeleton-row)`) take\nthe place of the empty state (`noDataRenderer` is not called). Placeholder\nrows are never data: not exported, selected, counted or focusable by API.\nDoes not fire `u-grid-loading`/`u-grid-load`; with `dataSource`, it adds\nto the source's own loading state (the getter returns only what you set).",
+              "attribute": "loading"
+            },
+            {
+              "kind": "field",
+              "name": "headerWrap",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). A\ncolumn's `headerWrap` wins. Auto-size measures the label in one line. If\nthe toolbar and the headers take more than half of the visible height,\nthe headers stop sticking (WCAG 2.4.11).",
+              "attribute": "header-wrap"
             },
             {
               "kind": "field",
@@ -2819,6 +2843,24 @@
               "fieldName": "autoExpandGroups"
             },
             {
+              "name": "loading",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Shows the grid as loading, for `items` you are still fetching. With rows\non screen, the load panel (`::part(load-panel)`) covers them; with no rows\nyet, a \"Loading…\" row and placeholder rows (`::part(skeleton-row)`) take\nthe place of the empty state (`noDataRenderer` is not called). Placeholder\nrows are never data: not exported, selected, counted or focusable by API.\nDoes not fire `u-grid-loading`/`u-grid-load`; with `dataSource`, it adds\nto the source's own loading state (the getter returns only what you set).",
+              "fieldName": "loading"
+            },
+            {
+              "name": "header-wrap",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false",
+              "description": "Wraps the column header labels in several lines instead of an ellipsis\n(the header row grows; `--u-grid-header-cell-height` is its minimum). A\ncolumn's `headerWrap` wins. Auto-size measures the label in one line. If\nthe toolbar and the headers take more than half of the visible height,\nthe headers stop sticking (WCAG 2.4.11).",
+              "fieldName": "headerWrap"
+            },
+            {
               "name": "auto-expand-rows",
               "type": {
                 "text": "boolean"
@@ -4048,8 +4090,28 @@
                 "text": "GridColumnBooleanDisplay | null"
               },
               "default": "null",
-              "description": "`text` (default) or `icon` (read-only check icon) for boolean columns.",
+              "description": "`text` (default), `icon` (read-only check/cross icon) or `check` (check\nicon for `true`, nothing visible for `false`) for boolean columns.",
               "attribute": "boolean-display"
+            },
+            {
+              "kind": "field",
+              "name": "trueText",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Text of `true` in this boolean column (cell, icon name, group row, filters,\ncopy/paste, summaries, export). Empty or unset: the language's `trueText`;\na fixed text, it does not follow `language`.",
+              "attribute": "true-text"
+            },
+            {
+              "kind": "field",
+              "name": "falseText",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Text of `false` in this boolean column, like `trueText`. Empty or unset: the language's `falseText`.",
+              "attribute": "false-text"
             },
             {
               "kind": "field",
@@ -4060,6 +4122,16 @@
               "default": "false",
               "description": "Wraps the text in several lines instead of an ellipsis (`wrap=\"false\"` turns it off).",
               "attribute": "wrap"
+            },
+            {
+              "kind": "field",
+              "name": "headerWrap",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Wraps the header label in several lines (`header-wrap`); `header-wrap=\"false\"`\nturns off the grid's `header-wrap` for this column. Unset: the grid's.",
+              "attribute": "header-wrap"
             },
             {
               "kind": "field",
@@ -4354,8 +4426,26 @@
                 "text": "GridColumnBooleanDisplay | null"
               },
               "default": "null",
-              "description": "`text` (default) or `icon` (read-only check icon) for boolean columns.",
+              "description": "`text` (default), `icon` (read-only check/cross icon) or `check` (check\nicon for `true`, nothing visible for `false`) for boolean columns.",
               "fieldName": "booleanDisplay"
+            },
+            {
+              "name": "true-text",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Text of `true` in this boolean column (cell, icon name, group row, filters,\ncopy/paste, summaries, export). Empty or unset: the language's `trueText`;\na fixed text, it does not follow `language`.",
+              "fieldName": "trueText"
+            },
+            {
+              "name": "false-text",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Text of `false` in this boolean column, like `trueText`. Empty or unset: the language's `falseText`.",
+              "fieldName": "falseText"
             },
             {
               "name": "wrap",
@@ -4365,6 +4455,15 @@
               "default": "false",
               "description": "Wraps the text in several lines instead of an ellipsis (`wrap=\"false\"` turns it off).",
               "fieldName": "wrap"
+            },
+            {
+              "name": "header-wrap",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "Wraps the header label in several lines (`header-wrap`); `header-wrap=\"false\"`\nturns off the grid's `header-wrap` for this column. Unset: the grid's.",
+              "fieldName": "headerWrap"
             },
             {
               "name": "min-width",

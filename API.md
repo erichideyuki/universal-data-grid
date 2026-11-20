@@ -291,10 +291,15 @@ interface GridColumnDef<TItem = any> {
   valueGetter?: ((item: TItem) => unknown) | null;
   /** Display text for a value; takes precedence over `format`. Also used in group rows. */
   displayValue?: ((value: unknown, item: TItem) => string) | null;
-  /** 'text' (default: trueText/falseText) or 'icon' (read-only check / cross). */
+  /** 'text' (default: trueText/falseText), 'icon' (read-only check / cross) or 'check' (check for true, nothing visible for false). */
   booleanDisplay?: GridColumnBooleanDisplay | null;
-  /** Wrap long text over several lines instead of truncating with an ellipsis. */
+  /** Text of true / false in this boolean column. Empty or null: the language's trueText / falseText. */
+  trueText?: string | null;
+  falseText?: string | null;
+  /** Wrap long cell text over several lines instead of truncating with an ellipsis (cells only). */
   wrap?: boolean;
+  /** Wrap the header label over several lines. null: the grid's `headerWrap`; false turns it off here. */
+  headerWrap?: boolean | null;
   /** Text shown for `null`/`undefined` values. Default: empty. */
   emptyText?: string | null;
   /** Cell content: (item, ctx) => template | string | element — see "Templates & master-detail". */
@@ -402,6 +407,16 @@ Boolean columns can show a read-only icon instead of text with `booleanDisplay: 
 screen readers announce the same text as in text mode. Empty values still use `emptyText`, group
 rows keep the text, and `displayValue` or a `format` function switch the column back to text.
 
+`booleanDisplay: 'check'` draws only the check for `true`: `false` shows nothing, and its text stays
+in the cell for screen readers (visually hidden), so the cell is never read as empty. Use it for
+columns that are never empty — a `null` cell (`emptyText`) and a `false` one look alike.
+
+Each boolean column can have its own texts with `trueText` / `falseText` (`true-text` /
+`false-text`): they replace the language's in the cell, the icon name, the group row, the filters,
+copy/paste, summaries and the exports. Use words, not symbols (a screen reader reads "✓" as "check
+mark"). For every column at once, override the language instead:
+`setGridTranslation('pt', { trueText: 'Sim', falseText: 'Não' })`.
+
 `alignment` is logical: `end` is the right edge in LTR and the left edge in RTL. The header follows
 the column alignment. Cells that do not wrap are truncated with an ellipsis and show the full text
 as a tooltip (`title`) when hovered.
@@ -412,6 +427,7 @@ Declaratively, primitive options are kebab-case attributes; functions and `forma
 <u-grid-column path="createdAt" type="datetime" empty-text="—" min-width="160">Created</u-grid-column>
 <u-grid-column path="notes" alignment="center" wrap>Notes</u-grid-column>
 <u-grid-column path="active" boolean-display="icon">Active</u-grid-column>
+<u-grid-column path="required" boolean-display="check" true-text="Required" false-text="Optional">Required</u-grid-column>
 ```
 
 ---
@@ -1165,6 +1181,13 @@ grid.dataSource = {
 - **Load panel and errors** — while a query loads, a panel ("Loading…", `::part(load-panel)`) covers
   the rows and the table gets `aria-busy="true"`. A rejected `load` shows an error bar
   (`::part(error-row)`, `role="alert"`) with a "Retry" button.
+- **Loading local items** — without a `dataSource`, set `loading` while you fetch the array
+  (`grid.loading = true; grid.items = await fetchAll(); grid.loading = false`). With rows on screen
+  the load panel covers them (no `aria-busy`: the rows stay readable); with none yet, a "Loading…"
+  row and placeholder rows (`::part(skeleton-row)`, only visual) replace the empty state, and the
+  table gets `aria-busy` and an unknown row count. "Loading…" is announced after 300 ms and, when it
+  ends, the number of rows. Placeholder rows are never data. It fires no `u-grid-loading` /
+  `u-grid-load` events.
 - **Events** — `u-grid-loading` before each call (cancelable: `preventDefault()` skips it and keeps
   the rows shown), `u-grid-load` with the result, `u-grid-load-error` with the error. Aborted calls
   fire nothing.
@@ -1624,8 +1647,8 @@ For the toolbar Export button, `createXlsxExporter(ExcelJS, options?)` returns t
 assign to `grid.xlsxExporter` (see [Export button](#export-button)).
 
 Group rows become Excel row outline levels; numbers, dates and booleans are typed cells with a
-number format close to the column `format`; columns with `displayValue`, a `format` function or
-`booleanDisplay` are written as their displayed text. Text is always a text cell (never a
+number format close to the column `format`; columns with `displayValue`, a `format` function,
+`booleanDisplay` or their own `trueText`/`falseText` are written as their displayed text. Text is always a text cell (never a
 formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `sheetName`
 (`'Sheet1'`), `includeHeaders` (`true`), `customize` and, for `downloadXlsx`, `fileName`
 (`'export.xlsx'`).
@@ -2043,8 +2066,9 @@ col.renderer = (item) => html`<b>${item.name}</b>`;
   `name` and `renderer`) keeps an empty header.
 - `groupRenderer(ctx)` (column) replaces the label and count of the group rows of that column
   (`ctx`: `column`, `value`, `text` — the formatted value —, `groupPath`, `groupIndex`, `itemCount`,
-  `expanded`, `summaries` — the inline ones —, `defaultText` — the label the grid would show —,
-  `grid`, `signal`). The expand button and the summaries aligned under columns stay.
+  `expanded`, `firstItem` — the group's first row in the current order, `undefined` in remote
+  groups without loaded rows —, `summaries` — the inline ones —, `defaultText` — the label the grid
+  would show —, `grid`, `signal`). The expand button and the summaries aligned under columns stay.
 - `noDataRenderer(ctx)` (grid) builds the empty state (`ctx.filtered` is `true` when a filter or
   the search hides every item).
 
@@ -2710,7 +2734,8 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `columnResizing`   | `column-resizing`     | `boolean` | `false` | Let the user resize columns. See [Column features](#column-features). |
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button (and "Choose columns" in the column header menu): search, show all, show/hide, reorder. See [Column chooser](#column-chooser). |
-| `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content. |
+| `columnAutoWidth`  | `column-auto-width`   | `boolean` | `false` | Size columns without `width` to their content (the header label in one line, with its buttons). |
+| `headerWrap`       | `header-wrap`         | `boolean` | `false` | Wrap the column header labels over several lines instead of an ellipsis (a column's `headerWrap` wins). The header row grows; if the bar and the headers take more than half of the visible height, the headers stop sticking. |
 | `columnRenderingMode` | `column-rendering-mode` | `'auto' \| 'virtual' \| 'standard'` | `'auto'` | Column virtualization (`auto`: virtual with more than 50 leaf columns). See [Column virtualization](#column-virtualization). |
 | `showFilterRow`    | `show-filter-row`     | `boolean` | `false` | Show the filter row. See [Filtering](#filtering). |
 | `showSearchPanel`  | `show-search-panel`   | `boolean` | `false` | Show the search box in the bar above the table. |
@@ -2736,6 +2761,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. Also opens the cell context menu with the range items, even without `row-menu`. See [Cell ranges](#cell-ranges). |
 | `showCellRangeSummary` | `show-cell-range-summary` | `boolean` | `false` | Bar with the count, sum and average of the selected cells. |
 | `noDataRenderer`   | *(property only)*     | `GridNoDataRenderer \| null` | `null` | Empty state content. See [Templates](#header-group-row-and-empty-state). |
+| `loading`          | `loading`             | `boolean` | `false` | Show the grid as loading while you fetch `items`: with rows, the load panel covers them; with none, a "Loading…" row and placeholder rows replace the empty state. See **Loading local items** under [Data sources, keys & paging](#data-sources-keys--paging). |
 | `detailRenderer`   | *(property only)*     | `GridDetailRenderer \| null` | `null` | Detail row content; adds the toggle column. See [Master-detail](#master-detail). |
 | `autoExpandRows`   | `auto-expand-rows`    | `boolean` | `false` | Detail rows start expanded (initial default; changing it resets the expansion state). |
 | `autoHideColumns`  | `auto-hide-columns`   | `boolean` | `false` | Hide columns by `hidingPriority` when the grid is too narrow; their values move to the row details. See [Responsive columns](#responsive-columns-auto-hide). |
@@ -2783,7 +2809,8 @@ tint derive from it.
 | `--u-grid-row-hover-opacity` | state-layer token / `8%` | Tint of the data row and of the column/band header under the pointer (`0%` disables both). |
 | `--u-grid-toolbar-height` | `56px` | Minimum height of the bar above the table (group panel, search, chooser button); it grows when its content wraps. |
 | `--u-grid-toolbar-padding` | `8px 16px` | Bar padding (or `--u-grid-toolbar-block-padding` / `--u-grid-toolbar-inline-padding`). |
-| `--u-grid-header-cell-height` | `46px` | Column header height. |
+| `--u-grid-toolbar-gap` | `8px` | Space between the bar items and between its lines (a `gap` value: `8px` or `8px 12px`). A change at runtime applies at the next toolbar layout (resize or item change). |
+| `--u-grid-header-cell-height` | `46px` | Minimum column header height (rows with `header-wrap` grow). |
 | `--u-grid-header-cell-padding` | `13px 16px` | Header cell padding. |
 | `--u-grid-header-cell-font-size` / `--u-grid-header-cell-font-weight` | `0.8125rem` / inherited | Header text. |
 | `--u-grid-cell-padding` | `13px 16px` | Data cell padding (shorthand; wins over the longhands). `--u-grid-cell-block-padding` (`13px`) / `--u-grid-cell-inline-padding` (`16px`) set one axis of both data and header cells (unless `--u-grid-cell-padding` / `--u-grid-header-cell-padding` is set). |
@@ -2809,8 +2836,8 @@ tint derive from it.
 | `--u-grid-sort-indicator-size` | `1.125em` | Size of the sort arrow. |
 | `--u-grid-drop-indicator-color` | primary token | Drag-and-drop drop indicator color. |
 | `--u-grid-drop-indicator-width` | `3px` | Drop indicator thickness. |
-| `--u-grid-resize-handle-width` | `8px` | Width of the invisible column resize hit area at the end of each header cell (over the cell padding; the cursor changes on hover). Keyboard and the header menu (auto-size, wider/narrower) are the equivalent controls (WCAG 2.5.8). |
-| `--u-grid-column-header-menu-button-size` | `24px` | Size of the header "⋮" menu button and of the header filter button (WCAG 2.5.8). |
+| `--u-grid-resize-handle-width` | `8px` | Width of the invisible column resize hit area at the end of each header cell (over the cell padding; the cursor changes on hover; also how far the header buttons reach into the end padding). Keyboard and the header menu (auto-size, wider/narrower) are the equivalent controls (WCAG 2.5.8). |
+| `--u-grid-column-header-menu-button-size` | `24px` | Size of the header "⋮" menu button and of the header filter button (WCAG 2.5.8). They sit side by side with no gap, so below `24px` add spacing. |
 | `--u-grid-resize-handle-color` | `--u-grid-drop-indicator-color` | Color of the separator shown at the column edge while dragging to resize. |
 | `--u-grid-fixed-shadow-color` | shadow token | Shadow at the edge of fixed columns while scrolling. |
 | `--u-grid-column-chooser-background-color` | surface-container token | Column chooser background. |
@@ -2860,7 +2887,7 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `cell` | Data cells (`<td>`). |
 | `selection-cell` | Cells and header of the checkbox column. |
 | `selection-checkbox` | The selection checkboxes (rows and "select all"). |
-| `no-data` | The cell rendered in the empty state. |
+| `no-data` | The cell rendered in the empty state, or the "Loading…" cell while `loading` has no rows. |
 | `header-cell` | Column header cells (`<th>`), bands included. |
 | `band-header-cell` | Band header cells (multi-level headers). |
 | `sort-indicator` | The sort arrow (and priority number) in headers and group chips. |
@@ -2913,8 +2940,8 @@ The older names (`--u-table-*`, `--u-td-*`, `--u-th-*`, `--u-group-*`,
 | `pager-button` | Pager buttons (first, previous, page numbers, next, last). |
 | `page-size-select` | The page size `<select>`. |
 | `page-info` | The "Page x of y (n items)" text. |
-| `load-panel` | The load panel shown while a data source loads. |
-| `skeleton-row` | Rows of a remote source not loaded yet (with `row`). |
+| `load-panel` | The load panel shown while a data source loads or `loading` is set (with rows). |
+| `skeleton-row` | Rows of a remote source not loaded yet (with `row`), or placeholder rows while `loading` has no rows. |
 | `error-row` | The bar shown when the data source failed. |
 | `retry-button` | Its "Retry" button. |
 | `modified` / `invalid` | Edited, unsaved data cells / cells with a validation error (with `cell` or `adaptive-value`). |
@@ -3009,7 +3036,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `true-text`, `false-text`, `wrap`, `header-wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -3169,7 +3196,7 @@ import {
   type GridRenderContextBase, // { grid, signal } — shared by every context
   type GridCellRenderContext, // { item, value, text, column, rowKey, adaptive, grid, signal }
   type GridHeaderRenderContext, // { column, grid, signal }
-  type GridGroupRenderContext, // { column, value, text, groupPath, groupIndex, itemCount, expanded, summaries, defaultText, grid, signal }
+  type GridGroupRenderContext, // { column, value, text, groupPath, groupIndex, itemCount, expanded, firstItem, summaries, defaultText, grid, signal }
   type GridDetailRenderContext, // { item, rowKey, grid, signal }
   type GridRowRenderer,     // (item, GridRowRenderContext) => GridRowRenderResult
   type GridRowRenderResult, // GridRenderResult | false (false = keep the row's columns)
@@ -3364,6 +3391,13 @@ In 0.2.0: a column without `label` shows its `path` as the header text and uses 
 totals of a column hidden by `autoHideColumns` are no longer shown in the last visible column; the
 cell padding longhands win over the old shorthands (the other axis comes from its own longhand or
 the default, so if you customized an old shorthand, set both longhands).
+
+After 0.2.0 (unreleased): the bar has `8px` between its items (`--u-grid-toolbar-gap`; host content
+no longer touches the group panel), and the search panel and host content lost their own `8px`
+start margin; the column chooser icon is `24px`; the header "⋮" and filter buttons sit side by side
+and reach into the end padding up to the resize handle (about `10px` more for the label); the group
+panel hint is shorter in every language; `GridColumnBooleanDisplay` gained `'check'` (an exhaustive
+`switch` over it needs the new case).
 
 **Header menu and column chooser (behavior changes, modeled on AG Grid):**
 

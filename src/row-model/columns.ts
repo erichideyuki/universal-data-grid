@@ -27,6 +27,19 @@ export const columnText = (column: { label?: string | null; path?: string | null
 export const headerText = (column: { label?: string | null; path?: string | null }): string =>
   column.label || column.path || '';
 
+/**
+ * Textos de `true`/`false` de uma coluna: os dela (`trueText`/`falseText`) ou
+ * os do idioma. Vazio também cai no idioma: o ícone e o `check` precisam de
+ * um nome acessível, e uma célula sem texto não diria nada ao leitor de tela.
+ */
+export const booleanTexts = (
+  column: { trueText?: string | null; falseText?: string | null } | undefined,
+  translation: { trueText: string; falseText: string },
+): { trueText: string; falseText: string } => ({
+  trueText: column?.trueText || translation.trueText,
+  falseText: column?.falseText || translation.falseText,
+});
+
 /** O que a árvore precisa de uma coluna: os filhos, quando é banda. */
 export interface TreeColumn {
   columns?: readonly unknown[] | null;

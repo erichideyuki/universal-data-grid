@@ -79,7 +79,8 @@ const PX_PER_CHAR = 7;
  * header, group rows with the row outline of Excel, group footers and
  * totals. Numbers, dates and booleans are typed cells with a number format
  * close to the column `format`; columns with `displayValue`, a `format`
- * function or `booleanDisplay` are written as their displayed text. Text is
+ * function, `booleanDisplay` or their own `trueText`/`falseText` are written
+ * as their displayed text. Text is
  * always a text cell (never a formula).
  */
 export const exportXlsx = async <M extends ExcelJSModule>(
@@ -213,7 +214,9 @@ const writerOf = (column: GridExportColumn, language: string | undefined): CellW
   const text: CellWriter = { write: (_, value) => textCell(value) };
 
   // O texto depende do item ou é ícone/texto traduzido: grava o que a tela mostra.
-  if (!dataType || dataType === 'string' || definition.displayValue || typeof definition.format === 'function' || (dataType === 'boolean' && definition.booleanDisplay)) {
+  const ownBooleanText = dataType === 'boolean' && (definition.booleanDisplay || definition.trueText || definition.falseText);
+
+  if (!dataType || dataType === 'string' || definition.displayValue || typeof definition.format === 'function' || ownBooleanText) {
     return text;
   }
 

@@ -4,5 +4,5 @@ export default {
   title: 'Data types & formatting',
   intro: 'Every column has a `dataType` (`string`, `number`, `date`, `datetime` or `boolean`), declared or inferred from the first value. It picks the default formatting and alignment; `format` takes `Intl` options or a function, `displayValue` gives full control over the text and `valueGetter` makes **computed columns** that sort, filter and group like any other.',
   readme: '#data-types--formatting',
-  examples: ['formatting', 'computed', 'text-display'],
+  examples: ['formatting', 'computed', 'text-display', 'booleans'],
 } satisfies DocPage;

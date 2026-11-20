@@ -23,8 +23,12 @@ export type GridColumnDataType = 'string' | 'number' | 'date' | 'datetime' | 'bo
 /** Logical alignment: `start`/`end` follow the direction (RTL). */
 export type GridColumnAlignment = 'start' | 'center' | 'end';
 
-/** Boolean as text (`trueText`/`falseText`) or as a read-only check icon. */
-export type GridColumnBooleanDisplay = 'text' | 'icon';
+/**
+ * Boolean as text (`trueText`/`falseText`), as a read-only check/cross icon
+ * (`icon`) or as a check for `true` only (`check`: `false` shows nothing, its
+ * text stays for screen readers).
+ */
+export type GridColumnBooleanDisplay = 'text' | 'icon' | 'check';
 
 /** Formats a cell value into its displayed text. */
 export type GridColumnFormatter<TItem = any> = (value: unknown, item: TItem) => string;
@@ -114,10 +118,29 @@ export interface GridColumnDef<TItem = any> {
   valueGetter?: ((item: TItem) => unknown) | null;
   /** Displayed text (cell and group row); wins over `format`. */
   displayValue?: ((value: unknown, item: TItem) => string) | null;
-  /** Boolean as text (default) or icon; the icon has the text as its accessible name. */
+  /**
+   * `'text'` (default: `trueText`/`falseText`), `'icon'` (read-only check/cross,
+   * the text as its accessible name) or `'check'` (check for `true` only;
+   * `false` keeps its text for screen readers).
+   */
   booleanDisplay?: GridColumnBooleanDisplay | null;
-  /** Wraps the text in several lines instead of an ellipsis. */
+  /**
+   * Text of `true` in a boolean column (declared or inferred): cell, icon
+   * name, group row, filters, copy/paste, summaries and export. Empty or
+   * `null`: the language's `trueText`. A fixed text: it does not follow
+   * `language`.
+   */
+  trueText?: string | null;
+  /** Text of `false` in a boolean column, like `trueText`. Empty or `null`: the language's `falseText`. */
+  falseText?: string | null;
+  /** Wraps the cell text in several lines instead of an ellipsis (cells only; see `headerWrap`). */
   wrap?: boolean;
+  /**
+   * Wraps the header label in several lines instead of an ellipsis; the
+   * header row grows. `null`/absent: the grid's `headerWrap`; `false` turns it
+   * off for this column.
+   */
+  headerWrap?: boolean | null;
   /** Text for empty values (`null`/`undefined`). */
   emptyText?: string | null;
   /**
@@ -373,6 +396,12 @@ export interface GridGroupRenderContext<TItem = any> extends GridRenderContextBa
   readonly itemCount: number;
   /** Whether the group is expanded. */
   readonly expanded: boolean;
+  /**
+   * The first row of the group in the current order (after filtering), to
+   * show data of the group's rows (an icon, a link); `undefined` when the
+   * group has no loaded rows (remote groups).
+   */
+  readonly firstItem: TItem | undefined;
   /** Summaries shown in the group row text (`display: 'inline'`). */
   readonly summaries: readonly GridSummaryValue<TItem>[];
   /** The full label the grid would show (`"Country: Brazil (3, Sum of Population: 1,234)"`). */

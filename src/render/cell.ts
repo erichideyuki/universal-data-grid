@@ -16,7 +16,10 @@ const CLOSE_PATH = 'm256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-2
  * (`trueText`/`falseText`), então o leitor de tela lê o mesmo que o modo
  * texto. Ícones simétricos: nada a espelhar em RTL.
  */
-const renderBooleanIcon = (value: boolean, format: FormatContext): TemplateResult => html`
+const renderBooleanIcon = (value: boolean, format: FormatContext, checkOnly: boolean): TemplateResult => !value && checkOnly
+  // `check`: o falso não desenha nada; o texto fica para o leitor de tela (a célula não é lida como vazia).
+  ? html`<span class="boolean-icon false visually-hidden">${format.falseText}</span>`
+  : html`
   <span
     class="boolean-icon ${value ? 'true' : 'false'}"
     role="img"
@@ -63,7 +66,7 @@ export const renderDataCell = (
 
     return icon === undefined
       ? formatCellValue(value, row.item, column, format)
-      : renderBooleanIcon(icon, format);
+      : renderBooleanIcon(icon, format, column.booleanDisplay === 'check');
   }
 
   const { item } = row;
