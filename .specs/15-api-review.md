@@ -152,6 +152,15 @@ para quem declara um objeto `GridI18n` completo (a chave some do tipo).
   `GridI18n` para o `GridI18nInput`: obsoletas SEM substituta, avisam uma
   vez e são ignoradas.
 
+- Frente 27: par atributo-id + propriedade-elemento no molde
+  `popovertarget`/`popoverTargetElement` — `scrollContainer` ↔
+  `scroll-container` (id de um ANCESTRAL, atravessando shadow roots; valor
+  reservado `window`) e `scrollContainerElement: HTMLElement | Window |
+  null` (vence o atributo; o getter devolve o que foi atribuído). Sem custom
+  property de deslocamento: o `scroll-padding` do contêiner é o contrato
+  (uma `--u-grid-*` herdada vazaria para os grids internos). Sem `:state()`
+  (seria API); o modo vindo da propriedade usa folha adotada da instância.
+
 ## Inventário (antes da revisão)
 
 **`<u-grid>` (`DataGrid`)** — propriedade → atributo → padrão: `items` →

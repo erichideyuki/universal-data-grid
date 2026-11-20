@@ -116,7 +116,7 @@ export const styles = css`
    * linhas que o virtualizador troca (a posição é relida pelo
    * \`IntersectionObserver\`).
    */
-  :host([scroll-container]) {
+  :host([scroll-container]:not([scroll-container=""])) {
     height: auto;
     overflow-anchor: none;
   }

@@ -64,8 +64,7 @@ contêiner externo, e o grid só desenha o que está na parte visível dele.
   (como `popoverTargetElement` × `popovertarget`); o getter devolve o que
   foi atribuído. `window`, `document.documentElement` e
   `document.scrollingElement` = a janela.
-- Resolução (no `connectedCallback`, a cada mudança das duas e, para o
-  id, também no `firstUpdated`): elemento não encontrado ou não ancestral
+- Resolução (no `connectedCallback` e a cada mudança das duas): elemento não encontrado ou não ancestral
   → `console.warn` (prefixo `<u-grid>:`, uma vez por valor) e rolagem
   interna — e aí o CSS do atributo é anulado por uma folha adotada da
   instância (o grid não fica "sem altura e sem rolagem"). Ancestral entre
@@ -313,14 +312,15 @@ Recusados: nenhum.
   com orçamento igual ao da rolagem interna.
 
 ## Decisões da implementação
-- **Foco por API: na hora, não no `scrollend`.** A linha ativa fica sempre
-  renderizada (fora da janela, como `.pinned`), então o foco do DOM vai
-  para a célula com `preventScroll` na hora e a rolagem suave vem depois.
-  O leitor recebe um evento de foco só; não há foco "pendente" a cancelar
-  nem a roubar. A revelação (trazer a linha e ajustar a célula) é que
-  espera o `scrollend` (ou 2 s; sem rolagem em 2 quadros, segue já); ação
-  do usuário no meio vence e rola na hora. **Diverge da proposta** (que
-  esperava o `scrollend` para focar): levar ao usuário na entrega.
+- **Foco por API com rolagem suave**: como aprovado, o foco espera a
+  linha chegar quando ela está fora da janela virtual (a `.pinned` é
+  invisível: lupa e realce do leitor iriam para o topo do grid); com a
+  linha já renderizada, o foco vai na hora (`preventScroll`) e só o ajuste
+  rola. Roda, toque, ponteiro ou tecla na porta (fora do grid) durante a
+  rolagem cancelam a revelação e o foco pendente; foco levado para outro
+  lugar enquanto isso também (nada é roubado). A revelação espera o
+  `scrollend` (ou 2 s; sem rolagem em 2 quadros, segue já); ação do
+  usuário no grid vence e rola na hora.
 - `auto` só vira rolagem suave com `scroll-behavior: smooth` computado no
   contêiner; sem ele a API rola na hora e relê a posição já (sem esperar
   evento).
@@ -349,6 +349,23 @@ Recusados: nenhum.
 - Arrasto do intervalo: a área de rolagem automática é a parte do grid
   visível na porta (menos o `scroll-padding`), e quem rola é a porta.
 - `_scrollElement` (`@internal`): o contêiner externo para o harness de perf.
+
+## Revisão da entrega (2026-11-20)
+API (`webcomponent-api-reviewer`), aceitos: aviso de altura dada ao host
+(faltava); README ("dê altura ao grid") com a exceção; `scrollContainerElement`
+inválido (SVG, outro realm) → aviso e rolagem interna, janela por referência
+também confere os ancestrais; avisos por objeto (WeakMap), não por
+instância; `scroll-container=""` não liga o modo no SSR
+(`:not([scroll-container=""])`); JSDoc com `<body>`, vazio e `overflow`;
+spec sem o `firstUpdated`; nomes registrados na 15.
+A11y (`a11y-reviewer`), aceitos: foco por API espera o `scrollend` com a
+linha fora da janela (volta ao desenho aprovado nesse caso); interrupção
+pelo usuário cancela a revelação; `#revealByApi` zerado ao desistir e no
+Tab de fora; testes de foco adiado, interrupção e Tab real (elemento e
+janela). Recusados: axe durante a carga (`inert`) e foco num controle de
+renderer — cobertos pelas suítes da 08 e da 10 no modo interno; o modo
+externo não muda o `inert` nem o foco dentro da célula (só a margem de
+rolagem, testada pela célula).
 
 ## Critério de pronto
 - Global (00) + `npm run test:perf` com o cenário novo dentro do

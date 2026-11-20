@@ -411,11 +411,11 @@ property). Linha fora da janela virtual: alvo auxiliar `aria-hidden`
 (fora da `<table>`, nunca no SSR) com as mesmas margens. Teclado e clique
 rolam instantâneo; API respeita o `scroll-behavior` do contêiner (só
 `smooth` anima), nunca com `prefers-reduced-motion: reduce` (2.3.3). Na
-API, o foco do DOM vai na hora (a linha ativa sempre fica renderizada, com
-`preventScroll`) e a rolagem suave vem depois — a proposta previa esperar o
-`scrollend`; mudou porque a linha ativa já está no DOM, o leitor recebe um
-único evento de foco e nada pode ser "roubado" depois; ação do usuário no
-meio da rolagem suave vence (rola na hora). PageUp/PageDown andam a altura
+API com rolagem suave, o foco espera a linha chegar quando ela está fora
+da janela virtual (a `.pinned` é invisível) e vai na hora quando ela já
+está renderizada; roda/toque/ponteiro/tecla na porta cancelam a revelação
+e o foco pendente, e foco levado para outro lugar não é roubado; ação do
+usuário no grid vence (rola na hora). PageUp/PageDown andam a altura
 da porta menos o que grudaria nela. Regra dos 50% das linhas fixas contra a
 altura da porta (somando o `scroll-padding`). O contêiner é do hospedeiro:
 o API.md pede `tabindex="0"` + `role="region"` + `aria-label` (com o grid

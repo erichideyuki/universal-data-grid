@@ -90,6 +90,28 @@ export class ScrollPortController implements ReactiveController {
     return !!scrollContainerElement || !!scrollContainer?.trim();
   }
 
+  /** Avisos por objeto (contêiner, ancestral, host): um por valor, sem segurar o objeto. */
+  readonly #warnedObjects = new WeakMap<object, Set<string>>();
+
+  #warnOnce(target: object, message: string): void {
+    const seen = this.#warnedObjects.get(target) ?? new Set<string>();
+
+    if (!seen.has(message)) {
+      seen.add(message);
+      this.#warnedObjects.set(target, seen);
+      console.warn(`<u-grid>: ${message}`);
+    }
+  }
+
+  /** Altura dada ao host no modo externo corta as linhas (o grid precisa crescer com o conteúdo). */
+  checkHeight(): void {
+    const host = this.#host;
+
+    if (this.#port && host.scrollHeight > host.clientHeight + 1) {
+      this.#warnOnce(host, 'with scroll-container the grid grows to its content; do not give it a height (it clips the rows).');
+    }
+  }
+
   #warn(key: string, message: string): void {
     if (!this.#warned.has(key)) {
       this.#warned.add(key);
@@ -127,16 +149,14 @@ export class ScrollPortController implements ReactiveController {
     const view = host.ownerDocument.defaultView;
 
     if (element) {
-      if (!(element instanceof HTMLElement)) {
-        return element;
-      }
-
-      if (isViewportElement(element)) {
+      if (element === view || (element instanceof Element && isViewportElement(element))) {
+        this.#checkBetween(null);
         return view;
       }
 
-      if (!this.#isAncestor(element)) {
-        this.#warn('element', 'scrollContainerElement must be an ancestor of the grid; using the grid\'s own scrolling.');
+      // Outro realm (iframe), SVG ou algo que não é elemento ancestral nem a janela deste documento.
+      if (!(element instanceof HTMLElement) || !this.#isAncestor(element)) {
+        this.#warnOnce(element, 'scrollContainerElement must be an ancestor element of the grid (or window); using the grid\'s own scrolling.');
         return null;
       }
 
@@ -200,7 +220,7 @@ export class ScrollPortController implements ReactiveController {
       const style = getComputedStyle(node);
 
       if (![style.overflowX, style.overflowY].every(value => value === 'visible' || value === 'clip')) {
-        this.#warn('between', 'an ancestor between the grid and its scroll container has overflow set; sticky headers will stick to it instead.');
+        this.#warnOnce(node, 'an ancestor between the grid and its scroll container has overflow set; sticky headers will stick to it instead.');
         return;
       }
     }
@@ -217,7 +237,7 @@ export class ScrollPortController implements ReactiveController {
     const text = this.#port && !attribute
       ? ':host { height: auto; overflow-anchor: none; }'
       : !this.#port && attribute
-        ? ':host([scroll-container]) { height: 100%; overflow-anchor: auto; }'
+        ? ':host([scroll-container]:not([scroll-container=""])) { height: 100%; overflow-anchor: auto; }'
         : '';
 
     if (!root || text === this.#sheetText || typeof CSSStyleSheet === 'undefined' || !('adoptedStyleSheets' in root)) {

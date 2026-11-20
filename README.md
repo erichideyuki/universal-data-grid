@@ -103,7 +103,8 @@ A self-contained bundle (Lit included) is published for CDNs. An import map lets
 ```
 
 > **Give the grid a height.** It fills its container (`height: 100%`), so the grid or its parent
-> needs a defined height for the scroll area.
+> needs a defined height for the scroll area — unless it scrolls with the page or a parent
+> ([`scroll-container`](https://github.com/erichideyuki/universal-data-grid/blob/main/API.md#scrolling-with-the-page-or-a-parent)).
 
 ### Lit
 

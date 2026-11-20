@@ -1272,7 +1272,8 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
 - Resolved when the grid connects and when either property changes (changing the ancestor's id
   later doesn't re-resolve). Not found, not an ancestor or empty: a console warning and the grid's
   own scrollbar. A warning also when an element between the grid and the container clips or
-  scrolls (`overflow` other than `visible`/`clip`): sticky headers would stick to it instead.
+  scrolls (`overflow` other than `visible`/`clip`): sticky headers would stick to it instead; and
+  when something gives the grid a height in this mode (it would clip the rows).
 - Accessibility: the container is yours. If it scrolls, make it reachable by keyboard and name it
   (`tabindex="0" role="region" aria-label="…"`): while the grid loads its rows it is inert, and a
   scrollable region with nothing focusable fails WCAG 2.1.1.

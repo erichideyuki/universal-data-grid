@@ -3305,8 +3305,11 @@ export class DataGrid extends LitElement {
    * part of the container; toolbar, headers, totals, fixed rows and columns
    * stick to it. The container's `scroll-padding-top`/`-bottom` offsets
    * what the page sticks there (an app bar). `<html>` (or the
-   * `document.scrollingElement`) means the window. Not found or not an
-   * ancestor: a console warning and the grid's own scrolling. Resolved when
+   * `document.scrollingElement`) means the window; `<body>` only when it is
+   * the scrolling element. Not found, not an ancestor or empty: a console
+   * warning and the grid's own scrolling. An element between the grid and
+   * the container that clips or scrolls (`overflow` other than
+   * `visible`/`clip`) also warns: sticky headers would stick to it. Resolved when
    * the grid connects and when this changes (changing the ancestor's id
    * later does not re-resolve). The attribute alone renders the outer mode
    * on the server.
@@ -5210,6 +5213,8 @@ export class DataGrid extends LitElement {
     this.#rangeSummaryAbort?.abort();
     this.#rangeSummaryAbort = undefined;
     this.#rangeAddMode = false;
+    // Rolagem suave da API em curso (frente 27): sem listeners na porta.
+    this.#cancelReveal();
     // A tabela não segura os rótulos da página enquanto o grid está fora dela (antes do super: precisa do ref).
     this.#hostLabel.disconnect();
     this.#syncTableLabel();
@@ -11541,6 +11546,7 @@ export class DataGrid extends LitElement {
     this.#updateScrollShadows();
     this.#syncFixedRows();
     this.#syncRevealMargins();
+    this.#scrollPort.checkHeight();
   }
 
   /**
@@ -13721,14 +13727,30 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    if (this.#focusPending) {
+    // Porta externa, API com rolagem suave até uma linha fora da janela
+    // virtual (spec 27): o foco espera a linha chegar (a `.pinned` é
+    // invisível; lupa e realce do leitor iriam para o topo do grid).
+    const pinned = cell.closest('tr')?.classList.contains('pinned') ?? false;
+    const deferFocus = this.#focusPending && pinned && this.#revealPending && this.#scrollPort.port !== null
+      && this.#revealBehavior() !== 'instant';
+
+    if (deferFocus) {
+      this.#deferredFocusFrom ??= this.#deepActiveElement();
+    } else if (this.#focusPending) {
       this.#focusPending = false;
+      const from = this.#deferredFocusFrom;
+      this.#deferredFocusFrom = undefined;
+      // Foco esperado pela rolagem: só se ninguém o levou para outro lugar enquanto isso.
+      const moved = from !== undefined && this.#deepActiveElement() !== from && !this.matches(':focus-within');
       // Foco perdido num valor da linha adaptativa (linha recriada ao salvar): volta ao mesmo valor (spec 21).
       const adaptive = this.#adaptiveFocus;
       const value = adaptive && cell.classList.contains('detail-cell')
         ? cell.querySelector<HTMLElement>(`.adaptive-value.focus-target[data-column="${columnIdOf(adaptive.column)}"]`)
         : null;
-      (value ?? cell).focus({ preventScroll: true });
+
+      if (!moved) {
+        (value ?? cell).focus({ preventScroll: true });
+      }
     }
 
     // Rolagem suave até a linha em curso (porta externa): continua quando ela acabar.
@@ -13741,6 +13763,7 @@ export class DataGrid extends LitElement {
       // pela rolagem traz a linha e termina o ajuste (horizontal).
       if (++this.#revealAttempts > 3) {
         this.#revealPending = false;
+        this.#revealByApi = false;
       }
 
       this.#scrollRowIntoView(this.#activeRowIndex);
@@ -13787,6 +13810,40 @@ export class DataGrid extends LitElement {
       this.#virtualizer.scrollToIndex(index);
     }
   }
+
+  /** Foco que esperava a rolagem suave: onde ele estava quando começou a esperar. */
+  #deferredFocusFrom: Element | null | undefined;
+  /** Listeners de interrupção (roda, toque, ponteiro, tecla na porta) durante a rolagem suave. */
+  #revealInterrupt: AbortController | undefined;
+
+  #deepActiveElement(): Element | null {
+    let active = document.activeElement;
+
+    while (active?.shadowRoot?.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+
+    return active;
+  }
+
+  /** O usuário mexeu na rolagem durante a rolagem suave da API: ela não é refeita (nem o foco roubado). */
+  readonly #cancelReveal = (event?: Event): void => {
+    // Dentro do grid, a tecla/clique já é uma ação do usuário com revelação própria.
+    if (event?.composedPath().includes(this)) {
+      return;
+    }
+
+    this.#revealInterrupt?.abort();
+    this.#revealInterrupt = undefined;
+    this.#revealPending = false;
+    this.#revealInFlight = false;
+    this.#revealByApi = false;
+
+    if (this.#deferredFocusFrom !== undefined) {
+      this.#focusPending = false;
+      this.#deferredFocusFrom = undefined;
+    }
+  };
 
   /** A última revelação veio de chamada de API (`focusCell`, `editCell`...). */
   #revealByApi = false;
@@ -13878,7 +13935,20 @@ export class DataGrid extends LitElement {
     }
 
     this.#revealInFlight = true;
+    const port = this.#scrollPort.port;
+
+    if (port && !this.#revealInterrupt) {
+      this.#revealInterrupt = new AbortController();
+      const options = { passive: true, signal: this.#revealInterrupt.signal };
+
+      for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        port.target.addEventListener(type, this.#cancelReveal, options);
+      }
+    }
+
     this.#scrollPort.afterScrollEnd(() => {
+      this.#revealInterrupt?.abort();
+      this.#revealInterrupt = undefined;
       // O alvo fica até a rolagem suave chegar (tirá-lo antes pode interrompê-la).
       probe?.remove();
       this.#revealInFlight = false;
@@ -14010,7 +14080,8 @@ export class DataGrid extends LitElement {
     if (!sameRow || (position.col !== this.#activeCol && !singleCell?.isGroup && !singleCell?.isDetail && !sameFullWidthCell)) {
       this.#setActive(position, 'user');
     } else if (path[0] === cell && cell.closest('tr')?.classList.contains('pinned')) {
-      // Tab de volta para a célula ativa que está fora da tela: traz a linha.
+      // Tab de volta para a célula ativa que está fora da tela: traz a linha (ação do usuário: na hora).
+      this.#revealByApi = false;
       this.#revealPending = true;
       this.#revealAttempts = 0;
       this.requestUpdate();

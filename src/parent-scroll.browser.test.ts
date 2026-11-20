@@ -5,6 +5,7 @@
  */
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
@@ -343,12 +344,17 @@ describe('parent scroll (spec 27)', () => {
     expect(row).toBeGreaterThanOrEqual(4);
   });
 
-  it('focusCell com scroll-behavior smooth: foca já e a célula chega à vista no scrollend', async () => {
-    const { grid, parent, rect } = await make('element');
+  it('focusCell com scroll-behavior smooth: a linha fora da janela recebe o foco no scrollend', async () => {
+    const { grid, parent, top, rect } = await make('element');
+    const button = document.createElement('button');
+    top.append(button);
+    button.focus();
     parent.style.scrollBehavior = 'smooth';
     const ok = grid.focusCell('r700');
     expect(ok).toBe(true);
     await settle(grid);
+    // Ainda rolando: o foco não foi para a linha invisível (`.pinned`).
+    expect(document.activeElement).toBe(button);
 
     await new Promise<void>(resolve => {
       const timer = setTimeout(resolve, 3000);
@@ -369,6 +375,33 @@ describe('parent scroll (spec 27)', () => {
     expect(sh(grid).activeElement).toBe(cell);
   });
 
+  it('o usuário rola no meio da rolagem suave da API: ela não é refeita e o foco não é roubado', async () => {
+    const { grid, parent, top } = await make('element');
+    const button = document.createElement('button');
+    top.append(button);
+    button.focus();
+    parent.style.scrollBehavior = 'smooth';
+    grid.focusCell('r700');
+    await settle(grid);
+
+    parent.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+    parent.style.scrollBehavior = '';
+    parent.scrollTop = 1000;
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    await settle(grid);
+
+    expect(Math.abs(parent.scrollTop - 1000)).toBeLessThan(2);
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('altura dada ao grid no modo externo: aviso', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { grid } = await make('element', { configure: g => g.style.height = '300px' });
+    await settle(grid);
+
+    expect(warn.mock.calls.flat().join()).toContain('do not give it a height');
+  });
+
   it('prefers-reduced-motion: a API rola na hora', async () => {
     const { grid, parent } = await make('element');
     parent.style.scrollBehavior = 'smooth';
@@ -383,27 +416,32 @@ describe('parent scroll (spec 27)', () => {
     expect(parent.scrollTop).toBeGreaterThan(600 * ROW);
   });
 
-  it('Tab de fora com a célula ativa fora da porta e da janela virtual traz a linha', async () => {
-    const { grid, parent, top, rect } = await make('element');
-    grid.focusCell('r500');
-    await settle(grid);
-    const button = document.createElement('button');
-    top.append(button);
-    button.focus();
-    parent.scrollTop = 0;
-    await settle(grid);
-    await settle(grid);
+  for (const port of ['element', 'window'] as const) {
+    it(`Tab de fora com a célula ativa fora da porta e da janela virtual traz a linha (${port})`, async () => {
+      const { grid, top, scrollTo, rect } = await make(port);
+      grid.focusCell('r500');
+      await settle(grid);
+      const button = document.createElement('button');
+      top.append(button);
+      button.focus();
+      await scrollTo(0);
 
-    activeCell(grid).focus();
-    await settle(grid);
-    await settle(grid);
+      // Tab real (Playwright) do botão acima até a célula ativa (passa pela barra, se houver focáveis).
+      for (let i = 0; i < 10 && sh(grid).activeElement?.tagName !== 'TD'; i++) {
+        await userEvent.tab();
+      }
 
-    const cell = activeCell(grid);
-    expect(cell.closest('tr')!.classList.contains('pinned')).toBe(false);
-    const box = cell.getBoundingClientRect();
-    expect(box.top).toBeGreaterThanOrEqual(rect().top);
-    expect(box.bottom).toBeLessThanOrEqual(rect().bottom);
-  });
+      await settle(grid);
+      await settle(grid);
+      expect(sh(grid).activeElement).toBe(activeCell(grid));
+
+      const cell = activeCell(grid);
+      expect(cell.closest('tr')!.classList.contains('pinned')).toBe(false);
+      const box = cell.getBoundingClientRect();
+      expect(box.top).toBeGreaterThanOrEqual(rect().top);
+      expect(box.bottom).toBeLessThanOrEqual(rect().bottom);
+    });
+  }
 
   it('conteúdo acima que encolhe sem rolagem: o corpo é redesenhado', async () => {
     const { grid, parent, top, scrollTo, rect } = await make('element', { above: 3000 });
