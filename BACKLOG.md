@@ -102,6 +102,7 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Dados | Paginação / rolagem infinita | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de linhas | ✅ | ✅ | ✅ |
 | Rolagem | Virtualização de colunas | ✅ | ✅ | ✅ |
+| Rolagem | Virtualizar pela rolagem de um contêiner externo (pai ou janela) | ✅ | — | — (`autoHeight` renderiza todas as linhas) |
 | Colunas | Definição por propriedade e por `<u-grid-column>` | ✅ | ✅ | ✅ |
 | Colunas | Reordenar por arrasto | ✅ | ✅ | ✅ |
 | Colunas | Redimensionar | ✅ | ✅ | ✅ |
@@ -194,6 +195,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Construtor de filtro | `24-*` | construtor visual e painel de filtro | — |
 | Árvore | `25-tree-data.md` | dados hierárquicos no próprio `<u-grid>` (`treeMode`) | feito |
 | Exportação em PDF | `26-export-pdf.md` | PDF marcado (PDF/UA) por motor próprio Rust/WASM em worker; entrada `export-pdf` | feito |
+| Rolagem pelo contêiner externo | `27-parent-scroll.md` | virtualizar linhas e colunas pela rolagem de um ancestral ou da janela, com o grid em qualquer posição; atributo `scroll-container` (id) e propriedade por elemento; partes grudadas nativas | feito |
 
 ### Pendências deixadas pelas frentes
 
@@ -205,3 +207,4 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Fundação | Expansão de grupos ainda não tem API (`expandAll` etc.) — frente 07 |
 | Memória | Chromium retém ~0,6 KiB por grid criado (`<thead>` em shadow root, item 20 da spec 14); reportar ao Chromium e decidir se troca o `<thead>` |
 | Exportação | Google Sheets não verificado ao colar o HTML do Ctrl+C (o `'` visível segue no HTML por causa do LibreOffice) |
+| Rolagem pelo contêiner externo | Orçamento de perf da exportação em PDF falha também na main (relatado pela frente 27; investigar na spec 26/16) |
