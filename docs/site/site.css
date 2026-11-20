@@ -189,6 +189,30 @@ code {
   background: color-mix(in srgb, var(--u-color-on-surface) 8%, transparent);
 }
 
+.sponsor-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--u-color-outline-variant);
+  border-radius: 999px;
+  color: var(--u-color-on-surface);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sponsor-link .icon {
+  font-size: 18px;
+  color: light-dark(#bf3989, #db61a2);
+  font-variation-settings: 'FILL' 1;
+}
+
+.sponsor-link:hover {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--u-color-on-surface) 8%, transparent);
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -854,8 +878,16 @@ code {
   }
 
   .brand-text,
-  .top-link {
+  .top-link,
+  .sponsor-text {
     display: none;
+  }
+
+  .sponsor-link {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+    border: 0;
   }
 
   .layout {

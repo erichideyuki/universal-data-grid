@@ -77,6 +77,7 @@ applyTheme(localStorage.getItem(THEME_KEY) ?? (matchMedia('(prefers-color-scheme
 // ------------------------------------------------------------------ layout
 
 const API = `${REPO}/blob/main/API.md`;
+const SPONSOR = 'https://github.com/sponsors/erichideyuki';
 const nav = el('nav', { className: 'nav', ariaLabel: 'Documentation' });
 const content = el('main', { className: 'content', id: 'content', tabIndex: -1 });
 const filter = el('input', { type: 'search', className: 'nav-filter', placeholder: 'Filter pages…', ariaLabel: 'Filter pages' });
@@ -108,6 +109,8 @@ document.body.append(
         el('span', { className: 'brand-name brand-accent' }, 'Material')),
       el('span', { className: 'brand-product' }, 'Data Grid')),
     el('span', { className: 'spacer' }),
+    el('a', { className: 'sponsor-link', href: SPONSOR, target: '_blank', rel: 'noopener', title: 'Sponsor on GitHub', ariaLabel: 'Sponsor on GitHub' },
+      icon('favorite'), el('span', { className: 'sponsor-text' }, 'Sponsor')),
     el('a', { className: 'top-link', href: API, target: '_blank', rel: 'noopener' }, 'API reference'),
     themeButton,
     el('a', { className: 'icon-button', href: REPO, target: '_blank', rel: 'noopener', title: 'View on GitHub', ariaLabel: 'View on GitHub' }, githubMark())),
