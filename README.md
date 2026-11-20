@@ -63,7 +63,7 @@ npm i @universal-material/data-grid
 ```
 
 The package is modern ESM with TypeScript declarations and a
-[custom elements manifest](https://github.com/custom-elements-manifest/custom-elements-manifest).
+[custom elements manifest](https://github.com/webcomponents/custom-elements-manifest).
 `lit`, `@lit/context` and `interactjs` are regular dependencies, so your bundler shares them with
 the rest of your app. Importing the package registers `<u-grid>` as a side effect.
 
