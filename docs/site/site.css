@@ -379,6 +379,15 @@ code {
   color: var(--u-color-on-surface-variant);
 }
 
+.sidebar-sponsor {
+  margin-top: 8px;
+}
+
+.sidebar-sponsor > .icon:first-child {
+  color: light-dark(#bf3989, #db61a2);
+  font-variation-settings: 'FILL' 1;
+}
+
 .sidebar-footer > .icon:last-child {
   font-size: 16px;
   color: var(--u-color-on-surface-variant);

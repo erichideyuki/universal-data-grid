@@ -23,6 +23,10 @@
     "url": "git+https://github.com/universal-material/data-grid.git"
   },
   "license": "MIT",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/erichideyuki"
+  },
   "author": "Eric Kono",
   "type": "module",
   "main": "./dist/grid.js",

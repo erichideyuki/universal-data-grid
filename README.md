@@ -2,6 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@universal-material/data-grid)](https://www.npmjs.com/package/@universal-material/data-grid)
 [![license](https://img.shields.io/npm/l/@universal-material/data-grid)](https://github.com/universal-material/data-grid/blob/main/LICENSE)
+[![sponsor](https://img.shields.io/github/sponsors/erichideyuki?label=Sponsor&logo=GitHub)](https://github.com/sponsors/erichideyuki)
 
 **A fast, accessible data grid as a standard Web Component.** `<u-grid>` is built with
 [Lit](https://lit.dev) and belongs to the [Universal Material](https://universal-material.github.io/)
@@ -150,6 +151,10 @@ React 19+, and `:columns.prop` in Vue. Import the package before the first rende
 Current evergreen browsers: Chrome and Edge 114+, Firefox 125+, and Safari 17+. The grid relies on
 ES2022, the Popover API and modern CSS (`color-mix()`, `:has()`). Internet Explorer and legacy
 Edge are not supported.
+
+## Sponsor
+
+If `<u-grid>` helps you, consider [sponsoring its development on GitHub](https://github.com/sponsors/erichideyuki).
 
 ## License
 
