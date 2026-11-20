@@ -21,7 +21,8 @@ Vue or Svelte.
 
 - **Millions of rows.** Its own row virtualization renders only the visible rows. Sorting,
   grouping and expanding don't add per-row work, and the scroll range scales past the browser's
-  maximum element height. Hundreds of columns can be virtualized as well.
+  maximum element height. Hundreds of columns can be virtualized as well, and the grid can scroll
+  with the page or a parent panel (`scroll-container`) and still virtualize both.
 - **Remote data.** A `dataSource` whose server filters, sorts, groups, summarizes and pages. Only the
   visible blocks load, with skeleton rows, a pager or infinite scrolling, a load panel and "Retry".
 - **Shape the data.** Multi-column sorting, a filter row, a search panel, header filters, grouping by

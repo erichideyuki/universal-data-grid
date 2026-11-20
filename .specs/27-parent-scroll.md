@@ -40,7 +40,7 @@ contêiner externo, e o grid só desenha o que está na parte visível dele.
 4. **Fora**: barra de rolagem horizontal flutuante (o padrão
    "floating-scroll"); ver "Fora de escopo".
 
-## API (revisada pelos subagentes em 2026-11-20; aguarda o aval do usuário)
+## API (revisada pelos subagentes; aprovada pelo usuário em 2026-11-20)
 
 `<u-grid>`:
 - `scrollContainer: string | null` ↔ atributo `scroll-container`
@@ -268,7 +268,7 @@ Recusados: nenhum.
 - `src/render/virtualizer.ts` — porta de rolagem (elemento/janela),
   destino virtual que dura até a chegada, margem relida.
 - `src/features/scroll-port.ts` (novo) — resolução do contêiner, avisos,
-  retângulo visível, `scrollIntoView` do auxiliar, `scrollend` com reserva,
+  folha da instância, listeners da porta, `scrollend` com reserva,
   `IntersectionObserver`; controller com liberação no disconnect.
 - `src/grid.ts` — propriedades, troca de modo, pontos que leem o
   contêiner interno (janela de colunas, sombras, viewport, página,
@@ -311,6 +311,44 @@ Recusados: nenhum.
   erro e com o modo externo no CSS.
 - Perf (spec 16): cenário novo "1 milhão de linhas rolando pela janela",
   com orçamento igual ao da rolagem interna.
+
+## Decisões da implementação
+- **Foco por API: na hora, não no `scrollend`.** A linha ativa fica sempre
+  renderizada (fora da janela, como `.pinned`), então o foco do DOM vai
+  para a célula com `preventScroll` na hora e a rolagem suave vem depois.
+  O leitor recebe um evento de foco só; não há foco "pendente" a cancelar
+  nem a roubar. A revelação (trazer a linha e ajustar a célula) é que
+  espera o `scrollend` (ou 2 s; sem rolagem em 2 quadros, segue já); ação
+  do usuário no meio vence e rola na hora. **Diverge da proposta** (que
+  esperava o `scrollend` para focar): levar ao usuário na entrega.
+- `auto` só vira rolagem suave com `scroll-behavior: smooth` computado no
+  contêiner; sem ele a API rola na hora e relê a posição já (sem esperar
+  evento).
+- **Largura**: `.layout` com `inline-size: max-content; min-inline-size:
+  100%` no modo externo, para a barra, a paginação e a barra de erro
+  (largura = parte visível, `--_viewport-inline-size`) grudarem na borda
+  inicial dentro de um pai tão largo quanto a tabela. A sobra da última
+  coluna (`fit`) usa a largura do HOST (`--_fill-inline-size`), não a parte
+  visível (que muda ao rolar). O `ResizeObserver` observa também o host.
+- **Escala** (porta externa): salto com zonas 1:1 de uma janela perto de
+  cada ponta do corpo e proporcional no meio; antes do corpo e depois do
+  fim, 1:1 com a ponta (o conteúdo do hospedeiro não escala). Voltar do
+  rodapé da página cai nas últimas linhas. Rolar até uma linha guarda o par
+  destino (físico, virtual) e interpola o caminho (`#glide`) até chegar.
+- **Janela como porta**: o 1º tamanho é lido num `requestAnimationFrame`
+  (como o 1º aviso do `ResizeObserver`), para a hidratação desenhar as
+  mesmas linhas que o servidor.
+- **Folha da instância** (`adoptedStyleSheets`): só existe com o modo
+  vindo só da propriedade (`:host { height: auto }`) ou com o atributo que
+  não resolveu (anula o `:host([scroll-container])`).
+- `--_reveal-*` e `--_port-inset-*` (internas) no `.layout`, atualizadas a
+  cada render e quando a porta muda; os `top`/`bottom` do que gruda somam
+  `--_port-inset-*` só no modo externo (a rolagem interna não muda).
+- Sombras das fixas e janela de colunas pelos retângulos (tabela × porta),
+  sem `scrollLeft`: valem em LTR/RTL e com qualquer `dir` no contêiner.
+- Arrasto do intervalo: a área de rolagem automática é a parte do grid
+  visível na porta (menos o `scroll-padding`), e quem rola é a porta.
+- `_scrollElement` (`@internal`): o contêiner externo para o harness de perf.
 
 ## Critério de pronto
 - Global (00) + `npm run test:perf` com o cenário novo dentro do

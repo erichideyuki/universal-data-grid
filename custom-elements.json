@@ -922,6 +922,25 @@
             },
             {
               "kind": "field",
+              "name": "scrollContainer",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls in both\ndirections, and rows and columns are still virtualized by the visible\npart of the container; toolbar, headers, totals, fixed rows and columns\nstick to it. The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window. Not found or not an\nancestor: a console warning and the grid's own scrolling. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
+              "attribute": "scroll-container"
+            },
+            {
+              "kind": "field",
+              "name": "scrollContainerElement",
+              "type": {
+                "text": "HTMLElement | Window | null"
+              },
+              "default": "null",
+              "description": "The outer scroll container by reference (wins over `scrollContainer`):\nan ancestor element, or `window`. `document.documentElement` (or the\n`document.scrollingElement`) means the window. See `scrollContainer`."
+            },
+            {
+              "kind": "field",
               "name": "items",
               "type": {
                 "text": "any[]"
@@ -2969,6 +2988,15 @@
               "default": "'virtual'",
               "description": "`virtual` (default): every row is in the scroll range and a remote\nsource loads the visible blocks. `infinite`: the next block loads when\nthe end is reached (remote paging only; with `paging` the pager wins).",
               "fieldName": "scrollMode"
+            },
+            {
+              "name": "scroll-container",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls in both\ndirections, and rows and columns are still virtualized by the visible\npart of the container; toolbar, headers, totals, fixed rows and columns\nstick to it. The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window. Not found or not an\nancestor: a console warning and the grid's own scrolling. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
+              "fieldName": "scrollContainer"
             },
             {
               "name": "sort-mode",

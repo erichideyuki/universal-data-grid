@@ -4927,6 +4927,16 @@ export class DataGrid extends LitElement {
   readonly _scrollContainerRef: Ref<HTMLDivElement> = createRef();
   /** @internal */
   readonly _groupContainerRef: Ref<HTMLDivElement> = createRef();
+
+  /**
+   * @internal Contêiner externo que rola o grid (frente 27), quando é um
+   * elemento; `undefined` na rolagem interna ou pela janela (harness de perf).
+   */
+  get _scrollElement(): HTMLElement | undefined {
+    const port = this.#scrollPort.port;
+    return port && !port.isWindow ? port.element : undefined;
+  }
+
   readonly #layoutRef: Ref<HTMLDivElement> = createRef();
 
   /** Rolagem por contêiner externo (spec 27). */
@@ -13789,7 +13799,11 @@ export class DataGrid extends LitElement {
 
   /** `instant` para ação do usuário e com `prefers-reduced-motion`; `auto` (o `scroll-behavior` do contêiner) para API. */
   #revealBehavior(): ScrollBehavior {
-    return this.#revealByApi && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'instant';
+    const port = this.#scrollPort.port;
+
+    // `auto` só faz diferença com `scroll-behavior: smooth` no contêiner; sem ele, é instantâneo (e relido já).
+    return this.#revealByApi && port && getComputedStyle(port.element).scrollBehavior === 'smooth'
+      && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'instant';
   }
 
   /**

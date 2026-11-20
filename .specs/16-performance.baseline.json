@@ -178,6 +178,20 @@
     "headerMenuOpenMs": 4.4,
     "toolbarMoreOpenMs": 4.2
   },
+  "parent-scroll-1m": {
+    "firstRenderMs": 58.3,
+    "scrollP95Ms": 0.9,
+    "scrollWorstMs": 0.9,
+    "jumpP95Ms": 25.3,
+    "jumpWorstMs": 31.2,
+    "horizontal.scrollP95Ms": 27.4,
+    "horizontal.scrollWorstMs": 39.6,
+    "horizontal.jumpP95Ms": 40.6,
+    "horizontal.jumpWorstMs": 42.3,
+    "focusFarMs": 35.3,
+    "domNodes": 558,
+    "gridHeapMiB": 1.1
+  },
   "pdf-100k": {
     "pdfSliceMs": 36.2,
     "pdfTotalMs": 2658,

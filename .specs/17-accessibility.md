@@ -398,6 +398,31 @@ erro sempre. Seleção recursiva exige as caixas (o misto só aparece nelas:
 `padding-inline-start`, seta espelhada recolhida; `forced-colors`: botão
 `ButtonText`, indicador `CanvasText`; movimento reduzido: sem giro.
 
+## Frente 27 — rolagem por contêiner externo
+
+Sem papel, tecla nem anúncio novos: muda QUEM rola (o contêiner externo ou
+a janela). Foco não obscurecido (2.4.11): a célula do corpo e os focáveis
+dentro dela levam `scroll-margin` (barra, cabeçalho, fixas do topo; totais,
+fixas do fundo e a barra de erro; colunas fixas nos lados lógicos), então
+o foco nativo (Tab vindo de fora, controle de renderer) e o
+`scrollIntoView` param fora do que o grid gruda; o que o hospedeiro gruda
+no contêiner entra pelo `scroll-padding` dele (técnica C43, sem custom
+property). Linha fora da janela virtual: alvo auxiliar `aria-hidden`
+(fora da `<table>`, nunca no SSR) com as mesmas margens. Teclado e clique
+rolam instantâneo; API respeita o `scroll-behavior` do contêiner (só
+`smooth` anima), nunca com `prefers-reduced-motion: reduce` (2.3.3). Na
+API, o foco do DOM vai na hora (a linha ativa sempre fica renderizada, com
+`preventScroll`) e a rolagem suave vem depois — a proposta previa esperar o
+`scrollend`; mudou porque a linha ativa já está no DOM, o leitor recebe um
+único evento de foco e nada pode ser "roubado" depois; ação do usuário no
+meio da rolagem suave vence (rola na hora). PageUp/PageDown andam a altura
+da porta menos o que grudaria nela. Regra dos 50% das linhas fixas contra a
+altura da porta (somando o `scroll-padding`). O contêiner é do hospedeiro:
+o API.md pede `tabindex="0"` + `role="region"` + `aria-label` (com o grid
+`inert` na carga, ficaria sem focável). axe sem violações no modo externo
+em LTR e RTL, com e sem linhas; roteiro de teclado (setas, PageUp/Down,
+Ctrl+Home/End na escala, Tab de fora) automatizado em LTR e RTL.
+
 ## `reshapeOnChanges` (dados ao vivo que reordenam)
 
 Decidido com o usuário em 2026-11-19, após a revisão do `a11y-reviewer`

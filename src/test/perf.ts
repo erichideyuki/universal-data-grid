@@ -167,8 +167,9 @@ export const painted = async (grid: DataGrid): Promise<void> => {
   await nextFrame();
 };
 
-const scrollerOf = (grid: DataGrid): HTMLElement =>
-  grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+/** O que rola o grid: o contêiner interno, ou o contêiner externo (frente 27). */
+export const scrollerOf = (grid: DataGrid): HTMLElement =>
+  grid._scrollElement ?? grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
 
 /** Força estilo e layout pendentes (o trabalho que o quadro faria antes de pintar). */
 const forceLayout = (grid: DataGrid): number =>

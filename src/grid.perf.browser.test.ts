@@ -29,6 +29,7 @@ import {
   painted,
   quietHeap,
   type PerfSession,
+  scrollerOf,
   startPerf,
   updatesDone,
   wheelPositions,
@@ -1318,7 +1319,7 @@ const editingScenario = (rows: number, label: string) => {
 /** Rolagem horizontal: passos de roda e saltos, melhor de {@link REPEATS}. */
 const horizontalMetrics = async (grid: DataGrid, prefix: string) => {
   const best = { wheelP95: Infinity, wheelWorst: Infinity, jumpP95: Infinity, jumpWorst: Infinity };
-  const scroller = grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+  const scroller = scrollerOf(grid);
 
   for (let i = 0; i < REPEATS; i++) {
     scroller.scrollLeft = 0;
@@ -1613,6 +1614,86 @@ const treeScenario = (label: string) => {
   });
 };
 
+/**
+ * Frente 27: rolagem por contêiner externo — o grid no meio de um painel
+ * rolável (conteúdo acima e abaixo), 1 milhão × 300 colunas: as duas
+ * virtualizações pela rolagem do painel, e o salto de `focusCell` (alvo
+ * auxiliar + `scrollIntoView`).
+ */
+const parentScrollScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 300 colunas num contêiner externo: render, rolagem vertical e horizontal, focusCell`, async () => {
+    let items: object[] | undefined = makeIdItems(rows);
+    const columns = makeWideColumns(300, 0);
+    const heapBefore = await heapMiB();
+
+    const mount = async () => {
+      const outer = document.createElement('div');
+      outer.id = 'perf-outer';
+      outer.style.cssText = 'height:600px;overflow:auto';
+      const above = document.createElement('div');
+      above.style.height = '300px';
+      const below = document.createElement('div');
+      below.style.height = '600px';
+      const grid = document.createElement('u-grid');
+      grid.setAttribute('scroll-container', 'perf-outer');
+      grid.keyExpr = 'id';
+      grid.columns = columns;
+      grid.items = items!;
+      outer.append(above, grid, below);
+
+      perf.recalibrate();
+      await quietHeap();
+      const start = performance.now();
+
+      document.body.append(outer);
+      await updatesDone(grid);
+      grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+
+      const ms = perf.weak(performance.now() - start);
+
+      await painted(grid);
+      return { grid, outer, ms };
+    };
+
+    await perf.throttle();
+    const { best } = await bestOfQuiet(async () => {
+      const { outer, ms } = await mount();
+      outer.remove();
+      return { ms };
+    });
+    const { grid, outer } = await mount();
+    // A roda começa dentro do corpo (não no conteúdo acima do grid).
+    outer.scrollTop = 20_000;
+    await painted(grid);
+    const scroll = await scrollMetrics(grid);
+    const horizontal = await horizontalMetrics(grid, 'horizontal.');
+    const nodes = domNodes(grid);
+    const keys = [rows - 10, 10, Math.floor(rows / 2)];
+    let next = 0;
+    const focusFar = await interaction('focusFar', grid, () => grid.focusCell(keys[next++ % keys.length]), () => undefined);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+
+    expect(grid.shadowRoot!.querySelectorAll('th.header-column').length, 'colunas no DOM').toBeLessThan(40);
+    expect(grid.shadowRoot!.querySelectorAll('tbody.body-rows tr[role=row]').length, 'linhas no DOM').toBeLessThan(60);
+    outer.remove();
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs: best.ms,
+      ...scroll,
+      ...horizontal,
+      ...focusFar,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`parent-scroll-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -1636,4 +1717,5 @@ describe('perfil de máquina fraca', () => {
   cellRangeScenario(1_000_000, '1m');
   responsiveScenario(1_000_000, '1m');
   treeScenario('1m');
+  parentScrollScenario(1_000_000, '1m');
 });

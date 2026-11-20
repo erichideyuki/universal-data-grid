@@ -19,7 +19,7 @@ For live examples of every feature, see the [documentation site](https://univers
 - [Summaries](#summaries) (totals and group summaries)
 - [Tree data](#tree-data) (nested or parent-key data, load-on-demand children, recursive selection)
 - [Selection & keyboard](#selection--keyboard) (row selection, cell ranges, keyboard navigation, accessibility)
-- [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling)
+- [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling, scrolling with the page or a parent)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization, responsive columns)
 - [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
 - [Toolbar & context menus](#toolbar--context-menus) (built-in and custom toolbar items, "More actions", export button, context menus)
@@ -1227,6 +1227,55 @@ into one more). Saving edits never reshapes: the edited row keeps its position.
 - **`scroll-mode="infinite"`** (remote paging only; otherwise ignored with a warning) loads the next block when the end is reached,
   without asking `totalCount` (`aria-rowcount="-1"` until the last block). With `paging` the pager
   wins.
+
+### Scrolling with the page or a parent
+
+By default the grid has its own scrollbar. To make it part of a longer page (one scrollbar for the
+whole page, content above and below the grid), point it at the container that scrolls:
+
+```html
+<!-- The page scrolls -->
+<u-grid scroll-container="window"></u-grid>
+
+<!-- A panel of the app scrolls (an ancestor of the grid) -->
+<main id="report" style="height: 100vh; overflow: auto">
+  <h1>Sales</h1>
+  <u-grid scroll-container="report"></u-grid>
+  <footer>…</footer>
+</main>
+```
+
+```js
+grid.scrollContainerElement = window;              // or an ancestor element
+grid.scrollContainerElement = null;                // back to the grid's own scrollbar
+```
+
+- **`scroll-container`** takes the id of an **ancestor** of the grid (the first ancestor with that
+  id, crossing shadow roots — unlike IDREF attributes such as `for`), or `window` for the page
+  (`window` wins over an element with `id="window"`). `<html>` (or the
+  `document.scrollingElement`) also means the page; `<body>` only when it is the scrolling
+  element. **`scrollContainerElement`** sets it by reference and wins over the attribute.
+- The grid grows to its content — **don't give it a height** in this mode — and the container
+  scrolls in both directions. Rows and columns are still virtualized: only what is visible in the
+  container is rendered, with millions of rows and with content after the grid.
+- The toolbar, the column headers (with bands), fixed rows, the totals, fixed columns and group
+  labels stick to the container. The toolbar, the pager, detail rows and full-width rows span the
+  visible part of the grid.
+- Something of yours stuck to the container (an app bar)? Give the container a
+  **`scroll-padding-top`** (and `scroll-padding-bottom` for a bottom bar): the grid sticks its
+  headers below it, and keyboard focus never stops under it (WCAG 2.4.11).
+- Keyboard navigation, `focusCell` and `editCell` scroll the container. Keyboard and mouse scroll
+  instantly; API calls follow the container's `scroll-behavior` (`smooth` animates, focus moves at
+  once), except with `prefers-reduced-motion: reduce`.
+- The attribute alone is enough for server rendering: the server already renders the grid without
+  its own scrollbar, so hydration doesn't jump.
+- Resolved when the grid connects and when either property changes (changing the ancestor's id
+  later doesn't re-resolve). Not found, not an ancestor or empty: a console warning and the grid's
+  own scrollbar. A warning also when an element between the grid and the container clips or
+  scrolls (`overflow` other than `visible`/`clip`): sticky headers would stick to it instead.
+- Accessibility: the container is yours. If it scrolls, make it reachable by keyboard and name it
+  (`tabindex="0" role="region" aria-label="…"`): while the grid loads its rows it is inert, and a
+  scrollable region with nothing focusable fails WCAG 2.1.1.
 
 ---
 
@@ -2675,6 +2724,8 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `pageIndex`        | `page-index`          | `number`  | `0`     | Current page (0-based, clamped). Setting it fires no event. |
 | `pageSizeOptions`  | `page-size-options`   | `readonly number[]` | `[10, 20, 50, 100]` | Page sizes of the pager (attribute: `"10, 20, 50"`; empty hides the selector). |
 | `scrollMode`       | `scroll-mode`         | `'virtual' \| 'infinite'` | `'virtual'` | Infinite scrolling for a remote source. |
+| `scrollContainer`  | `scroll-container`    | `string \| null` | `null` | Scroll with an outer container: the id of an ancestor, or `window`. See [Scrolling with the page or a parent](#scrolling-with-the-page-or-a-parent). |
+| `scrollContainerElement` | *(property only)* | `HTMLElement \| Window \| null` | `null` | The outer scroll container by reference (wins over `scrollContainer`). |
 | `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'copy-paste' \| 'none'` | `'copy'` | Ctrl+C copies the cell ranges, the selected rows or the focused cell; `copy-paste` also pastes with Ctrl+V (and the cell menu "Paste" with cell ranges or `row-menu`). See [Export & clipboard](#export--clipboard). |
 | `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. Also opens the cell context menu with the range items, even without `row-menu`. See [Cell ranges](#cell-ranges). |
 | `showCellRangeSummary` | `show-cell-range-summary` | `boolean` | `false` | Bar with the count, sum and average of the selected cells. |
