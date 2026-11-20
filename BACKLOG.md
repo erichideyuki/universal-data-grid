@@ -129,7 +129,7 @@ Legenda: ✅ tem · ◐ parcial/com defeito · — não tem.
 | Detalhe | Master-detail (linha expansível) | ✅ | ✅ | ✅ (Enterprise) |
 | Hierarquia | Dados em árvore | ✅ | ◐ | ✅ (Enterprise) |
 | Estado | Salvar/restaurar layout (colunas, ordem, filtros, grupos) | ✅ | ✅ | ✅ |
-| Exportação | CSV / Excel / PDF / área de transferência | ◐ (CSV, Excel por adaptador, Ctrl+C; PDF pelo hospedeiro) | ✅ | ✅ (Excel: Enterprise) |
+| Exportação | CSV / Excel / PDF / área de transferência | ✅ | ✅ | ✅ (Excel: Enterprise) |
 | UI | Barra de ferramentas, menu de contexto, painel de carregamento | ✅ | ✅ | ✅ |
 | UI | Responsivo (colunas ocultas por prioridade) | ✅ | ✅ | — |
 | A11y | Padrão grid ARIA completo, leitor de tela | ✅ | ✅ | ✅ |
@@ -193,6 +193,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Edição por formulário e desfazer | `23-*` | modos formulário/popup; desfazer/refazer | — |
 | Construtor de filtro | `24-*` | construtor visual e painel de filtro | — |
 | Árvore | `25-tree-data.md` | dados hierárquicos no próprio `<u-grid>` (`treeMode`) | feito |
+| Exportação em PDF | `26-export-pdf.md` | PDF marcado (PDF/UA) por motor próprio Rust/WASM em worker; entrada `export-pdf` | feito |
 
 ### Pendências deixadas pelas frentes
 
