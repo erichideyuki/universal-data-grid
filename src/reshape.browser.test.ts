@@ -235,12 +235,20 @@ describe('reshapeOnChanges', () => {
     const data = Array.from({ length: 300 }, (_, id) => ({ id, name: `N${id}`, price: id }));
     const local = new LocalDataSource(data);
     const calls: GridLoadOptions[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
     const source: GridDataSource = {
       load: (options, signal) => new Promise((resolve, reject) => {
         calls.push(options);
-        const timer = setTimeout(() => resolve(local.query(options)), 40);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        const timer = setTimeout(() => {
+          inFlight--;
+          resolve(local.query(options));
+        }, 40);
         signal.addEventListener('abort', () => {
           clearTimeout(timer);
+          inFlight--;
           reject(signal.reason);
         }, { once: true });
       }),
@@ -260,17 +268,25 @@ describe('reshapeOnChanges', () => {
     await waitFor(() => names(grid).length > 0);
     await settle(grid);
     const before = calls.length;
+    maxInFlight = 0;
 
     for (let n = 0; n < 20; n++) {
       grid.applyChanges({ update: [{ id: n, name: `N${n}`, price: n }] });
       await new Promise(resolve => setTimeout(resolve, 5));
     }
 
+    // Depois da última mudança: no máximo a que está em voo terminar e a da fila rodar.
+    const afterBurst = calls.length;
     await new Promise(resolve => setTimeout(resolve, 300));
     await settle(grid);
-    // Uma em voo + uma na fila (cada recarga pede o bloco em vista).
-    expect(calls.length - before).toBeLessThanOrEqual(4);
+
+    // O invariante não depende do relógio: nunca duas cargas ao mesmo tempo, e a rajada inteira
+    // vira no máximo uma recarga a mais depois dela (a da fila). Contar o total dependia de quanto a
+    // rajada demora (máquina carregada: mais janelas de 40 ms, mais recargas), e falhava na suíte cheia.
+    expect(maxInFlight).toBe(1);
+    expect(calls.length - afterBurst).toBeLessThanOrEqual(1);
     expect(calls.length - before).toBeGreaterThanOrEqual(1);
+    expect(inFlight).toBe(0);
   });
 
   it('passes axe after a reshape', async () => {
