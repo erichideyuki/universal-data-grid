@@ -15578,7 +15578,13 @@ export class DataGrid extends LitElement {
 
     // A sobra vai para a última coluna NÃO fixa: uma fixa (ex.: ações no fim, com
     // largura escolhida) fica na largura dela, como na referência (relato 0.3.3).
-    const last = [...layout].reverse().find(({ column }) => this._fixedOf(column) === null) ?? layout[layout.length - 1];
+    // Só fixas visíveis: para a última sem largura do autor (medida pelo
+    // auto-width conta para a soma, mas pode levar a sobra; relato 0.3.5).
+    const reversed = [...layout].reverse();
+    const authorWidth = (column: GridColumnDef) => this.#userWidths.has(column) || (column.width !== null && column.width !== undefined);
+    const last = reversed.find(({ column }) => this._fixedOf(column) === null)
+      ?? reversed.find(({ column }) => !authorWidth(column))
+      ?? layout[layout.length - 1];
     let fillWidth: string | undefined;
 
     if (fill && last) {

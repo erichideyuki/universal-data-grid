@@ -289,6 +289,32 @@ describe('revisão do site de documentação', () => {
     });
   }
 
+  // Relato da 0.3.5 (click): só fixas sobraram (Nome fixa no início, medida pelo auto-width): a
+  // sobra ia para Ações (width 72 do autor), que ficava com 172px.
+  it('só fixas visíveis: a sobra vai para a fixa sem width do autor, nunca para a de width explícito', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Nome', minWidth: 140, fixed: 'start' },
+        { path: 'active', label: 'Ativo', dataType: 'boolean', hidingPriority: 0 },
+        { path: 'done', label: 'Concluído', dataType: 'number', hidingPriority: 1 },
+        { name: 'actions', label: 'Ações', width: 72, fixed: 'end', resizable: false, sortable: false, valueGetter: () => 'x' },
+      ],
+      items: ['Paulo Henrique Duarte', 'Ana'].map(name => ({ name, active: true, done: 3 })),
+      configure: g => {
+        g.style.width = '360px';
+        g.columnAutoWidth = true;
+        g.autoHideColumns = true;
+      },
+    });
+    await settle(grid);
+    await settle(grid);
+
+    expect(grid.getAdaptiveColumns().length).toBe(2);
+    expect(headerCell(grid, 'Ações').getBoundingClientRect().width).toBeCloseTo(72, 0);
+    expect(headerCell(grid, 'Nome').getBoundingClientRect().width).toBeGreaterThan(200);
+    expect(root(grid).querySelector('table')!.getBoundingClientRect().width).toBeCloseTo(scroller(grid).clientWidth, 0);
+  });
+
   it('filtro booleano: botão de menu estilizável no lugar do <select>, pelo teclado', async () => {
     const grid = await createGrid({
       columns: [...columns(), { path: 'active', label: 'Active', dataType: 'boolean', width: 120 }],

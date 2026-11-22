@@ -1378,7 +1378,8 @@ column out).
 
 When every visible column has a width (set by you or by the user), the last non-fixed column absorbs
 any leftover width so the table still fills the grid (its own width is the minimum; a column fixed
-at an edge, such as an actions column, keeps its width) — columns measured by
+at an edge, such as an actions column, keeps its width; when only fixed columns are shown, the last
+one without a width of yours takes it) — columns measured by
 `column-auto-width` count as having a width; otherwise, with at least one auto-width column, that
 column takes the leftover. With column virtualization the table is exactly
 as wide as the sum. `getColumnWidth()` and the resize handle report the set width, not the
@@ -3432,6 +3433,10 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): when only fixed columns are shown (the others hidden by
+`autoHideColumns`), the leftover width goes to the last one without a width of yours, not to an
+actions column with `width` (it took the leftover).
 
 In 0.3.5: with `column-auto-width`, a fixed column with a `width` (an actions
 column) keeps it too; the leftover goes to the last non-fixed column (the browser spread it over
