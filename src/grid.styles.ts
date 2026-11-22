@@ -111,6 +111,13 @@ export const styles = css`
   }
 
   .scroll-container {
+    /*
+     * Bloco de contenção dos absolutos da tabela (textos só para leitor de
+     * tela nas linhas de grupo, linha ativa fora da janela): sem isso eles se
+     * posicionam no \`.container\`, fora desta área, escapam do overflow e
+     * alargam o grid e a página (relato de uso, celular).
+     */
+    position: relative;
     height: 100%;
     overflow: auto;
   }
@@ -2301,6 +2308,7 @@ export const styles = css`
   }
 
   .pager {
+    container: u-grid-pager / inline-size;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -2333,8 +2341,22 @@ export const styles = css`
 
   .pager-buttons {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
+    max-width: 100%;
+  }
+
+  /*
+   * Paginador estreito (celular, painel lateral): só as setas — o número da
+   * página já está no texto ("Página 1 de 14"). Sem isso, os 9 botões de 40px
+   * (376px com os espaços) passavam da largura do grid e alargavam a página
+   * (WCAG 1.4.10). A medida é a área de conteúdo do paginador (sem padding).
+   */
+  @container u-grid-pager (max-width: 375.98px) {
+    .pager-number {
+      display: none;
+    }
   }
 
   .pager-button {

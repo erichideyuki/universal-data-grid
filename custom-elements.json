@@ -2204,11 +2204,11 @@
                   "name": "options",
                   "optional": true,
                   "type": {
-                    "text": "{ rowFixed?: GridRowFixed } | null"
+                    "text": "GridFocusCellOptions | null"
                   }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out or in a collapsed group — groups are\nnot expanded) or `column` is not a shown (user-visible), ungrouped\ncolumn (a band returns `false`). A column hidden by `autoHideColumns`\nopens the row details (`u-grid-row-expansion-change`, `source: 'api'`)\nand focuses its value. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out, or in a collapsed group or tree\nnode — unless `options.expandAncestors`, which expands them first, from\nthe outer level in, firing `u-grid-group-expansion-change` /\n`u-grid-node-expansion-change` with `source: 'api'`) or `column` is not\na shown (user-visible), ungrouped column (a band returns `false`). A\n`false` result changes nothing. A column hidden by `autoHideColumns`\nopens the row details (`u-grid-row-expansion-change`, `source: 'api'`)\nand focuses its value. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
             },
             {
               "kind": "method",

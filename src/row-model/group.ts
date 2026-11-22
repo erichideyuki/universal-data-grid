@@ -38,6 +38,10 @@ const groupValueReader = (column: GridColumnDef): (item: unknown) => unknown => 
     : cellValueReader(column);
 };
 
+/** Valores de agrupamento de um item, um por nível (os de \`GroupNode.value\`; caminho do grupo dele). */
+export const groupValuesOf = (item: unknown, groupColumns: readonly GridColumnDef[]): unknown[] =>
+  groupColumns.map(column => groupValueReader(column)(item));
+
 /** Identidade de um valor de grupo; a faixa não passa pelo `dataType` da coluna. */
 const groupIdentity = (value: unknown, column: GridColumnDef): string =>
   valueIdentity(column.groupValueGetter ? value : coerceValue(value, column.dataType));

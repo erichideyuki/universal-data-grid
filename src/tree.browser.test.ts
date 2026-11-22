@@ -778,3 +778,18 @@ describe('árvore: fonte remota', () => {
     expect(root(grid).querySelector('[aria-live]')!.textContent).toContain('Could not load child rows');
   });
 });
+
+describe('focusCell com expandAncestors (nós fechados)', () => {
+  it('sem a opção não abre; com ela abre os nós acima da linha e foca', async () => {
+    const grid = await flatGrid();
+    expect(tree(grid)).toEqual(['a', 'b', 'c']);
+
+    expect(grid.focusCell(4)).toBe(false);
+    expect(tree(grid)).toEqual(['a', 'b', 'c']);
+
+    expect(grid.focusCell(4, 'size', { expandAncestors: true })).toBe(true);
+    await settle(grid);
+    expect(tree(grid)).toEqual(['a', '  a1', '  a2', '    a2x', 'b', 'c']);
+    expect((root(grid).activeElement as HTMLElement).closest('tr')!.textContent).toContain('a2x');
+  });
+});

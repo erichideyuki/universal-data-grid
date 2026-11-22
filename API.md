@@ -1335,6 +1335,11 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
 - Accessibility: the container is yours. If it scrolls, make it reachable by keyboard and name it
   (`tabindex="0" role="region" aria-label="…"`): while the grid loads its rows it is inert, and a
   scrollable region with nothing focusable fails WCAG 2.1.1.
+- **Phones and `window`:** the container scrolls sideways too, so with `scroll-container="window"` a
+  table wider than the screen makes the page wider. Mobile browsers then widen their layout
+  viewport, and what sticks to the bottom (totals, `fixedBottomItems`) sticks below the screen. On
+  narrow screens turn on `autoHideColumns` (the columns that don't fit move to the row details) or
+  use an element as the container.
 
 ---
 
@@ -3107,7 +3112,7 @@ CSS property and part for IDEs and tooling.
 | `refresh()` | Reload the data source (or recompute local data); resolves when done. |
 | `applyChanges({ add, update, remove })` | Change loaded rows of `dataSource` by key without reloading everything. |
 | `getTotalCount()` | Number of data rows (after the filter; the server total with remote paging; `-1` while unknown). |
-| `focusCell(rowKey, column?, options?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups are not expanded); a column hidden by `autoHideColumns` opens the row details and focuses its value. `{ rowFixed: 'top' \| 'bottom' }` looks among the fixed rows. |
+| `focusCell(rowKey, column?, options?)` | Scroll to a cell and focus it (`column`: definition, `name` or `path`); `false` if the row or column is not shown (groups and tree nodes are not expanded, unless `{ expandAncestors: true }`: it expands the collapsed groups or nodes that contain the row, from the outer level in, with `source: 'api'` expansion events; nothing expands with a remote `dataSource`, for a filtered-out row or an invalid column); a column hidden by `autoHideColumns` opens the row details and focuses its value. `{ rowFixed: 'top' \| 'bottom' }` looks among the fixed rows. |
 | `selectCellRange(range, { append })` | Select a range of data cells (`append`: add it, `multiple` only); `false` (nothing changes) when the mode is `none`, a column is not a visible data column, a row is not a data row of the displayed body, or the range is a single cell without `append` and another range. See [Cell ranges](#cell-ranges). |
 | `getCellRanges()` / `clearCellRanges()` | The cell ranges (copies, frozen) / clear them. |
 | `getCellRangeSummary({ signal })` | `Promise<GridCellRangeSummary>`: count, sum and average of the selected cells. |
@@ -3244,6 +3249,7 @@ import {
   type GridNodeSummaryItem, // = GridGroupSummaryItem (summary.node)
   type GridNodeExpansionChangeEventDetail, // { rowKey, expanded, source }
   type GridAddRowOptions,   // { parentKey? }
+  type GridFocusCellOptions, // { rowFixed?, expandAncestors? }
   type GridLoadTree,        // { parentKeys: (GridRowKey | null)[] | null } — GridLoadOptions.tree
   type GridRowKey,          // string | number
   type GridKeyExpr,         // string | ((item) => GridRowKey)
@@ -3416,6 +3422,12 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): `focusCell(rowKey, column, { expandAncestors: true })` expands the collapsed
+groups or tree nodes that contain the row before focusing it (default `false`, as before); absolutely positioned parts inside the table (the screen reader text of
+group rows) no longer escape the grid's scroll area — they made the grid and the page wider on
+phones; the pager shows only its arrow buttons when the page number buttons don't fit (the page number
+is in its text).
 
 In 0.3.1: `header-wrap` breaks only between words (it used to split words at
 any letter); a word longer than the column ends in an ellipsis, `--u-grid-header-cell-max-lines`

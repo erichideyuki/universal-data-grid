@@ -874,3 +874,27 @@ describe('loading com items locais', () => {
     expect(root(grid).querySelector('[part~="load-panel"]')).toBeNull();
   });
 });
+
+// Relato de uso (docs, celular): os 9 botões do paginador passavam da largura do grid e alargavam a página.
+it('paginador estreito: só as setas, nada transborda; largo: números de volta', async () => {
+  const grid = await createGrid({
+    columns: [{ path: 'id', label: 'ID' }],
+    items: Array.from({ length: 140 }, (_, id) => ({ id })),
+    configure: g => {
+      g.style.width = '309px';
+      g.paging = true;
+      g.pageSize = 10;
+    },
+  });
+  const pager = root(grid).querySelector<HTMLElement>('.pager')!;
+  const visible = (selector: string) => [...pager.querySelectorAll<HTMLElement>(selector)].filter(button => button.getBoundingClientRect().width > 0).length;
+
+  expect(pager.scrollWidth).toBeLessThanOrEqual(pager.clientWidth + 1);
+  expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+  expect(visible('.pager-number')).toBe(0);
+  expect(visible('.pager-arrow')).toBe(4);
+
+  grid.style.width = '800px';
+  await settle(grid);
+  expect(visible('.pager-number')).toBeGreaterThan(0);
+});

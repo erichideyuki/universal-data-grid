@@ -579,3 +579,115 @@ describe('groupable', () => {
     expect(cellText(bodyRows(grid)[0].cells[1])).toContain('N: big');
   });
 });
+
+// Relato de uso (docs, celular): o texto escondido das linhas de grupo ("Sum of Total: …", absoluto)
+// se posicionava fora da área de rolagem do grid, escapava do overflow e alargava a página.
+describe('nada do grid escapa da área de rolagem na horizontal', () => {
+  it('grid estreito, agrupado, com resumos: o host não transborda', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'country', label: 'Country', width: 200, groupIndex: 0 },
+        { path: 'city', label: 'City', width: 200 },
+        { path: 'amount', label: 'Amount', width: 200, dataType: 'number' },
+        { path: 'day', label: 'Day', width: 200, dataType: 'date' },
+      ],
+      items: sales(),
+      configure: g => {
+        g.style.width = '300px';
+        g.autoExpandGroups = true;
+        g.summary = { group: [{ column: 'amount', type: 'sum' }, { column: 'amount', type: 'max', display: 'column' }], total: [{ column: 'amount', type: 'sum' }] };
+      },
+    });
+
+    expect(root(grid).querySelector('.scroll-container')!.scrollWidth).toBeGreaterThan(300);
+    expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+  });
+});
+
+it('linha ativa fora da janela virtual (presa no DOM) não alarga o grid', async () => {
+  const items = Array.from({ length: 500 }, (_, i) => ({ country: `C${i}`, city: 'x', amount: i, day: '2024-01-01' }));
+  const grid = await createGrid({
+    columns: columns().map(def => ({ ...def, width: 250 })),
+    items,
+    configure: g => {
+      g.style.width = '300px';
+      g.selectionMode = 'multiple';
+      g.showCheckboxes = true;
+    },
+  });
+
+  // Foco numa célula da 1ª linha e rolagem para longe: a linha fica presa fora da janela.
+  grid.focusCell(items[0], 'country');
+  await settle(grid);
+  root(grid).querySelector('.scroll-container')!.scrollTop = 20_000;
+  await settle(grid);
+  await settle(grid);
+
+  expect(root(grid).querySelectorAll('tr.pinned').length).toBe(1);
+  expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+});
+
+describe('focusCell com expandAncestors', () => {
+  const nested = (configure?: (grid: DataGrid) => void) => {
+    const defs = columns();
+    defs[0].groupIndex = 0;
+    defs[1].groupIndex = 1;
+
+    return createGrid({ columns: defs, items: sales(), configure: grid => {
+      grid.language = 'en';
+      grid.keyExpr = 'day';
+      configure?.(grid);
+    } });
+  };
+
+  it('padrão: grupo fechado devolve false e não abre nada', async () => {
+    const grid = await nested();
+    const events: unknown[] = [];
+    grid.addEventListener('u-grid-group-expansion-change', event => events.push((event as CustomEvent).detail));
+
+    expect(grid.focusCell('2024-02-01')).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it('expandAncestors: abre do nível de fora para dentro (eventos api), rola e foca a célula', async () => {
+    const grid = await nested();
+    const events: GridGroupExpansionChangeEventDetail[] = [];
+    grid.addEventListener('u-grid-group-expansion-change', event => events.push(event.detail));
+
+    expect(grid.focusCell('2024-02-01', 'amount', { expandAncestors: true })).toBe(true);
+    await settle(grid);
+
+    expect(events.map(({ groupPath, groupIndex, expanded, source }) => ({ groupPath: [...groupPath ?? []], groupIndex, expanded, source }))).toEqual([
+      { groupPath: ['Brazil'], groupIndex: 0, expanded: true, source: 'api' },
+      { groupPath: ['Brazil', 'SP'], groupIndex: 1, expanded: true, source: 'api' },
+    ]);
+    // A célula de Amount (1ª coluna navegável: as agrupadas saem) da linha de 1/2/2024.
+    const cell = root(grid).activeElement as HTMLElement;
+    const header = [...root(grid).querySelectorAll('th.header-column')].find(th => th.textContent.includes('Amount'))!;
+    expect(cell.getAttribute('aria-colindex')).toBe(header.getAttribute('aria-colindex'));
+    expect(cell.closest('tr')!.textContent).toContain('2/1/2024');
+
+    // Já aberto: nada novo.
+    expect(grid.focusCell('2024-03-01', null, { expandAncestors: true })).toBe(true);
+    expect(events).toHaveLength(3);
+  });
+
+  it('coluna inválida: false sem abrir nenhum grupo (um false não muda nada)', async () => {
+    const grid = await nested();
+    const events: unknown[] = [];
+    grid.addEventListener('u-grid-group-expansion-change', event => events.push((event as CustomEvent).detail));
+
+    expect(grid.focusCell('2024-02-01', 'nope', { expandAncestors: true })).toBe(false);
+    expect(grid.focusCell('2024-02-01', 'country', { expandAncestors: true })).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it('linha filtrada: false, nenhum grupo aberto', async () => {
+    const grid = await nested(g => g.filterValue = ['amount', '>', 20]);
+    const events: unknown[] = [];
+    grid.addEventListener('u-grid-group-expansion-change', event => events.push((event as CustomEvent).detail));
+
+    expect(grid.focusCell('2024-03-01', null, { expandAncestors: true })).toBe(false);
+    expect(events).toEqual([]);
+  });
+});

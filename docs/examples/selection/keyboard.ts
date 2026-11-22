@@ -5,7 +5,7 @@ import { makeOrders } from '../shared/data.js';
 
 export const meta = {
   title: 'Keyboard navigation',
-  description: 'Click a cell (or `Tab` into the grid) and use the keys: arrows move between cells (the header is the first row), `Home`/`End` go to the ends of the row, `Ctrl`+`Home`/`Ctrl`+`End` to the first/last cell, `PageUp`/`PageDown` scroll a page, `Space` selects the row and `Shift`+`↑`/`↓` extends the selection. On a header, `Enter` sorts, `Alt`+`←`/`→` resizes, `Alt`+`Shift`+`←`/`→` moves the column, `Ctrl`+`G` groups and `Shift`+`F10` opens its menu. `u-grid-focus-change` reports every move; `focusCell` scrolls to a cell and focuses it.',
+  description: 'Click a cell (or `Tab` into the grid) and use the keys: arrows move between cells (the header is the first row), `Home`/`End` go to the ends of the row, `Ctrl`+`Home`/`Ctrl`+`End` to the first/last cell, `PageUp`/`PageDown` scroll a page, `Space` selects the row and `Shift`+`↑`/`↓` extends the selection. On a header, `Enter` sorts, `Alt`+`←`/`→` resizes, `Alt`+`Shift`+`←`/`→` moves the column, `Ctrl`+`G` groups and `Shift`+`F10` opens its menu. `u-grid-focus-change` reports every move; `focusCell` scrolls to a cell and focuses it — with `expandAncestors` it also opens the collapsed groups that contain the row (group the grid by a column, then try the buttons).',
 };
 
 export default (host: HTMLElement) => {
@@ -31,8 +31,9 @@ export default (host: HTMLElement) => {
   });
 
   controls(host,
-    button('Focus order 1500 · Total', () => grid.focusCell(1500, 'total')),
-    button('Focus order 1 · Customer', () => grid.focusCell(1, 'customer')),
+    // `expandAncestors`: if you grouped the grid, the collapsed groups that contain the row open first.
+    button('Focus order 1500 · Total', () => grid.focusCell(1500, 'total', { expandAncestors: true })),
+    button('Focus order 1 · Customer', () => grid.focusCell(1, 'customer', { expandAncestors: true })),
     button('Focus the grid', () => grid.focus()),
     button('Log focusedRowKey', () => log.write(`focusedRowKey = ${String(grid.focusedRowKey)}`)));
 };

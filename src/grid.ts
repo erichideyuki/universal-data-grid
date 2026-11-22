@@ -274,7 +274,7 @@ import {
   resolveDataType,
   toDate,
 } from './row-model/format.js';
-import { buildGroups, groupKeyOf } from './row-model/group.js';
+import { buildGroups, groupKeyOf, groupValuesOf } from './row-model/group.js';
 import { LruCache } from './row-model/lru.js';
 import { type RankCache, sortOrder } from './row-model/sort.js';
 import { type SummaryFormatContext, formatSummaryValue, summarize, type SummarySpec } from './row-model/summary.js';
@@ -512,6 +512,19 @@ export interface GridNodeExpansionChangeEventDetail {
   expanded: boolean;
   /** `user` (expand button, keyboard) or `api` (`expandNode`, `collapseNode`…; also a failed child load). */
   source: GridChangeSource;
+}
+
+/** Options of `focusCell`. */
+export interface GridFocusCellOptions {
+  /** Look for the row among the fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead of the body. */
+  rowFixed?: GridRowFixed;
+  /**
+   * Expand the collapsed groups (or tree nodes) that contain the row, from
+   * the outer level in, before focusing it. Default `false`. Ignored with
+   * `rowFixed`; nothing expands with a remote `dataSource` or for a row that
+   * is filtered out (`false`).
+   */
+  expandAncestors?: boolean;
 }
 
 /** Options of `addRow`. */
@@ -6618,9 +6631,12 @@ export class DataGrid extends LitElement {
   /**
    * Scrolls to the cell of the row `rowKey` and `column` (default: the first
    * visible column) and moves the DOM focus to it. Returns `false` when the
-   * row is not in the grid (filtered out or in a collapsed group — groups are
-   * not expanded) or `column` is not a shown (user-visible), ungrouped
-   * column (a band returns `false`). A column hidden by `autoHideColumns`
+   * row is not in the grid (filtered out, or in a collapsed group or tree
+   * node — unless `options.expandAncestors`, which expands them first, from
+   * the outer level in, firing `u-grid-group-expansion-change` /
+   * `u-grid-node-expansion-change` with `source: 'api'`) or `column` is not
+   * a shown (user-visible), ungrouped column (a band returns `false`). A
+   * `false` result changes nothing. A column hidden by `autoHideColumns`
    * opens the row details (`u-grid-row-expansion-change`, `source: 'api'`)
    * and focuses its value. Before the
    * first render it only sets the active cell (the focus moves when it is
@@ -6629,10 +6645,23 @@ export class DataGrid extends LitElement {
    * of the body (`false` when the key is not among them). In a full-width
    * row (`rowRenderer`) the focus goes to its single cell for any `column`.
    */
-  focusCell(rowKey: unknown, column?: GridColumnRef | null, options?: { rowFixed?: GridRowFixed } | null): boolean {
+  focusCell(rowKey: unknown, column?: GridColumnRef | null, options?: GridFocusCellOptions | null): boolean {
     this.#ensureRows();
 
     const fixed = options?.rowFixed;
+
+    // Linha num grupo (ou nó da árvore) fechado: abre o caminho até ela (opcional; padrão: não abre).
+    // Antes, o que é síncrono: com coluna inválida o \`false\` não pode deixar grupos abertos.
+    if (options?.expandAncestors && !fixed && this.#rowIndexOfKey(rowKey) < 0) {
+      const wanted = column === undefined || column === null ? undefined : this.#leafColumn(column);
+      const usable = column === undefined || column === null
+        || (!!wanted && (this._visibleColumns.includes(wanted) || this.#adaptiveColumns.includes(wanted)) && !this._groupColumns.includes(wanted));
+
+      if (usable && this.#expandToRow(rowKey)) {
+        this.#ensureRows();
+      }
+    }
+
     const fixedPosition = fixed ? this.#fixedRows()[fixed].findIndex(entry => this.#keyOf(entry.item) === rowKey) : -1;
     const row = fixed ? fixedPosition < 0 ? -1 : this.#fixedIndex(fixed, fixedPosition) : this.#rowIndexOfKey(rowKey);
 
@@ -6655,6 +6684,78 @@ export class DataGrid extends LitElement {
 
     this.#setActive({ row, col: Math.max(col, 0) }, 'api', { focus: true, reveal: true });
     return true;
+  }
+
+  /**
+   * Abre os grupos fechados que contêm a linha (do nível de fora para dentro;
+   * um \`u-grid-group-expansion-change\` por grupo, \`source: 'api'\`) ou, na
+   * árvore, os nós fechados acima dela. Nada com fonte remota (os grupos vêm
+   * do servidor) nem para uma linha filtrada. \`true\` se abriu algo.
+   */
+  #expandToRow(rowKey: unknown): boolean {
+    if (this.#dataSource) {
+      return false;
+    }
+
+    if (this.#treeOn) {
+      const index = this.#tree.index;
+      const node = this.#nodeOfKey(rowKey);
+
+      if (!index || node < 0) {
+        return false;
+      }
+
+      const chain: number[] = [];
+
+      for (let parent = index.parent[node]; parent >= 0; parent = index.parent[parent]) {
+        chain.unshift(parent);
+      }
+
+      let opened = false;
+
+      for (const parent of chain) {
+        if (!this.#nodeShownExpanded(parent)) {
+          void this.#setNodeExpanded(this.#keyOf(index.nodes[parent]), true, 'api');
+          opened = true;
+        }
+      }
+
+      return opened;
+    }
+
+    const columns = this._groupColumns;
+
+    if (!columns.length) {
+      return false;
+    }
+
+    const item = this.items.find(candidate => this.#keyOf(candidate) === rowKey);
+
+    if (item === undefined) {
+      return false;
+    }
+
+    // O grupo de dentro precisa existir e conter o item (filtrado: nada abre).
+    const values = groupValuesOf(item, columns);
+    const leaf = this.#findGroup(values);
+
+    if (!leaf?.items.includes(item)) {
+      return false;
+    }
+
+    let opened = false;
+
+    for (let level = 0; level < values.length; level++) {
+      const path = Object.freeze(values.slice(0, level + 1));
+      const key = groupKeyOf(path, columns);
+
+      if (key !== undefined && !this.#isExpanded(key, level)) {
+        this.#setGroupExpanded(key, level, path, true, 'api');
+        opened = true;
+      }
+    }
+
+    return opened;
   }
 
   // ------------------------------------------------------------- edição

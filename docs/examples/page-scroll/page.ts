@@ -6,7 +6,7 @@ import { leanRow, type LeanRow } from '../shared/data.js';
 
 export const meta = {
   title: 'A long list in the page',
-  description: '100,000 rows and 30 columns in the page flow: scroll the page down and sideways. The toolbar and headers stick under the site bar, the pinned **Target** row sticks below them, the totals and the **Budget** row stick to the bottom of the window while the grid is in view, and the **ID** column stays at the start. Keyboard focus never stops under the stuck parts.',
+  description: '100,000 rows and 30 columns in the page flow: scroll the page down and sideways (on a phone the columns that don\'t fit move to the row details instead). The toolbar and headers stick under the site bar, the pinned **Target** row sticks below them, the totals and the **Budget** row stick to the bottom of the window while the grid is in view, and the **ID** column stays at the start. Keyboard focus never stops under the stuck parts.',
 };
 
 const columns: GridColumnDef<LeanRow>[] = [
@@ -41,7 +41,18 @@ export default (host: HTMLElement) => {
   const previous = page.scrollPaddingTop;
   page.scrollPaddingTop = 'var(--site-topbar-height)';
 
+  // On a phone, a page wider than the screen makes the browser widen its layout viewport, and what
+  // sticks to the bottom (totals, the Budget row) ends up below the screen: there, hide the columns
+  // that don't fit (they move to the row details) instead of scrolling the page sideways.
+  const narrow = window.matchMedia('(max-width: 767.98px)');
+  const applyWidth = () => {
+    grid.autoHideColumns = narrow.matches;
+  };
+  applyWidth();
+  narrow.addEventListener('change', applyWidth);
+
   return () => {
     page.scrollPaddingTop = previous;
+    narrow.removeEventListener('change', applyWidth);
   };
 };
