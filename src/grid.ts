@@ -15473,10 +15473,13 @@ export class DataGrid extends LitElement {
     };
 
     // Com todas as larguras definidas a tabela tem a soma exata e a sobra da
-    // largura vai para a última coluna (como na referência, medida na revisão
-    // do site); com alguma automática, a tabela ocupa a largura e ela leva a sobra.
+    // largura vai para a última coluna não fixa (como na referência, medida na
+    // revisão do site); com alguma automática, a tabela ocupa a largura e ela
+    // leva a sobra. Uma medida pelo \`column-auto-width\` conta como definida:
+    // senão o navegador espalhava a sobra por todas, inclusive a fixa com
+    // largura escolhida (relato 0.3.4).
     const fit = layout.length > 0 && (this.#virtualColumns || layout.every(({ column }) =>
-      this.#userWidths.has(column) || (column.width !== null && column.width !== undefined)));
+      this.#userWidths.has(column) || (column.width !== null && column.width !== undefined) || this.#autoWidths.has(column)));
 
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
     // Pelas classes do layout: fixas que deixaram de grudar (responsivo, spec 21) não reservam espaço.

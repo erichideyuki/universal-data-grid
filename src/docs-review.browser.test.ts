@@ -264,6 +264,31 @@ describe('revisão do site de documentação', () => {
     expect(root(grid).querySelector('table')!.getBoundingClientRect().width).toBeCloseTo(scroller(grid).clientWidth, 0);
   });
 
+  // Relato da 0.3.4 (click): com column-auto-width a fixa no fim (width 72) ainda esticava.
+  for (const [width, autoHide] of [[600, false], [360, true]] as const) {
+    it(`column-auto-width${autoHide ? ' + autoHideColumns' : ''} em ${width}px: a fixa com width fica na largura dela`, async () => {
+      const grid = await createGrid({
+        columns: [
+          { path: 'name', label: 'Nome', minWidth: 140 },
+          { path: 'active', label: 'Ativo', dataType: 'boolean', hidingPriority: 0 },
+          { path: 'done', label: 'Concluído', dataType: 'number', hidingPriority: 1 },
+          { name: 'actions', label: 'Ações', width: 72, fixed: 'end', resizable: false, sortable: false, valueGetter: () => 'x' },
+        ],
+        items: ['Paulo Henrique Duarte', 'Ana'].map(name => ({ name, active: true, done: 3 })),
+        configure: g => {
+          g.style.width = `${width}px`;
+          g.columnAutoWidth = true;
+          g.autoHideColumns = autoHide;
+        },
+      });
+      await settle(grid);
+      await settle(grid);
+
+      expect(headerCell(grid, 'Ações').getBoundingClientRect().width).toBeCloseTo(72, 0);
+      expect(root(grid).querySelector('table')!.getBoundingClientRect().width).toBeLessThanOrEqual(scroller(grid).clientWidth + 1);
+    });
+  }
+
   it('filtro booleano: botão de menu estilizável no lugar do <select>, pelo teclado', async () => {
     const grid = await createGrid({
       columns: [...columns(), { path: 'active', label: 'Active', dataType: 'boolean', width: 120 }],
