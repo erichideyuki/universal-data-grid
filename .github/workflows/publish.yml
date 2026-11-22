@@ -5,8 +5,8 @@
 # (`v0.4.0-beta.1`) vai para a dist-tag `next`, não para `latest`.
 #
 # Configuração única no npmjs.com: pacote → Settings → Trusted Publisher →
-# GitHub Actions, organização/usuário `universal-material`, repositório
-# `data-grid`, workflow `publish.yml`, ambiente `npm`.
+# GitHub Actions, organização/usuário `erichideyuki`, repositório
+# `universal-data-grid`, workflow `publish.yml`, ambiente `npm`.
 name: Publish to npm
 
 on:
