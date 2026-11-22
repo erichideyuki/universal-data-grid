@@ -341,17 +341,23 @@ describe('memória do aria-labelledby (spec 14)', () => {
       await flush(grid);
     };
 
-    // Aquecimento do mesmo tamanho da medida: no runner do CI, o código do JIT e
-    // as alocações do 1º lote grande davam ~520 KiB num grid sem vazamento.
+    // Vazamento cresce a CADA lote. No runner do CI, um lote sem vazamento dava
+    // um degrau fixo de ~521 KiB (página do heap), logo acima do limite: só
+    // falha se dois lotes seguidos passarem do limite.
     await churn(2000);
-    const before = await measureHeap();
-    await churn(2000);
-    const after = await measureHeap();
-    const delta = heapDelta(before, after);
+
+    const growth = async () => {
+      const before = await measureHeap();
+      await churn(2000);
+      return heapDelta(before, await measureHeap());
+    };
+
+    const first = await growth();
+    const delta = first.jsHeapUsed < 512 * 1024 ? first : await growth();
 
     expect(nameOf(grid)).toBe('Title 1999');
     expect(grid._memoryStats.hostLabelObservers).toBe(2);
-    expect(delta.jsHeapUsed, `cresceu ${kib(delta.jsHeapUsed)}`).toBeLessThan(512 * 1024);
-    expect(delta.nodes).toBeLessThan(50);
+    expect(delta.jsHeapUsed, `cresceu ${kib(first.jsHeapUsed)} e depois ${kib(delta.jsHeapUsed)}`).toBeLessThan(512 * 1024);
+    expect(first.nodes).toBeLessThan(50);
   });
 });
