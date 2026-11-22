@@ -3433,7 +3433,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): with `column-auto-width`, a fixed column with a `width` (an actions
+In 0.3.5: with `column-auto-width`, a fixed column with a `width` (an actions
 column) keeps it too; the leftover goes to the last non-fixed column (the browser spread it over
 every column, the fixed one included).
 
