@@ -3423,7 +3423,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): `focusCell(rowKey, column, { expandAncestors: true })` expands the collapsed
+In 0.3.2: `focusCell(rowKey, column, { expandAncestors: true })` expands the collapsed
 groups or tree nodes that contain the row before focusing it (default `false`, as before); absolutely positioned parts inside the table (the screen reader text of
 group rows) no longer escape the grid's scroll area — they made the grid and the page wider on
 phones; the pager shows only its arrow buttons when the page number buttons don't fit (the page number
