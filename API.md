@@ -3431,6 +3431,14 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
+In 0.3.3: with `header-wrap` and no `--u-grid-header-cell-max-lines`, a word longer than the column
+ends in an ellipsis on its line again (it was cut mid-letter); with `autoHideColumns` and
+`scroll-container`, the `overflow-x` warning waits until the columns are hidden (it fired before,
+for a table that then fit); with `autoHideColumns`, when only fixed columns are left and the table
+still doesn't fit, the widest fixed one shrinks (never below its `minWidth`) — e.g. a fixed name
+column sized by `column-auto-width`; host content in the toolbar (`renderer` items) can shrink, so
+its own `flex-wrap` works in a narrow grid. Published from CI with npm provenance.
+
 In 0.3.2: `focusCell(rowKey, column, { expandAncestors: true })` expands the collapsed
 groups or tree nodes that contain the row before focusing it (default `false`, as before); absolutely positioned parts inside the table (the screen reader text of
 group rows) no longer escape the grid's scroll area — they made the grid and the page wider on
