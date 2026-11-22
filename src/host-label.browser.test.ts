@@ -341,7 +341,9 @@ describe('memória do aria-labelledby (spec 14)', () => {
       await flush(grid);
     };
 
-    await churn(200);
+    // Aquecimento do mesmo tamanho da medida: no runner do CI, o código do JIT e
+    // as alocações do 1º lote grande davam ~520 KiB num grid sem vazamento.
+    await churn(2000);
     const before = await measureHeap();
     await churn(2000);
     const after = await measureHeap();
