@@ -5521,6 +5521,12 @@ export class DataGrid extends LitElement {
     this.#observeFixedSections();
     this.#syncTableLabel();
 
+    // Só com a largura da porta medida: antes disso o responsivo ainda não escondeu nada.
+    if (this.#clipCheckPending && !this.#adaptiveDirty && this.#viewportWidth > 0) {
+      this.#clipCheckPending = false;
+      this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
+    }
+
     // Editor fechou (ou o foco saiu sem focusout no corpo): o reshape adiado roda agora.
     if (this.#reshapePending && !this.#reshapeFrozen) {
       queueMicrotask(() => this.#flushReshape());
@@ -10585,15 +10591,31 @@ export class DataGrid extends LitElement {
     const overflow = kept.reduce((sum, input) => sum + input.width, 0) - available;
 
     if (hidden.length && overflow > 0) {
-      for (let index = shown.length - 1; index >= 0; index--) {
+      const capOf = (index: number) => {
         const column = shown[index];
         const width = this.#widthOf(column);
+        const min = Math.max(column.minWidth ?? 0, DEFAULT_MIN_COLUMN_WIDTH);
 
-        if (!hidden.includes(index) && !inputs[index].fixed && width !== undefined) {
-          const min = Math.max(column.minWidth ?? 0, DEFAULT_MIN_COLUMN_WIDTH);
-          this.#adaptiveCap = { column, width: Math.max(min, width - overflow) };
-          break;
+        return width === undefined || hidden.includes(index) ? undefined : { column, width: Math.max(min, width - overflow) };
+      };
+
+      for (let index = shown.length - 1; index >= 0 && !this.#adaptiveCap; index--) {
+        if (!inputs[index].fixed) {
+          this.#adaptiveCap = capOf(index);
         }
+      }
+
+      // Só fixas sobraram (ex.: "Nome" fixa no início com column-auto-width, relato 0.3.2): a mais larga encolhe.
+      if (!this.#adaptiveCap) {
+        let widest = -1;
+
+        inputs.forEach((input, index) => {
+          if (input.fixed && !hidden.includes(index) && (widest < 0 || input.width > inputs[widest].width)) {
+            widest = index;
+          }
+        });
+
+        this.#adaptiveCap = widest >= 0 ? capOf(widest) : undefined;
       }
     }
 
@@ -11759,8 +11781,18 @@ export class DataGrid extends LitElement {
     this.#syncFixedRows();
     this.#syncRevealMargins();
     this.#scrollPort.checkHeight();
-    this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
+
+    if (this.autoHideColumns) {
+      // As colunas ocultas por falta de espaço saem no próximo render: medir antes avisaria à toa (relato 0.3.2).
+      this.#clipCheckPending = true;
+      this.requestUpdate();
+    } else {
+      this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
+    }
   }
+
+  /** Aviso de \`overflow-x\` adiado para depois do render que esconde as colunas (\`autoHideColumns\`). */
+  #clipCheckPending = false;
 
   /**
    * Classe, deslocamento `sticky` e limites de cada coluna visível. Os

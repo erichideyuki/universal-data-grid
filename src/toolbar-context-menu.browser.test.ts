@@ -166,6 +166,47 @@ describe('barra: composição', () => {
   });
 });
 
+// Relato da 0.3.2 (click): conteúdo do hospedeiro com flex-wrap não encolhia (flex: none) e vazava do grid.
+describe('barra: conteúdo do hospedeiro encolhe', () => {
+  it('legenda com flex-wrap quebra em linhas dentro do grid estreito', async () => {
+    const style = document.createElement('style');
+    style.textContent = '.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; min-width: 0; } .legend span { white-space: nowrap; }';
+    document.head.append(style);
+
+    try {
+      const grid = await createGrid({
+        columns: [{ path: 'name', label: 'Nome' }],
+        items: [{ name: 'Ana' }],
+        configure: g => {
+          g.style.width = '220px';
+          g.columnChooser = true;
+          g.toolbarItems = [
+            {
+              location: 'start',
+              // Elemento do hospedeiro (light DOM, por slot), como no relato.
+              renderer: () => {
+                const legend = document.createElement('div');
+                legend.className = 'legend';
+                legend.append(...['Aceito (data)', 'Não aceito', 'Não aplicável'].map(text => Object.assign(document.createElement('span'), { textContent: text })));
+                return legend;
+              },
+            },
+            { name: 'columnChooserButton', location: 'end' },
+          ];
+        },
+      });
+      await settle(grid);
+
+      const box = grid.getBoundingClientRect();
+      const legend = grid.querySelector('.legend')!.getBoundingClientRect();
+      expect(legend.right).toBeLessThanOrEqual(box.right + 0.5);
+      expect(legend.height).toBeGreaterThan(30);
+    } finally {
+      style.remove();
+    }
+  });
+});
+
 describe('barra: avisos e validação', () => {
   it('embutido desligado avisa uma vez (também em string, renderizando de novo); exportFormats valida na propriedade', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

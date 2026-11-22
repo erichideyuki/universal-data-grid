@@ -666,6 +666,37 @@ describe('headerWrap', () => {
     expect(header(grid, 0).getBoundingClientRect().height).toBeLessThan(wrapped);
   });
 
+  // Relato da 0.3.2 (click): sem max-lines a palavra maior que a coluna saía
+  // cortada no meio da letra. No Chromium, \`-webkit-box\` com \`line-clamp:
+  // none\` desliga as reticências de todas as linhas; com um número (ou num
+  // bloco comum) cada linha que transborda ganha reticências, como a
+  // referência. As reticências não aparecem no DOM: confere o mecanismo.
+  it('palavra maior que a coluna: reticências por linha, com e sem max-lines', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: 'PRO-014 - Procedimento de Brindes, Presentes e Hospitalidades', width: 110 }, { path: 'c', label: 'C' }],
+      items,
+      configure: g => g.headerWrap = true,
+    });
+    const text = () => header(grid, 0).querySelector<HTMLElement>('.header-text')!;
+
+    const clampsAll = () => {
+      const style = getComputedStyle(text());
+      return style.display === '-webkit-box' && style.webkitLineClamp === 'none';
+    };
+
+    expect(text().scrollWidth).toBeGreaterThan(text().clientWidth);
+    expect(getComputedStyle(text()).textOverflow).toBe('ellipsis');
+    expect(clampsAll()).toBe(false);
+
+    for (const value of ['none', '2']) {
+      grid.style.setProperty('--u-grid-header-cell-max-lines', value);
+      await settle(grid);
+      expect(clampsAll(), value).toBe(false);
+    }
+
+    expect(getComputedStyle(text()).webkitLineClamp).toBe('2');
+  });
+
   it('<u-grid-column header-wrap> e header-wrap="false" contra o padrão do grid', async () => {
     const grid = document.createElement('u-grid');
     grid.style.cssText = 'display:block;height:300px';

@@ -1340,6 +1340,11 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
   viewport, and what sticks to the bottom (totals, `fixedBottomItems`) sticks below the screen. On
   narrow screens turn on `autoHideColumns` (the columns that don't fit move to the row details) or
   use an element as the container.
+- **A wrapper that grows with the table** (for example `display: inline-block; min-width: 100%`
+  around the grid, to keep the container's padding at the end of the horizontal scroll) makes the
+  grid as wide as its table, so `autoHideColumns` never runs out of room and hides nothing. Use one
+  or the other: keep the wrapper where all columns should show (wide screens) and drop it
+  (`display: block`) where `autoHideColumns` should act.
 
 ---
 
@@ -1531,7 +1536,8 @@ render) the grid renders the columns that fit in 1920 px.
 ### Responsive columns (auto-hide)
 
 With `auto-hide-columns` (`autoHideColumns`), columns that don't fit in the **grid's own width**
-(not the window's: a side panel or a narrow card counts too) leave the table, and their values move
+(not the window's: a side panel or a narrow card counts too; so the grid must not grow with its
+table) leave the table, and their values move
 to the row details — an expandable row below each row, the same one as
 [master-detail](#master-detail):
 
@@ -1550,7 +1556,9 @@ to the row details — an expandable row below each row, the same one as
   Fixed columns, grouped columns, checkboxes, the toggle and the row buttons never hide, and at
   least one column always stays. The grid needs a width per column: the chosen width (user,
   `width`, auto-size) or `max(minWidth, 150 × font-size/16)` px within `maxWidth` (follows text-only zoom).
-  If what is left still doesn't fit, the last column with a width shrinks to the available space.
+  If what is left still doesn't fit, the last non-fixed column with a width shrinks to the available
+  space (never below its `minWidth`); when only fixed columns are left, the widest one shrinks — e.g.
+  a fixed name column sized by `column-auto-width`.
   A hidden column comes back only when it fits with a small margin (no flicker when the scrollbar
   appears).
 - **Row details:** while a column is hidden, the toggle column appears at the start (sticky). An

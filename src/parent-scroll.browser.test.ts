@@ -660,6 +660,33 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
     expect(warnings(warn)).toHaveLength(1);
   });
 
+  // Relato da 0.3.2 (click): com autoHideColumns o aviso saía no layout inicial, antes de esconder as colunas.
+  it('autoHideColumns: depois de esconder, a tabela cabe e não há aviso', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const box = document.createElement('div');
+    box.id = 'autohide-box';
+    box.style.cssText = 'width:360px;height:400px;overflow-y:auto;overflow-x:hidden';
+    const grid = document.createElement('u-grid');
+    grid.setAttribute('scroll-container', 'autohide-box');
+    grid.autoHideColumns = true;
+    grid.columns = [
+      { path: 'name', label: 'Nome', width: 160, fixed: 'start' },
+      ...['a', 'b', 'c', 'd', 'e', 'f'].map((path, index) => ({ path, label: path.toUpperCase(), width: 120, hidingPriority: index })),
+    ];
+    grid.items = Array.from({ length: 5 }, (_, i) => ({ name: `P${i}`, a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }));
+    box.append(grid);
+    document.body.append(box);
+    cleanups.push(() => box.remove());
+
+    for (let i = 0; i < 4; i++) {
+      await settle(grid);
+    }
+
+    expect(grid.getAdaptiveColumns().length).toBeGreaterThan(0);
+    expect(grid.shadowRoot!.querySelector('table')!.offsetWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+    expect(warnings(warn)).toEqual([]);
+  });
+
   it('janela: <body> com overflow-x: hidden avisa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     document.body.style.overflowX = 'hidden';

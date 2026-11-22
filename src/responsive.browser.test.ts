@@ -102,6 +102,29 @@ const fieldTexts = (row: Element): string[] =>
   ].join('='));
 
 describe('colunas ocultas por falta de espaço', () => {
+  // Relato da 0.3.2 (click): "Nome" fixa sem width, com column-auto-width, ficava com a largura do
+  // conteúdo; escondidas as outras, a tabela seguia mais larga que o grid (a capa pulava as fixas).
+  it('column-auto-width: a fixa larga encolhe até caber (nunca abaixo do minWidth)', async () => {
+    type Row = { id: number; name: string; a: number; b: number; c: number; d: number; e: number };
+    const cols: GridColumnDef<Row>[] = [
+      { path: 'name', label: 'Nome', minWidth: 140, fixed: 'start' },
+      ...(['a', 'b', 'c', 'd', 'e'] as const).map((path, index) => ({ path, label: `Coluna ${path.toUpperCase()}`, dataType: 'number' as const, hidingPriority: index })),
+      { name: 'actions', label: 'Ações', width: 56, fixed: 'end', valueGetter: () => '…', filterable: false, sortable: false },
+    ];
+    const rows = ['Alessandra Bittencourt Cavalcanti de Albuquerque', 'Paulo Henrique Duarte', 'Ana']
+      .map((name, id) => ({ id, name, a: 1, b: 2, c: 3, d: 4, e: 5 }));
+    const grid = await createResponsive(354, g => g.columnAutoWidth = true, rows as never, cols as never);
+    await settle(grid);
+    await settle(grid);
+
+    const table = root(grid).querySelector('table')!;
+    const nameCell = bodyRows(grid)[0].querySelector<HTMLElement>('td[part~=cell]')!;
+
+    expect(grid.getAdaptiveColumns().length).toBeGreaterThan(0);
+    expect(table.offsetWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+    expect(nameCell.getBoundingClientRect().width).toBeGreaterThanOrEqual(140 - 0.5);
+  });
+
   it('sem hidingPriority saem da última para a primeira; a coluna de expansão aparece', async () => {
     const grid = await createResponsive(1000);
 

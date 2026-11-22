@@ -892,12 +892,25 @@ export const styles = css`
     hyphens: auto;
   }
 
+  /*
+   * No Chromium, \`-webkit-box\` com \`line-clamp: none\` desliga as reticências
+   * de TODAS as linhas (a palavra longa sai cortada no meio da letra); com um
+   * número, cada linha que transborda ganha reticências, como na referência.
+   * Sem limite = um número alto; \`none\` explícito vira bloco comum (que
+   * também tem reticências por linha).
+   */
   .header-column.header-wrap > .header-content > .header-text:not(:has(*)) {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--u-grid-header-cell-max-lines, none);
+    -webkit-line-clamp: var(--u-grid-header-cell-max-lines, 9999);
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  @container style(--u-grid-header-cell-max-lines: none) {
+    .header-column.header-wrap > .header-content > .header-text:not(:has(*)) {
+      display: block;
+    }
   }
 
   /* Auto-size mede o rótulo numa linha só (como o DevExtreme): senão a coluna encolhe até a maior palavra. */
@@ -1154,10 +1167,17 @@ export const styles = css`
     min-width: min(200px, 100%);
   }
 
+  /*
+   * Conteúdo do hospedeiro: encolhe até a largura da barra (nunca além do
+   * grid), para o \`flex-wrap\` dele quebrar linhas; o mínimo de cada filho
+   * continua sendo o do próprio conteúdo (relato 0.3.2).
+   */
   .toolbar-content {
     display: flex;
     align-items: center;
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .toolbar-button {
