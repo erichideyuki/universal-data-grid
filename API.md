@@ -3432,7 +3432,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): with `autoHideColumns` and `scroll-container`, a grid inset in its
+In 0.3.4: with `autoHideColumns` and `scroll-container`, a grid inset in its
 container (a padded wrapper) fits its own width again (the table took the container's visible width,
 so too few or no columns were hidden); the leftover width of a grid whose columns all have a width
 goes to the last non-fixed column (a fixed actions column kept growing); the `overflow-x` warning
