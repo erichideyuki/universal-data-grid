@@ -149,10 +149,18 @@ export const styles = css`
     overflow: visible;
   }
 
-  /* Barra e paginação: na largura da parte visível do grid, presas à borda inicial. */
+  /*
+   * Barra e paginação: na largura da parte visível do grid, presas à borda
+   * inicial. Sem entrar no \`max-content\` do layout (\`contain: inline-size\` e
+   * largura em %): uma largura explícita aqui alargava a tabela até a parte
+   * visível do contêiner, e a parte visível seguia larga — com o grid recuado
+   * no contêiner, o responsivo nunca cabia (relato 0.3.3).
+   */
   .external-scroll .header,
   .external-scroll > .pager {
-    inline-size: var(--_viewport-inline-size, 100%);
+    contain: inline-size;
+    inline-size: 100%;
+    max-inline-size: var(--_viewport-inline-size, 100%);
   }
 
   .external-scroll > .pager {
@@ -186,7 +194,9 @@ export const styles = css`
   .external-scroll .error-row {
     position: sticky;
     bottom: var(--_port-inset-bottom, 0px);
-    inline-size: var(--_viewport-inline-size, 100%);
+    contain: inline-size;
+    inline-size: 100%;
+    max-inline-size: var(--_viewport-inline-size, 100%);
     inset-inline-start: 0;
   }
 

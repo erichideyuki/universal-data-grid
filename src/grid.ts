@@ -5524,7 +5524,7 @@ export class DataGrid extends LitElement {
     // Só com a largura da porta medida: antes disso o responsivo ainda não escondeu nada.
     if (this.#clipCheckPending && !this.#adaptiveDirty && this.#viewportWidth > 0) {
       this.#clipCheckPending = false;
-      this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
+      this.#scrollPort.checkHorizontalClip(this.#tableRef.value);
     }
 
     // Editor fechou (ou o foco saiu sem focusout no corpo): o reshape adiado roda agora.
@@ -11787,7 +11787,7 @@ export class DataGrid extends LitElement {
       this.#clipCheckPending = true;
       this.requestUpdate();
     } else {
-      this.#scrollPort.checkHorizontalClip(this.#tableRef.value?.offsetWidth ?? 0);
+      this.#scrollPort.checkHorizontalClip(this.#tableRef.value);
     }
   }
 
@@ -15573,7 +15573,9 @@ export class DataGrid extends LitElement {
       return cap?.column === column && chosen !== undefined ? Math.min(chosen, cap.width) : chosen;
     };
 
-    const last = layout[layout.length - 1];
+    // A sobra vai para a última coluna NÃO fixa: uma fixa (ex.: ações no fim, com
+    // largura escolhida) fica na largura dela, como na referência (relato 0.3.3).
+    const last = [...layout].reverse().find(({ column }) => this._fixedOf(column) === null) ?? layout[layout.length - 1];
     let fillWidth: string | undefined;
 
     if (fill && last) {

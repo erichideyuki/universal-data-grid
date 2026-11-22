@@ -246,6 +246,24 @@ describe('revisão do site de documentação', () => {
     expect(scroller(grid).scrollWidth).toBeGreaterThan(scroller(grid).clientWidth);
   });
 
+  // Relato da 0.3.3 (click): a coluna de ações fixa no fim (width 72) levava a sobra e ficava com 103px.
+  it('larguras definidas com uma fixa no fim: a sobra vai para a última não fixa, a fixa fica na largura dela', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'name', label: 'Nome', width: 150 },
+        { path: 'b', label: 'B', width: 100 },
+        { name: 'actions', label: 'Ações', width: 72, fixed: 'end', sortable: false, valueGetter: () => 'x' },
+      ],
+      items: [{ name: 'Ana', b: 1 }],
+      configure: g => g.style.width = '360px',
+    });
+    await settle(grid);
+
+    expect(headerCell(grid, 'Ações').getBoundingClientRect().width).toBeCloseTo(72, 0);
+    expect(headerCell(grid, 'B').getBoundingClientRect().width).toBeGreaterThan(100);
+    expect(root(grid).querySelector('table')!.getBoundingClientRect().width).toBeCloseTo(scroller(grid).clientWidth, 0);
+  });
+
   it('filtro booleano: botão de menu estilizável no lugar do <select>, pelo teclado', async () => {
     const grid = await createGrid({
       columns: [...columns(), { path: 'active', label: 'Active', dataType: 'boolean', width: 120 }],

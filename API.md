@@ -1376,8 +1376,9 @@ column out).
 - Using the handle (drag, click, double-click, keys) never sorts the column; neither does dragging a
   header to reorder it.
 
-When every visible column has a width (set by you or by the user), the last column absorbs any
-leftover width so the table still fills the grid (its own width is the minimum); with at least one
+When every visible column has a width (set by you or by the user), the last non-fixed column absorbs
+any leftover width so the table still fills the grid (its own width is the minimum; a column fixed
+at an edge, such as an actions column, keeps its width); with at least one
 auto-width column, that column takes the leftover. With column virtualization the table is exactly
 as wide as the sum. `getColumnWidth()` and the resize handle report the set width, not the
 stretched one.
@@ -3430,6 +3431,13 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): with `autoHideColumns` and `scroll-container`, a grid inset in its
+container (a padded wrapper) fits its own width again (the table took the container's visible width,
+so too few or no columns were hidden); the leftover width of a grid whose columns all have a width
+goes to the last non-fixed column (a fixed actions column kept growing); the `overflow-x` warning
+also fires when the grid grows with its table (an `inline-block` wrapper) and the table passes the
+container's visible edge.
 
 In 0.3.3: with `header-wrap` and no `--u-grid-header-cell-max-lines`, a word longer than the column
 ends in an ellipsis on its line again (it was cut mid-letter); with `autoHideColumns` and

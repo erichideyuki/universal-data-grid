@@ -116,13 +116,24 @@ export class ScrollPortController implements ReactiveController {
    * A tabela mais larga que o grid transborda no contêiner (que rola nas duas
    * direções, spec 27). Com \`overflow-x: hidden\`/\`clip\` nele (ou em
    * \`html\`/\`body\`, com a janela), o transbordo some sem rolagem possível
-   * e sem nenhum sinal: avisa uma vez (relato de uso, 0.3.0).
+   * e sem nenhum sinal: avisa uma vez (relato de uso, 0.3.0). Também quando
+   * o grid cresce com a tabela (um invólucro \`inline-block\` do hospedeiro) e
+   * é a tabela que passa da borda visível do contêiner (relato 0.3.3).
    */
-  checkHorizontalClip(tableWidth: number): void {
+  checkHorizontalClip(table: HTMLElement | undefined): void {
     const port = this.#port;
     const host = this.#host;
 
-    if (!port || tableWidth <= host.clientWidth + 1) {
+    if (!port || !table) {
+      return;
+    }
+
+    const box = table.getBoundingClientRect();
+    const view = port.rect();
+    const wider = table.offsetWidth > host.clientWidth + 1;
+    const pastEdge = box.right > view.right + 1 || box.left < view.left - 1;
+
+    if (!wider && !pastEdge) {
       return;
     }
 
@@ -133,7 +144,7 @@ export class ScrollPortController implements ReactiveController {
       : clipping(port.source as HTMLElement) ? port.source as HTMLElement : undefined;
 
     if (culprit) {
-      this.#warnOnce(culprit, `the table is wider than the grid, but ${port.isWindow ? `<${culprit.tagName.toLowerCase()}>` : 'its scroll container'} has `
+      this.#warnOnce(culprit, `the table does not fit horizontally, but ${port.isWindow ? `<${culprit.tagName.toLowerCase()}>` : 'its scroll container'} has `
       + 'overflow-x: hidden/clip, so the extra columns cannot be scrolled to; use overflow-x: auto (or give the columns less width).');
     }
   }

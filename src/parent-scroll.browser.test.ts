@@ -687,6 +687,69 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
     expect(warnings(warn)).toEqual([]);
   });
 
+  // Relato da 0.3.3 (click): com o grid recuado no contêiner (padding do wrapper), o responsivo
+  // usava a largura visível do contêiner (da borda do grid até a do contêiner), não a do grid.
+  for (const width of [386, 1200]) {
+    it(`autoHideColumns com o grid recuado no contêiner de ${width}px: a tabela cabe no grid`, async () => {
+      const box = document.createElement('div');
+      box.id = `inset-box-${width}`;
+      box.style.cssText = `width:${width}px;height:400px;overflow:auto`;
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = `padding:0 16px;width:${width === 386 ? 'auto' : '354px'}`;
+      const grid = document.createElement('u-grid');
+      grid.setAttribute('scroll-container', box.id);
+      grid.columnAutoWidth = true;
+      grid.autoHideColumns = true;
+      grid.columns = [
+        { path: 'name', label: 'Nome', minWidth: 140, fixed: 'start' },
+        { path: 'a', label: 'Ativo', dataType: 'boolean', hidingPriority: 0 },
+        { path: 'b', label: 'Concluído após o limite', dataType: 'number', hidingPriority: 1 },
+        { path: 'c', label: 'Em progresso', dataType: 'number', hidingPriority: 2 },
+        { path: 'd', label: 'Não iniciado', dataType: 'number', hidingPriority: 3 },
+        { path: 'e', label: 'Concluído', dataType: 'number', hidingPriority: 4 },
+      ];
+      grid.items = ['Paulo Henrique Duarte', 'João Pedro Almeida', 'Ana'].map((name, id) => ({ id, name, a: true, b: 2, c: 3, d: 4, e: 5 }));
+      wrapper.append(grid);
+      box.append(wrapper);
+      document.body.append(box);
+      cleanups.push(() => box.remove());
+
+      for (let i = 0; i < 5; i++) {
+        await settle(grid);
+      }
+
+      expect(grid.clientWidth).toBe(354);
+      expect(grid.getAdaptiveColumns().length).toBeGreaterThan(0);
+      expect(grid.shadowRoot!.querySelector('table')!.offsetWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+    });
+  }
+
+  // Relato da 0.3.3 (click): com um invólucro inline-block o grid cresce com a tabela, e o aviso
+  // (que só comparava tabela com grid) nunca saía — mas a tabela passava da borda do contêiner.
+  it('grid da largura da tabela (invólucro inline-block) num contêiner com overflow-x: hidden avisa', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const box = document.createElement('div');
+    box.id = 'wrapped-box';
+    box.style.cssText = 'width:360px;height:300px;overflow-y:auto;overflow-x:hidden';
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:inline-block;min-width:100%';
+    const grid = document.createElement('u-grid');
+    grid.setAttribute('scroll-container', box.id);
+    grid.columns = ['a', 'b', 'c', 'd', 'e'].map(path => ({ path, label: path.toUpperCase(), width: 150 }));
+    grid.items = Array.from({ length: 5 }, () => ({ a: 1, b: 2, c: 3, d: 4, e: 5 }));
+    wrapper.append(grid);
+    box.append(wrapper);
+    document.body.append(box);
+    cleanups.push(() => box.remove());
+
+    for (let i = 0; i < 4; i++) {
+      await settle(grid);
+    }
+
+    expect(grid.shadowRoot!.querySelector('table')!.offsetWidth).toBeLessThanOrEqual(grid.clientWidth + 1);
+    expect(warnings(warn)).toHaveLength(1);
+  });
+
   it('janela: <body> com overflow-x: hidden avisa', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     document.body.style.overflowX = 'hidden';
