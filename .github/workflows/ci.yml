@@ -1,0 +1,74 @@
+# Validação automática: lint, tipos, testes (Node + Chromium headless),
+# auditoria das dependências de runtime, build do pacote e do site de
+# documentação; e os testes do motor de PDF (Rust). O projeto de desempenho
+# (`npm run test:perf`) fica fora: mede contra uma máquina de referência
+# (spec 16) e não faz sentido num runner compartilhado.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Reaproveitado pelo publish.yml antes de publicar.
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Commits novos cancelam a validação antiga do mesmo ramo; tags (publicação) nunca.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint, typecheck, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Runtime dependencies have no known vulnerabilities
+        run: npm audit --omit=dev
+
+      - name: Package builds (prepack) and its contents
+        run: npm pack --dry-run
+
+      - name: Docs site builds
+        run: npm run docs:build
+
+  pdf-engine:
+    name: PDF engine (Rust)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            pdf/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('pdf/Cargo.lock', 'pdf/Cargo.toml') }}
+
+      - run: cargo test --manifest-path pdf/Cargo.toml --release

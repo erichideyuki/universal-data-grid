@@ -116,6 +116,11 @@ anota o que mediu na própria spec (seção "Referência medida").
   SSR de demo e Material Web são `devDependencies`.
 - O servidor de dev escuta só em `localhost`.
 - `npm audit --omit=dev` precisa estar zerado para publicar.
+- CI e publicação no GitHub Actions: `.github/workflows/ci.yml` (lint, tipos,
+  testes, auditoria, build do pacote e do site, motor de PDF) a cada push na
+  `main` e em PR; `publish.yml` publica no npm por Trusted Publishing ao
+  enviar a tag `vX.Y.Z` (igual ao `package.json`; sufixo `-beta.N` vai para
+  `next`) e cria o GitHub Release. Não publicar à mão.
 
 ## Fluxo em paralelo
 

@@ -1,0 +1,78 @@
+# Publicação no npm por tag: `git tag v0.3.3 && git push origin v0.3.3`.
+# Roda o CI inteiro antes; confere que a tag bate com o package.json; publica
+# por Trusted Publishing (OIDC do GitHub: sem token nem 2FA no pipeline, com
+# atestado de procedência) e cria o GitHub Release. Tag com sufixo
+# (`v0.4.0-beta.1`) vai para a dist-tag `next`, não para `latest`.
+#
+# Configuração única no npmjs.com: pacote → Settings → Trusted Publisher →
+# GitHub Actions, organização/usuário `universal-material`, repositório
+# `data-grid`, workflow `publish.yml`, ambiente `npm`.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+# Nunca cancelar uma publicação em andamento.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish ${{ github.ref_name }}
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    permissions:
+      contents: write # GitHub Release
+      id-token: write # Trusted Publishing (OIDC) e procedência
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted Publishing precisa do npm >= 11.5.1.
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      - name: Tag matches package.json version
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($version)"
+            exit 1
+          fi
+
+      # O CI acima já rodou lint, tipos e testes: aqui só o build do pacote
+      # (o que o prepack faria) e a publicação sem repetir os scripts.
+      - name: Build
+        run: npm run build && npm run bundle:browser
+
+      - name: Publish
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            npm publish --ignore-scripts --tag next
+          else
+            npm publish --ignore-scripts
+          fi
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes $prerelease
