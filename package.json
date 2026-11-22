@@ -1,6 +1,6 @@
 {
   "name": "@universal-material/data-grid",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A high-performance data grid Web Component (<u-grid>) built with Lit: row virtualization, drag-and-drop grouping, column reordering, custom cells, SSR and i18n.",
   "keywords": [
     "web-components",
