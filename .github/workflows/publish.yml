@@ -1,12 +1,15 @@
 # Publicação no npm por tag: `git tag v0.3.3 && git push origin v0.3.3`.
-# Roda o CI inteiro antes; confere que a tag bate com o package.json; publica
-# por Trusted Publishing (OIDC do GitHub: sem token nem 2FA no pipeline, com
-# atestado de procedência) e cria o GitHub Release. Tag com sufixo
-# (`v0.4.0-beta.1`) vai para a dist-tag `next`, não para `latest`.
+# Roda o CI inteiro antes; confere que a tag bate com o package.json; ENVIA
+# a versão para a área de espera do npm por Trusted Publishing (OIDC do
+# GitHub: sem token no pipeline, com atestado de procedência) e cria o
+# GitHub Release. A versão só vai ao ar quando o dono aprova com 2FA: no
+# npmjs.com (pacote → Staged) ou `npm stage list` + `npm stage approve <id>`.
+# Tag com sufixo (`v0.4.0-beta.1`) vai para a dist-tag `next`, não `latest`.
 #
 # Configuração única no npmjs.com: pacote → Settings → Trusted Publisher →
 # GitHub Actions, organização/usuário `erichideyuki`, repositório
-# `universal-data-grid`, workflow `publish.yml`, ambiente `npm`.
+# `universal-data-grid`, workflow `publish.yml`, ambiente `npm`, permissão
+# "npm stage publish".
 name: Publish to npm
 
 on:
@@ -43,8 +46,8 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
 
-      # Trusted Publishing precisa do npm >= 11.5.1.
-      - run: npm install -g npm@latest
+      # `npm stage` (publicação com aprovação) existe a partir do npm 12.
+      - run: npm install -g npm@12
 
       - run: npm ci
 
@@ -61,13 +64,12 @@ jobs:
       - name: Build
         run: npm run build && npm run bundle:browser
 
-      - name: Publish
+      - name: Stage on npm (waits for the owner's 2FA approval)
         run: |
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            npm publish --ignore-scripts --tag next
-          else
-            npm publish --ignore-scripts
-          fi
+          tag=latest
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then tag=next; fi
+          npm stage publish . --ignore-scripts --tag "$tag" --access public --provenance
+          echo "::notice::$GITHUB_REF_NAME staged on npm. Approve it on npmjs.com or with npm stage approve <id> to publish."
 
       - name: GitHub Release
         env:

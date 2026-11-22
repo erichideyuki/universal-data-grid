@@ -118,9 +118,11 @@ anota o que mediu na própria spec (seção "Referência medida").
 - `npm audit --omit=dev` precisa estar zerado para publicar.
 - CI e publicação no GitHub Actions: `.github/workflows/ci.yml` (lint, tipos,
   testes, auditoria, build do pacote e do site, motor de PDF) a cada push na
-  `main` e em PR; `publish.yml` publica no npm por Trusted Publishing ao
-  enviar a tag `vX.Y.Z` (igual ao `package.json`; sufixo `-beta.N` vai para
-  `next`) e cria o GitHub Release. Não publicar à mão.
+  `main` e em PR; `publish.yml` envia a versão para a área de espera do npm
+  (`npm stage publish`, Trusted Publishing) ao enviar a tag `vX.Y.Z` (igual
+  ao `package.json`; sufixo `-beta.N` vai para `next`) e cria o GitHub
+  Release; ela só vai ao ar quando o dono aprova com 2FA no npmjs.com ou com
+  `npm stage approve <id>`. Não publicar à mão.
 
 ## Fluxo em paralelo
 
