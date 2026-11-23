@@ -785,7 +785,8 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
   const styles = new StyleTable();
   const plans = ctx.columns.map(column => planOf(column, ctx.numberLanguage, styles));
   const headerSpec = (align: AlignCode): StyleSpec => ({ bold: true, fill: HEADER_FILL, align });
-  const groupLabelSpec: StyleSpec = { bold: true, align: Align.CenterContinuous };
+  // No início da linha, como na tela e como o rótulo da banda (relato de uso: centralizado, ficava solto no meio).
+  const groupLabelSpec: StyleSpec = { bold: true, align: Align.None };
   const groupCellSpecs = plans.map(plan => ({ bold: true, align: plan.align }));
   const footerSpecs = plans.map(plan => ({ align: plan.align }));
   const totalSpecs = plans.map(plan => ({ bold: true, align: plan.align }));

@@ -229,7 +229,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(definedName(book, '_xlnm.Print_Titles')).toBeNull();
   });
 
-  it('grupos: outline com o resumo acima, rótulo em texto centralizado na seleção, rodapé e total', async () => {
+  it('grupos: outline com o resumo acima, rótulo em texto no início da linha, rodapé e total', async () => {
     const grid = await create(g => {
       g.summary = { group: [{ column: 'amount', type: 'sum', display: 'footer' }], total: [{ column: 'amount', type: 'sum' }] };
     });
@@ -241,7 +241,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(props.getAttribute('outlineLevelRow')).toBe('1');
     expect(book.sheet.getElementsByTagName('outlinePr')[0].getAttribute('summaryBelow')).toBe('0');
     expect(book.cells.get('A2')?.value).toMatch(/^Country: Brazil/);
-    expect(book.styleOf('A2')).toMatchObject({ bold: true, horizontal: 'centerContinuous' });
+    expect(book.styleOf('A2')).toMatchObject({ bold: true, horizontal: null });
     const rows = [...book.sheet.getElementsByTagName('row')];
     expect(rows[1].getAttribute('outlineLevel')).toBeNull();
     expect(rows[2].getAttribute('outlineLevel')).toBe('1');
@@ -364,7 +364,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
 
     // 2 grupos, só o rótulo (a coluna agrupada sai; a faixa cobre as 3 que ficam: sem resumo alinhado)
     expect(spans).toEqual([3, 3]);
-    expect(book.styleOf('A2').horizontal).toBe('centerContinuous');
+    expect(book.styleOf('A2').horizontal).toBeNull();
     expect(['B2', 'C2'].map(ref => book.cells.get(ref))).toEqual(['B2', 'C2'].map(() => ({ value: null, type: null, style: book.cells.get('A2')!.style })));
   });
 

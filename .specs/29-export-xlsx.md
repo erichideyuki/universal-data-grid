@@ -96,7 +96,8 @@ GridExportCellStyle { wrap?: boolean; border?: boolean | GridXlsxBorder }`
 todos). Contraste < 4,5:1 com a mesma regra do PDF (aviso).
 
 **Estrutura** — grupos com `outlineLevel` e rótulo em texto ("Campo: valor
-(n)"), não só negrito, sem mesclar (`centerContinuous`); linhas fixas
+(n)"), não só negrito, sem mesclar, no início da linha (como a banda;
+era `centerContinuous` até a 0.4.2, relato de uso); linhas fixas
 saem (`includeFixedRows`), não congeladas; nenhuma linha em branco entre
 o cabeçalho e os dados; larguras pelas do grid.
 
