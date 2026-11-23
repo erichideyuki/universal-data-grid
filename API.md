@@ -3436,7 +3436,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): the header filter shows a `=`/`<>` of one value on its own column
+In 0.3.8: the header filter shows a `=`/`<>` of one value on its own column
 (an initial `filterValue`) as its selection — it listed only the matching values and couldn't widen
 the filter.
 
