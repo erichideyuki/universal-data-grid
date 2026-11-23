@@ -5,7 +5,7 @@
  */
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
@@ -765,19 +765,26 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
 // fixas e o rótulo do grupo andavam a folga nas pontas da rolagem horizontal ("os botões saltam"); e com a
 // janela rolando, a coluna fixa no início grudava em x=0, por baixo de um menu lateral fixo.
 describe('recuos horizontais do que o grid gruda (folga do layout e scroll-padding-inline)', () => {
-  const build = async (rtl: boolean) => {
+  const build = async (rtl: boolean, red = false) => {
     const box = document.createElement('div');
     box.id = 'inset-scroller';
-    box.style.cssText = 'width:700px;height:400px;overflow:auto';
+    // Estreito no teste de pixels: o screenshot do elemento precisa caber no iframe do Vitest.
+    box.style.cssText = `width:${red ? 300 : 700}px;height:400px;overflow:auto`;
     box.dir = rtl ? 'rtl' : 'ltr';
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:inline-block;min-width:100%;padding:0 24px;box-sizing:border-box';
+    wrapper.style.cssText = 'display:inline-block;min-width:100%;padding:0 24px;box-sizing:border-box;background:rgb(0,0,255)';
     const grid = document.createElement('u-grid');
     grid.setAttribute('scroll-container', box.id);
     grid.keyExpr = 'c0';
     grid.columns = [
       { path: 'g', label: 'Group' },
-      ...Array.from({ length: 6 }, (_, i) => ({ path: `c${i}`, label: `C${i}`, width: 150 })),
+      ...Array.from({ length: 6 }, (_, i) => ({
+        path: `c${i}`,
+        label: `C${i}`,
+        width: 150,
+        // Bloco vermelho que enche a célula: denuncia conteúdo rolado na folga.
+        renderer: red ? () => Object.assign(document.createElement('div'), { className: 'red' }) : undefined,
+      })),
       { name: 'actions', label: 'Actions', width: 72, fixed: 'end' as const, valueGetter: () => 'x' },
     ];
     grid.items = Array.from({ length: 30 }, (_, i) => ({ g: i < 15 ? 'A' : 'B', c0: i, c1: 1, c2: 2, c3: 3, c4: 4, c5: 5 }));
@@ -814,6 +821,58 @@ describe('recuos horizontais do que o grid gruda (folga do layout e scroll-paddi
       }
 
       expect([...seen]).toHaveLength(1);
+    });
+  }
+
+  /** Cor do pixel (x, y relativos ao contêiner) num screenshot dele. */
+  const pixels = async (box: HTMLElement, points: [number, number][]) => {
+    const base64 = await page.screenshot({ element: box, save: false });
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    const scale = image.width / box.getBoundingClientRect().width;
+    return points.map(([x, y]) => [...context.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data.slice(0, 3)].join());
+  };
+
+  for (const rtl of [false, true]) {
+    it(`a folga entre a borda do contêiner e o que gruda não mostra o conteúdo rolado (${rtl ? 'rtl' : 'ltr'})`, async () => {
+      const { box, grid } = await build(rtl, true);
+      const style = document.createElement('style');
+      style.textContent = 'u-grid .red { display: block; height: 24px; background: rgb(255, 0, 0); }';
+      document.head.append(style);
+      cleanups.push(() => style.remove());
+      await settle(grid);
+      const red = '255,0,0';
+      const blue = '0,0,255';
+
+      const probe = () => {
+        const view = box.getBoundingClientRect();
+        const block = grid.querySelector<HTMLElement>('.red')!.getBoundingClientRect();
+        const y = block.top + block.height / 2 - view.top;
+        // 12px da borda inicial e da final (lógicas) da área de conteúdo (sem a barra de rolagem), no meio da folga de 24px
+        const left = box.clientLeft + 12;
+        const right = box.clientLeft + box.clientWidth - 12;
+        return { start: [rtl ? right : left, y] as [number, number], end: [rtl ? left : right, y] as [number, number] };
+      };
+
+      // Em repouso, o início é a folga do hospedeiro (o padding azul): nada pintado por cima.
+      let { start, end } = probe();
+      const [restStart, restEnd] = await pixels(box, [start, end]);
+      expect(restStart).toBe(blue);
+      expect(restEnd).not.toBe(red);
+
+      const max = box.scrollWidth - box.clientWidth;
+      box.scrollLeft = rtl ? -max / 2 : max / 2;
+      await settle(grid);
+      ({ start, end } = probe());
+      const [midStart, midEnd] = await pixels(box, [start, end]);
+      expect(midStart).not.toBe(red);
+      expect(midEnd).not.toBe(red);
     });
   }
 

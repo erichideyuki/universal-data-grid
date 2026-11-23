@@ -14263,7 +14263,7 @@ export class DataGrid extends LitElement {
   /** Margens horizontais do que gruda (colunas fixas, recuos), medidas no render. */
   #revealInline = { start: 0, end: 0 };
   /** Recuos horizontais da porta externa (`--_port-inset-start/end`), por lado lógico. */
-  #portInline = { start: 0, end: 0 };
+  #portInline = { start: 0, end: 0, maskStart: 0, maskEnd: 0 };
   #revealMarginsKey = '';
   #revealProbe: HTMLDivElement | undefined;
 
@@ -14302,6 +14302,8 @@ export class DataGrid extends LitElement {
       inset.bottom,
       inline.start,
       inline.end,
+      inline.maskStart,
+      inline.maskEnd,
     ];
     const key = values.join();
 
@@ -14310,7 +14312,18 @@ export class DataGrid extends LitElement {
     }
 
     this.#revealMarginsKey = key;
-    const names = ['--_reveal-top', '--_reveal-bottom', '--_reveal-start', '--_reveal-end', '--_port-inset-top', '--_port-inset-bottom', '--_port-inset-start', '--_port-inset-end'];
+    const names = [
+      '--_reveal-top',
+      '--_reveal-bottom',
+      '--_reveal-start',
+      '--_reveal-end',
+      '--_port-inset-top',
+      '--_port-inset-bottom',
+      '--_port-inset-start',
+      '--_port-inset-end',
+      '--_port-mask-start',
+      '--_port-mask-end',
+    ];
     names.forEach((name, i) => layout.style.setProperty(name, `${values[i]}px`));
   }
 
@@ -15570,6 +15583,9 @@ export class DataGrid extends LitElement {
         class="container ${classMap(classes)}"
         ${ref(this._containerRef)}>
         <div class="scroll-container" style=${scrollPadding} .inert=${waiting} ${ref(this._scrollContainerRef)}>
+          ${this.#scrollPort.external
+            ? html`<div class="port-masks" aria-hidden="true"><div class="port-mask"></div><div class="port-mask"></div></div>`
+            : nothing}
           ${this.#renderToolbar()}
           <table
             class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}

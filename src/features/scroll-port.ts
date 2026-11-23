@@ -453,12 +453,12 @@ export class ScrollPortController implements ReactiveController {
    * grid começando na 1ª metade da parte visível (não prende no meio da tela
    * um grid posto longe, num quadro que rola de lado).
    */
-  inlineInsets(table: HTMLElement | undefined): { start: number; end: number } {
+  inlineInsets(table: HTMLElement | undefined): { start: number; end: number; maskStart: number; maskEnd: number } {
     const port = this.#port;
     const host = this.#host;
 
     if (!port || !table) {
-      return { start: 0, end: 0 };
+      return { start: 0, end: 0, maskStart: 0, maskEnd: 0 };
     }
 
     const element = port.element;
@@ -482,10 +482,13 @@ export class ScrollPortController implements ReactiveController {
     const gapEnd = rtl ? tableBox.left + remaining - view.left : view.right - (tableBox.right - remaining);
     const cap = (gap: number) => gap > 0 && gap <= width / 2 ? Math.round(gap) : 0;
 
-    return {
-      start: Math.max(padding(style.scrollPaddingInlineStart), cap(gapStart)),
-      end: Math.max(padding(style.scrollPaddingInlineEnd), cap(gapEnd)),
-    };
+    const paddingStart = padding(style.scrollPaddingInlineStart);
+    const paddingEnd = padding(style.scrollPaddingInlineEnd);
+    const start = Math.max(paddingStart, cap(gapStart));
+    const end = Math.max(paddingEnd, cap(gapEnd));
+
+    // Máscara: a folga entre a borda visível (depois do scroll-padding) e o que gruda, onde o rolado apareceria.
+    return { start, end, maskStart: start - paddingStart, maskEnd: end - paddingEnd };
   }
 
   /** `scroll-padding` do contêiner (o que o hospedeiro gruda nele), em px. */

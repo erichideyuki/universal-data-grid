@@ -150,6 +150,47 @@ export const styles = css`
   }
 
   /*
+   * Folga entre a borda visível do contêiner (depois do \`scroll-padding\`) e
+   * o que gruda (\`--_port-mask-start/end\`, medida pelo grid, ex.: o padding
+   * do hospedeiro em volta do grid): duas faixas sticky com o fundo do grid,
+   * acima das células, escondem o conteúdo rolado que passaria ali. A
+   * posição natural delas é fora da tabela; o corte da camada
+   * (\`clip-path\` na área do grid) as esconde em repouso (a folga é do
+   * hospedeiro) e mostra só a parte que o conteúdo rolado ocupa. O corte não
+   * vai no \`.container\`: com milhões de linhas (15M px de altura) o
+   * Chromium erra o hit-test das células. (Sombra na célula não serve: o
+   * Chromium não pinta a sombra externa de \`<td>\` com \`border-collapse:
+   * collapse\`, e um pseudo-elemento seria cortado pelo \`overflow\` da célula.)
+   */
+  .port-masks {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    pointer-events: none;
+    clip-path: inset(0);
+  }
+
+  .port-mask {
+    position: sticky;
+    flex: none;
+    background: var(--_background-color);
+    pointer-events: auto;
+  }
+
+  .port-mask:first-child {
+    inline-size: var(--_port-mask-start, 0px);
+    margin-inline-start: calc(var(--_port-mask-start, 0px) * -1);
+    inset-inline-start: calc(var(--_port-inset-start, 0px) - var(--_port-mask-start, 0px));
+  }
+
+  .port-mask:last-child {
+    inline-size: var(--_port-mask-end, 0px);
+    margin-inline: auto calc(var(--_port-mask-end, 0px) * -1);
+    inset-inline-end: calc(var(--_port-inset-end, 0px) - var(--_port-mask-end, 0px));
+  }
+
+  /*
    * Barra e paginação: na largura da parte visível do grid, presas à borda
    * inicial. Sem entrar no \`max-content\` do layout (\`contain: inline-size\` e
    * largura em %): uma largura explícita aqui alargava a tabela até a parte

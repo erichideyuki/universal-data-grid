@@ -1328,7 +1328,9 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
   keep fixed columns, group labels and the toolbar clear of it (start/end follow the direction; with
   `window`, set it on `<html>`). Without it, the grid sticks those parts at its own edge when it sits
   inset in the container (the padding of your layout), so nothing slides at the ends of a sideways
-  scroll; that inset is only used when the grid starts in the first half of the visible area.
+  scroll; that inset is only used when the grid starts in the first half of the visible area. Once
+  you scroll sideways, the strip between the visible edge and the stuck parts is painted with the
+  grid background, so scrolled content never shows beside a fixed column.
 - Keyboard navigation, `focusCell` and `editCell` scroll the container. Keyboard and mouse scroll
   instantly; API calls follow the container's `scroll-behavior` (`smooth` animates, focus moves at
   once), except with `prefers-reduced-motion: reduce`.
@@ -3567,7 +3569,8 @@ absorbs the leftover width.
 Next release (unreleased): with `scroll-container`, fixed columns, group labels, band labels, detail
 and full-width rows and the toolbar stick at the container's `scroll-padding-inline-start/-end` and
 at the grid's own edge when it sits inset in the container — they no longer slide by that inset at the
-ends of a sideways scroll, nor hide under a fixed side menu; `column-auto-width` reserves the sort
+ends of a sideways scroll, nor hide under a fixed side menu, and scrolled content no longer shows in
+the strip between the container's visible edge and them; `column-auto-width` reserves the sort
 arrow (and, with `sort-mode="multiple"`, its priority number), so sorting no longer narrows and wraps
 the label; leaf header labels and their buttons sit at the bottom of the header row also without
 bands, so with `header-wrap` the buttons of every column line up with the last line of the labels;
