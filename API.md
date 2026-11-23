@@ -3555,7 +3555,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): Excel export without ExcelJS — `exportXlsx(grid, options)`,
+In 0.4.0: Excel export without ExcelJS — `exportXlsx(grid, options)`,
 `downloadXlsx` and `createXlsxExporter(options)` write the file in a WebAssembly engine in a Web
 Worker, with `customizeCell` (per-cell values, formats, styles, links), progress and "Cancel export"
 in the toolbar; the ExcelJS forms are deprecated. Visible changes of the new forms: band rows are
