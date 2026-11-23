@@ -197,7 +197,7 @@ Estado: `—` a fazer · `em curso` · `feito`.
 | Exportação em PDF | `26-export-pdf.md` | PDF marcado (PDF/UA) por motor próprio Rust/WASM em worker; entrada `export-pdf` | feito |
 | Rolagem pelo contêiner externo | `27-parent-scroll.md` | virtualizar linhas e colunas pela rolagem de um ancestral ou da janela, com o grid em qualquer posição; atributo `scroll-container` (id) e propriedade por elemento; partes grudadas nativas | feito |
 | Filtro em coluna calculada | `28-computed-column-filter.md` | colunas com `valueGetter` e `name` (sem `path`) filtráveis na linha de filtro, no filtro de cabeçalho e na busca; fora do servidor no modo remoto | feito |
-| Exportação em Excel | `29-export-xlsx.md` | xlsx por motor próprio Rust/WASM em worker (crate `uo-xlsx` no Universal Office + `grid-xlsx`), sem ExcelJS; `customizeCell` com estilo comum ao PDF, bandas, cabeçalho congelado, progresso; bundles `.min.js` autocontidos | spec aprovada; aguarda o `uo-xlsx` |
+| Exportação em Excel | `29-export-xlsx.md` | xlsx pelo escritor do Universal Office (`uo-xlsx`, dependência Rust) num worker WASM (`grid-xlsx`), sem ExcelJS; `customizeCell` com estilo comum ao PDF, bandas, cabeçalho congelado, progresso; bundles `.min.js` autocontidos | spec aprovada; aguarda o `uo-xlsx` |
 
 ### Pendências deixadas pelas frentes
 

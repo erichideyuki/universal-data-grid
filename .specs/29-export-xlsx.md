@@ -1,4 +1,4 @@
-# 29 — Exportação em Excel (xlsx) com motor próprio
+# 29 — Exportação em Excel (xlsx) pelo escritor do Universal Office
 
 Estado: **aprovada** pelo usuário (2026-11-23), depois de 2 rodadas de
 revisão (API e a11y). Implementação aguarda o crate `uo-xlsx`.
@@ -24,12 +24,17 @@ grid de `/vendor` ou de CDN.
   sem congelar.
 
 ## Decisões do usuário (2026-11-23)
-1. **Motor**: escritor PRÓPRIO em Rust/WASM, como o PDF (spec 26). A
-   gravação essencial de xlsx vira o crate `uo-xlsx` no Universal Office
+1. **Motor**: o escritor de xlsx é do Universal Office — crate `uo-xlsx`
    (branch `rust-core`, sobre `uo-opc` — zip, deflate, XML, OPC — e
-   `uo-numfmt`), adiantando a "track C" da migração do Sheet; o grid tem o
-   crate `grid-xlsx` (WASM, em worker) que o usa, como o `grid-pdf` usa o
-   `uo-fonts`.
+   `uo-numfmt`), adiantando a "track C" da migração do Sheet. O grid o usa
+   como dependência Rust (git `rev` fixo, como o `grid-pdf` usa o
+   `uo-fonts`) num crate fino, `grid-xlsx`: só traduz as linhas e estilos
+   da exportação para o `uo-xlsx` e o expõe ao worker em WASM.
+   Dependência por pacote npm do Universal Office foi considerada e
+   descartada por ora (o `uo-wasm` publicado é um wasm único do núcleo
+   inteiro; acoplaria as versões; mais um pacote para o hospedeiro servir);
+   volta à mesa se o Universal Office publicar um wasm só de xlsx que os
+   apps já carreguem.
 2. **Esperar o motor**: a API nova sai junto com ele, não antes sobre o
    ExcelJS.
 
