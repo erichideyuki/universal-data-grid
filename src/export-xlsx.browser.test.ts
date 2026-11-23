@@ -12,6 +12,7 @@ import { userEvent } from 'vitest/browser';
 import { createXlsxExporter, exportXlsx, type GridXlsxOptions } from './export-xlsx/index.js';
 import type { GridExporter } from './export/types.js';
 import type { GridColumnDef } from './grid-column-def.js';
+import { setGridTranslation } from './grid-i18n.js';
 import type { DataGrid } from './grid.js';
 import { cleanup, createGrid, settle } from './test/fixture.js';
 import { unzip, xmlOf } from './test/unzip.js';
@@ -188,10 +189,10 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.sheet.getElementsByTagName('sheetView')[0].getAttribute('rightToLeft')).toBeNull();
   });
 
-  it('bandas: linhas acima das folhas, rótulo na 1ª coluna centralizado na seleção, sem mesclar; congela tudo', async () => {
+  it('bandas: linhas acima das folhas, rótulo na 1ª coluna com o alinhamento da banda (center = centralizar na seleção), sem mesclar; congela tudo', async () => {
     const cols: GridColumnDef[] = [
       { path: 'name', label: 'Name' },
-      { label: 'Sale', columns: [{ path: 'country', label: 'Country' }, { path: 'amount', label: 'Amount', dataType: 'number' }] },
+      { label: 'Sale', alignment: 'center', columns: [{ path: 'country', label: 'Country' }, { path: 'amount', label: 'Amount', dataType: 'number' }] },
       { path: 'when', label: 'When', dataType: 'date' },
     ];
     let book = await run(await create(undefined, cols));
@@ -343,7 +344,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(['B2', 'C2'].map(ref => book.cells.get(ref))).toEqual(['B2', 'C2'].map(() => ({ value: null, type: null, style: book.cells.get('A2')!.style })));
   });
 
-  it('contraste: cor clara no cabeçalho sai; fundo escuro sem cor de texto sai; texto e fundo bons ficam', async () => {
+  it('contraste: cor clara no cabeçalho sai; fundo escuro sem cor de texto ganha texto branco; texto e fundo bons ficam', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const book = await run(await create(), {
       customizeCell: cell => {
@@ -362,7 +363,8 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     });
 
     expect(book.styleOf('A1')).toMatchObject({ color: null, fill: 'FFE6E6E6' });
-    expect(book.styleOf('A2')).toMatchObject({ color: null, fill: null });
+    // fundo escuro sem cor de texto: texto branco (o fundo fica)
+    expect(book.styleOf('A2')).toMatchObject({ color: 'FFFFFFFF', fill: 'FF000080' });
     expect(book.styleOf('B2')).toMatchObject({ color: 'FFFFFFFF', fill: 'FF000080' });
     expect(warn.mock.calls.filter(([m]) => String(m).includes('contrast')).length).toBeGreaterThan(0);
     warn.mockRestore();
@@ -371,7 +373,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
   it('RTL: dc:language do grid, start/end e bordas espelhados, bandas e grupos', async () => {
     const cols: GridColumnDef[] = [
       { path: 'name', label: 'الاسم' },
-      { label: 'البيع', columns: [{ path: 'country', label: 'البلد' }, { path: 'amount', label: 'المبلغ', dataType: 'number' }] },
+      { label: 'البيع', alignment: 'center', columns: [{ path: 'country', label: 'البلد' }, { path: 'amount', label: 'المبلغ', dataType: 'number' }] },
       { path: 'when', label: 'التاريخ', dataType: 'date' },
     ];
     const grid = await create(g => {
@@ -402,6 +404,102 @@ describe('exportXlsx (motor uo-xlsx)', () => {
   it('assetsUrl relativo à página, sem a barra final', async () => {
     const book = await run(await create(), { worker: false, assetsUrl: '/src/export-xlsx' });
     expect(book.cells.get('A2')?.value).toBe('Ana');
+  });
+
+  it('banda: padrão `start` como na tela; customizeCell recebe a 1ª coluna em `column` e a banda em `band`', async () => {
+    const sale: GridColumnDef = { label: 'Sale', columns: [{ path: 'country', label: 'Country' }, { path: 'amount', label: 'Amount', dataType: 'number' }] };
+    const seen: { column: string | undefined; band: string | null | undefined; span: number }[] = [];
+    const book = await run(await create(undefined, [{ path: 'name', label: 'Name' }, sale]), {
+      customizeCell: cell => {
+        if (cell.rowType === 'header' && cell.headerRow === 0 && cell.band) {
+          seen.push({ column: cell.column?.label, band: cell.band.label, span: cell.columnSpan });
+        }
+
+        if (cell.rowType === 'data') {
+          expect(cell.band).toBeNull();
+        }
+      },
+    });
+
+    expect(book.cells.get('B1')?.value).toBe('Sale');
+    expect(book.styleOf('B1').horizontal).toBeNull();
+    expect(book.cells.get('C1')).toMatchObject({ value: null, style: book.cells.get('B1')!.style });
+    expect(seen).toEqual([{ column: 'Country', band: 'Sale', span: 2 }]);
+  });
+
+  it('language: dc:language e os formatos de número e data; o padrão é o do grid', async () => {
+    const cols: GridColumnDef[] = [
+      { path: 'name', label: 'Name' },
+      { path: 'amount', label: 'Amount', dataType: 'number', format: { minimumFractionDigits: 2, maximumFractionDigits: 2 } },
+      { path: 'when', label: 'When', dataType: 'date' },
+    ];
+    let book = await run(await create(undefined, cols), { language: 'pt-BR' });
+    expect(book.core.getElementsByTagName('dc:language')[0].textContent).toBe('pt-BR');
+    expect(book.styleOf('C2').numFmt).toBe('dd/mm/yyyy');
+
+    book = await run(await create(undefined, cols));
+    expect(book.core.getElementsByTagName('dc:language')[0].textContent).toBe('en');
+    expect(book.styleOf('C2').numFmt).toBe('mm/dd/yyyy');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    book = await run(await create(undefined, cols), { language: 'not a tag!' });
+    expect(book.core.getElementsByTagName('dc:language')[0].textContent).toBe('en');
+    expect(warn.mock.calls.some(([m]) => String(m).includes('not a valid language tag'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('exportDefaultTitle dá o nome padrão; a chave antiga `pdfDefaultTitle` ainda vale, com aviso', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    setGridTranslation('x-xlsx', { pdfDefaultTitle: 'Planilha' });
+    expect(warn.mock.calls.some(([m]) => String(m).includes('"pdfDefaultTitle" is deprecated, use "exportDefaultTitle"'))).toBe(true);
+    warn.mockRestore();
+
+    const book = await run(await create(g => {
+      g.removeAttribute('aria-label');
+      g.language = 'x-xlsx';
+    }));
+    expect(book.workbook.getElementsByTagName('sheet')[0].getAttribute('name')).toBe('Planilha');
+    expect(book.core.getElementsByTagName('dc:title')[0].textContent).toBe('Planilha');
+  });
+
+  it('link: cor de link quando o hospedeiro não dá cor; num fundo escuro, texto branco', async () => {
+    const book = await run(await create(), {
+      customizeCell: cell => {
+        if (cell.rowType === 'data' && cell.columnIndex === 0) {
+          cell.link = { url: 'https://example.com', description: 'ignored in xlsx' };
+
+          if (cell.text === 'Bob') {
+            cell.style.backgroundColor = '#000080';
+          }
+
+          if (cell.text === 'Caio') {
+            cell.style.color = '#006400';
+          }
+        }
+      },
+    });
+
+    expect(book.styleOf('A2').color).toBe('FF0563C1');
+    expect(book.styleOf('A3')).toMatchObject({ color: 'FFFFFFFF', fill: 'FF000080' });
+    expect(book.styleOf('A4').color).toBe('FF006400');
+    expect(book.sheet.getElementsByTagName('hyperlink')).toHaveLength(3);
+  });
+
+  it('colunas `fixed: \'start\'`: congeladas (xSplit) e títulos de linha (RowTitle)', async () => {
+    const cols = columns().map((c, i) => i === 0 ? { ...c, fixed: 'start' as const } : c);
+    let book = await run(await create(undefined, cols));
+    expect(pane(book)?.getAttribute('xSplit')).toBe('1');
+    expect(pane(book)?.getAttribute('ySplit')).toBe('1');
+    expect(definedName(book, 'RowTitle')).toMatch(/!\$A\$1$/);
+    expect(definedName(book, 'ColumnTitle')).toMatch(/!\$A\$1$/);
+
+    book = await run(await create(), {});
+    expect(pane(book)?.getAttribute('xSplit')).toBeNull();
+    expect(definedName(book, 'RowTitle')).toBeNull();
+
+    book = await run(await create(undefined, cols), { freezeHeader: false });
+    expect(pane(book)?.getAttribute('xSplit')).toBe('1');
+    expect(pane(book)?.getAttribute('ySplit')).toBeNull();
   });
 
   it('formas com o ExcelJS: avisam uma vez (obsoletas) e continuam funcionando', async () => {

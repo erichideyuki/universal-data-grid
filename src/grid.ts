@@ -398,6 +398,7 @@ export type {
   GridCsvOptions,
   GridExportCellStyle,
   GridExportColumn,
+  GridExportLink,
   GridExportData,
   GridExportDataRow,
   GridExportGroupRow,

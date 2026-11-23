@@ -321,8 +321,8 @@ export interface GridI18n {
   exportProgress: string;
   /** PDF page footer. `{page}` = page number, `{pageCount}` = number of pages. */
   pdfPageNumber: string;
-  /** PDF title when the grid has no accessible name and no `title` option. */
-  pdfDefaultTitle: string;
+  /** Title of an exported file (PDF title, xlsx sheet name and title) when the grid has no accessible name and no option sets it. */
+  exportDefaultTitle: string;
   /** First cell of the totals row in a PDF when it has no text of its own. */
   pdfTotalRow: string;
   /** Screen reader announcement while an export started from the UI takes more than a second. */
@@ -440,6 +440,7 @@ const LEGACY_I18N_KEYS: Readonly<Record<string, keyof GridI18n>> = {
   pinEnd: 'fixEnd',
   unpin: 'unfix',
   groupPanelMenu: 'groupPanelMenuLabel',
+  pdfDefaultTitle: 'exportDefaultTitle',
 };
 
 const warnedLegacyKeys = new Set<string>();
@@ -456,6 +457,8 @@ export type GridI18nInput = Partial<GridI18n> & {
   unpin?: string;
   /** @deprecated Use `groupPanelMenuLabel`. */
   groupPanelMenu?: string;
+  /** @deprecated Use `exportDefaultTitle` (the PDF and the xlsx share it). */
+  pdfDefaultTitle?: string;
   /** @deprecated Ignored: the column chooser has no pin buttons any more (pin from the column header menu). */
   fixStartLabel?: string;
   /** @deprecated Ignored: the column chooser has no pin buttons any more (pin from the column header menu). */
@@ -672,7 +675,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Export canceled',
     exportProgress: 'Exporting… {percent}%',
     pdfPageNumber: 'Page {page} of {pageCount}',
-    pdfDefaultTitle: 'Data',
+    exportDefaultTitle: 'Data',
     pdfTotalRow: 'Total',
     exportingAnnouncement: 'Exporting…',
     exportCompleteAnnouncement: 'Exported to {format}',
@@ -887,7 +890,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Exportación cancelada',
     exportProgress: 'Exportando… {percent} %',
     pdfPageNumber: 'Página {page} de {pageCount}',
-    pdfDefaultTitle: 'Datos',
+    exportDefaultTitle: 'Datos',
     pdfTotalRow: 'Total',
     exportingAnnouncement: 'Exportando…',
     exportCompleteAnnouncement: 'Exportado a {format}',
@@ -1102,7 +1105,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Exportação cancelada',
     exportProgress: 'Exportando… {percent}%',
     pdfPageNumber: 'Página {page} de {pageCount}',
-    pdfDefaultTitle: 'Dados',
+    exportDefaultTitle: 'Dados',
     pdfTotalRow: 'Total',
     exportingAnnouncement: 'Exportando…',
     exportCompleteAnnouncement: 'Exportado para {format}',
@@ -1317,7 +1320,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Exportation annulée',
     exportProgress: 'Exportation… {percent} %',
     pdfPageNumber: 'Page {page} sur {pageCount}',
-    pdfDefaultTitle: 'Données',
+    exportDefaultTitle: 'Données',
     pdfTotalRow: 'Total',
     exportingAnnouncement: 'Exportation…',
     exportCompleteAnnouncement: 'Exporté en {format}',
@@ -1532,7 +1535,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Export abgebrochen',
     exportProgress: 'Export läuft… {percent} %',
     pdfPageNumber: 'Seite {page} von {pageCount}',
-    pdfDefaultTitle: 'Daten',
+    exportDefaultTitle: 'Daten',
     pdfTotalRow: 'Summe',
     exportingAnnouncement: 'Wird exportiert…',
     exportCompleteAnnouncement: 'Nach {format} exportiert',
@@ -1747,7 +1750,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Esportazione annullata',
     exportProgress: 'Esportazione… {percent}%',
     pdfPageNumber: 'Pagina {page} di {pageCount}',
-    pdfDefaultTitle: 'Dati',
+    exportDefaultTitle: 'Dati',
     pdfTotalRow: 'Totale',
     exportingAnnouncement: 'Esportazione…',
     exportCompleteAnnouncement: 'Esportato in {format}',
@@ -1962,7 +1965,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Exporteren geannuleerd',
     exportProgress: 'Exporteren… {percent}%',
     pdfPageNumber: 'Pagina {page} van {pageCount}',
-    pdfDefaultTitle: 'Gegevens',
+    exportDefaultTitle: 'Gegevens',
     pdfTotalRow: 'Totaal',
     exportingAnnouncement: 'Bezig met exporteren…',
     exportCompleteAnnouncement: 'Geëxporteerd naar {format}',
@@ -2177,7 +2180,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Экспорт отменён',
     exportProgress: 'Экспорт… {percent} %',
     pdfPageNumber: 'Страница {page} из {pageCount}',
-    pdfDefaultTitle: 'Данные',
+    exportDefaultTitle: 'Данные',
     pdfTotalRow: 'Итого',
     exportingAnnouncement: 'Экспорт…',
     exportCompleteAnnouncement: 'Экспортировано в {format}',
@@ -2392,7 +2395,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Eksport anulowany',
     exportProgress: 'Eksportowanie… {percent}%',
     pdfPageNumber: 'Strona {page} z {pageCount}',
-    pdfDefaultTitle: 'Dane',
+    exportDefaultTitle: 'Dane',
     pdfTotalRow: 'Suma',
     exportingAnnouncement: 'Eksportowanie…',
     exportCompleteAnnouncement: 'Wyeksportowano do {format}',
@@ -2607,7 +2610,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'Dışa aktarma iptal edildi',
     exportProgress: 'Dışa aktarılıyor… %{percent}',
     pdfPageNumber: 'Sayfa {page} / {pageCount}',
-    pdfDefaultTitle: 'Veriler',
+    exportDefaultTitle: 'Veriler',
     pdfTotalRow: 'Toplam',
     exportingAnnouncement: 'Dışa aktarılıyor…',
     exportCompleteAnnouncement: '{format} olarak dışa aktarıldı',
@@ -2822,7 +2825,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'エクスポートをキャンセルしました',
     exportProgress: 'エクスポート中… {percent}%',
     pdfPageNumber: '{page} / {pageCount} ページ',
-    pdfDefaultTitle: 'データ',
+    exportDefaultTitle: 'データ',
     pdfTotalRow: '合計',
     exportingAnnouncement: 'エクスポートしています…',
     exportCompleteAnnouncement: '{format} にエクスポートしました',
@@ -3037,7 +3040,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: '내보내기를 취소했습니다',
     exportProgress: '내보내는 중… {percent}%',
     pdfPageNumber: '{pageCount}페이지 중 {page}페이지',
-    pdfDefaultTitle: '데이터',
+    exportDefaultTitle: '데이터',
     pdfTotalRow: '합계',
     exportingAnnouncement: '내보내는 중…',
     exportCompleteAnnouncement: '{format}(으)로 내보냈습니다',
@@ -3252,7 +3255,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: '已取消导出',
     exportProgress: '正在导出… {percent}%',
     pdfPageNumber: '第 {page} 页，共 {pageCount} 页',
-    pdfDefaultTitle: '数据',
+    exportDefaultTitle: '数据',
     pdfTotalRow: '合计',
     exportingAnnouncement: '正在导出…',
     exportCompleteAnnouncement: '已导出为 {format}',
@@ -3467,7 +3470,7 @@ export const gridTranslations: Record<string, GridI18n> = Object.assign(Object.c
     exportCanceledAnnouncement: 'تم إلغاء التصدير',
     exportProgress: 'جارٍ التصدير… ‎{percent}%',
     pdfPageNumber: 'الصفحة {page} من {pageCount}',
-    pdfDefaultTitle: 'البيانات',
+    exportDefaultTitle: 'البيانات',
     pdfTotalRow: 'الإجمالي',
     exportingAnnouncement: 'جارٍ التصدير…',
     exportCompleteAnnouncement: 'تم التصدير إلى {format}',

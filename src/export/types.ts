@@ -157,6 +157,21 @@ export interface GridExportCellStyle {
   alignment?: GridColumnAlignment;
 }
 
+/**
+ * A link on an exported cell (`customizeCell` of the PDF and xlsx exports):
+ * `http:`, `https:` or `mailto:` only (others are ignored with a warning).
+ */
+export interface GridExportLink {
+  /** Target (`http:`, `https:` or `mailto:`). */
+  url: string;
+  /**
+   * Accessible description of the link target when the cell text alone is
+   * not enough. The PDF tags it; the xlsx ignores it for now (its writer
+   * has no link tooltip yet).
+   */
+  description?: string;
+}
+
 /** Progress of an export (`onProgress`): data rows done, data rows in total, pages so far (PDF). */
 export interface GridExportProgress {
   readonly rowCount: number;

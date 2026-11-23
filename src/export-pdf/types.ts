@@ -1,4 +1,4 @@
-import type { GridExportCellStyle, GridExportColumn, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
+import type { GridExportCellStyle, GridExportColumn, GridExportLink, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
 
 /** A font for the PDF. Every font is embedded (subset); the order is the fallback order per character. */
 export interface GridPdfFont {
@@ -62,12 +62,7 @@ export interface GridPdfImage {
 }
 
 /** A link on the cell text (`http:`, `https:` or `mailto:` only). */
-export interface GridPdfLink {
-  /** Target (`http:`, `https:` or `mailto:`; others are ignored with a warning). */
-  url: string;
-  /** Accessible description of the link target when the cell text alone is not enough. */
-  description?: string;
-}
+export type GridPdfLink = GridExportLink;
 
 /**
  * A cell of the PDF, passed to `customizeCell` before it is laid out: change

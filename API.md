@@ -1697,10 +1697,13 @@ column). Text is always a text cell (never a formula), so it needs no `'` prefix
 
 The sheet is built for spreadsheet users and screen readers alike: the header rows (bands and column
 labels) are frozen and repeat on every printed page; a `ColumnTitle` name on the first column label
-lets screen readers (JAWS) read the column titles; band labels and group labels are **centered across
-their columns, never merged** (merged cells break sorting, filtering and the accessibility checker of
-Office); group rows are text (`"Country: Brazil (3)"`) with the row outline of Excel (the collapse
-button on the group row); fixed rows are exported, not frozen. The document title and language
+lets screen readers (JAWS) read the column titles; columns fixed at the start (`fixed: 'start'`) are
+frozen too and named `RowTitle` (row titles; repeating them on printed pages waits for the writer);
+band and group labels are **never merged** (merged cells break sorting, filtering and the
+accessibility checker of Office): a band label sits in its first column with the band `alignment`
+(default `start`, as on screen; `center` centers it across the band), a group label is text
+(`"Country: Brazil (3)"`) centered across the row, with the row outline of Excel (the collapse button
+on the group row); fixed rows are exported, not frozen. The document title and language
 (`dc:language`) come from the grid, and a right-to-left grid writes a right-to-left sheet. Cell
 templates (`renderer`) are not drawn — the sheet holds the values; restyle cells with `customizeCell`.
 
@@ -1708,9 +1711,10 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 | ------ | ------- | ----------- |
 | `sheetName` | accessible name of the grid, else "Data" (translated) | Tab name, always cleaned: `[ ] : * ? / \` removed, cut to 31 characters, never `History`. |
 | `title` | accessible name of the grid, else "Data" (translated) | Document title (metadata). |
+| `language` | language of the grid | Language of the file (BCP 47): `dc:language` and the number and date formats. |
 | `includeHeaders` | `true` | The header rows (bands and column labels). |
-| `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, centered across it). |
-| `freezeHeader` | `true` | Freezes every header row. |
+| `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, aligned by the band `alignment`). |
+| `freezeHeader` | `true` | Freezes every header row (the `fixed: 'start'` columns are always frozen). |
 | `direction` | direction of the grid | `'rtl'` writes a right-to-left sheet; `start`/`end` alignments follow it. |
 | `customizeCell` | — | `(cell) => void`, see below. |
 | `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void` (`pageCount` is 0), about every 250 ms and once at the end. |
@@ -1721,11 +1725,14 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 
 `customizeCell(cell)` runs synchronously for every header, band, data, group, group footer and totals
 cell, after the adapter chose its value, number format and style. Read `rowType` (`'header'` includes
-the band rows), `row`, `column` (the band in a band cell, `null` in the label of a group row),
+the band rows), `row`, `column` (the `GridExportColumn`, as in the PDF; in a band cell, the first column
+of the band; `null` in the label of a group row), `band` (the band of a band cell, else `null`),
 `columnIndex`, `columnSpan`, `headerRow` and `value` (the source value); change `cellValue` (a string
 is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
-`numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (`{ url }`: `http:`, `https:`
-or `mailto:`). The last write wins.
+`numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (a `GridExportLink` `{ url,
+description? }`: `http:`, `https:` or `mailto:`; without a color of yours the cell gets the link color
+`#0563c1` — no underline yet — and `description` is ignored for now: the writer has no link tooltip
+yet). The last write wins.
 
 **Color is never the only signal.** When a background tells a state, write the state in the cell too:
 
@@ -1748,8 +1755,8 @@ await downloadXlsx(grid, {
 `cell.style`: `bold`, `italic`, `color`, `backgroundColor`, `alignment` (the same `GridExportCellStyle`
 as the PDF), plus `wrap` and `border` (`true`, one `{ color?, style?: 'thin' | 'medium' }` for every
 side, or `GridXlsxBorderSides` `{ top?, bottom?, start?, end? }`). A text color below 4.5:1 contrast
-with its background is dropped (with a console warning) — and when the automatic black text does not
-reach 4.5:1 either, so is the background; unsupported values are ignored with a warning. A band or
+with its background is dropped (with a console warning); on a dark background where the automatic black
+text does not reach 4.5:1 the text turns white; unsupported values are ignored with a warning. A band or
 group label spans its columns without merging: `customizeCell` sees it once (`columnSpan`), the
 covered cells take its final style, and only `alignment: 'center'` centers across them.
 
@@ -2813,7 +2820,7 @@ interface GridI18n {
   // clearColumnSorting, expandGroup, collapseGroup, expandRow, collapseRow, copyFailedAnnouncement
   // Tree data: expandNode, collapseNode, addChildRow, childRowsLoadingAnnouncement,
   // childRowsLoadedAnnouncement ({count}), childRowsLoadErrorAnnouncement, nodesExpandedAnnouncement ({count})
-  // PDF export: pdfPageNumber ({page}, {pageCount}), pdfDefaultTitle, pdfTotalRow
+  // exports: exportDefaultTitle (PDF title, xlsx sheet name); PDF: pdfPageNumber ({page}, {pageCount}), pdfTotalRow
   fixColumn: string;           // header menu submenu: "Pin column"
   autoSizeAllColumns: string;  // header menu: "Auto-size all columns"
   openColumnChooser: string;   // header menu: "Choose columns"
@@ -2834,7 +2841,7 @@ interface GridI18n {
 `{column}`, `{order}`, `{count}`, `{position}`, `{priority}`, `{level}`, `{width}`, `{operation}`,
 `{cells}`, `{rows}`, `{columns}`, `{max}`, `{skipped}`, `{shown}`, `{target}`, `{percent}`, `{format}`, `{page}` and
 `{pageCount}` are placeholders filled by the grid (`{order}` with `sortAscending` /
-`sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin` and `groupPanelMenu` were renamed;
+`sortDescending`). The keys `clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu` and `pdfDefaultTitle` were renamed;
 `setGridTranslation` still accepts them (with a console warning).
 
 ### SSR note
@@ -3450,15 +3457,15 @@ import {
   exportXlsx,              // (grid, GridXlsxOptions?) => Promise<Blob>; deprecated: (grid, ExcelJS, GridXlsxExcelJSOptions?)
   downloadXlsx,            // (grid, GridXlsxDownloadOptions?) => Promise<void>; deprecated: (grid, ExcelJS, options?)
   createXlsxExporter,      // (GridXlsxExporterOptions?) => GridExporter — for grid.xlsxExporter; deprecated: (ExcelJS, options?)
-  type GridXlsxOptions,    // GridExportOptions + { sheetName?, title?, includeHeaders?, includeBands?, freezeHeader?, direction?, customizeCell?, onProgress?, worker?, assetsUrl? }
+  type GridXlsxOptions,    // GridExportOptions + { sheetName?, title?, language?, includeHeaders?, includeBands?, freezeHeader?, direction?, customizeCell?, onProgress?, worker?, assetsUrl? }
   type GridXlsxDownloadOptions, // + { fileName? }
   type GridXlsxExporterOptions, // GridXlsxDownloadOptions without selectedOnly and signal
-  type GridXlsxCell,       // customizeCell argument: readonly rowType, row, column, columnIndex, columnSpan, headerRow, value; cellValue, text, numFmt, style, link
+  type GridXlsxCell,       // customizeCell argument: readonly rowType, row, column, band, columnIndex, columnSpan, headerRow, value; cellValue, text, numFmt, style, link
   type GridXlsxCellStyle,  // GridExportCellStyle + { wrap?, border? }
   type GridXlsxBorder,     // { color?, style?: 'thin' | 'medium' }
   type GridXlsxBorderSides, // { top?, bottom?, start?, end? }: boolean | GridXlsxBorder each
   type GridExportCellStyle, // { bold?, italic?, color?, backgroundColor?, alignment? } (shared with the PDF)
-  type GridPdfLink,        // { url, description? } (cell.link)
+  type GridExportLink,     // { url, description? } (cell.link; shared with the PDF, description ignored in xlsx for now)
   type GridXlsxExcelJSOptions, // deprecated: options of the ExcelJS forms ({ sheetName?, includeHeaders?, customize? })
   type ExcelJSModule,      // the minimal ExcelJS shape the adapter needs ({ Workbook })
   type ExcelJSWorkbook,    // the part of an ExcelJS workbook it uses
@@ -3486,7 +3493,8 @@ import {
   type GridPdfCellStyle,   // = GridExportCellStyle { bold?, italic?, color?, backgroundColor?, alignment? }
   type GridExportCellStyle,
   type GridPdfImage,       // { data, format: 'png' | 'jpeg', width, height, alt } (pt)
-  type GridPdfLink,        // { url, description? }
+  type GridPdfLink,        // = GridExportLink { url, description? }
+  type GridExportLink,
   type GridPdfProgress,    // = GridExportProgress
 } from '@universal-material/data-grid/export-pdf';
 ```
@@ -3509,6 +3517,7 @@ They will be removed in the next major version.
 | `detail.fromIndex` / `detail.toIndex` of `u-grid-column-reorder` | `previousIndex` / `index` |
 | type `UmDataGridColumn` | `DataGridColumn` |
 | i18n keys `clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu` | `sortClearedAnnouncement`, `fixStart`, `fixEnd`, `unfix`, `groupPanelMenuLabel` |
+| i18n key `pdfDefaultTitle` | `exportDefaultTitle` (the PDF and the xlsx share it) |
 | i18n keys `fixStartLabel`, `fixEndLabel` — an exception: ignored (with the warning), since the chooser has no pin buttons | — (pin from the column header menu) |
 | `--u-grid-header-height` (bar) | `--u-grid-toolbar-height` (the header cells use `--u-grid-header-cell-height`) |
 | `--u-table-header-padding`, `-block-padding`, `-inline-padding` | `--u-grid-toolbar-padding`, `-block-padding`, `-inline-padding` |
@@ -3548,9 +3557,11 @@ in the toolbar; the ExcelJS forms are deprecated. Visible changes of the new for
 exported above the column labels (`includeBands`, default `true`: the data starts lower) and the
 header rows are frozen (`freezeHeader`, default `true`); the default sheet name is the grid's
 accessible name (else "Data", translated) instead of `Sheet1`; group labels are centered across the
-row instead of merged, and the outline button sits on the group row. New self-contained
+row instead of merged, and the outline button sits on the group row; `fixed: 'start'` columns are frozen. New self-contained
 `export-xlsx.min.js` and `export-pdf.min.js` for pages without a bundler; the export workers are now
-one file each. `GridPdfCellStyle` is now an alias of the shared `GridExportCellStyle`.
+one file each. `GridPdfCellStyle` and `GridPdfLink` are now aliases of the shared `GridExportCellStyle` and
+`GridExportLink`; the i18n key `pdfDefaultTitle` is renamed `exportDefaultTitle` (the old name still
+works in `setGridTranslation`, with a warning).
 
 In 0.3.8: the header filter shows a `=`/`<>` of one value on its own column
 (an initial `filterValue`) as its selection — it listed only the matching values and couldn't widen

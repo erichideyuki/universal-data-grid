@@ -11,11 +11,10 @@
  * As formas com o ExcelJS no 2º argumento (frente 12) continuam, obsoletas,
  * em `legacy.ts`.
  */
-import type { GridPdfLink } from '../export-pdf/types.js';
 import { downloadBlob } from '../export/download.js';
 import { contrast as contrastOf, parseColor as parseCssColor, Writer } from '../export/serialize.js';
 import { createSlicer, yieldToHost } from '../export/slice.js';
-import type { GridExportColumn, GridExporter, GridExportProgress, GridExportRow } from '../export/types.js';
+import type { GridExportColumn, GridExporter, GridExportLink, GridExportProgress, GridExportRow } from '../export/types.js';
 import type { GridColumnAlignment, GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 import { columnText } from '../row-model/columns.js';
@@ -38,8 +37,7 @@ import type {
   WorksheetOf,
 } from './types.js';
 
-export type { GridPdfLink } from '../export-pdf/types.js';
-export type { GridExportCellStyle } from '../export/types.js';
+export type { GridExportCellStyle, GridExportLink } from '../export/types.js';
 export type {
   ExcelJSCell,
   ExcelJSModule,
@@ -64,6 +62,8 @@ declare const __U_GRID_ASSETS__: string | undefined;
 // ------------------------------------------------------------------ padrões
 
 const WHITE = 0xffffff;
+/** Cor de hiperlink do Excel (5,9:1 sobre branco). */
+const LINK_COLOR = 0x0563c1;
 /** Cor "automática" do texto no Excel. */
 const BLACK = 0x000000;
 const HEADER_FILL = 0xe6e6e6;
@@ -330,7 +330,7 @@ const bordersOf = (border: GridXlsxCellStyle['border'], rtl: boolean): Borders |
 };
 
 /** Estilo do hospedeiro → normalizado, com a regra de contraste do PDF (a cor reprovada sai, com aviso). */
-const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | null, span: boolean, rtl: boolean): StyleSpec => {
+const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | null, span: boolean, rtl: boolean, link = false): StyleSpec => {
   const s = style ?? {};
   let color = parseColor(s.color);
   let fill = parseColor(s.backgroundColor);
@@ -345,11 +345,22 @@ const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | nu
 
   const background = fill ?? WHITE;
 
-  if (contrast(color ?? BLACK, background) < MIN_CONTRAST) {
-    warnOnce(`cell:${color ?? BLACK}:${background}`, 'a cell color has a contrast below 4.5:1 with its background; the automatic colors were used.');
-    color = undefined;
+  // link sem cor do hospedeiro: a cor de link do Excel, se passar no contraste
+  if (color === undefined && link && contrast(LINK_COLOR, background) >= MIN_CONTRAST) {
+    color = LINK_COLOR;
+  }
 
-    if (fill !== undefined && contrast(BLACK, fill) < MIN_CONTRAST) {
+  if (color !== undefined && contrast(color, background) < MIN_CONTRAST) {
+    warnOnce(`cell:${color}:${background}`, 'a cell color has a contrast below 4.5:1 with its background; the automatic color was used.');
+    color = undefined;
+  }
+
+  // texto automático (preto) reprovado num fundo escuro: branco antes de tirar o fundo
+  if (color === undefined && contrast(BLACK, background) < MIN_CONTRAST) {
+    if (contrast(WHITE, background) >= MIN_CONTRAST) {
+      color = WHITE;
+    } else {
+      warnOnce(`fill:${background}`, 'a cell background has a contrast below 4.5:1 with both black and white text; it was ignored.');
       fill = undefined;
     }
   }
@@ -416,11 +427,15 @@ const emit = (w: Writer, value: CellValue, style: number, link?: string): void =
   }
 };
 
+/** O que a célula de `customizeCell` só lê (`band`: só na célula de banda). */
+type CellBase = Pick<GridXlsxCell, 'rowType' | 'row' | 'column' | 'columnIndex' | 'columnSpan' | 'headerRow' | 'value'> & { band?: GridColumnDef };
+
 /** A célula de `customizeCell`. */
 class XlsxCell implements GridXlsxCell {
   readonly rowType: GridXlsxCell['rowType'];
   readonly row: GridExportRow | null;
-  readonly column: GridExportColumn | GridColumnDef | null;
+  readonly column: GridExportColumn | null;
+  readonly band: GridColumnDef | null;
   readonly columnIndex: number;
   readonly columnSpan: number;
   readonly headerRow: number;
@@ -428,11 +443,11 @@ class XlsxCell implements GridXlsxCell {
   cellValue: CellValue;
   numFmt: string | null;
   style: GridXlsxCellStyle;
-  link?: GridPdfLink;
+  link?: GridExportLink;
   #text: string;
 
   constructor(
-    base: Pick<GridXlsxCell, 'rowType' | 'row' | 'column' | 'columnIndex' | 'columnSpan' | 'headerRow' | 'value'>,
+    base: CellBase,
     cellValue: CellValue,
     text: string,
     numFmt: string | null,
@@ -441,6 +456,7 @@ class XlsxCell implements GridXlsxCell {
     this.rowType = base.rowType;
     this.row = base.row;
     this.column = base.column;
+    this.band = base.band ?? null;
     this.columnIndex = base.columnIndex;
     this.columnSpan = base.columnSpan;
     this.headerRow = base.headerRow;
@@ -532,6 +548,8 @@ interface Context {
   rows: Iterator<GridExportRow>;
   totalCount: number;
   maxLevel: number;
+  /** Colunas fixas no início, seguidas (congeladas e títulos de linha). */
+  fixedStart: number;
   /** Bandas acima de cada coluna (de cima para baixo), quando `includeBands`. */
   chains: GridColumnDef[][];
   numberLanguage: string | undefined;
@@ -560,27 +578,39 @@ const contextOf = (grid: DataGrid, options: GridXlsxOptions): Context => {
   const stream = grid._exportStream(options);
   const translation = grid._exportTranslation;
   const name = grid._exportName.trim();
-  const fallback = translation.pdfDefaultTitle;
+  const fallback = translation.exportDefaultTitle;
   const bands = options.includeBands !== false && options.includeHeaders !== false;
+  const language = validLanguage(options.language);
+
+  if (options.language && !language) {
+    warnOnce(`lang:${options.language}`, `"${options.language}" is not a valid language tag; the language of the grid was used.`);
+  }
+
+  let fixedStart = 0;
+
+  while (fixedStart < stream.columns.length && grid._fixedOf(stream.columns[fixedStart].column) === 'start') {
+    fixedStart++;
+  }
 
   return {
     title: options.title?.trim() || name || fallback,
     sheetName: options.sheetName?.trim() || name || fallback,
     fallbackName: fallback,
-    language: validLanguage(grid._exportLanguages.content) ?? 'en',
+    language: language ?? validLanguage(grid._exportLanguages.content) ?? 'en',
     rtl: (options.direction ?? getComputedStyle(grid).direction) === 'rtl',
     columns: stream.columns,
     rows: stream.rows,
     totalCount: stream.totalCount,
     maxLevel: Math.min(MAX_OUTLINE, stream.maxLevel),
+    fixedStart,
     chains: bands ? stream.columns.map(column => grid._bandChainOf(column.column)) : stream.columns.map(() => []),
-    numberLanguage: grid.language,
+    numberLanguage: language ?? grid.language,
   };
 };
 
 const configOf = (ctx: Context, headerRows: number, freeze: boolean): Uint8Array => {
   const w = new Writer();
-  w.u8(1);
+  w.u8(2);
   w.str(ctx.title);
   w.str(ctx.language);
   w.str(ctx.sheetName);
@@ -588,6 +618,7 @@ const configOf = (ctx: Context, headerRows: number, freeze: boolean): Uint8Array
   w.u8((ctx.rtl ? 1 : 0) | (freeze ? 2 : 0));
   w.u8(headerRows);
   w.u8(ctx.maxLevel);
+  w.u16(Math.min(ctx.fixedStart, 0xffff));
   w.u16(ctx.columns.length);
 
   for (const c of ctx.columns) {
@@ -701,7 +732,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
 
   /** `customizeCell` sobre a célula; devolve valor, estilo e link finais. */
   const custom = (
-    base: Pick<GridXlsxCell, 'rowType' | 'row' | 'column' | 'columnIndex' | 'columnSpan' | 'headerRow' | 'value'>,
+    base: CellBase,
     value: CellValue,
     text: string,
     numFmt: string | null,
@@ -709,7 +740,6 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
   ): { value: CellValue; style: number; link?: string; spec: StyleSpec } => {
     const cell = new XlsxCell(base, value, text, numFmt, publicStyle(spec));
     customize!(cell);
-    const final = specOf(cell.style, cell.numFmt, base.columnSpan > 1, rtl);
     let link: string | undefined;
 
     if (cell.link) {
@@ -722,6 +752,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
       }
     }
 
+    const final = specOf(cell.style, cell.numFmt, base.columnSpan > 1, rtl, !!link);
     let out = cell.cellValue;
 
     if (out !== null && typeof out !== 'string' && typeof out !== 'number' && typeof out !== 'boolean' && !(out instanceof Date)) {
@@ -815,14 +846,16 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
         }
 
         const label = columnText(run.band);
-        let spec = headerSpec(Align.CenterContinuous);
+        // o alinhamento da banda, como na tela (padrão `start`); `center` centraliza na seleção
+        const alignment = run.band.alignment ?? 'start';
+        let spec = headerSpec(alignment === 'center' ? span > 1 ? Align.CenterContinuous : Align.Center : ALIGN_OF[alignment] ?? Align.None);
         let value: CellValue = label;
         let style = styles.id(spec);
         let link: string | undefined;
 
         if (customize) {
           ({ value, style, link, spec } = custom(
-            { rowType: 'header', row: null, column: run.band, columnIndex: run.start, columnSpan: span, headerRow: d, value: label },
+            { rowType: 'header', row: null, column: ctx.columns[run.start], band: run.band, columnIndex: run.start, columnSpan: span, headerRow: d, value: label },
             label,
             label,
             null,

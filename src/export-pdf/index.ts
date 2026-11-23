@@ -27,7 +27,7 @@ import type {
   GridPdfProgress,
 } from './types.js';
 
-export type { GridExportCellStyle } from '../export/types.js';
+export type { GridExportCellStyle, GridExportLink } from '../export/types.js';
 export type {
   GridPdfCell,
   GridPdfCellStyle,
@@ -202,7 +202,7 @@ const contextOf = (source: DataGrid | GridExportData, options: GridPdfOptions): 
     const style = getComputedStyle(source);
 
     return {
-      title: options.title?.trim() || source._exportName.trim() || translation.pdfDefaultTitle,
+      title: options.title?.trim() || source._exportName.trim() || translation.exportDefaultTitle,
       language,
       textLanguage: text,
       rtl: (options.direction ?? style.direction) === 'rtl',
@@ -220,7 +220,7 @@ const contextOf = (source: DataGrid | GridExportData, options: GridPdfOptions): 
   const translation = exportTranslation(language);
 
   return {
-    title: options.title?.trim() || translation.pdfDefaultTitle,
+    title: options.title?.trim() || translation.exportDefaultTitle,
     language,
     textLanguage: language,
     rtl: options.direction === 'rtl',

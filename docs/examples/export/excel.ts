@@ -23,6 +23,7 @@ export default (host: HTMLElement) => {
     { path: 'id', label: 'Order', width: 90, dataType: 'number' },
     {
       label: 'Customer',
+      alignment: 'center',
       columns: [
         { path: 'customer', label: 'Name', width: 190 },
         { path: 'country', label: 'Country', width: 150 },
@@ -58,7 +59,7 @@ export default (host: HTMLElement) => {
         onProgress: ({ rowCount, totalCount }) => progress.textContent = `Excel export: ${rowCount} of ${totalCount} rows`,
         customizeCell: cell => {
           // a priority order: bold and a tinted background, with the state already in the text ("Yes")
-          if (cell.rowType === 'data' && cell.column && 'column' in cell.column && cell.column.column.path === 'priority' && cell.value === true) {
+          if (cell.rowType === 'data' && cell.column?.column.path === 'priority' && cell.value === true) {
             cell.text = 'Yes (priority)';
             cell.style = { ...cell.style, bold: true, backgroundColor: '#fff3cd' };
           }

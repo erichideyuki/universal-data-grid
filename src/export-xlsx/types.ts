@@ -1,5 +1,4 @@
-import type { GridPdfLink } from '../export-pdf/types.js';
-import type { GridExportCellStyle, GridExportColumn, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
+import type { GridExportCellStyle, GridExportColumn, GridExportLink, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
 import type { GridColumnDef } from '../grid-column-def.js';
 
 /** The part of an ExcelJS cell the deprecated ExcelJS forms write. */
@@ -97,9 +96,11 @@ export interface GridXlsxCell<TItem = any> {
   readonly rowType: GridExportRow['rowType'] | 'header';
   /** The exported row (`null` in the header). */
   readonly row: GridExportRow<TItem> | null;
-  /** The column; in a band cell, the band ({@link GridColumnDef}); `null` for the label cell of a group row. */
-  readonly column: GridExportColumn<TItem> | GridColumnDef<TItem> | null;
-  /** Index in `columns`: in a band, its first column; `-1` for the label cell of a group row. */
+  /** The column (in a band cell, the first column of the band); `null` for the label cell of a group row. */
+  readonly column: GridExportColumn<TItem> | null;
+  /** The band of a band cell; `null` in every other cell. */
+  readonly band: GridColumnDef<TItem> | null;
+  /** Index in `columns` (in a band cell, of its first column); `-1` for the label cell of a group row. */
   readonly columnIndex: number;
   /**
    * Columns the cell spans (a band, the label of a group row); `1` otherwise.
@@ -127,8 +128,13 @@ export interface GridXlsxCell<TItem = any> {
   numFmt: string | null;
   /** Style of the cell (replace the object or change its fields). */
   style: GridXlsxCellStyle;
-  /** A native hyperlink (`http:`, `https:`, `mailto:`; others are ignored with a warning). `description` is not used. */
-  link?: GridPdfLink;
+  /**
+   * A native hyperlink (`http:`, `https:`, `mailto:`; others are ignored
+   * with a warning). Without a `style.color` of yours the cell gets the link
+   * color (`#0563c1`, contrast checked); no underline yet (the writer has
+   * none). `description` is ignored for now (no link tooltip yet).
+   */
+  link?: GridExportLink;
 }
 
 /** Options of `exportXlsx()`. The type parameters are deprecated (they only type the deprecated `customize`). */
@@ -141,14 +147,23 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
   sheetName?: string;
   /** Document title (metadata). Default: the accessible name of the grid, else "Data" (translated). */
   title?: string;
+  /**
+   * Language of the file (BCP 47): `dc:language` and the number and date
+   * formats. Default: the language of the grid.
+   */
+  language?: string;
   /** Header rows with the column labels (and the bands). Default `true`. */
   includeHeaders?: boolean;
   /**
    * Band rows above the column labels, not merged: the label in the first
-   * column of the band, centered across its columns. Default `true`.
+   * column of the band, aligned by the band `alignment` (default `start`, as
+   * on screen; `center` centers it across the band). Default `true`.
    */
   includeBands?: boolean;
-  /** Freezes every header row (bands and labels). Default `true`. */
+  /**
+   * Freezes every header row (bands and labels). Default `true`. Columns
+   * fixed at the start (`fixed: 'start'`) are always frozen too.
+   */
   freezeHeader?: boolean;
   /** Default: the direction of the grid. `rtl` writes a right-to-left sheet; `start`/`end` follow it. */
   direction?: 'ltr' | 'rtl';

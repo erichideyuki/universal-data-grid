@@ -3,10 +3,11 @@
 //! JS serializa (protocolo binário, little endian) em chamadas ao escritor; a escrita, o deflate e
 //! o pacote são do `uo-xlsx`.
 //!
-//! Configuração (`begin`): versão `u8` = 1, título, idioma (`dc:language`), nome da aba, nome de
+//! Configuração (`begin`): versão `u8` = 2, título, idioma (`dc:language`), nome da aba, nome de
 //! reserva (quando o nome limpo fica vazio), flags `u8` (1 RTL, 2 congelar o cabeçalho), linhas de
-//! cabeçalho `u8` (bandas + folhas; a última é a das folhas), níveis de outline `u8` (0–7), colunas:
-//! `u16` n e por coluna a largura `f32` em px (≤ 0 = padrão). Strings: `u32` de bytes + UTF-8.
+//! cabeçalho `u8` (bandas + folhas; a última é a das folhas), níveis de outline `u8` (0–7), colunas
+//! fixas no início `u16` (sempre congeladas; títulos de linha), colunas: `u16` n e por coluna a
+//! largura `f32` em px (≤ 0 = padrão). Strings: `u32` de bytes + UTF-8.
 //!
 //! Bloco (`append`): estilos novos — `u16` n e por estilo flags `u8` (1 negrito, 2 itálico, 4 cor,
 //! 8 fundo, 16 quebra, 32 formato), alinhamento `u8` (0 nenhum, 1 esquerda, 2 centro, 3 direita,
@@ -166,7 +167,7 @@ impl Engine {
 
     fn read_begin(cfg: &[u8]) -> Result<uo_xlsx::Result<XlsxWriter>, String> {
         let mut r = Rd::new(cfg);
-        if r.u8()? != 1 {
+        if r.u8()? != 2 {
             return Err("unknown config version".into());
         }
         let title = r.str()?;
@@ -176,6 +177,7 @@ impl Engine {
         let flags = r.u8()?;
         let header_rows = u32::from(r.u8()?);
         let outline_levels = r.u8()?.min(MAX_OUTLINE);
+        let fixed_cols = u32::from(r.u16()?);
         let n = r.u16()?;
         let mut columns = Vec::with_capacity(usize::from(n));
         for _ in 0..n {
@@ -190,21 +192,27 @@ impl Engine {
             ..WorkbookOptions::default()
         };
         let headers = header_rows > 0;
+        let mut names = Vec::new();
+        // convenção dos leitores de tela (JAWS): `ColumnTitle` na 1ª célula da linha das folhas (títulos
+        // de coluna à direita dela); `RowTitle` no topo da coluna de títulos de linha (a 1ª fixa)
+        if headers {
+            names.push(DefinedName { name: "ColumnTitle".into(), range: CellRange::cell(header_rows, 1), sheet_scope: true });
+        }
+        if fixed_cols > 0 {
+            names.push(DefinedName { name: "RowTitle".into(), range: CellRange::cell(header_rows.max(1), 1), sheet_scope: true });
+        }
         let sheet = SheetOptions {
             name: uo_xlsx::sanitize_sheet_name(name, fallback),
             right_to_left: flags & 1 != 0,
             columns,
             freeze_rows: if flags & 2 != 0 { header_rows } else { 0 },
+            // as colunas fixas no início, como no grid (o `uo-xlsx` ainda não grava títulos de impressão por coluna)
+            freeze_cols: fixed_cols.min(n.into()),
             outline_levels,
             // a linha de grupo vem ANTES dos detalhes (como no grid): o botão de recolher fica nela
             summary_above: true,
             print_title_rows: headers.then_some((1, header_rows)),
-            // convenção dos leitores de tela (JAWS): títulos de coluna a partir da 1ª célula da linha das folhas
-            names: if headers {
-                vec![DefinedName { name: "ColumnTitle".into(), range: CellRange::cell(header_rows, 1), sheet_scope: true }]
-            } else {
-                Vec::new()
-            },
+            names,
             ..SheetOptions::default()
         };
         Ok(XlsxWriter::new(opts).and_then(|mut w| w.begin_sheet(sheet).map(|()| w)))

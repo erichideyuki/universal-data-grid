@@ -45,19 +45,20 @@ struct Begin<'a> {
     freeze: bool,
     header_rows: u8,
     outline: u8,
+    fixed: u16,
     widths: &'a [f32],
 }
 
 impl Default for Begin<'_> {
     fn default() -> Self {
-        Begin { title: "Sales", language: "pt-BR", name: "Sales", rtl: false, freeze: true, header_rows: 1, outline: 0, widths: &[100.0, 0.0] }
+        Begin { title: "Sales", language: "pt-BR", name: "Sales", rtl: false, freeze: true, header_rows: 1, outline: 0, fixed: 0, widths: &[100.0, 0.0] }
     }
 }
 
 fn config(b: &Begin<'_>) -> Vec<u8> {
     let mut e = Enc::default();
-    e.u8(1).s(b.title).s(b.language).s(b.name).s("Data");
-    e.u8(u8::from(b.rtl) | if b.freeze { 2 } else { 0 }).u8(b.header_rows).u8(b.outline);
+    e.u8(2).s(b.title).s(b.language).s(b.name).s("Data");
+    e.u8(u8::from(b.rtl) | if b.freeze { 2 } else { 0 }).u8(b.header_rows).u8(b.outline).u16(b.fixed);
     e.u16(b.widths.len() as u16);
     for &w in b.widths {
         e.f32(w);
@@ -214,6 +215,20 @@ fn cabecalho_congelado_titulos_e_nome_columntitle() {
 }
 
 #[test]
+fn colunas_fixas_congeladas_e_rowtitle() {
+    let p = run(&Begin { header_rows: 2, fixed: 1, widths: &[100.0, 80.0], ..Begin::default() }, &[block(&[], &[(0, vec![C::Text("a", 0)])])]);
+    let s = sheet(&p);
+    assert!(s.contains(r#"<pane xSplit="1" ySplit="2" topLeftCell="B3" activePane="bottomRight" state="frozen"/>"#), "{s}");
+    let wb = &p["xl/workbook.xml"];
+    assert!(wb.contains(r#"<definedName name="RowTitle" localSheetId="0">'Sales'!$A$2</definedName>"#), "{wb}");
+    assert!(wb.contains(r#"<definedName name="ColumnTitle" localSheetId="0">'Sales'!$A$2</definedName>"#), "{wb}");
+    // sem congelar o cabeçalho: só as colunas
+    let p = run(&Begin { freeze: false, fixed: 1, ..Begin::default() }, &[block(&[], &[])]);
+    assert!(sheet(&p).contains(r#"xSplit="1""#), "{}", sheet(&p));
+    assert!(!sheet(&p).contains("ySplit"), "{}", sheet(&p));
+}
+
+#[test]
 fn rtl_sem_congelar_e_sem_cabecalho() {
     let p = run(&Begin { rtl: true, freeze: false, header_rows: 0, ..Begin::default() }, &[block(&[], &[(0, vec![C::Text("a", 0)])])]);
     let s = sheet(&p);
@@ -320,7 +335,7 @@ fn erros_de_protocolo_e_de_estado() {
     let mut e = Engine::new();
     assert_eq!(e.append(&block(&[], &[])), code::STATE);
     assert_eq!(e.finish(), code::STATE);
-    assert_eq!(e.begin(&[2]), code::INVALID);
+    assert_eq!(e.begin(&[1]), code::INVALID);
     assert_eq!(e.begin(&config(&Begin::default())), code::OK);
     assert_eq!(e.begin(&config(&Begin::default())), code::STATE);
     // bloco truncado, estilo desconhecido, sobra no fim

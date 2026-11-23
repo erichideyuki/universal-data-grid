@@ -7,11 +7,11 @@
 import type { GridI18n } from '../grid-i18n.js';
 
 /** Os textos que a exportação usa. */
-export type ExportTexts = Pick<GridI18n, 'pdfDefaultTitle' | 'pdfPageNumber' | 'adaptiveLabelSeparator' | 'pdfTotalRow'>;
+export type ExportTexts = Pick<GridI18n, 'exportDefaultTitle' | 'pdfPageNumber' | 'adaptiveLabelSeparator' | 'pdfTotalRow'>;
 
 /** Os de `en` em `grid-i18n.ts` (só quando o grid não foi carregado). */
 const ENGLISH: ExportTexts = {
-  pdfDefaultTitle: 'Data',
+  exportDefaultTitle: 'Data',
   pdfPageNumber: 'Page {page} of {pageCount}',
   adaptiveLabelSeparator: ': ',
   pdfTotalRow: 'Total',
