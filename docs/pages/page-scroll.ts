@@ -2,7 +2,7 @@ import type { DocPage } from '../site/types.js';
 
 export default {
   title: 'Scrolling with the page',
-  intro: 'With `scroll-container="window"` the grid has no scrollbar of its own: it grows to its full height and the **page** scrolls it, while only the rows in view are rendered. Toolbar, headers, fixed rows, totals and the fixed column stick to the page, below the site bar (the page\'s `scroll-padding-top`).',
+  intro: 'With `scroll-container="window"` the grid has no vertical scrollbar of its own: it grows to its full height and the **page** scrolls it, while only the rows in view are rendered. Sideways, the grid keeps the width of the page and scrolls its columns inside itself (`scroll-container-axis="block"`, the default), so the page never scrolls sideways. Toolbar, headers, fixed rows, totals and the grid\'s horizontal scrollbar stick to the page, below the site bar (the page\'s `scroll-padding-top`).',
   readme: '#scrolling-with-the-page-or-a-parent',
   examples: ['page'],
   bare: true,

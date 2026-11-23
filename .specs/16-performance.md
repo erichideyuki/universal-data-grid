@@ -139,6 +139,8 @@ percentual, data ISO com `dataType: 'date'`, booleano). Grid de 600 px.
 | `responsive-1m` | 1 milhão × 8 colunas com `autoHideColumns`, frente 21 | 1º render; estreitar 1366 → 520 px (`resizeHide`, colunas saem) e alargar (`resizeShow`): do quadro da troca de largura ao fim do `ResizeObserver` do grid e do render pedido, com o layout; rolar estreito com 5 linhas adaptativas abertas (`adaptive.`); nós |
 | `tree-1m` | 1,1 milhão de nós em 6 níveis (10 filhos por nó), entrada plana, frente 25 | 1º render (índice + raízes); expandir tudo; rolar; filtrar (`contains`, com ancestrais); ordenar por nível; recolher tudo; nós; heap |
 | `wide-1m`, `bands-1m` | 1 milhão × 300 colunas calculadas (`valueGetter` do `id`; sem e com bandas de 10), frente 13 | 1º render; rolar na vertical; rolar na horizontal (`horizontal.`: 40 passos de 120 px e 20 saltos pela largura); rolar na vertical com a janela de colunas no meio (`middle.`); nós; heap |
+| `parent-scroll-1m` | 1 milhão × 300 colunas num contêiner externo (elemento), eixo `both` (0.4.x), frentes 27/30 | 1º render; rolar na vertical e na horizontal (o contêiner); `focusCell` distante; nós; heap |
+| `horizontal-bands-1m` | 1 milhão × 40 colunas com totais, a janela como contêiner, eixo `block` (faixas), frente 30 | 1º render; rolar a página na vertical; rolar a faixa do corpo na horizontal (`horizontal.`; cabeçalho, rodapé e barra acompanham); nós; heap |
 | `xlsx-10k` | 10 mil usuários × 40 colunas (mapa de calor do clickCompliance), frente 29 | exportar xlsx no worker sem e com `customizeCell` (fundo por valor + estado no texto): maior bloqueio da thread principal (`xlsxSliceMs`, `xlsxHeatSliceMs`, sonda `user-blocking`) e tempo total (`xlsxTotalMs`, `xlsxHeatTotalMs`) |
 
 - **5 milhões × 24 colunas não cabe** no heap de 1 GiB: só os itens passam
@@ -348,3 +350,19 @@ maior de 2 execuções): `xlsxSliceMs` 21,3 e `xlsxHeatSliceMs` 24,8
 por célula no estilo normalizado (2,2 s → 1,4 s) e a fatia contada por
 linha (62 ms com 40 `customizeCell` por linha). Entrou só a entrada do
 cenário novo na linha de base.
+
+## Linha de base: eixo `block` (frente 30, 2026-11-23)
+
+Cenário novo `horizontal-bands-1m`; o `parent-scroll-1m` passou a fixar
+`scroll-container-axis="both"` (mede o mesmo de antes). O harness ganhou
+`horizontalScrollerOf` (a faixa do corpo) e espera o `scroll` da página na
+janela (depois do grid). Medido (máquina fraca): `firstRenderMs` 205,
+`jumpP95Ms` 96,3 (orçamento 100), rolagens de roda e horizontais < 1 ms,
+`domNodes` 1.417. O salto é o render de 40 colunas × as linhas de uma
+janela de 768 px, não as faixas: o mesmo cenário no eixo `both` mediu
+76,8 (contra 81,5 no `block`, mesma execução). Perto do orçamento: se
+oscilar acima, a saída é a virtualização de colunas (o limiar), não as
+faixas. A suíte inteira ficou dentro da tolerância, exceto
+`pdf-1m.pdfGroupedSliceMs` (131,7) numa execução com a máquina carregada;
+isolado, 40,5 (exportação, caminho que a frente não toca). Entrou só a
+entrada do cenário novo na linha de base (o resto é reordenação do JSON).

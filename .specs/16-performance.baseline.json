@@ -65,18 +65,18 @@
     "filterAnyOfMs": 31.4,
     "searchMs": 158.6
   },
-  "filter-computed-100k": {
-    "computedTextMs": 37.8,
-    "computedNumberMs": 51.3,
-    "computedAnyOfMs": 25.8,
-    "searchMs": 158.9
-  },
   "filter-1m": {
     "typingWorstMs": 47.3,
     "filterWorstMs": 49.3,
     "filterMs": 162.6,
     "searchWorstMs": 53.7,
     "searchMs": 1185.6
+  },
+  "filter-computed-100k": {
+    "computedTextMs": 37.8,
+    "computedNumberMs": 51.3,
+    "computedAnyOfMs": 25.8,
+    "searchMs": 158.9
   },
   "fixed-rows-1m": {
     "firstRenderMs": 33.2,
@@ -158,6 +158,19 @@
     "replaceItemsMs": 1122.9,
     "domNodes": 686,
     "gridHeapMiB": 17.8
+  },
+  "horizontal-bands-1m": {
+    "firstRenderMs": 205,
+    "scrollP95Ms": 0.5,
+    "scrollWorstMs": 0.5,
+    "jumpP95Ms": 96.3,
+    "jumpWorstMs": 107.2,
+    "horizontal.scrollP95Ms": 0.5,
+    "horizontal.scrollWorstMs": 0.5,
+    "horizontal.jumpP95Ms": 0.5,
+    "horizontal.jumpWorstMs": 0.5,
+    "domNodes": 1417,
+    "gridHeapMiB": 2.5
   },
   "lean-5m": {
     "firstRenderMs": 34.4,

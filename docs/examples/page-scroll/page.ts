@@ -1,12 +1,12 @@
 import '@universal-material/data-grid';
-import type { GridColumnDef } from '@universal-material/data-grid';
+import type { GridColumnDef, GridScrollContainerAxis } from '@universal-material/data-grid';
 
-import { button, controls } from '../shared/controls.js';
+import { button, controls, select } from '../shared/controls.js';
 import { leanRow, type LeanRow } from '../shared/data.js';
 
 export const meta = {
   title: 'A long list in the page',
-  description: '100,000 rows and 30 columns in the page flow: scroll the page down and sideways (on a phone the columns that don\'t fit move to the row details instead). The toolbar and headers stick under the site bar, the pinned **Target** row sticks below them, the totals and the **Budget** row stick to the bottom of the window while the grid is in view, and the **ID** column stays at the start. Keyboard focus never stops under the stuck parts.',
+  description: '100,000 rows and 30 columns in the page flow: scroll the page down, and the grid sideways — it keeps the width of the page, with its own horizontal scrollbar stuck to the bottom of the window (Shift+wheel over the headers works too). The toolbar and headers stick under the site bar, the pinned **Target** row sticks below them, the totals, the **Budget** row and the scrollbar stick to the bottom of the window while the grid is in view, and the **ID** column stays at the start. Keyboard focus never stops under the stuck parts. Switch the axis to **both** for the 0.4.x behavior: the page itself scrolls sideways.',
 };
 
 const columns: GridColumnDef<LeanRow>[] = [
@@ -15,8 +15,8 @@ const columns: GridColumnDef<LeanRow>[] = [
   { path: 'country', label: 'Country', width: 160 },
   { path: 'quantity', label: 'Quantity', width: 130, dataType: 'number' },
   { path: 'price', label: 'Price', width: 130, dataType: 'number', format: { style: 'currency', currency: 'USD' } },
-  // Wider than the page: the page scrolls sideways too.
-  ...Array.from({ length: 25 }, (_, n): GridColumnDef<LeanRow> => ({ path: 'quantity', label: `Extra ${n + 1}`, width: 120, dataType: 'number' })),
+  // Wider than the page: the grid scrolls sideways inside itself. No width: 150px.
+  ...Array.from({ length: 25 }, (_, n): GridColumnDef<LeanRow> => ({ path: 'quantity', label: `Extra ${n + 1}`, dataType: 'number' })),
 ];
 
 export default (host: HTMLElement) => {
@@ -31,6 +31,9 @@ export default (host: HTMLElement) => {
   grid.fixedBottomItems = [{ ...leanRow(1), id: -2, name: 'Budget' }];
 
   controls(host,
+    select<GridScrollContainerAxis>('Sideways', [['block', 'block: the grid scrolls'], ['both', 'both: the page scrolls']], 'block', axis => {
+      grid.scrollContainerAxis = axis;
+    }),
     button('Focus row 50,000', () => grid.focusCell(50_000)),
     button('Back to the top', () => window.scrollTo({ top: 0 })));
 
@@ -41,18 +44,7 @@ export default (host: HTMLElement) => {
   const previous = page.scrollPaddingTop;
   page.scrollPaddingTop = 'var(--site-topbar-height)';
 
-  // On a phone, a page wider than the screen makes the browser widen its layout viewport, and what
-  // sticks to the bottom (totals, the Budget row) ends up below the screen: there, hide the columns
-  // that don't fit (they move to the row details) instead of scrolling the page sideways.
-  const narrow = window.matchMedia('(max-width: 767.98px)');
-  const applyWidth = () => {
-    grid.autoHideColumns = narrow.matches;
-  };
-  applyWidth();
-  narrow.addEventListener('change', applyWidth);
-
   return () => {
     page.scrollPaddingTop = previous;
-    narrow.removeEventListener('change', applyWidth);
   };
 };

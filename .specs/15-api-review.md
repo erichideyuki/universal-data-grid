@@ -179,6 +179,15 @@ lado. As formas com o ExcelJS de `exportXlsx`/`downloadXlsx`/
   `filterable` liga por padrão com `valueGetter` + `name` (como
   `sortable`/`groupable`), menos no filtro remoto.
 
+- Frente 30: `scrollContainerAxis` ↔ `scroll-container-axis`, `'block' |
+  'both'` (lógicos; recusados `horizontal-scroll="grid|container"`, físico, e
+  o booleano `scroll-container-inline`, que fecharia um 3º modo), padrão
+  `block` (quebra visível, 0.5.0), valor inválido → `block` com aviso por
+  valor, sem reflexão, tipo `GridScrollContainerAxis` no molde de
+  `GridScrollMode`. Sem `::part` nem custom property da barra própria: o
+  contrato é o `scrollbar-color` herdado. Na publicação, o título "0.5.0
+  (unreleased)" do API.md vira o parágrafo "In 0.5.0: **Breaking:** …".
+
 ## Inventário (antes da revisão)
 
 **`<u-grid>` (`DataGrid`)** — propriedade → atributo → padrão: `items` →

@@ -263,6 +263,114 @@ export const styles = css`
     scroll-margin-inline: var(--_reveal-start, 0px) var(--_reveal-end, 0px);
   }
 
+  /*
+   * Eixo \`block\` (spec 30): o contêiner externo rola só na vertical; o grid
+   * fica na largura que o hospedeiro dá e rola as colunas dentro dele, em
+   * faixas (cabeçalho, corpo, rodapé) com o mesmo \`<colgroup>\`. O atributo
+   * cobre o SSR (\`min-inline-size: 0\`: item de flex/grid não cresce até a
+   * tabela); com a propriedade, a folha da instância.
+   */
+  :host([scroll-container]:not([scroll-container=""]):not([scroll-container-axis="both"])) {
+    min-inline-size: 0;
+  }
+
+  .layout.external-scroll.axis-block {
+    inline-size: auto;
+    min-inline-size: 0;
+  }
+
+  .grid-bands {
+    position: relative;
+  }
+
+  .band {
+    /* Bloco de contenção dos absolutos da tabela (linha ativa fora da janela, textos do leitor), como o \`.scroll-container\`. */
+    position: relative;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    /* Sem âncora de rolagem: o virtualizador troca as linhas (spec 27). */
+    overflow-anchor: none;
+  }
+
+  /* A única rolagem horizontal nativa (toque, trackpad, Ctrl+F, Tab); a barra visível é a própria, no rodapé. */
+  .band-body {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  /* Focável só por programa (clique no vazio): sem anel; o foco visível é o das células. */
+  .band-body:focus {
+    outline: none;
+  }
+
+  .band-body::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Cabeçalho (rótulos, linha de filtro, fixas do topo) e rodapé (fixas do fundo, totais, barra) grudam na porta. */
+  .band-head {
+    position: sticky;
+    top: var(--_port-inset-top, 0px);
+    z-index: 2;
+    background-color: var(--u-grid-header-background-color, var(--_background-color));
+  }
+
+  .header + .grid-bands > .band-head {
+    top: calc(var(--_port-inset-top, 0px) + var(--_toolbar-offset, var(--_header-height)));
+  }
+
+  .band-foot {
+    position: sticky;
+    bottom: var(--_port-inset-bottom, 0px);
+    z-index: 2;
+    background-color: var(--_background-color);
+  }
+
+  /* Dentro das faixas o que grudava na vertical fica no fluxo: quem gruda é a faixa. */
+  .grid-bands :is(thead, tfoot, tbody.fixed-rows):where(.grid-table > *) {
+    position: relative;
+    inset-block: auto;
+  }
+
+  /* Acima da metade da altura da porta (zoom, WCAG 1.4.10/2.4.11): as faixas rolam com o conteúdo. */
+  .bands-scroll .band-head,
+  .bands-scroll .band-foot {
+    position: relative;
+    inset-block: auto;
+  }
+
+  /*
+   * Barra horizontal própria: espelho do \`scrollLeft\` do corpo. Oculta para o
+   * leitor e fora do Tab (o teclado rola pela navegação de células). A área
+   * operável é a da barra nativa (exceção de controle do agente de usuário,
+   * 2.5.8); os 24px reservam o espaço com barra de sobreposição. A cor vem do
+   * \`scrollbar-color\` herdado.
+   */
+  .hscroll {
+    display: flex;
+    align-items: flex-end;
+    min-block-size: 24px;
+    overflow-x: scroll;
+    overflow-y: hidden;
+  }
+
+  .hscroll[hidden] {
+    display: none;
+  }
+
+  .hscroll-spacer {
+    flex: none;
+    block-size: 1px;
+  }
+
+  /* Foco nativo e \`scrollIntoView\` nas faixas: as margens das fixas já estão no \`scroll-padding\` delas. */
+  .axis-block tbody:where(.grid-table > *).body-rows > tr > :is(td, th),
+  .axis-block tbody:where(.grid-table > *).body-rows > tr > :is(td, th) *,
+  .axis-block :is(thead, tfoot, tbody.fixed-rows):where(.grid-table > *) > tr > :is(td, th),
+  .axis-block :is(thead, tfoot, tbody.fixed-rows):where(.grid-table > *) > tr > :is(td, th) * {
+    scroll-margin-inline: 0;
+  }
+
   /* Alvo invisível do \`scrollIntoView\` de uma linha fora da janela virtual. */
   .reveal-probe {
     position: absolute;
@@ -642,6 +750,7 @@ export const styles = css`
   }
 
   @media (forced-colors: active) {
+
     .adaptive-mark {
       color: CanvasText;
     }
@@ -1153,6 +1262,17 @@ export const styles = css`
     border: 0;
   }
 
+  /*
+   * A região \`aria-live\` (filha da raiz): presa ao canto inicial do host e
+   * sem a margem negativa — na posição estática, em RTL, ela passava 1px da
+   * borda e a página rolava na horizontal (spec 30).
+   */
+  .visually-hidden:where([role="status"]) {
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    margin: 0;
+  }
+
   .grouping-cell {
     color: color-mix(in srgb, currentColor var(--u-grid-group-row-emphasis, var(--u-grid-grouping-cell-emphasis, 80%)), transparent);
     /* clip (não hidden): não vira contêiner de rolagem e o rótulo fica sticky. */
@@ -1648,7 +1768,7 @@ export const styles = css`
    * Toque longo (frente 18): sem o balão nativo do iOS (seleção/"copiar") por
    * cima do menu do grid, só onde há menu.
    */
-  .grid-table[data-row-menu] > tbody > tr > td,
+  :is(.grid-table[data-row-menu], [data-row-menu] .grid-table) > tbody > tr > td,
   .grid-table > thead th,
   .group {
     -webkit-touch-callout: none;

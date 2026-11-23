@@ -65,6 +65,33 @@ describe('SSR', () => {
     expect(plain).not.toContain('layout external-scroll');
   });
 
+  it('scroll-container-axis (frente 30): o servidor lê o eixo; block (padrão) desenha as faixas, both a tabela única', async () => {
+    const summary: GridSummary = { total: [{ column: 'year', type: 'count' }] };
+    const block = await renderToString(html`
+      <u-grid scroll-container="window" .columns=${columns} .items=${items} .summary=${summary}></u-grid>`);
+
+    expect(block).toContain('layout external-scroll axis-block');
+    expect(block).toMatch(/<div[^>]*class="grid-bands"[^>]*role="treegrid"/);
+    expect(block).toContain('band band-head');
+    expect(block).toContain('band band-body');
+    expect(block).toContain('band band-foot-rows');
+    expect(block).toMatch(/class="hscroll"[^>]*aria-hidden="true"[^>]*tabindex="-1"[^>]*hidden/);
+    expect(block.match(/<table[^>]*role="presentation"/g)).toHaveLength(3);
+    expect(block.match(/<colgroup><!--/g)).toHaveLength(3);
+    expect(block).toContain('Brazil');
+
+    const explicit = await renderToString(html`
+      <u-grid scroll-container="window" scroll-container-axis="block" .columns=${columns} .items=${items}></u-grid>`);
+    expect(explicit).toContain('axis-block');
+
+    const both = await renderToString(html`
+      <u-grid scroll-container="window" scroll-container-axis="both" .columns=${columns} .items=${items}></u-grid>`);
+    expect(both).toContain('layout external-scroll');
+    expect(both).not.toContain('external-scroll axis-block');
+    expect(both).not.toContain('class="grid-bands"');
+    expect(both).toMatch(/<table[^>]*role="treegrid"/);
+  });
+
   it('sem itens mostra o texto de vazio traduzido', async () => {
     const output = await renderToString(html`
       <u-grid language="pt" .columns=${columns} .items=${[]}></u-grid>`);

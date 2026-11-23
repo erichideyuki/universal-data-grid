@@ -424,6 +424,49 @@ o API.md pede `tabindex="0"` + `role="region"` + `aria-label` (com o grid
 em LTR e RTL, com e sem linhas; roteiro de teclado (setas, PageUp/Down,
 Ctrl+Home/End na escala, Tab de fora) automatizado em LTR e RTL.
 
+## Frente 30 — rolagem horizontal no grid (eixo `block`)
+
+Uma grade só para a tecnologia assistiva: o `role="grid"`/`treegrid` e os
+`aria-rowcount`/`-colcount`/`-multiselectable`/`-label`/`-busy` vão para a
+`div` que contém as faixas; as três `<table>` são `presentation`, as
+células e linhas mantêm papéis e índices. Bandas e folhas com `rowspan`
+ganham `aria-colspan`/`aria-rowspan` explícitos (o nativo some numa tabela
+`presentation`); só no eixo `block`.
+
+Desvio do desenho, medido na entrega: o Chromium põe a faixa do corpo
+(área rolável) no Tab quando a parada do roving está no cabeçalho (nenhum
+filho com `tabindex >= 0` nela). `tabindex="-1"` numa `div` genérica
+dentro da grade viola `aria-required-children` (axe). Saída: a própria
+faixa do corpo é o `rowgroup` (com `tabindex="-1"`, sem anel de foco) e o
+`<tbody>` dela fica `presentation`; cabeçalho e rodapé (`overflow: hidden`)
+não são roláveis pelo usuário e não precisam. A célula `no-data` ganha
+`tabindex="-1"` (focável, sem virar parada de Tab): com ela o axe deixa
+`scrollable-region-focusable` em "incompleto", não violação.
+
+Barra horizontal própria: `aria-hidden`, `tabindex="-1"` explícito,
+espaçador `inert`; clique nela ou no vazio da faixa do corpo devolve o foco
+à célula. A área operável é a barra nativa (exceção de controle do agente
+de usuário, 2.5.8; os 24px só reservam espaço); em `forced-colors` vale a
+barra do sistema. Rótulo de grupo e `no-data` também levam `aria-colspan`. Regra dos 50%: barra + faixa do cabeçalho + faixa do
+rodapé (totais, fixas e a barra) + `scroll-padding` acima da metade da
+altura da porta → as faixas deixam de grudar juntas (classe
+`bands-scroll`). Margens de 2.4.11: a de baixo é a faixa do rodapé inteira.
+Foco numa célula do cabeçalho/rodapé: `scrollIntoView` rola a faixa dela
+(por programa) e a sincronização copia o `scrollLeft` para o corpo e as
+outras faixas no mesmo tratamento. Correção junto: a região `aria-live`
+(`.visually-hidden[role=status]`) passava 1px da borda em RTL e a página
+rolava de lado; agora fica presa ao canto inicial do host, sem margem.
+
+Automatizado (`src/horizontal-scroll.browser.test.ts`): Tab não para na
+barra nem nas faixas; teclado revela coluna fora da vista no corpo e no
+cabeçalho (LTR e RTL); última linha e última coluna acima dos totais e da
+barra; cursor num campo da linha de filtro realinha o corpo; axe sem
+violações com bandas, agrupado, RTL, sem dados e carregando. Pendente
+(usuário): roteiro manual com NVDA+Chrome, NVDA+Firefox, JAWS+Chrome e
+VoiceOver+Safari — Ctrl+Alt+setas no modo de leitura atravessando
+cabeçalho → corpo → rodapé e o cabeçalho da coluna anunciado numa célula
+do corpo, com colunas virtualizadas e com bandas.
+
 ## `reshapeOnChanges` (dados ao vivo que reordenam)
 
 Decidido com o usuário em 2026-11-19, após a revisão do `a11y-reviewer`

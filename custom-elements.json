@@ -955,7 +955,7 @@
                 "text": "string | null"
               },
               "default": "null",
-              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls in both\ndirections, and rows and columns are still virtualized by the visible\npart of the container; toolbar, headers, totals, fixed rows and columns\nstick to it. The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window; `<body>` only when it is\nthe scrolling element. Not found, not an ancestor or empty: a console\nwarning and the grid's own scrolling. An element between the grid and\nthe container that clips or scrolls (`overflow` other than\n`visible`/`clip`) also warns: sticky headers would stick to it. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
+              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls\nvertically and rows are still virtualized by its visible part; toolbar,\nheaders, totals and fixed rows stick to it. Horizontally, with\n`scrollContainerAxis` `block` (the default) the grid keeps the width it is given and\nscrolls its columns inside itself, with its own horizontal scrollbar\nstuck to the bottom of the container; with `both` the container scrolls\nin both directions (the 0.4.x behavior). The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window; `<body>` only when it is\nthe scrolling element. Not found, not an ancestor or empty: a console\nwarning and the grid's own scrolling. An element between the grid and\nthe container that clips or scrolls (`overflow` other than\n`visible`/`clip`) also warns: sticky headers would stick to it. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
               "attribute": "scroll-container"
             },
             {
@@ -966,6 +966,16 @@
               },
               "default": "null",
               "description": "The outer scroll container by reference (wins over `scrollContainer`):\nan ancestor element, or `window`. `document.documentElement` (or the\n`document.scrollingElement`) means the window. See `scrollContainer`."
+            },
+            {
+              "kind": "field",
+              "name": "scrollContainerAxis",
+              "type": {
+                "text": "GridScrollContainerAxis"
+              },
+              "default": "'block'",
+              "description": "With `scrollContainer`: which directions the outer container scrolls.\n`block` (default): only vertically — the grid never gets wider than the\nwidth it is given and scrolls horizontally inside itself (headers,\nbody and totals scroll together; a horizontal scrollbar of the grid\nsticks to the bottom of the container, styled by the inherited\n`scrollbar-color`); columns without `width` get their `columnAutoWidth`\nmeasure or `max(minWidth, 150)` px within `maxWidth`. `both`: the\ncontainer scrolls in both directions and the grid grows to the width of\nits columns (the 0.4.x behavior). No effect without an outer container\n(`scrollContainer` or `scrollContainerElement`). Unknown values fall back\nto `block` with a console warning; removing the attribute means `block`.\nThe attribute alone renders this mode on the server.",
+              "attribute": "scroll-container-axis"
             },
             {
               "kind": "field",
@@ -2208,7 +2218,7 @@
                   }
                 }
               ],
-              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out, or in a collapsed group or tree\nnode — unless `options.expandAncestors`, which expands them first, from\nthe outer level in, firing `u-grid-group-expansion-change` /\n`u-grid-node-expansion-change` with `source: 'api'`) or `column` is not\na shown (user-visible), ungrouped column (a band returns `false`). A\n`false` result changes nothing. A column hidden by `autoHideColumns`\nopens the row details (`u-grid-row-expansion-change`, `source: 'api'`)\nand focuses its value. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`."
+              "description": "Scrolls to the cell of the row `rowKey` and `column` (default: the first\nvisible column) and moves the DOM focus to it. Returns `false` when the\nrow is not in the grid (filtered out, or in a collapsed group or tree\nnode — unless `options.expandAncestors`, which expands them first, from\nthe outer level in, firing `u-grid-group-expansion-change` /\n`u-grid-node-expansion-change` with `source: 'api'`) or `column` is not\na shown (user-visible), ungrouped column (a band returns `false`). A\n`false` result changes nothing. A column hidden by `autoHideColumns`\nopens the row details (`u-grid-row-expansion-change`, `source: 'api'`)\nand focuses its value. Before the\nfirst render it only sets the active cell (the focus moves when it is\nrendered) and fires no event. `options.rowFixed` looks for the row among\nthe fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead\nof the body (`false` when the key is not among them). In a full-width\nrow (`rowRenderer`) the focus goes to its single cell for any `column`.\nWith `scrollContainer` and `scrollContainerAxis` `block` (the default)\nthe grid scrolls its columns sideways and the container scrolls vertically."
             },
             {
               "kind": "method",
@@ -2232,7 +2242,7 @@
                   }
                 }
               ],
-              "description": "Opens the editor of a cell (focus goes to it). In `row` mode it opens the\nwhole row with the focus on that cell. A column hidden by\n`autoHideColumns` opens the row details (`u-grid-row-expansion-change`,\n`source: 'api'`) and edits its value there. Returns `false` when the row is\nnot in the grid, the cell is not editable, a save is running or\n`u-grid-edit-starting` was canceled."
+              "description": "Opens the editor of a cell (focus goes to it). In `row` mode it opens the\nwhole row with the focus on that cell. A column hidden by\n`autoHideColumns` opens the row details (`u-grid-row-expansion-change`,\n`source: 'api'`) and edits its value there. Returns `false` when the row is\nnot in the grid, the cell is not editable, a save is running or\n`u-grid-edit-starting` was canceled. Scrolls to the cell like `focusCell`\n(with `scrollContainer` and `scrollContainerAxis` `block`, the default:\nthe grid sideways, the container vertically)."
             },
             {
               "kind": "method",
@@ -3041,8 +3051,17 @@
                 "text": "string | null"
               },
               "default": "null",
-              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls in both\ndirections, and rows and columns are still virtualized by the visible\npart of the container; toolbar, headers, totals, fixed rows and columns\nstick to it. The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window; `<body>` only when it is\nthe scrolling element. Not found, not an ancestor or empty: a console\nwarning and the grid's own scrolling. An element between the grid and\nthe container that clips or scrolls (`overflow` other than\n`visible`/`clip`) also warns: sticky headers would stick to it. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
+              "description": "Scrolls the grid with an outer container instead of its own scrollbar:\nthe id of an ANCESTOR of the grid (the first ancestor with this id,\ncrossing shadow boundaries, unlike IDREF attributes), or `window` for\nthe page (wins over an element with `id=\"window\"`). The grid grows to\nits content (do not give it a height), the container scrolls\nvertically and rows are still virtualized by its visible part; toolbar,\nheaders, totals and fixed rows stick to it. Horizontally, with\n`scrollContainerAxis` `block` (the default) the grid keeps the width it is given and\nscrolls its columns inside itself, with its own horizontal scrollbar\nstuck to the bottom of the container; with `both` the container scrolls\nin both directions (the 0.4.x behavior). The container's `scroll-padding-top`/`-bottom` offsets\nwhat the page sticks there (an app bar). `<html>` (or the\n`document.scrollingElement`) means the window; `<body>` only when it is\nthe scrolling element. Not found, not an ancestor or empty: a console\nwarning and the grid's own scrolling. An element between the grid and\nthe container that clips or scrolls (`overflow` other than\n`visible`/`clip`) also warns: sticky headers would stick to it. Resolved when\nthe grid connects and when this changes (changing the ancestor's id\nlater does not re-resolve). The attribute alone renders the outer mode\non the server.",
               "fieldName": "scrollContainer"
+            },
+            {
+              "name": "scroll-container-axis",
+              "type": {
+                "text": "GridScrollContainerAxis"
+              },
+              "default": "'block'",
+              "description": "With `scrollContainer`: which directions the outer container scrolls.\n`block` (default): only vertically — the grid never gets wider than the\nwidth it is given and scrolls horizontally inside itself (headers,\nbody and totals scroll together; a horizontal scrollbar of the grid\nsticks to the bottom of the container, styled by the inherited\n`scrollbar-color`); columns without `width` get their `columnAutoWidth`\nmeasure or `max(minWidth, 150)` px within `maxWidth`. `both`: the\ncontainer scrolls in both directions and the grid grows to the width of\nits columns (the 0.4.x behavior). No effect without an outer container\n(`scrollContainer` or `scrollContainerElement`). Unknown values fall back\nto `block` with a console warning; removing the attribute means `block`.\nThe attribute alone renders this mode on the server.",
+              "fieldName": "scrollContainerAxis"
             },
             {
               "name": "sort-mode",
@@ -3981,7 +4000,7 @@
               "type": {
                 "text": "number | null"
               },
-              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`)\na column without `width` takes its auto-size width or `max(minWidth, 150)` px.",
+              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`),\nor with `scrollContainer` and `scrollContainerAxis` `block` (the default),\na column without `width` takes its `columnAutoWidth` measure or\n`max(minWidth, 150)` px within `maxWidth`.",
               "attribute": "width"
             },
             {
@@ -4377,7 +4396,7 @@
               "type": {
                 "text": "number | null"
               },
-              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`)\na column without `width` takes its auto-size width or `max(minWidth, 150)` px.",
+              "description": "Width in px. Changing it after the column is rendered overrides the width\nchosen by the user. Under virtual column rendering (`columnRenderingMode`),\nor with `scrollContainer` and `scrollContainerAxis` `block` (the default),\na column without `width` takes its `columnAutoWidth` measure or\n`max(minWidth, 150)` px within `maxWidth`.",
               "fieldName": "width"
             },
             {

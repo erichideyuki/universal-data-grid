@@ -2,10 +2,18 @@ import type { ReactiveController, ReactiveControllerHost } from 'lit';
 
 import { ScrollPort } from '../render/virtualizer.js';
 
+/**
+ * Which directions the outer scroll container scrolls (spec 30): `block`
+ * (default) = only vertically, the grid scrolls horizontally inside itself;
+ * `both` = the container scrolls in both directions (0.4.x behavior).
+ */
+export type GridScrollContainerAxis = 'block' | 'both';
+
 /** O que o controller precisa do grid. */
 export interface ScrollPortHost extends ReactiveControllerHost, HTMLElement {
   scrollContainer: string | null;
   scrollContainerElement: HTMLElement | Window | null;
+  scrollContainerAxis: GridScrollContainerAxis;
 }
 
 export interface ScrollPortCallbacks {
@@ -14,6 +22,9 @@ export interface ScrollPortCallbacks {
   /** A porta externa mudou de tamanho ou o grid se moveu dentro dela sem rolagem. */
   moved: () => void;
 }
+
+/** Seletor da regra estática do eixo `block` (`grid.styles.ts`), para a folha da instância anular. */
+const STATIC_AXIS_RULE = ':host([scroll-container]:not([scroll-container=""]):not([scroll-container-axis="both"]))';
 
 /** Tempo máximo de espera pelo `scrollend` (navegador sem o evento, rolagem interrompida). */
 const SCROLL_END_TIMEOUT = 2000;
@@ -85,6 +96,29 @@ export class ScrollPortController implements ReactiveController {
     return this.#resolved ? this.#port !== null : this.#requested();
   }
 
+  /**
+   * Eixo do contêiner externo (spec 30), normalizado: valor desconhecido
+   * (inclusive `inline` sozinho) vale `block`, com um aviso por valor.
+   */
+  get axis(): GridScrollContainerAxis {
+    const value = this.#host.scrollContainerAxis as unknown;
+
+    if (value === 'both' || value === 'block') {
+      return value;
+    }
+
+    if (value !== null && value !== undefined) {
+      this.#warn(`axis:${String(value)}`, `scroll-container-axis="${String(value)}" is not 'block' or 'both'; using 'block'.`);
+    }
+
+    return 'block';
+  }
+
+  /** Modo externo com a rolagem horizontal dentro do grid (eixo `block`, spec 30). */
+  get bands(): boolean {
+    return this.external && this.axis === 'block';
+  }
+
   #requested(): boolean {
     const { scrollContainer, scrollContainerElement } = this.#host;
     return !!scrollContainerElement || !!scrollContainer?.trim();
@@ -154,6 +188,11 @@ export class ScrollPortController implements ReactiveController {
       this.#warned.add(key);
       console.warn(`<u-grid>: ${message}`);
     }
+  }
+
+  /** Eixo mudou (spec 30): só a folha da instância depende dele aqui. */
+  axisChanged(): void {
+    this.#syncSheet();
   }
 
   /** Resolve o contêiner pedido; chamado na conexão e quando as duas propriedades mudam. */
@@ -271,11 +310,19 @@ export class ScrollPortController implements ReactiveController {
   #syncSheet(): void {
     const root = this.#host.shadowRoot;
     const attribute = this.#host.hasAttribute('scroll-container');
-    const text = this.#port && !attribute
-      ? ':host { height: auto; overflow-anchor: none; }'
+    // Eixo `block` (spec 30): o grid encolhe até a largura dada (item de flex/grid com `min-width: auto`).
+    const shrink = this.#port ? ` min-inline-size: ${this.axis === 'block' ? '0' : 'auto'};` : '';
+    // A regra estática do eixo (atributo, para o SSR) é mais específica que `:host`: com o eixo
+    // `both` pela propriedade, ou sem contêiner resolvido, a anulação repete o seletor dela (vence por vir depois).
+    const unshrink = attribute && !(this.#port && this.axis === 'block')
+      ? ` ${STATIC_AXIS_RULE} { min-inline-size: auto; }`
+      : '';
+    const base = this.#port && !attribute
+      ? `:host { height: auto; overflow-anchor: none;${shrink} }`
       : !this.#port && attribute
-        ? ':host([scroll-container]:not([scroll-container=""])) { height: 100%; overflow-anchor: auto; }'
-        : '';
+        ? ':host([scroll-container]:not([scroll-container=""])) { height: 100%; overflow-anchor: auto; min-inline-size: auto; }'
+        : shrink ? `:host {${shrink} }` : '';
+    const text = `${base}${unshrink}`.trim();
 
     if (!root || text === this.#sheetText || typeof CSSStyleSheet === 'undefined' || !('adoptedStyleSheets' in root)) {
       return;

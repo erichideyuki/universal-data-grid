@@ -102,6 +102,7 @@ import { FilterRowController, renderFilterCell, renderFilterMenu } from './featu
 import { FilteringController } from './features/filtering.js';
 import { GroupDragAndDropAdapter } from './features/group-dnd.js';
 import { HeaderFilterController, renderHeaderFilter, renderHeaderFilterButton } from './features/header-filter.js';
+import { HorizontalSyncController } from './features/horizontal-sync.js';
 import { HOST_LABEL_ATTRIBUTES, HostLabel } from './features/host-label.js';
 import {
   type CellPosition,
@@ -122,7 +123,7 @@ import {
   measureContentWidth,
   type WidthBounds,
 } from './features/resize.js';
-import { ScrollPortController } from './features/scroll-port.js';
+import { type GridScrollContainerAxis, ScrollPortController } from './features/scroll-port.js';
 import { Debouncer, renderHighlighted, renderSearchPanel, SearchController } from './features/search.js';
 import {
   countSelected,
@@ -385,6 +386,7 @@ export type {
 } from './data/data-source.js';
 export type { GridChildrenExpr, GridHasChildrenExpr, GridParentKeyExpr, GridTreeFilterMode, GridTreeMode } from './features/tree.js';
 export type { GridClipboardMode } from './features/clipboard.js';
+export type { GridScrollContainerAxis } from './features/scroll-port.js';
 export type {
   GridCellRange,
   GridCellRangeChangeEventDetail,
@@ -903,7 +905,8 @@ interface RangeDrag {
   y: number;
   /** `requestAnimationFrame` da rolagem automática (0 = nenhum). */
   frame: number;
-  table: HTMLTableElement;
+  /** Quem tem o papel de grade (a tabela, ou a `div` das faixas no eixo `block`). */
+  table: HTMLElement;
 }
 
 /** Mac: Ctrl+clique (botão principal) é o clique de contexto. */
@@ -1336,6 +1339,31 @@ const VIRTUAL_COLUMNS_THRESHOLD = 50;
 
 /** Largura de coluna sem `width` na virtualização de colunas. */
 const DEFAULT_VIRTUAL_COLUMN_WIDTH = 150;
+
+/** Atributos do papel de grade: na tabela, ou na `div` das faixas (eixo `block`, spec 30). */
+interface GridRoleAttributes {
+  role: 'grid' | 'treegrid';
+  label: string | undefined;
+  rowCount: string;
+  colCount: string;
+  multiselectable: 'true' | undefined;
+  busy: 'true' | undefined;
+  rowMenu: '' | undefined;
+  scrollPadding: string;
+}
+
+/** Partes da tabela do render, repartidas entre as faixas no eixo `block`. */
+interface GridTableParts {
+  className: string;
+  colgroup: () => unknown;
+  head: unknown;
+  fixedTop: unknown;
+  body: unknown;
+  fixedBottom: unknown;
+  foot: unknown;
+  hasHead: boolean;
+  hasFoot: boolean;
+}
 
 /** Antes de medir (SSR, 1º render): largura suposta da área visível. */
 const DEFAULT_VIEWPORT_WIDTH = 1920;
@@ -3352,10 +3380,13 @@ export class DataGrid extends LitElement {
    * the id of an ANCESTOR of the grid (the first ancestor with this id,
    * crossing shadow boundaries, unlike IDREF attributes), or `window` for
    * the page (wins over an element with `id="window"`). The grid grows to
-   * its content (do not give it a height), the container scrolls in both
-   * directions, and rows and columns are still virtualized by the visible
-   * part of the container; toolbar, headers, totals, fixed rows and columns
-   * stick to it. The container's `scroll-padding-top`/`-bottom` offsets
+   * its content (do not give it a height), the container scrolls
+   * vertically and rows are still virtualized by its visible part; toolbar,
+   * headers, totals and fixed rows stick to it. Horizontally, with
+   * `scrollContainerAxis` `block` (the default) the grid keeps the width it is given and
+   * scrolls its columns inside itself, with its own horizontal scrollbar
+   * stuck to the bottom of the container; with `both` the container scrolls
+   * in both directions (the 0.4.x behavior). The container's `scroll-padding-top`/`-bottom` offsets
    * what the page sticks there (an app bar). `<html>` (or the
    * `document.scrollingElement`) means the window; `<body>` only when it is
    * the scrolling element. Not found, not an ancestor or empty: a console
@@ -3374,6 +3405,22 @@ export class DataGrid extends LitElement {
    * `document.scrollingElement`) means the window. See `scrollContainer`.
    */
   @property({ attribute: false }) scrollContainerElement: HTMLElement | Window | null = null;
+
+  /**
+   * With `scrollContainer`: which directions the outer container scrolls.
+   * `block` (default): only vertically — the grid never gets wider than the
+   * width it is given and scrolls horizontally inside itself (headers,
+   * body and totals scroll together; a horizontal scrollbar of the grid
+   * sticks to the bottom of the container, styled by the inherited
+   * `scrollbar-color`); columns without `width` get their `columnAutoWidth`
+   * measure or `max(minWidth, 150)` px within `maxWidth`. `both`: the
+   * container scrolls in both directions and the grid grows to the width of
+   * its columns (the 0.4.x behavior). No effect without an outer container
+   * (`scrollContainer` or `scrollContainerElement`). Unknown values fall back
+   * to `block` with a console warning; removing the attribute means `block`.
+   * The attribute alone renders this mode on the server.
+   */
+  @property({ attribute: 'scroll-container-axis' }) scrollContainerAxis: GridScrollContainerAxis = 'block';
 
   /**
    * Origem da última mudança que pode encolher as linhas (dados, filtro,
@@ -4000,7 +4047,69 @@ export class DataGrid extends LitElement {
   readonly #resizeAnnouncer = new Debouncer<'resize'>(this);
   /** Colunas navegáveis do último render (caixa de seleção + visíveis). */
   #navColumns: NavColumn[] = [];
+  /** A tabela (uma só) ou, no eixo `block` (spec 30), a tabela do corpo. */
   readonly #tableRef: Ref<HTMLTableElement> = createRef();
+  /** Quem tem o `role="grid"`: a tabela, ou a `div` das faixas no eixo `block`. */
+  readonly #gridRef: Ref<HTMLElement> = createRef();
+  readonly #headTableRef: Ref<HTMLTableElement> = createRef();
+  readonly #footTableRef: Ref<HTMLTableElement> = createRef();
+  readonly #headBandRef: Ref<HTMLDivElement> = createRef();
+  readonly #bodyBandRef: Ref<HTMLDivElement> = createRef();
+  readonly #footBandRef: Ref<HTMLDivElement> = createRef();
+  readonly #footRowsRef: Ref<HTMLDivElement> = createRef();
+  readonly #barRef: Ref<HTMLDivElement> = createRef();
+  readonly #barSpacerRef: Ref<HTMLDivElement> = createRef();
+
+  /** Faixas do eixo `block` (spec 30): o corpo rola na horizontal; cabeçalho, rodapé e barra acompanham. */
+  readonly #horizontalSync = new HorizontalSyncController(this, {
+    scrolled: () => {
+      this.#onHorizontalScroll();
+      this.#updateScrollShadows();
+    },
+    resized: () => {
+      this.#onHorizontalScroll();
+      this.#updateScrollShadows();
+      this.#syncFixedRows();
+      this.#syncRevealMargins();
+    },
+  });
+
+  /** Eixo `block` com contêiner externo (spec 30): cabeçalho, corpo e rodapé em faixas separadas. */
+  get #bands(): boolean {
+    return this.#scrollPort.bands;
+  }
+
+  /** Tabelas do grid: a única, ou as das faixas (cabeçalho, corpo, rodapé) no eixo `block`. */
+  #tables(): HTMLTableElement[] {
+    return [this.#headTableRef.value, this.#tableRef.value, this.#footTableRef.value]
+      .filter((table): table is HTMLTableElement => !!table?.isConnected);
+  }
+
+  /** 1º elemento de `selector` (com `:scope` = cada tabela) em qualquer tabela do grid. */
+  #queryTables(selector: string): HTMLElement | null {
+    for (const table of this.#tables()) {
+      const found = table.querySelector<HTMLElement>(selector);
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  #tHead(): HTMLTableSectionElement | null {
+    return this.#tables().find(table => table.tHead)?.tHead ?? null;
+  }
+
+  #tFoot(): HTMLTableSectionElement | null {
+    return this.#tables().find(table => table.tFoot)?.tFoot ?? null;
+  }
+
+  /** Quem rola as colunas: a faixa do corpo (eixo `block`) ou o contêiner interno. */
+  #horizontalScroller(): HTMLElement | undefined {
+    return (this.#bands ? this.#bodyBandRef.value : undefined) ?? this._scrollContainerRef.value;
+  }
 
   /**
    * Key of the data row of the active cell (the cell keyboard navigation
@@ -5017,6 +5126,12 @@ export class DataGrid extends LitElement {
 
       // Onde a porta começa, em coordenadas da tela, e quanto ela já rolou.
       const origin = port ? port.rect().top - port.scrollTop : scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const body = this.#bands ? this.#tableRef.value : undefined;
+
+      // Eixo `block` (spec 30): a faixa do cabeçalho gruda; o corpo começa onde a tabela dele começa.
+      if (body) {
+        return body.getBoundingClientRect().top - origin;
+      }
 
       // O corpo começa depois do cabeçalho e das linhas fixas do topo (no fluxo, sticky ou não).
       return table.getBoundingClientRect().top - origin + (table.tHead?.offsetHeight ?? 0)
@@ -5041,13 +5156,19 @@ export class DataGrid extends LitElement {
 
   /** Observa cabeçalho, totais e fixas: deslocamentos sticky medidos e a regra dos 50% (spec 20). */
   #observeFixedSections(): void {
-    const table = this.#tableRef.value;
     const observer = this.#resizeObserver;
     const wanted = new Set<Element>();
 
-    if (table && observer && (this.#fixedTopItems.length || this.#fixedBottomItems.length || this.#anyHeaderWrap)) {
+    if (observer && this.#bands) {
+      // Eixo `block` (spec 30): as faixas grudadas (a do rodapé muda com a barra própria): regra dos 50%.
+      for (const element of [this.#headBandRef.value, this.#footBandRef.value]) {
+        if (element?.isConnected) {
+          wanted.add(element);
+        }
+      }
+    } else if (observer && (this.#fixedTopItems.length || this.#fixedBottomItems.length || this.#anyHeaderWrap)) {
       // Rótulos que quebram linha: a altura do cabeçalho muda sem o host mudar (zoom de texto, largura).
-      for (const element of [table.tHead, table.tFoot, ...table.querySelectorAll(':scope > tbody.fixed-rows')]) {
+      for (const element of [this.#tHead(), this.#tFoot(), ...this.#tables().flatMap(table => [...table.querySelectorAll(':scope > tbody.fixed-rows')])]) {
         if (element) {
           wanted.add(element);
         }
@@ -5083,15 +5204,37 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const top = table.querySelector<HTMLElement>(':scope > tbody.fixed-top-rows');
-    const bottom = table.querySelector<HTMLElement>(':scope > tbody.fixed-bottom-rows');
+    const top = this.#queryTables(':scope > tbody.fixed-top-rows');
+    const bottom = this.#queryTables(':scope > tbody.fixed-bottom-rows');
     const toolbar = this.#observedToolbar?.isConnected ? this.#observedToolbar.offsetHeight : 0;
-    const head = table.tHead?.offsetHeight ?? 0;
-    const foot = table.tFoot?.offsetHeight ?? 0;
+    const head = this.#tHead()?.offsetHeight ?? 0;
+    const foot = this.#tFoot()?.offsetHeight ?? 0;
     const port = this.#scrollPort.port;
     // Porta externa (spec 27): a conta é contra a altura da porta, somando o que o hospedeiro gruda nela.
     const inset = port ? this.#scrollPort.padding() : { top: 0, bottom: 0 };
     const height = port ? port.clientHeight : scroller.clientHeight;
+
+    if (this.#bands) {
+      // Eixo `block` (spec 30): barra + faixa do cabeçalho + faixa do rodapé (totais, fixas e a barra
+      // própria) grudadas acima da metade da altura da porta deixam de grudar juntas (WCAG 1.4.10/2.4.11).
+      const headBand = this.#headBandRef.value?.isConnected ? this.#headBandRef.value.offsetHeight : 0;
+      const footBand = this.#footBandRef.value?.offsetHeight ?? 0;
+      const stuck = toolbar + headBand + footBand + inset.top + inset.bottom <= height * 0.5 || !height;
+
+      container.classList.toggle('bands-scroll', !stuck);
+      container.classList.toggle('header-rows-scroll', !stuck);
+      container.style.setProperty('--_fixed-top-offset', `${toolbar}px`);
+      container.style.setProperty('--_fixed-bottom-offset', '0px');
+
+      if (stuck !== this.#stickyFixed) {
+        this.#stickyFixed = stuck;
+        container.classList.toggle('fixed-rows-scroll', !stuck);
+      }
+
+      return;
+    }
+
+    container.classList.remove('bands-scroll');
     const covered = toolbar + head + foot + (top?.offsetHeight ?? 0) + (bottom?.offsetHeight ?? 0) + inset.top + inset.bottom;
     const sticky = !(top || bottom) || covered <= height * 0.5 || !height;
     // Rótulos quebrados: barra + cabeçalho acima da metade da altura visível deixam de grudar (WCAG 2.4.11).
@@ -5177,6 +5320,8 @@ export class DataGrid extends LitElement {
       scrollPortAttached: this.#scrollPort.port ? 1 : 0,
       scrollPortObservedRows: this.#scrollPort.observedRows,
       scrollEndWaits: this.#scrollPort.scrollEndWaits,
+      // Faixas do eixo `block` (spec 30): faixas com `scroll`/`wheel` ligados e o `ResizeObserver`.
+      horizontalSyncListeners: this.#horizontalSync.listeners,
       // Responsivo (frente 21): o anúncio das ocultas por espaço e o que é guardado por coluna.
       adaptiveTimers: this.#adaptiveTimer === undefined ? 0 : 1,
       adaptiveColumns: this.#adaptiveColumns.length + this.#reportedAdaptive.length,
@@ -5340,6 +5485,11 @@ export class DataGrid extends LitElement {
   override willUpdate(changed: PropertyValues<this>) {
     if (changed.has('scrollContainer') || changed.has('scrollContainerElement')) {
       this.#scrollPort.resolve();
+    }
+
+    if (changed.has('scrollContainerAxis')) {
+      this.#scrollPort.axisChanged();
+      this.#layoutDirty = true;
     }
 
     // No servidor o Lit não chama o `attributeChangedCallback` do elemento: lê o `aria-label` aqui.
@@ -5518,6 +5668,7 @@ export class DataGrid extends LitElement {
 
   override updated(changed: PropertyValues<this>) {
     const virtualizer = this.#virtualizer;
+    this.#attachBands();
     this.#pruneRowRenders();
     this.#afterExternalRender();
     this.#observeToolbar();
@@ -5527,7 +5678,7 @@ export class DataGrid extends LitElement {
     // Só com a largura da porta medida: antes disso o responsivo ainda não escondeu nada.
     if (this.#clipCheckPending && !this.#adaptiveDirty && this.#viewportWidth > 0) {
       this.#clipCheckPending = false;
-      this.#scrollPort.checkHorizontalClip(this.#tableRef.value);
+      this.#checkHorizontalClip();
     }
 
     // Editor fechou (ou o foco saiu sem focusout no corpo): o reshape adiado roda agora.
@@ -6434,7 +6585,7 @@ export class DataGrid extends LitElement {
     }
 
     const active = this.shadowRoot?.activeElement;
-    const table = this.#tableRef.value;
+    const table = this.#gridRef.value;
 
     if (active && table?.contains(active) && !active.closest('thead, tfoot')) {
       return true;
@@ -6653,6 +6804,8 @@ export class DataGrid extends LitElement {
    * the fixed rows of that side (`fixedTopItems`/`fixedBottomItems`) instead
    * of the body (`false` when the key is not among them). In a full-width
    * row (`rowRenderer`) the focus goes to its single cell for any `column`.
+   * With `scrollContainer` and `scrollContainerAxis` `block` (the default)
+   * the grid scrolls its columns sideways and the container scrolls vertically.
    */
   focusCell(rowKey: unknown, column?: GridColumnRef | null, options?: GridFocusCellOptions | null): boolean {
     this.#ensureRows();
@@ -6807,7 +6960,9 @@ export class DataGrid extends LitElement {
    * `autoHideColumns` opens the row details (`u-grid-row-expansion-change`,
    * `source: 'api'`) and edits its value there. Returns `false` when the row is
    * not in the grid, the cell is not editable, a save is running or
-   * `u-grid-edit-starting` was canceled.
+   * `u-grid-edit-starting` was canceled. Scrolls to the cell like `focusCell`
+   * (with `scrollContainer` and `scrollContainerAxis` `block`, the default:
+   * the grid sideways, the container vertically).
    */
   editCell(rowKey: unknown, column: GridColumnRef): boolean {
     this.#ensureRows();
@@ -8392,7 +8547,7 @@ export class DataGrid extends LitElement {
     }
 
     const col = editor.column ? this.#currentNavColumns().indexOf(editor.column) : -1;
-    const tr = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${index}"]`);
+    const tr = this.#queryTables(`:scope > tbody > tr[data-index="${index}"]`);
     return tr?.querySelector<HTMLElement>(`:scope > td.editing[data-col="${col}"]`) ?? tr?.querySelector<HTMLElement>(':scope > td.editing') ?? null;
   }
 
@@ -8743,7 +8898,7 @@ export class DataGrid extends LitElement {
    * selecionado pelo usuário) com `clipboardMode` ligado.
    */
   #copyCellOf(event: Event): { position: CellPosition; column?: GridColumnDef } | undefined {
-    const table = this.#tableRef.value;
+    const table = this.#gridRef.value;
 
     if (this.clipboardMode === 'none' || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
       return undefined;
@@ -8792,7 +8947,7 @@ export class DataGrid extends LitElement {
    * `aria-labelledby`.
    */
   #syncTableLabel(): void {
-    const table = this.#tableRef.value;
+    const table = this.#gridRef.value;
 
     if (!table) {
       return;
@@ -9326,7 +9481,7 @@ export class DataGrid extends LitElement {
   }
 
   #startRangeDrag(event: PointerEvent, anchor: CellPosition, base: CellCorners[]): void {
-    const table = this.#tableRef.value;
+    const table = this.#gridRef.value;
 
     if (!table) {
       return;
@@ -9379,16 +9534,16 @@ export class DataGrid extends LitElement {
 
   /** Célula de dados sob o ponteiro, com o ponto preso à área do corpo (abaixo do cabeçalho grudado). */
   #rangeCellAt(x: number, y: number): CellPosition | undefined {
-    const scroller = this._scrollContainerRef.value;
-    const table = this.#tableRef.value;
+    const scroller = this.#horizontalScroller();
+    const tables = this.#tables();
     const root = this.shadowRoot;
 
-    if (!scroller || !table || !root) {
+    if (!scroller || !tables.length || !root) {
       return undefined;
     }
 
     const box = this.#visibleScrollBox(scroller);
-    const head = table.tHead?.getBoundingClientRect().bottom ?? box.top;
+    const head = this.#tHead()?.getBoundingClientRect().bottom ?? box.top;
     const px = Math.min(Math.max(x, box.left + 1), box.right - 2);
     const py = Math.min(Math.max(y, Math.max(head, box.top) + 1), box.bottom - 2);
     const [firstCol, lastCol] = this.#rangeColBounds();
@@ -9396,7 +9551,7 @@ export class DataGrid extends LitElement {
     for (const element of root.elementsFromPoint(px, py)) {
       const cell = element.closest('td[data-col]');
 
-      if (!(cell instanceof HTMLElement) || cell.parentElement?.parentElement?.parentElement !== table || cell.closest('tbody') === null) {
+      if (!(cell instanceof HTMLElement) || !tables.includes(cell.parentElement?.parentElement?.parentElement as HTMLTableElement) || cell.closest('tbody') === null) {
         continue;
       }
 
@@ -9426,12 +9581,14 @@ export class DataGrid extends LitElement {
 
     const view = port.rect();
     const inset = this.#scrollPort.padding();
+    // Eixo `block` (spec 30): a faixa do rodapé gruda no pé e cobre o corpo.
+    const foot = this.#bands && this.#stickyFixed ? this.#footBandRef.value?.getBoundingClientRect().top ?? Infinity : Infinity;
 
     return {
       top: Math.max(box.top, view.top + inset.top),
       left: Math.max(box.left, view.left),
       right: Math.min(box.right, view.right),
-      bottom: Math.min(box.bottom, view.bottom - inset.bottom),
+      bottom: Math.min(box.bottom, view.bottom - inset.bottom, foot),
     };
   }
 
@@ -9481,14 +9638,14 @@ export class DataGrid extends LitElement {
 
     drag.frame = requestAnimationFrame(() => {
       drag.frame = 0;
-      const scroller = this._scrollContainerRef.value;
+      const scroller = this.#horizontalScroller();
 
       if (this.#rangeDrag !== drag || !scroller) {
         return;
       }
 
       const box = this.#visibleScrollBox(scroller);
-      const head = Math.max(drag.table.tHead?.getBoundingClientRect().bottom ?? box.top, box.top);
+      const head = Math.max(this.#tHead()?.getBoundingClientRect().bottom ?? box.top, box.top);
       const speed = (distance: number): number => Math.min(Math.ceil(distance / 2) + 2, 48);
       const dy = drag.y < head + AUTO_SCROLL_EDGE
         ? -speed(head + AUTO_SCROLL_EDGE - drag.y)
@@ -9501,7 +9658,16 @@ export class DataGrid extends LitElement {
         return;
       }
 
-      (this.#scrollPort.port?.source ?? scroller).scrollBy(dx, dy);
+      const port = this.#scrollPort.port;
+
+      if (port && this.#bands) {
+        // Eixo `block` (spec 30): a horizontal é do corpo; a vertical, do contêiner.
+        scroller.scrollBy(dx, 0);
+        port.source.scrollBy(0, dy);
+      } else {
+        (port?.source ?? scroller).scrollBy(dx, dy);
+      }
+
       this.#dragRangeTo();
       this.#scheduleRangeAutoScroll();
     });
@@ -9796,7 +9962,7 @@ export class DataGrid extends LitElement {
 
   /** Ctrl/Cmd+V (`paste` nativo) numa célula de dados com `clipboard-mode="copy-paste"`. */
   readonly #onPaste = (event: ClipboardEvent): void => {
-    const table = this.#tableRef.value;
+    const table = this.#gridRef.value;
 
     if (!this.#canPaste() || !table || !this.shadowRoot || !isGridCopy(event, table, this.shadowRoot)) {
       return;
@@ -10753,7 +10919,7 @@ export class DataGrid extends LitElement {
 
   /** O `<dd>` da coluna na linha adaptativa de índice `detailIndex`. */
   #adaptiveValueElement(detailIndex: number, column: GridColumnDef, extra = ''): HTMLElement | null {
-    return this.#tableRef.value?.querySelector<HTMLElement>(
+    return this.#queryTables(
       `:scope > tbody > tr.detail-row[data-index="${detailIndex}"] .adaptive-value${extra}[data-column="${columnIdOf(column)}"]`,
     ) ?? null;
   }
@@ -11279,8 +11445,8 @@ export class DataGrid extends LitElement {
       ?? this.#autoWidths.get(column);
 
     if (width === null || width === undefined) {
-      // Virtualização de colunas: precisa de todas as larguras (frente 13).
-      return this.#virtualColumns
+      // Virtualização de colunas e faixas do eixo `block` (spec 30, `<colgroup>` compartilhado): precisam de todas as larguras.
+      return this.#virtualColumns || this.#bands
         ? clampWidth(Math.max(column.minWidth ?? 0, DEFAULT_VIRTUAL_COLUMN_WIDTH), column.minWidth ?? 0, column.maxWidth ?? Infinity)
         : undefined;
     }
@@ -11371,7 +11537,7 @@ export class DataGrid extends LitElement {
 
   /** Rolagem horizontal: re-renderiza só quando a janela de colunas muda. */
   readonly #onHorizontalScroll = (): void => {
-    const scroller = this._scrollContainerRef.value;
+    const scroller = this.#horizontalScroller();
     const external = this.#externalHorizontal();
 
     if (external) {
@@ -11671,11 +11837,13 @@ export class DataGrid extends LitElement {
         this.#layoutRef.value?.style.setProperty('--_fill-inline-size', `${width}px`);
         this.#measurePlaceholderRows(scroller);
 
-        // Porta externa (spec 27): a parte visível, medida na rolagem.
+        // Porta externa (spec 27): a parte visível, medida na rolagem; no eixo `block` (spec 30), a largura do grid.
+        if (!this.#scrollPort.port || this.#bands) {
+          this.#layoutRef.value?.style.setProperty('--_viewport-inline-size', `${width}px`);
+        }
+
         if (this.#scrollPort.port) {
           this.#onExternalMoved();
-        } else {
-          this.#layoutRef.value?.style.setProperty('--_viewport-inline-size', `${width}px`);
         }
 
         this.requestUpdate();
@@ -11731,7 +11899,7 @@ export class DataGrid extends LitElement {
 
   /** Sombra das fixas: só aparece quando há conteúdo rolado por baixo delas. */
   readonly #updateScrollShadows = (): void => {
-    const scroller = this._scrollContainerRef.value;
+    const scroller = this.#horizontalScroller();
     const container = this._containerRef.value;
 
     if (!scroller || !container) {
@@ -11756,7 +11924,8 @@ export class DataGrid extends LitElement {
     const port = this.#scrollPort.port;
     const table = this.#tableRef.value;
 
-    if (!port || !table) {
+    // Eixo `block` (spec 30): a rolagem horizontal é a da faixa do corpo, não a da porta.
+    if (!port || !table || this.#bands) {
       return undefined;
     }
 
@@ -11780,7 +11949,7 @@ export class DataGrid extends LitElement {
 
   /** Largura da área das colunas: a do grid, ou a parte visível na porta externa. */
   #columnViewport(): number {
-    return this.#scrollPort.port ? this.#visibleWidth : this.#viewportWidth;
+    return this.#scrollPort.port && !this.#bands ? this.#visibleWidth : this.#viewportWidth;
   }
 
   /** `--_viewport-inline-size` = parte visível (barra, detalhe, linha inteira, paginação). */
@@ -11845,6 +12014,33 @@ export class DataGrid extends LitElement {
       this.#clipCheckPending = true;
       this.requestUpdate();
     } else {
+      this.#checkHorizontalClip();
+    }
+  }
+
+  /** Faixas do eixo `block` (spec 30) do render atual na sincronização horizontal (ou solta tudo). */
+  #attachBands(): void {
+    if (!this.#bands) {
+      this.#horizontalSync.detach();
+      return;
+    }
+
+    const head = this.#headBandRef.value;
+    const foot = this.#footRowsRef.value;
+
+    this.#horizontalSync.attach({
+      body: this.#bodyBandRef.value,
+      table: this.#tableRef.value,
+      head: head?.isConnected ? head : null,
+      foot: foot?.isConnected ? foot : null,
+      bar: this.#barRef.value,
+      spacer: this.#barSpacerRef.value,
+    });
+  }
+
+  /** Aviso de `overflow-x` no contêiner: só no eixo `both` (no `block` a tabela rola dentro do grid). */
+  #checkHorizontalClip(): void {
+    if (!this.#bands) {
       this.#scrollPort.checkHorizontalClip(this.#tableRef.value);
     }
   }
@@ -14125,7 +14321,7 @@ export class DataGrid extends LitElement {
 
   #activeCellElement(): HTMLElement | null {
     // Só células do próprio grid (não o conteúdo de renderers, com seus `tabindex`).
-    return this.#tableRef.value?.querySelector<HTMLElement>(':scope > thead > tr > [tabindex="0"], :scope > tbody > tr > [tabindex="0"], :scope > tfoot > tr > [tabindex="0"]') ?? null;
+    return this.#queryTables(':scope > thead > tr > [tabindex="0"], :scope > tbody > tr > [tabindex="0"], :scope > tfoot > tr > [tabindex="0"]');
   }
 
   /** Depois do render: foco do DOM e rolagem até a célula ativa. */
@@ -14188,6 +14384,14 @@ export class DataGrid extends LitElement {
       this.#syncRevealMargins();
       const behavior = this.#revealBehavior();
       cell.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
+      // Eixo `block` (spec 30): a faixa da célula rolou na horizontal (cabeçalho e rodapé também, por
+      // programa); o corpo e as outras faixas acompanham já, sem esperar o `scroll`.
+      const band = this.#bands ? cell.closest<HTMLElement>('.band') : null;
+
+      if (band) {
+        this.#horizontalSync.syncFrom(band);
+      }
+
       this.#afterRevealScroll(behavior);
       this.#revealByApi = false;
       return;
@@ -14289,15 +14493,17 @@ export class DataGrid extends LitElement {
     }
 
     const inset = this.#scrollPort.padding();
+    const bands = this.#bands;
     // Recuos horizontais (scroll-padding-inline e a folga do layout): o que o grid gruda na horizontal fica neles.
-    const inline = this.#portInline = this.#scrollPort.inlineInsets(this.#tableRef.value);
+    // Eixo `block` (spec 30): nenhum — o contêiner não rola na horizontal e o `scroll-padding-inline` das faixas cobre as fixas.
+    const inline = this.#portInline = bands ? { start: 0, end: 0, maskStart: 0, maskEnd: 0 } : this.#scrollPort.inlineInsets(this.#tableRef.value);
     // A barra de erro (56px) cobre o pé da parte visível.
     const error = this.#dataSource && this.#loader.error ? 56 : 0;
     const values = [
       this.#stickyTop(),
       this.#stickyBottom() + error,
-      this.#revealInline.start + inline.start,
-      this.#revealInline.end + inline.end,
+      bands ? 0 : this.#revealInline.start + inline.start,
+      bands ? 0 : this.#revealInline.end + inline.end,
       inset.top,
       inset.bottom,
       inline.start,
@@ -14413,6 +14619,11 @@ export class DataGrid extends LitElement {
 
   /** Altura do rodapé de totais e das fixas do fundo (presos no fim da rolagem). */
   #stickyBottom(): number {
+    // Eixo `block` (spec 30): a faixa do rodapé inteira (totais, fixas e a barra própria), se gruda.
+    if (this.#bands) {
+      return this.#stickyFixed ? this.#footBandRef.value?.offsetHeight ?? 0 : 0;
+    }
+
     return (this.renderRoot.querySelector<HTMLElement>('tfoot')?.offsetHeight ?? 0) + this.#fixedHeight('bottom');
   }
 
@@ -14442,19 +14653,20 @@ export class DataGrid extends LitElement {
 
   /** Célula navegável (td/th com `data-col`) no caminho do evento. */
   #navCellOf(path: EventTarget[]): HTMLElement | undefined {
-    const table = this.#tableRef.value;
+    const grid = this.#gridRef.value;
+    const tables = this.#tables();
 
     for (const node of path) {
-      if (node === table) {
+      if (node === grid) {
         return undefined;
       }
 
-      // Só células desta tabela (não as de um grid aninhado no detalhe).
+      // Só células destas tabelas (não as de um grid aninhado no detalhe).
       if (
         node instanceof HTMLElement
         && node.hasAttribute('data-col')
         && (node.tagName === 'TD' || node.tagName === 'TH')
-        && node.parentElement?.parentElement?.parentElement === table
+        && tables.includes(node.parentElement?.parentElement?.parentElement as HTMLTableElement)
       ) {
         return node;
       }
@@ -14488,6 +14700,16 @@ export class DataGrid extends LitElement {
   /** Foco que entra numa célula (clique, Tab, conteúdo da célula): ela vira a ativa. */
   readonly #onGridFocusIn = (event: FocusEvent): void => {
     const path = event.composedPath();
+
+    // Eixo `block` (spec 30): clique no vazio da faixa do corpo (focável só por programa) ou na barra
+    // própria (`aria-hidden`) não deixa o foco ali — volta para onde estava no grid, ou à célula ativa.
+    if (path[0] === this.#bodyBandRef.value || path[0] === this.#barRef.value) {
+      const from = event.relatedTarget as HTMLElement | null;
+      const back = from && this.#gridRef.value?.contains(from) && from !== path[0] ? from : this.#activeCellElement();
+      back?.focus({ preventScroll: true });
+      return;
+    }
+
     const cell = this.#navCellOf(path);
     const position = cell && this.#positionOf(cell);
 
@@ -14901,7 +15123,7 @@ export class DataGrid extends LitElement {
 
     this.#setActive({ row: position.row, col: logical }, 'user', { reveal: true });
     void this.updateComplete.then(() => {
-      const td = this.#tableRef.value?.querySelector<HTMLElement>(`:scope > tbody > tr[data-index="${position.row}"] > td[data-col="${logical}"]`);
+      const td = this.#queryTables(`:scope > tbody > tr[data-index="${position.row}"] > td[data-col="${logical}"]`);
       const target = td ? focusTargetsWithin(td)[0] : undefined;
       (target ?? td)?.focus();
     });
@@ -15562,7 +15784,7 @@ export class DataGrid extends LitElement {
     // leva a sobra. Uma medida pelo \`column-auto-width\` conta como definida:
     // senão o navegador espalhava a sobra por todas, inclusive a fixa com
     // largura escolhida (relato 0.3.4).
-    const fit = layout.length > 0 && (this.#virtualColumns || layout.every(({ column }) =>
+    const fit = layout.length > 0 && (this.#virtualColumns || this.#bands || layout.every(({ column }) =>
       this.#userWidths.has(column) || (column.width !== null && column.width !== undefined) || this.#autoWidths.has(column)));
 
     // O foco de teclado (`focus()`/`scrollIntoView`) não para sob o que é fixo/sticky.
@@ -15576,43 +15798,28 @@ export class DataGrid extends LitElement {
       + ` --_fixed-start: ${this.#stickyStart() + fixedStart}px; --_fixed-end: ${fixedEnd}px;`
       + (this.#dataSource && this.#loader.error ? ' scroll-padding-block-end: 56px;' : '');
 
-    // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
-    return html`
-      <div class=${`layout${waiting ? ' state-loading' : ''}${this.#scrollPort.external ? ' external-scroll' : ''}`} ${ref(this.#layoutRef)}>
-      <div
-        class="container ${classMap(classes)}"
-        ${ref(this._containerRef)}>
-        <div class="scroll-container" style=${scrollPadding} .inert=${waiting} ${ref(this._scrollContainerRef)}>
-          ${this.#scrollPort.external
-            ? html`<div class="port-masks" aria-hidden="true"><div class="port-mask"></div><div class="port-mask"></div></div>`
-            : nothing}
-          ${this.#renderToolbar()}
-          <table
-            class=${`grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`}
-            role=${this._groupColumns.length || this.#treeOn ? 'treegrid' : 'grid'}
-            aria-label=${ifDefined(this.#hostLabel.name || undefined)}
-            aria-rowcount="${waiting || this.#unknownRowCount || this.#loadingPlaceholders ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}"
-            aria-colcount="${navColumns.length}"
-            aria-multiselectable=${ifDefined(selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined)}
-            aria-busy=${ifDefined(waiting || (this.#isLoading && !this.#reshapeLoading) || this.#filtering.pending || this.#loadingPlaceholders ? 'true' : undefined)}
-            ${ref(this.#tableRef)}
-            @pointerover=${this.#updateCellHint}
-            @keydown=${this.#onGridKeyDown}
-            @copy=${this.#onCopy}
-            data-row-menu=${ifDefined(this.rowMenu || this.#cellSelectionMode !== 'none' ? '' : undefined)}
-            @contextmenu=${this.#onTableContextMenu}
-            @pointerdown=${this.#onLongPressStart}
-            @click=${this.#longPressClickCapture}
-            @beforecopy=${this.#onBeforeCopy}
-            @paste=${this.#onPaste}
-            @focusin=${this.#onGridFocusIn}
-            @focusout=${this.#onGridFocusOut}>
-            <colgroup>${this.#renderColGroups(layout, fit && !this.#virtualColumns)}</colgroup>
-            ${this.#renderColumnHeaders(layout)}
-            ${fixedTop.length ? this.#renderFixedRows('top', fixedTop, headerRows, layout) : nothing}
-            <tbody
+    const bands = this.#bands;
+    const grid: GridRoleAttributes = {
+      role: this._groupColumns.length || this.#treeOn ? 'treegrid' : 'grid',
+      label: this.#hostLabel.name || undefined,
+      rowCount: `${waiting || this.#unknownRowCount || this.#loadingPlaceholders ? -1 : this.#bodyRowCount + headerRows + footerRows + fixedTop.length + fixedBottom.length}`,
+      colCount: `${navColumns.length}`,
+      multiselectable: selectionMode === 'multiple' || this.#cellSelectionMode !== 'none' ? 'true' : undefined,
+      busy: waiting || (this.#isLoading && !this.#reshapeLoading) || this.#filtering.pending || this.#loadingPlaceholders ? 'true' : undefined,
+      rowMenu: this.rowMenu || this.#cellSelectionMode !== 'none' ? '' : undefined,
+      scrollPadding,
+    };
+    const tableClass = `grid-table${fit ? ' fit' : ''}${this.#cellSelectionMode !== 'none' ? ' cell-range-mode' : ''}`;
+    // Partes da tabela; no eixo `block` (spec 30) cada faixa tem a sua tabela com o mesmo `<colgroup>`.
+    const table: GridTableParts = {
+      className: tableClass,
+      // Uma por tabela: o \`map\` do Lit devolve um iterador, que só se percorre uma vez.
+      colgroup: () => html`<colgroup>${this.#renderColGroups(layout, fit && !this.#virtualColumns)}</colgroup>`,
+      head: this.#renderColumnHeaders(layout),
+      fixedTop: fixedTop.length ? this.#renderFixedRows('top', fixedTop, headerRows, layout) : nothing,
+      body: html`<tbody
               class="body-rows"
-              role="rowgroup"
+              role=${bands ? 'presentation' : 'rowgroup'}
               style="height: ${virtualizer.getTotalSize()}px;"
               @click=${this.#onBodyClick}
               @dblclick=${this.#onBodyDblClick}
@@ -15620,10 +15827,52 @@ export class DataGrid extends LitElement {
               <tr class="spacer" role="presentation" aria-hidden="true" style="height: ${window.offset}px;"></tr>
               ${this.#renderBody(window, headerRows, layout)}
               <tr class="filler" role="presentation"></tr>
-            </tbody>
-            ${fixedBottom.length ? this.#renderFixedRows('bottom', fixedBottom, headerRows, layout) : nothing}
-            ${footerRows ? this.#renderTotalFooter(layout, this.#ariaRowIndexOf(this.#rows.length, headerRows)) : nothing}
-          </table>
+            </tbody>`,
+      fixedBottom: fixedBottom.length ? this.#renderFixedRows('bottom', fixedBottom, headerRows, layout) : nothing,
+      foot: footerRows ? this.#renderTotalFooter(layout, this.#ariaRowIndexOf(this.#rows.length, headerRows)) : nothing,
+      hasHead: this.showColumnHeaders || this.showFilterRow || fixedTop.length > 0,
+      hasFoot: footerRows > 0 || fixedBottom.length > 0,
+    };
+
+    // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
+    return html`
+      <div class=${`layout${waiting ? ' state-loading' : ''}${this.#scrollPort.external ? ' external-scroll' : ''}${bands ? ' axis-block' : ''}`} ${ref(this.#layoutRef)}>
+      <div
+        class="container ${classMap(classes)}"
+        ${ref(this._containerRef)}>
+        <div class="scroll-container" style=${bands ? '' : scrollPadding} .inert=${waiting} ${ref(this._scrollContainerRef)}>
+          ${this.#scrollPort.external && !bands
+            ? html`<div class="port-masks" aria-hidden="true"><div class="port-mask"></div><div class="port-mask"></div></div>`
+            : nothing}
+          ${this.#renderToolbar()}
+          ${bands ? this.#renderBands(grid, table) : html`<table
+            class=${tableClass}
+            role=${grid.role}
+            aria-label=${ifDefined(grid.label)}
+            aria-rowcount=${grid.rowCount}
+            aria-colcount=${grid.colCount}
+            aria-multiselectable=${ifDefined(grid.multiselectable)}
+            aria-busy=${ifDefined(grid.busy)}
+            ${ref(this.#tableRef)}
+            ${ref(this.#gridRef)}
+            @pointerover=${this.#updateCellHint}
+            @keydown=${this.#onGridKeyDown}
+            @copy=${this.#onCopy}
+            data-row-menu=${ifDefined(grid.rowMenu)}
+            @contextmenu=${this.#onTableContextMenu}
+            @pointerdown=${this.#onLongPressStart}
+            @click=${this.#longPressClickCapture}
+            @beforecopy=${this.#onBeforeCopy}
+            @paste=${this.#onPaste}
+            @focusin=${this.#onGridFocusIn}
+            @focusout=${this.#onGridFocusOut}>
+            ${table.colgroup()}
+            ${table.head}
+            ${table.fixedTop}
+            ${table.body}
+            ${table.fixedBottom}
+            ${table.foot}
+          </table>`}
         </div>
         ${this.#inTextLanguage(this.#renderLoadState())}
         ${this.#inTextLanguage(this.#chooser.open ? this.#renderColumnChooser() : nothing)}
@@ -15646,6 +15895,59 @@ export class DataGrid extends LitElement {
       ${this.#renderRemoveDialog()}
       <slot hidden @slotchange=${this.#readDeclarativeColumns}></slot>
     `;
+  }
+
+  /**
+   * Eixo `block` (spec 30): a rolagem vertical é do contêiner externo e a
+   * horizontal, do grid. O que gruda na vertical sai da área que rola na
+   * horizontal (um `overflow-x` faria o `sticky` grudar nele): até três
+   * faixas, cada uma com a sua tabela `presentation` e o mesmo
+   * `<colgroup>`; o `role="grid"` fica na `div` que as contém (uma grade só
+   * para a tecnologia assistiva). A barra horizontal própria fica no rodapé
+   * grudado, oculta para o leitor e fora do Tab (`tabindex="-1"` explícito:
+   * o Chromium torna focável a área rolável sem focáveis).
+   */
+  #renderBands(grid: GridRoleAttributes, table: GridTableParts) {
+    // As faixas também ganham o `scroll-padding-inline` das fixas: o foco nativo não para sob elas.
+    // A do corpo é área rolável: `tabindex="-1"` explícito para o Chromium não a pôr no Tab quando o
+    // foco do roving está no cabeçalho (as células já a percorrem). Focável, ela não pode ser genérica
+    // dentro da grade (`aria-required-children`): é ela o `rowgroup` do corpo, e o `<tbody>` fica sem papel.
+    return html`<div
+      class="grid-bands"
+      role=${grid.role}
+      aria-label=${ifDefined(grid.label)}
+      aria-rowcount=${grid.rowCount}
+      aria-colcount=${grid.colCount}
+      aria-multiselectable=${ifDefined(grid.multiselectable)}
+      aria-busy=${ifDefined(grid.busy)}
+      style=${grid.scrollPadding}
+      data-row-menu=${ifDefined(grid.rowMenu)}
+      ${ref(this.#gridRef)}
+      @pointerover=${this.#updateCellHint}
+      @keydown=${this.#onGridKeyDown}
+      @copy=${this.#onCopy}
+      @contextmenu=${this.#onTableContextMenu}
+      @pointerdown=${this.#onLongPressStart}
+      @click=${this.#longPressClickCapture}
+      @beforecopy=${this.#onBeforeCopy}
+      @paste=${this.#onPaste}
+      @focusin=${this.#onGridFocusIn}
+      @focusout=${this.#onGridFocusOut}>
+      ${table.hasHead
+        ? html`<div class="band band-head" style=${grid.scrollPadding} ${ref(this.#headBandRef)}><table
+            class=${table.className} role="presentation" ${ref(this.#headTableRef)}>${table.colgroup()}${table.head}${table.fixedTop}</table></div>`
+        : nothing}
+      <div class="band band-body" role="rowgroup" tabindex="-1" style=${grid.scrollPadding} ${ref(this.#bodyBandRef)}><table
+        class=${table.className} role="presentation" ${ref(this.#tableRef)}>${table.colgroup()}${table.body}</table></div>
+      <div class="band-foot" ${ref(this.#footBandRef)}>
+        ${table.hasFoot
+          ? html`<div class="band band-foot-rows" style=${grid.scrollPadding} ${ref(this.#footRowsRef)}><table
+              class=${table.className} role="presentation" ${ref(this.#footTableRef)}>${table.colgroup()}${table.fixedBottom}${table.foot}</table></div>`
+          : nothing}
+        <div class="hscroll" aria-hidden="true" tabindex="-1" hidden ${ref(this.#barRef)}><div
+          class="hscroll-spacer" .inert=${true} ${ref(this.#barSpacerRef)}></div></div>
+      </div>
+    </div>`;
   }
 
   /**
@@ -15892,6 +16194,7 @@ export class DataGrid extends LitElement {
           part="detail-toggle-cell"
           role="columnheader"
           rowspan=${ifDefined(rowSpan)}
+          aria-rowspan=${ifDefined(this.#bands ? rowSpan : undefined)}
           aria-colindex="1"
           data-col="0"
           data-level=${bottom}
@@ -15913,6 +16216,7 @@ export class DataGrid extends LitElement {
           part="selection-cell"
           role="columnheader"
           rowspan=${ifDefined(rowSpan)}
+          aria-rowspan=${ifDefined(this.#bands ? rowSpan : undefined)}
           aria-colindex=${selectionCol + 1}
           data-col=${selectionCol}
           data-level=${bottom}
@@ -15931,6 +16235,7 @@ export class DataGrid extends LitElement {
         part="command-cell"
         role="columnheader"
         rowspan=${ifDefined(rowSpan)}
+        aria-rowspan=${ifDefined(this.#bands ? rowSpan : undefined)}
         aria-colindex=${col + 1}
         data-col=${col}
         data-level=${bottom}
@@ -15959,6 +16264,7 @@ export class DataGrid extends LitElement {
       tabIndex: active === column ? 0 : -1,
       level: bottom,
       rowSpan,
+      ariaRowSpan: this.#bands,
       idSuffix,
       columnId: cell.id,
       sortable: this.#canSortByUser(column),
@@ -16024,6 +16330,7 @@ export class DataGrid extends LitElement {
       },
       colIndex: first.col + 1,
       colSpan: header.span,
+      ariaColSpan: this.#bands ? last.col - first.col + 1 : undefined,
       level: header.level,
       tabIndex: active === column ? 0 : -1,
       idSuffix: `${header.level}-${first.col + 1}`,
@@ -16234,7 +16541,9 @@ export class DataGrid extends LitElement {
    * Linha do estado vazio: "sem dados" ou, com `loading`, "Carregando…" e
    * linhas de esqueleto só visuais (`aria-hidden`, sem papel nem foco; spec
    * 17), no lugar do que caberia na tela. Um template só: ao terminar a carga
-   * o mesmo `<td>` fica e só o conteúdo muda.
+   * o mesmo `<td>` fica e só o conteúdo muda. No eixo `block` (spec 30) a
+   * faixa do corpo é área rolável: a célula é focável (`tabindex="-1"`),
+   * sem virar parada de Tab (WCAG 2.1.1, `scrollable-region-focusable`).
    */
   #renderEmptyRow(layout: ColumnLayout[]) {
     const columns = Math.max(this.#totalColumns(layout), 1);
@@ -16242,9 +16551,14 @@ export class DataGrid extends LitElement {
 
     return html`
       <tr role="row" class=${loading ? 'no-data-row loading-row' : 'no-data-row'}>
-        <td role="gridcell" part="no-data" lang=${ifDefined(this.noDataRenderer && !loading ? undefined : this.#textLanguage)} colspan="${columns}">${loading
-          ? this.#translation.loading
-          : this.noDataRenderer ? this.#renderNoDataContent(this.noDataRenderer) : this.#translation.noData}</td>
+        <td
+          role="gridcell"
+          part="no-data"
+          tabindex=${ifDefined(this.#bands ? '-1' : undefined)}
+          aria-colspan=${ifDefined(this.#bands && this.#navColumns.length > 1 ? this.#navColumns.length : undefined)}
+          lang=${ifDefined(this.noDataRenderer && !loading ? undefined : this.#textLanguage)} colspan="${columns}">${loading
+            ? this.#translation.loading
+            : this.noDataRenderer ? this.#renderNoDataContent(this.noDataRenderer) : this.#translation.noData}</td>
       </tr>
       ${loading
         ? map(Array.from({ length: this.#placeholderRows }), () => html`
@@ -16891,6 +17205,7 @@ export class DataGrid extends LitElement {
         ? nothing
         : html`${aligned}${this.#showCommandColumn ? html`<td class="command-cell" role="gridcell" aria-colindex=${offset + this._visibleColumns.length + 1}></td>` : nothing}`,
       tabIndex: this.#isActive(rowIndex, -1) ? 0 : -1,
+      ariaColSpan: this.#bands ? (renderedFrom < layout.length ? offset + alignedFrom : this.#navColumns.length) : undefined,
       onToggle: this.#toggleGroup,
     });
   }

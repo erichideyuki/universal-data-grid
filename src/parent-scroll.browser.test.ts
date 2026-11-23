@@ -14,6 +14,18 @@ import { settle } from './test/fixture.js';
 import './grid.js';
 
 const ROW = 48;
+
+/**
+ * Esta suíte é a do eixo `both` (spec 27, comportamento da 0.4.x): desde a
+ * spec 30 o padrão do `scroll-container` é `block` (horizontal dentro do
+ * grid, em `horizontal-scroll.browser.test.ts`).
+ */
+const createGrid = (): DataGrid => {
+  const grid = document.createElement('u-grid');
+  grid.setAttribute('scroll-container-axis', 'both');
+  return grid;
+};
+
 const cleanups: (() => void)[] = [];
 
 afterEach(() => {
@@ -57,7 +69,7 @@ const make = async (port: Port, options: MakeOptions = {}) => {
   top.className = 'above';
   const bottom = document.createElement('div');
   bottom.style.cssText = `height:${below}px`;
-  const grid = document.createElement('u-grid');
+  const grid = createGrid();
 
   if (by === 'attribute') {
     grid.setAttribute('scroll-container', port === 'element' ? 'outer-scroller' : 'window');
@@ -494,7 +506,7 @@ describe('parent scroll (spec 27)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const holder = document.createElement('div');
     holder.style.height = '300px';
-    const grid = document.createElement('u-grid');
+    const grid = createGrid();
     grid.setAttribute('scroll-container', 'missing');
     grid.columns = [{ path: 'a' }];
     grid.items = Array.from({ length: 500 }, (_, a) => ({ a }));
@@ -619,7 +631,7 @@ describe('nada do grid escapa do contêiner externo', () => {
     const parent = document.createElement('div');
     parent.id = 'escape-scroller';
     parent.style.cssText = 'height:300px;overflow:auto';
-    const grid = document.createElement('u-grid');
+    const grid = createGrid();
     grid.setAttribute('scroll-container', 'escape-scroller');
     grid.columns = [{ path: 'a', label: 'A' }];
     grid.items = Array.from({ length: 100_000 }, (_, a) => ({ a }));
@@ -666,7 +678,7 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
     const box = document.createElement('div');
     box.id = 'autohide-box';
     box.style.cssText = 'width:360px;height:400px;overflow-y:auto;overflow-x:hidden';
-    const grid = document.createElement('u-grid');
+    const grid = createGrid();
     grid.setAttribute('scroll-container', 'autohide-box');
     grid.autoHideColumns = true;
     grid.columns = [
@@ -696,7 +708,7 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
       box.style.cssText = `width:${width}px;height:400px;overflow:auto`;
       const wrapper = document.createElement('div');
       wrapper.style.cssText = `padding:0 16px;width:${width === 386 ? 'auto' : '354px'}`;
-      const grid = document.createElement('u-grid');
+      const grid = createGrid();
       grid.setAttribute('scroll-container', box.id);
       grid.columnAutoWidth = true;
       grid.autoHideColumns = true;
@@ -733,7 +745,7 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
     box.style.cssText = 'width:360px;height:300px;overflow-y:auto;overflow-x:hidden';
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'display:inline-block;min-width:100%';
-    const grid = document.createElement('u-grid');
+    const grid = createGrid();
     grid.setAttribute('scroll-container', box.id);
     grid.columns = ['a', 'b', 'c', 'd', 'e'].map(path => ({ path, label: path.toUpperCase(), width: 150 }));
     grid.items = Array.from({ length: 5 }, () => ({ a: 1, b: 2, c: 3, d: 4, e: 5 }));
@@ -773,7 +785,7 @@ describe('recuos horizontais do que o grid gruda (folga do layout e scroll-paddi
     box.dir = rtl ? 'rtl' : 'ltr';
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'display:inline-block;min-width:100%;padding:0 24px;box-sizing:border-box;background:rgb(0,0,255)';
-    const grid = document.createElement('u-grid');
+    const grid = createGrid();
     grid.setAttribute('scroll-container', box.id);
     grid.keyExpr = 'c0';
     grid.columns = [

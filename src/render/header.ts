@@ -47,6 +47,11 @@ export interface HeaderCellContext {
   level?: number;
   /** Linhas cobertas (folha sem banda acima: até o último nível). */
   rowSpan?: number;
+  /**
+   * `aria-rowspan` explícito: numa tabela `presentation` (faixas do eixo
+   * `block`, spec 30) o `rowspan` nativo some da árvore ARIA.
+   */
+  ariaRowSpan?: boolean;
   /** Sufixo único dos ids (nível + coluna): banda e folha não repetem id. */
   idSuffix?: string;
   /** Identidade da coluna para o arrasto (`data-column-id`). */
@@ -62,6 +67,8 @@ export interface BandHeaderCellContext {
   /** `aria-colindex` = primeira coluna renderizada sob a banda. */
   colIndex: number;
   colSpan: number;
+  /** `aria-colspan` explícito (colunas lógicas sob a banda; faixas do eixo `block`, spec 30). */
+  ariaColSpan?: number;
   level: number;
   tabIndex: 0 | -1;
   idSuffix: string;
@@ -139,6 +146,7 @@ export const renderBandHeaderCell = ({
   styles,
   colIndex,
   colSpan,
+  ariaColSpan,
   level,
   tabIndex,
   idSuffix,
@@ -154,6 +162,7 @@ export const renderBandHeaderCell = ({
     part="header-cell band-header-cell"
     role="columnheader"
     colspan=${colSpan}
+    aria-colspan=${ifDefined(ariaColSpan && ariaColSpan > 1 ? ariaColSpan : undefined)}
     aria-colindex="${colIndex}"
     aria-labelledby="header-text-${idSuffix}"
     aria-describedby=${ifDefined(description ? `header-description-${idSuffix}` : undefined)}
@@ -221,6 +230,7 @@ export const renderHeaderCell = ({
   label = headerText(column),
   level,
   rowSpan,
+  ariaRowSpan,
   idSuffix = String(colIndex),
   columnId,
 }: HeaderCellContext): TemplateResult => html`
@@ -230,6 +240,7 @@ export const renderHeaderCell = ({
     part="header-cell"
     role="columnheader"
     rowspan=${ifDefined(rowSpan && rowSpan > 1 ? rowSpan : undefined)}
+    aria-rowspan=${ifDefined(ariaRowSpan && rowSpan && rowSpan > 1 ? rowSpan : undefined)}
     aria-colindex="${colIndex}"
     aria-labelledby="header-text-${idSuffix}"
     aria-sort=${ifDefined(sortable || order ? ariaSort(sortIndex === undefined || sortIndex === 1 ? order : undefined) : undefined)}

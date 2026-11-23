@@ -87,8 +87,10 @@ export interface GridColumnDef<TItem = any> {
    */
   columns?: readonly GridColumnDef<TItem>[] | null;
   /**
-   * Width in px. Under virtual column rendering (`columnRenderingMode`) a
-   * column without `width` takes its auto-size width or `max(minWidth, 150)` px.
+   * Width in px. Under virtual column rendering (`columnRenderingMode`), or
+   * with `scrollContainer` and `scrollContainerAxis` `block` (the default), a
+   * column without `width` takes its `columnAutoWidth` measure or
+   * `max(minWidth, 150)` px within `maxWidth`.
    */
   width?: number | null;
   /** Minimum width in px (also when resizing and auto-sizing). */

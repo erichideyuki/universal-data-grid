@@ -167,9 +167,27 @@ export const painted = async (grid: DataGrid): Promise<void> => {
   await nextFrame();
 };
 
-/** O que rola o grid: o contêiner interno, ou o contêiner externo (frente 27). */
+/** O que rola o grid: o contêiner interno, ou o contêiner externo (frente 27; a janela = `scrollingElement`). */
 export const scrollerOf = (grid: DataGrid): HTMLElement =>
-  grid._scrollElement ?? grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+  grid._scrollElement
+  ?? (grid.getAttribute('scroll-container') === 'window' ? document.scrollingElement as HTMLElement : undefined)
+  ?? grid.shadowRoot!.querySelector<HTMLElement>('.scroll-container')!;
+
+/** O que rola as colunas: a faixa do corpo no eixo `block` (frente 30), ou o mesmo de `scrollerOf`. */
+export const horizontalScrollerOf = (grid: DataGrid): HTMLElement =>
+  grid.shadowRoot!.querySelector<HTMLElement>('.band-body') ?? scrollerOf(grid);
+
+/**
+ * Onde esperar o `scroll` de `scroller`: a rolagem da página dispara no
+ * `document` e sobe à janela, onde o grid ouve — a espera vai na janela,
+ * depois dele (senão o render ainda não foi pedido).
+ */
+const scrollTarget = (scroller: HTMLElement): EventTarget =>
+  scroller === scroller.ownerDocument.scrollingElement ? scroller.ownerDocument.defaultView! : scroller;
+
+/** Ancestral que ouve o `scroll` na captura (antes do virtualizador). */
+const captureTarget = (scroller: HTMLElement): EventTarget =>
+  scroller === scroller.ownerDocument.scrollingElement ? scroller.ownerDocument : scroller.parentElement!;
 
 /** Força estilo e layout pendentes (o trabalho que o quadro faria antes de pintar). */
 const forceLayout = (grid: DataGrid): number =>
@@ -208,7 +226,7 @@ export interface ScrollResult {
  */
 export const measureScroll = async (grid: DataGrid, positions: readonly number[]): Promise<ScrollResult> => {
   const scroller = scrollerOf(grid);
-  const container = scroller.parentElement!;
+  const container = captureTarget(scroller);
   const work: number[] = [];
   let start = 0;
 
@@ -229,7 +247,7 @@ export const measureScroll = async (grid: DataGrid, positions: readonly number[]
         continue;
       }
 
-      await new Promise(resolve => scroller.addEventListener('scroll', resolve, { once: true }));
+      await new Promise(resolve => scrollTarget(scroller).addEventListener('scroll', resolve, { once: true }));
       await updatesDone(grid);
       forceLayout(grid);
       work.push(performance.now() - start);
@@ -248,8 +266,8 @@ export const measureScroll = async (grid: DataGrid, positions: readonly number[]
  * `measureScroll`, pelo `scrollLeft`. Em RTL as posições são negativas.
  */
 export const measureHorizontalScroll = async (grid: DataGrid, positions: readonly number[]): Promise<ScrollResult> => {
-  const scroller = scrollerOf(grid);
-  const container = scroller.parentElement!;
+  const scroller = horizontalScrollerOf(grid);
+  const container = captureTarget(scroller);
   const work: number[] = [];
   let start = 0;
 
@@ -270,7 +288,7 @@ export const measureHorizontalScroll = async (grid: DataGrid, positions: readonl
         continue;
       }
 
-      await new Promise(resolve => scroller.addEventListener('scroll', resolve, { once: true }));
+      await new Promise(resolve => scrollTarget(scroller).addEventListener('scroll', resolve, { once: true }));
       await updatesDone(grid);
       forceLayout(grid);
       work.push(performance.now() - start);
@@ -286,7 +304,7 @@ export const measureHorizontalScroll = async (grid: DataGrid, positions: readonl
 
 /** Passos horizontais de roda (`delta` px) e saltos espalhados pela largura toda. */
 export const horizontalPositions = (grid: DataGrid, steps: number, delta: number | 'jump'): number[] => {
-  const scroller = scrollerOf(grid);
+  const scroller = horizontalScrollerOf(grid);
   const max = scroller.scrollWidth - scroller.clientWidth;
   const start = scroller.scrollLeft;
 

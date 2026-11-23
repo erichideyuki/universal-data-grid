@@ -75,8 +75,10 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
 
   /**
    * Width in px. Changing it after the column is rendered overrides the width
-   * chosen by the user. Under virtual column rendering (`columnRenderingMode`)
-   * a column without `width` takes its auto-size width or `max(minWidth, 150)` px.
+   * chosen by the user. Under virtual column rendering (`columnRenderingMode`),
+   * or with `scrollContainer` and `scrollContainerAxis` `block` (the default),
+   * a column without `width` takes its `columnAutoWidth` measure or
+   * `max(minWidth, 150)` px within `maxWidth`.
    */
   @property({ type: Number })
   get width(): number | null {

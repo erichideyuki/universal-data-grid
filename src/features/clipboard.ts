@@ -41,7 +41,7 @@ export const hasTextSelection = (root: ShadowRoot): boolean => {
 };
 
 /** Algum elemento do caminho, até a tabela, é editável? (shadow roots aninhados do renderer incluídos) */
-const isEditablePath = (path: readonly EventTarget[], table: HTMLTableElement): boolean => {
+const isEditablePath = (path: readonly EventTarget[], table: HTMLElement): boolean => {
   for (const node of path) {
     if (node === table) {
       return false;
@@ -60,7 +60,7 @@ const isEditablePath = (path: readonly EventTarget[], table: HTMLTableElement): 
  * editável — linha de filtro, busca) e o usuário não selecionou texto (aí
  * a cópia nativa segue).
  */
-export const isGridCopy = (event: Event, table: HTMLTableElement, root: ShadowRoot): boolean => {
+export const isGridCopy = (event: Event, table: HTMLElement, root: ShadowRoot): boolean => {
   if (event.type === 'copy' && !(event as ClipboardEvent).clipboardData) {
     return false;
   }

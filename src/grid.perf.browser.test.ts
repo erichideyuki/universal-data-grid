@@ -30,7 +30,7 @@ import {
   painted,
   quietHeap,
   type PerfSession,
-  scrollerOf,
+  horizontalScrollerOf,
   startPerf,
   updatesDone,
   wheelPositions,
@@ -1378,7 +1378,7 @@ const editingScenario = (rows: number, label: string) => {
 /** Rolagem horizontal: passos de roda e saltos, melhor de {@link REPEATS}. */
 const horizontalMetrics = async (grid: DataGrid, prefix: string) => {
   const best = { wheelP95: Infinity, wheelWorst: Infinity, jumpP95: Infinity, jumpWorst: Infinity };
-  const scroller = scrollerOf(grid);
+  const scroller = horizontalScrollerOf(grid);
 
   for (let i = 0; i < REPEATS; i++) {
     scroller.scrollLeft = 0;
@@ -1695,6 +1695,8 @@ const parentScrollScenario = (rows: number, label: string) => {
       below.style.height = '600px';
       const grid = document.createElement('u-grid');
       grid.setAttribute('scroll-container', 'perf-outer');
+      // Linha de base da 0.4.x (o contêiner rola nas duas direções); o eixo `block` tem cenário próprio.
+      grid.setAttribute('scroll-container-axis', 'both');
       grid.keyExpr = 'id';
       grid.columns = columns;
       grid.items = items!;
@@ -1753,6 +1755,83 @@ const parentScrollScenario = (rows: number, label: string) => {
   });
 };
 
+/**
+ * Frente 30: eixo `block` com a janela como contêiner — 1 milhão × 40
+ * colunas (com totais): a vertical rola a página, a horizontal rola a faixa
+ * do corpo, e o cabeçalho, o rodapé e a barra própria acompanham.
+ */
+const horizontalBandsScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 40 colunas no eixo block (janela): render, rolagem vertical e horizontal`, async () => {
+    let items: object[] | undefined = makeIdItems(rows);
+    const columns = makeWideColumns(40, 0);
+    const heapBefore = await heapMiB();
+
+    const mount = async () => {
+      const page = document.createElement('div');
+      const above = document.createElement('div');
+      above.style.height = '300px';
+      const below = document.createElement('div');
+      below.style.height = '600px';
+      const grid = document.createElement('u-grid');
+      grid.setAttribute('scroll-container', 'window');
+      grid.keyExpr = 'id';
+      grid.columns = columns;
+      grid.items = items!;
+      grid.summary = { total: [{ column: columns[1], type: 'count' }] };
+      page.append(above, grid, below);
+
+      perf.recalibrate();
+      await quietHeap();
+      const start = performance.now();
+
+      document.body.append(page);
+      await updatesDone(grid);
+      grid.shadowRoot!.querySelector('tbody')!.getBoundingClientRect();
+
+      const ms = perf.weak(performance.now() - start);
+
+      await painted(grid);
+      return { grid, page, ms };
+    };
+
+    await perf.throttle();
+    const { best } = await bestOfQuiet(async () => {
+      const { page, ms } = await mount();
+      page.remove();
+      return { ms };
+    });
+    const { grid, page } = await mount();
+    window.scrollTo({ top: 20_000, behavior: 'instant' });
+    await painted(grid);
+    const scroll = await scrollMetrics(grid);
+    const horizontal = await horizontalMetrics(grid, 'horizontal.');
+    const nodes = domNodes(grid);
+
+    await perf.unthrottle();
+
+    const heap = await heapMiB();
+    const root = grid.shadowRoot!;
+
+    // O cabeçalho acompanha o corpo e a página não rola de lado.
+    expect(root.querySelector<HTMLElement>('.band-head')!.scrollLeft).toBe(root.querySelector<HTMLElement>('.band-body')!.scrollLeft);
+    expect(document.scrollingElement!.scrollWidth).toBe(document.scrollingElement!.clientWidth);
+    expect(root.querySelectorAll('tbody.body-rows tr[role=row]').length, 'linhas no DOM').toBeLessThan(60);
+    page.remove();
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    items = undefined;
+
+    const metrics = {
+      firstRenderMs: best.ms,
+      ...scroll,
+      ...horizontal,
+      domNodes: nodes,
+      gridHeapMiB: heap - heapBefore,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`horizontal-bands-${label}`, metrics));
+  });
+};
+
 describe('perfil de máquina fraca', () => {
   flatScenario(100_000, '100k');
   groupedScenario(100_000, '100k');
@@ -1778,4 +1857,5 @@ describe('perfil de máquina fraca', () => {
   responsiveScenario(1_000_000, '1m');
   treeScenario('1m');
   parentScrollScenario(1_000_000, '1m');
+  horizontalBandsScenario(1_000_000, '1m');
 });

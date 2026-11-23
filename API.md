@@ -275,7 +275,7 @@ interface GridColumnDef<TItem = any> {
   name?: string;
   /** The column's name as text: header text (unless headerRenderer; empty: path, or the name of a column with a valueGetter) and its name in menus, chips, chooser, announcements and export (empty: path, then name, as is). With <u-grid-column>, the element's text content. */
   label?: string;
-  /** Fixed column width in pixels. Omit for auto width (under virtual column rendering: auto-size width or max(minWidth, 150) px). */
+  /** Fixed column width in pixels. Omit for auto width (under virtual column rendering, or with scroll-container on the block axis: auto-size width or max(minWidth, 150) px). */
   width?: number | null;
   /** Minimum column width in pixels. */
   minWidth?: number | null;
@@ -1316,25 +1316,47 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
   `document.scrollingElement`) also means the page; `<body>` only when it is the scrolling
   element. **`scrollContainerElement`** sets it by reference and wins over the attribute.
 - The grid grows to its content — **don't give it a height** in this mode — and the container
-  scrolls in both directions. Rows and columns are still virtualized: only what is visible in the
-  container is rendered, with millions of rows and with content after the grid.
-- The toolbar, the column headers (with bands), fixed rows, the totals, fixed columns and group
-  labels stick to the container. The toolbar, the pager, detail rows and full-width rows span the
-  visible part of the grid.
+  scrolls **vertically**. Rows are still virtualized: only what is visible in the container is
+  rendered, with millions of rows and with content after the grid.
+- **Sideways, the grid scrolls inside itself** (`scroll-container-axis="block"`, the default): it
+  keeps the width you give it, so the page never scrolls sideways and the rest of your layout stays
+  put. Headers, body and totals scroll together, fixed columns and group labels stay at the grid's
+  edges, and a horizontal scrollbar of the grid sticks to the bottom of the container (below the
+  totals) whenever the grid is in view; touch, trackpad, Shift+wheel (also over the headers),
+  Ctrl+F and keyboard navigation scroll it too. The scrollbar takes its colors from the inherited
+  `scrollbar-color` (`u-grid { scrollbar-color: … }`). In a flex or grid layout the grid already
+  shrinks to its track (`min-width: 0`).
+- **Columns without `width` are 150px** in this mode (`max(minWidth, 150)`, within `maxWidth`), or
+  the width measured once by `column-auto-width` (it never changes while you scroll). The headers,
+  the body and the totals are separate tables sharing the column widths, so a width can't come from
+  the content of each one. The leftover width still goes to the last non-fixed column.
+- **`scroll-container-axis="both"`** keeps the 0.4.x behavior: the container scrolls in both
+  directions, the grid grows to the width of its columns and columns are virtualized by the visible
+  part of the container (the bullets on `scroll-padding-inline`, phones and wrappers below are about
+  this mode).
+
+```html
+<u-grid scroll-container="window" scroll-container-axis="both"></u-grid>
+```
+
+- The toolbar, the column headers (with bands), fixed rows and the totals stick to the container;
+  fixed columns and group labels stick to the grid's edges (with `both`, to the container's). The
+  toolbar, the pager, detail rows and full-width rows span the visible part of the grid.
 - Something of yours stuck to the container (an app bar)? Give the container a
   **`scroll-padding-top`** (and `scroll-padding-bottom` for a bottom bar): the grid sticks its
   headers below it, and keyboard focus never stops under it (WCAG 2.4.11).
-- The same sideways: **`scroll-padding-inline-start`/`-end`** (a fixed side menu over the page)
+- With `both`, the same sideways: **`scroll-padding-inline-start`/`-end`** (a fixed side menu over the page)
   keep fixed columns, group labels and the toolbar clear of it (start/end follow the direction; with
   `window`, set it on `<html>`). Without it, the grid sticks those parts at its own edge when it sits
   inset in the container (the padding of your layout), so nothing slides at the ends of a sideways
   scroll; that inset is only used when the grid starts in the first half of the visible area. Once
   you scroll sideways, the strip between the visible edge and the stuck parts is painted with the
   grid background, so scrolled content never shows beside a fixed column.
-- Keyboard navigation, `focusCell` and `editCell` scroll the container. Keyboard and mouse scroll
+- Keyboard navigation, `focusCell` and `editCell` scroll the container (with `block`, the grid
+  sideways and the container vertically). Keyboard and mouse scroll
   instantly; API calls follow the container's `scroll-behavior` (`smooth` animates, focus moves at
   once), except with `prefers-reduced-motion: reduce`.
-- The attribute alone is enough for server rendering: the server already renders the grid without
+- The attributes alone (`scroll-container`, `scroll-container-axis`) are enough for server rendering: the server already renders the grid without
   its own scrollbar, so hydration doesn't jump.
 - Resolved when the grid connects and when either property changes (changing the ancestor's id
   later doesn't re-resolve). Not found, not an ancestor or empty: a console warning and the grid's
@@ -1343,13 +1365,19 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
   when something gives the grid a height in this mode (it would clip the rows).
 - Accessibility: the container is yours. If it scrolls, make it reachable by keyboard and name it
   (`tabindex="0" role="region" aria-label="…"`): while the grid loads its rows it is inert, and a
-  scrollable region with nothing focusable fails WCAG 2.1.1.
-- **Phones and `window`:** the container scrolls sideways too, so with `scroll-container="window"` a
+  scrollable region with nothing focusable fails WCAG 2.1.1. Screen readers still see one grid
+  (`role="grid"` on the element that holds headers, body and totals); the grid's own scrollbar is
+  hidden from them and never takes Tab focus (the keyboard scrolls by moving between cells). When
+  the stuck parts (toolbar, headers, totals and scrollbar) would cover more than half of the
+  container's height (zoom, a short panel), they scroll with the content instead (WCAG 1.4.10).
+- CSS of yours that targeted the `<table>`, `<thead>` or `<tbody>` inside the shadow root is not
+  supported (with `block` they are split in three tables); the row and cell `::part`s are the same.
+- **Phones and `window` with `both`:** the container scrolls sideways too, so with `scroll-container="window"` a
   table wider than the screen makes the page wider. Mobile browsers then widen their layout
   viewport, and what sticks to the bottom (totals, `fixedBottomItems`) sticks below the screen. On
   narrow screens turn on `autoHideColumns` (the columns that don't fit move to the row details) or
   use an element as the container.
-- **A wrapper that grows with the table** (for example `display: inline-block; min-width: 100%`
+- **With `both`, a wrapper that grows with the table** (for example `display: inline-block; min-width: 100%`
   around the grid, to keep the container's padding at the end of the horizontal scroll) makes the
   grid as wide as its table, so `autoHideColumns` never runs out of room and hides nothing. Use one
   or the other: keep the wrapper where all columns should show (wide screens) and drop it
@@ -2924,6 +2952,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `scrollMode`       | `scroll-mode`         | `'virtual' \| 'infinite'` | `'virtual'` | Infinite scrolling for a remote source. |
 | `scrollContainer`  | `scroll-container`    | `string \| null` | `null` | Scroll with an outer container: the id of an ancestor, or `window`. See [Scrolling with the page or a parent](#scrolling-with-the-page-or-a-parent). |
 | `scrollContainerElement` | *(property only)* | `HTMLElement \| Window \| null` | `null` | The outer scroll container by reference (wins over `scrollContainer`). |
+| `scrollContainerAxis` | `scroll-container-axis` | `'block' \| 'both'` | `'block'` | With `scrollContainer`: `block` = the container scrolls vertically and the grid scrolls its columns sideways inside itself (columns without `width`: 150px); `both` = the container scrolls in both directions (0.4.x). Unknown values: `block` and a console warning. |
 | `clipboardMode`    | `clipboard-mode`      | `'copy' \| 'copy-paste' \| 'none'` | `'copy'` | Ctrl+C copies the cell ranges, the selected rows or the focused cell; `copy-paste` also pastes with Ctrl+V (and the cell menu "Paste" with cell ranges or `row-menu`). See [Export & clipboard](#export--clipboard). |
 | `cellSelectionMode` | `cell-selection-mode` | `'none' \| 'single' \| 'multiple'` | `'none'` | Cell ranges. Also opens the cell context menu with the range items, even without `row-menu`. See [Cell ranges](#cell-ranges). |
 | `showCellRangeSummary` | `show-cell-range-summary` | `boolean` | `false` | Bar with the count, sum and average of the selected cells. |
@@ -3395,6 +3424,7 @@ import {
   type GridRemoteOperations, // { filtering?, sorting?, paging?, grouping?, summary? }
   type GridDataChanges,     // { add?, update?, remove? }
   type GridScrollMode,      // 'virtual' | 'infinite'
+  type GridScrollContainerAxis, // 'block' | 'both'
   type GridLoadingEventDetail, // { options }
   type GridLoadEventDetail,  // { options, result }
   type GridLoadErrorEventDetail, // { options, error }
@@ -3516,6 +3546,20 @@ import {
   type GridPdfProgress,    // = GridExportProgress
 } from '@universal-material/data-grid/export-pdf';
 ```
+
+### 0.5.0 (unreleased)
+
+**Breaking:** with `scroll-container`, the container now scrolls only vertically and the grid
+scrolls its columns sideways inside itself (new `scrollContainerAxis` / `scroll-container-axis`,
+default `block`): the grid keeps the width it is given instead of growing to the width of its
+columns, so the page (or panel) no longer scrolls sideways; headers, body and totals scroll
+together, with a horizontal scrollbar of the grid stuck to the bottom of the container. In this mode
+a column without `width` is 150px (or its `column-auto-width` measure) instead of sized by its
+content, and the headers, body and totals are three tables in the shadow root (`role="grid"` moves
+from the `<table>` to the element that holds them; CSS that targeted the shadow `<table>`,
+`<thead>` or `<tbody>` is not supported, the `::part`s are unchanged). To keep the 0.4.x behavior,
+set `scroll-container-axis="both"`. Also: in RTL the grid's live region no longer pokes 1px past
+the grid's edge (the page could scroll sideways by 1px).
 
 ### Deprecated names
 

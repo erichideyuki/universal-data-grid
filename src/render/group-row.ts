@@ -20,6 +20,8 @@ export interface GroupRowContext {
   trailing?: TemplateResult | typeof nothing;
   /** Roving tabindex: `0` quando a linha é a ativa. */
   tabIndex: 0 | -1;
+  /** `aria-colspan` explícito (colunas lógicas do rótulo; tabela `presentation` do eixo `block`, spec 30). */
+  ariaColSpan?: number;
   /** Nome acessível da célula do rótulo quando há resumos em células à parte (a linha é um ponto só da navegação). */
   ariaLabel?: string;
   onToggle: (row: GroupRow) => void;
@@ -43,6 +45,7 @@ export const renderGroupRowCells = ({
   valueText,
   info = '',
   tabIndex,
+  ariaColSpan,
   ariaLabel,
   labelSpan,
   trailing = nothing,
@@ -90,7 +93,8 @@ export const renderGroupRowCells = ({
       aria-keyshortcuts="Control+G Meta+G"
       aria-label=${ifDefined(ariaLabel)}
       aria-labelledby=${ifDefined(alignedSummaries ? `${alignedSummaries.id}-label ${alignedSummaries.id}-summaries` : undefined)}
-      colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}><span
+      colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}
+      aria-colspan=${ifDefined(ariaColSpan && ariaColSpan > 1 ? ariaColSpan : undefined)}><span
         class="grouping-label"
         id=${ifDefined(alignedSummaries ? `${alignedSummaries.id}-label` : undefined)}
         style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${content === undefined

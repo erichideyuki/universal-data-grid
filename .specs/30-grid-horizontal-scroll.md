@@ -1,6 +1,7 @@
 # 30 — Rolagem horizontal no grid com a vertical no contêiner externo
 
-> Estado: proposta revisada (2026-11-23: `webcomponent-api-reviewer` e
+> Estado: IMPLEMENTADA no branch da frente (2026-11-23; ver
+> "Implementação"). Proposta revisada (2026-11-23: `webcomponent-api-reviewer` e
 > `a11y-reviewer`, achados em "Revisão do desenho") e APROVADA pelo
 > usuário em 2026-11-23 (API `scroll-container-axis`, novo padrão `block`
 > na 0.5.0, 150px para coluna sem largura). Depende da frente 27 (`scroll-container`), já na `main`. Sai numa
@@ -196,7 +197,7 @@ grid (largura do hospedeiro)
   `treegrid`) e `aria-rowcount`/`aria-colcount`/`aria-multiselectable`/
   `aria-label`/`aria-busy` passam da `<table>` para a `div` que contém as
   três faixas; cada `<table>` vira `role="presentation"`; `<thead>`,
-  `<tbody>`, `<tfoot>` ficam `role="rowgroup"`; linhas e células mantêm os
+  `<tfoot>` ficam `role="rowgroup"` (o corpo: ver "Implementação"); linhas e células mantêm os
   papéis explícitos que já têm (`row`, `columnheader`, `gridcell`,
   `rowheader`) e os `aria-rowindex`/`aria-colindex` atuais. A ordem do DOM
   (cabeçalho → corpo → rodapé) é a ordem de leitura. Numa tabela
@@ -249,6 +250,38 @@ Nenhum texto novo.
   leitores, `no-data` no roving, sticky desligado acima de ~50% da altura,
   área de 24px e barra de sobreposição.
 - Recusados: nenhum.
+
+## Implementação (2026-11-23)
+- Faixas em `#renderBands` (`src/grid.ts`), sincronização em
+  `src/features/horizontal-sync.ts`. Uma consulta multi-tabela
+  (`#tables()`/`#queryTables`) substitui as buscas na tabela única; o papel
+  de grade e os handlers da tabela vão para quem tem o papel (`#gridRef`).
+- Cada tabela gera o próprio `<colgroup>` (o `map` do Lit devolve um
+  iterador, que só se percorre uma vez).
+- Desvio de a11y (aceito na entrega, ver spec 17): a faixa do corpo é o
+  `rowgroup` com `tabindex="-1"` (o Chromium a punha no Tab quando o
+  roving estava no cabeçalho; numa `div` genérica, o `tabindex` viola
+  `aria-required-children`) e o `<tbody>` dela fica `presentation`. A
+  célula `no-data` ganha `tabindex="-1"`, sem entrar como parada do roving.
+- A medida da barra (mostrar/ocultar, largura do espaçador) roda no quadro
+  seguinte ao `ResizeObserver`: dentro do callback ela mudava a altura do
+  grid, observado pelo próprio grid ("ResizeObserver loop").
+- Regra dos 50% por faixa inteira: cabeçalho (com as fixas do topo) e
+  rodapé (fixas do fundo, totais e barra) deixam de grudar juntos.
+- Correção junto: a região `aria-live` passava 1px da borda em RTL.
+- Revisão de a11y da entrega (2026-11-23, sem ALTA): clique no vazio da
+  faixa do corpo ou na barra devolve o foco à célula (`#onGridFocusIn`);
+  `aria-colspan` explícito também no rótulo de grupo e na célula
+  `no-data`; testes da regra dos 50%, Shift+Tab, axe com bandas+RTL e
+  seleção múltipla + filtro + fixas, e a regra de área rolável aplicada no
+  estado vazio. Decisões: a `no-data` fica `tabindex="-1"` (sem parada
+  própria; sem cabeçalho e sem dados o grid não tem parada, como na 0.4.x);
+  a área operável da barra é a nativa (exceção de controle do agente de
+  usuário em 2.5.8 — os 24px só reservam espaço); em `forced-colors` vale a
+  barra do sistema (o navegador força `scrollbar-color: auto`).
+- Os testes da spec 27 (`parent-scroll.browser.test.ts`) rodam no eixo
+  `both`; o cenário de perf `parent-scroll-1m` também (linha de base da
+  0.4.x). Cenário novo `horizontal-bands-1m`.
 
 ## Fora de escopo
 - Rolagem horizontal emulada e cabeçalho movido por JS na vertical
