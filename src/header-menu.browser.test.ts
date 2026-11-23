@@ -8,26 +8,14 @@
  */
 import axe from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
+import { page } from 'vitest/browser';
 
 import type { GridContextMenuOpeningEventDetail } from './features/context-menu.js';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid } from './grid.js';
-import { cleanup, createGrid, headerLabels, settle } from './test/fixture.js';
+import { cleanup, createGrid, headerLabels, parkPointer, settle } from './test/fixture.js';
 
-/**
- * Tira o mouse virtual de cima do grid: o Chromium dispara `pointerenter`
- * de verdade quando um elemento aparece sob o cursor parado, e outro
- * arquivo da suíte pode ter deixado o mouse onde o menu abre — o submenu
- * "Fixar coluna" abriria sozinho pelo hover (falha só na suíte inteira).
- */
-beforeEach(async () => {
-  const corner = document.createElement('div');
-  corner.style.cssText = 'position: fixed; right: 0; bottom: 0; width: 4px; height: 4px;';
-  document.body.append(corner);
-  await userEvent.hover(corner);
-  corner.remove();
-});
+beforeEach(parkPointer);
 
 afterEach(async () => {
   cleanup();

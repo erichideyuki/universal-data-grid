@@ -1,3 +1,5 @@
+import { userEvent } from 'vitest/browser';
+
 import type { GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 
@@ -95,4 +97,18 @@ export const cellText = (cell: Element): string => {
   }
 
   return cell.textContent.trim();
+};
+
+/**
+ * Tira o mouse virtual de cima do grid: o Chromium dispara \`pointerenter\`
+ * de verdade quando um elemento aparece sob o cursor parado, e outro
+ * arquivo da suíte pode ter deixado o mouse onde o teste mede (hover do
+ * cabeçalho, submenu que abre sozinho). Só nos testes de navegador.
+ */
+export const parkPointer = async (): Promise<void> => {
+  const corner = document.createElement('div');
+  corner.style.cssText = 'position: fixed; right: 0; bottom: 0; width: 4px; height: 4px;';
+  document.body.append(corner);
+  await userEvent.hover(corner);
+  corner.remove();
 };

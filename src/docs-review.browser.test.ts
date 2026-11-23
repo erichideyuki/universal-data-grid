@@ -5,11 +5,11 @@
 import { html } from 'lit';
 
 import axe from 'axe-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 
 import type { DataGrid, GridColumnDef } from './grid.js';
-import { cleanup, createGrid, nextFrame, settle } from './test/fixture.js';
+import { cleanup, createGrid, nextFrame, parkPointer, settle } from './test/fixture.js';
 
 interface Order {
   id: number;
@@ -79,6 +79,7 @@ const pointer = (type: string, target: EventTarget, x: number, y: number) => tar
 }));
 
 describe('revisão do site de documentação', () => {
+  beforeEach(parkPointer);
   afterEach(cleanup);
 
   it('bandas: nenhuma linha horizontal atravessa as células com rowspan; banda no início, folhas embaixo', async () => {
@@ -520,6 +521,7 @@ describe('revisão do site de documentação', () => {
 });
 
 describe('rolagem sem salto', () => {
+  beforeEach(parkPointer);
   afterEach(cleanup);
 
   it('1 milhão de linhas com totais: a posição não é corrigida e as linhas andam junto', async () => {
