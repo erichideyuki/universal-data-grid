@@ -3559,7 +3559,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): in the Excel export, a total or group footer of your own aggregator that
+In 0.4.1: in the Excel export, a total or group footer of your own aggregator that
 shows only its value (no `label`, no `format` function) is a number or date cell with the column's
 number format (it was text); a sheet name over 31 characters is cut at the last whole word with "…"
 (it was cut mid-word).
