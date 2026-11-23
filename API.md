@@ -579,7 +579,9 @@ ignored with a console warning.
 
 The grid keeps a frozen copy of `filterValue` (never your array) and updates it when the user
 filters, so reading it always gives the current filter. The filter row and the header filter edit
-the top-level `and` conditions of their column and leave the rest of the expression alone.
+the top-level `and` conditions of their column and leave the rest of the expression alone. The
+header filter shows `anyof`/`noneof` as its selection, and also a `=`/`<>` of one value on its
+column (`['active', '=', true]` opens with "Inactive" unchecked; OK replaces it).
 
 ### Column options
 
@@ -3433,6 +3435,10 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): the header filter shows a `=`/`<>` of one value on its own column
+(an initial `filterValue`) as its selection — it listed only the matching values and couldn't widen
+the filter.
 
 In 0.3.7: with `autoHideColumns`, resizing a column while the grid has room no
 longer hides it (dragging fixed the stretched width of the column taking the leftover, so the first

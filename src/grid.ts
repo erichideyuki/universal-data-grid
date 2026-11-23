@@ -258,6 +258,7 @@ import {
   type FilterFieldResolver,
   hasColumnCondition,
   replaceColumnCondition,
+  withoutHeaderCondition,
   searchExpression,
 } from './row-model/filter.js';
 import { type BlockDetails, flattenRows, pageBounds, RowList, RowPage, type Rows } from './row-model/flatten.js';
@@ -12947,7 +12948,7 @@ export class DataGrid extends LitElement {
    */
   _distinctValues(column: GridColumnDef): DistinctValues {
     const others = combineFilters(
-      replaceColumnCondition(this.#filtering.filterValue, column, 'header', null, this.#resolveFilterField),
+      withoutHeaderCondition(this.#filtering.filterValue, column, this.#resolveFilterField),
       searchExpression(this.#filtering.searchText, this._searchColumns()),
     );
     let items: readonly unknown[] = this.#items;

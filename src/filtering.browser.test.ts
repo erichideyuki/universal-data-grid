@@ -433,6 +433,34 @@ describe('filtro do cabeçalho', () => {
     [...popover.querySelectorAll<HTMLElement>('.header-filter-list [role=treeitem]')]
       .find(item => item.querySelector('.header-filter-text')!.textContent === text)!;
 
+  // Relato da 0.3.7 (click): filterValue inicial com '=' na própria coluna; o funil só listava
+  // "Ativo" e não dava para incluir os inativos por ele.
+  for (const [operation, checked, unchecked] of [['=', 'Ativo', 'Inativo'], ['<>', 'Inativo', 'Ativo']] as const) {
+    it(`'${operation}' na própria coluna aparece como seleção no funil, e o OK o substitui`, async () => {
+      const grid = await createGrid({
+        columns: [{ path: 'name', label: 'Name' }, { path: 'active', label: 'Ativo', dataType: 'boolean', trueText: 'Ativo', falseText: 'Inativo' }],
+        items: [{ name: 'a', active: true }, { name: 'b', active: true }, { name: 'c', active: false }],
+        configure: g => {
+          g.headerFilter = true;
+          g.filterValue = ['active', operation, true];
+        },
+      });
+      const popover = await open(grid, 'Ativo');
+
+      expect(entries(popover)).toEqual(['Inativo 1', 'Ativo 2']);
+      expect(check(popover, checked).getAttribute('aria-checked')).toBe('true');
+      expect(check(popover, unchecked).getAttribute('aria-checked')).toBe('false');
+
+      check(popover, unchecked).click();
+      await settle(grid);
+      click(popover.querySelector<HTMLElement>('.header-filter-ok')!);
+      await settle(grid);
+
+      expect(grid.filterValue).toBeNull();
+      expect(names(grid)).toEqual(['a', 'b', 'c']);
+    });
+  }
+
   it('valores distintos com contagem e (Blanks); OK aplica; funil ativo; não ordena', async () => {
     const grid = await createGrid({ columns: columns(), items: people(), configure: g => g.headerFilter = true });
     const fired = events(grid);

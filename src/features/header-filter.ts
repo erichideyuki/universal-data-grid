@@ -12,7 +12,7 @@ import type { GridI18n } from '../grid-i18n.js';
 import { labelledByHeader } from '../render/header.js';
 import { columnText } from '../row-model/columns.js';
 import type { DistinctDateNode, DistinctValue, DistinctValues } from '../row-model/distinct.js';
-import { type ColumnFilterKind, type FilterFieldResolver, filterFieldOf, findColumnCondition, hasColumnCondition } from '../row-model/filter.js';
+import { type ColumnFilterKind, type FilterFieldResolver, filterFieldOf, findHeaderCondition, hasColumnCondition } from '../row-model/filter.js';
 import { createTextMatcher } from '../row-model/fold.js';
 import { columnKeyOf } from './filter-row.js';
 import { Debouncer } from './search.js';
@@ -44,6 +44,8 @@ interface OpenState {
   selected: Set<string>;
   search: string;
   expanded: Set<string>;
+  /** A condição veio de um \`=\`/\`<>\` da coluna: o OK também a tira. */
+  adopted: boolean;
 }
 
 /**
@@ -150,7 +152,8 @@ export class HeaderFilterController implements ReactiveController {
 
     const distinct = this.#host._distinctValues(column);
     const all = [...distinct.blanks ? [null] : [], ...distinct.values.map(value => value.value)];
-    const condition = findColumnCondition(this.#host.filterValue, column, 'header', field => this.#host._resolveFilterField(field));
+    const found = findHeaderCondition(this.#host.filterValue, column, field => this.#host._resolveFilterField(field));
+    const condition = found?.condition;
     const listed = new Set((Array.isArray(condition?.[1]) ? condition[1] as unknown[] : []).map(keyOf));
     const selected = new Set<string>();
 
@@ -163,7 +166,7 @@ export class HeaderFilterController implements ReactiveController {
       }
     }
 
-    this.#state = { column, distinct, all, selected, search: '', expanded: new Set() };
+    this.#state = { column, distinct, all, selected, search: '', expanded: new Set(), adopted: !!found?.adopted };
     this.#shown = false;
     this.#host.requestUpdate();
   }
@@ -380,7 +383,7 @@ export class HeaderFilterController implements ReactiveController {
       return;
     }
 
-    const { column, all, selected } = state;
+    const { column, all, selected, adopted } = state;
     const checked = all.filter(value => selected.has(keyOf(value)));
     const unchecked = all.filter(value => !selected.has(keyOf(value)));
     let condition: GridFilterCondition | null = null;
@@ -392,7 +395,8 @@ export class HeaderFilterController implements ReactiveController {
     }
 
     this.close(true);
-    this.#host._userFilterColumn(column, 'header', condition);
+    // Adotada de um \`=\`/\`<>\`: a seleção nova substitui ela também.
+    this.#host._userFilterColumn(column, adopted ? 'all' : 'header', condition);
   }
 
   /** "Limpar filtro": tira todas as condições da coluna (linha e cabeçalho). */

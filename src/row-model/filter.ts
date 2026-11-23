@@ -824,6 +824,44 @@ export const findColumnCondition = (
   return undefined;
 };
 
+/**
+ * Condição que o filtro do cabeçalho mostra: \`anyof\`/\`noneof\` da coluna ou,
+ * sem elas, um \`=\`/\`<>\` de um valor só na coluna — a mesma seleção que
+ * \`anyof [v]\`/\`noneof [v]\` (um \`filterValue\` inicial com \`=\`; relato 0.3.7).
+ * \`adopted\`: veio de um \`=\`/\`<>\`, que o OK e a lista de valores também tiram.
+ */
+export const findHeaderCondition = (
+  expression: GridFilterExpression | null | undefined,
+  column: GridColumnDef,
+  resolve: FilterFieldResolver,
+): { condition: [GridFilterOperation, unknown]; adopted: boolean } | undefined => {
+  const own = findColumnCondition(expression, column, 'header', resolve);
+
+  if (own) {
+    return { condition: own, adopted: false };
+  }
+
+  const row = findColumnCondition(expression, column, 'row', resolve);
+
+  if (row && (row[0] === '=' || row[0] === '<>') && !Array.isArray(row[1])) {
+    return { condition: [row[0] === '=' ? 'anyof' : 'noneof', [row[1]]], adopted: true };
+  }
+
+  return undefined;
+};
+
+/** A expressão sem a condição do filtro do cabeçalho da coluna (com a \`=\`/\`<>\` adotada, se houver). */
+export const withoutHeaderCondition = (
+  expression: GridFilterExpression | null | undefined,
+  column: GridColumnDef,
+  resolve: FilterFieldResolver,
+): GridFilterExpression | null => {
+  const adopted = findHeaderCondition(expression, column, resolve)?.adopted;
+  const next = replaceColumnCondition(expression, column, 'header', null, resolve);
+
+  return adopted ? replaceColumnCondition(next, column, 'row', null, resolve) : next;
+};
+
 /** A coluna tem alguma condição no nível de cima (ícone de funil ativo)? */
 export const hasColumnCondition = (
   expression: GridFilterExpression | null | undefined,
