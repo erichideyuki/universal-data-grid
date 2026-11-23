@@ -760,3 +760,73 @@ describe('aviso: contêiner que corta a rolagem horizontal', () => {
     expect(warnings(warn)[0]).toContain('<body>');
   });
 });
+
+// Relato do usuário e do click (0.4.1): com o grid recuado no contêiner (padding do layout) as colunas
+// fixas e o rótulo do grupo andavam a folga nas pontas da rolagem horizontal ("os botões saltam"); e com a
+// janela rolando, a coluna fixa no início grudava em x=0, por baixo de um menu lateral fixo.
+describe('recuos horizontais do que o grid gruda (folga do layout e scroll-padding-inline)', () => {
+  const build = async (rtl: boolean) => {
+    const box = document.createElement('div');
+    box.id = 'inset-scroller';
+    box.style.cssText = 'width:700px;height:400px;overflow:auto';
+    box.dir = rtl ? 'rtl' : 'ltr';
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:inline-block;min-width:100%;padding:0 24px;box-sizing:border-box';
+    const grid = document.createElement('u-grid');
+    grid.setAttribute('scroll-container', box.id);
+    grid.keyExpr = 'c0';
+    grid.columns = [
+      { path: 'g', label: 'Group' },
+      ...Array.from({ length: 6 }, (_, i) => ({ path: `c${i}`, label: `C${i}`, width: 150 })),
+      { name: 'actions', label: 'Actions', width: 72, fixed: 'end' as const, valueGetter: () => 'x' },
+    ];
+    grid.items = Array.from({ length: 30 }, (_, i) => ({ g: i < 15 ? 'A' : 'B', c0: i, c1: 1, c2: 2, c3: 3, c4: 4, c5: 5 }));
+    wrapper.append(grid);
+    box.append(wrapper);
+    document.body.append(box);
+    cleanups.push(() => box.remove());
+    grid.groupColumn(grid.columns[0]);
+    grid.expandAllGroups();
+    await settle(grid);
+    await settle(grid);
+    return { box, grid };
+  };
+
+  for (const rtl of [false, true]) {
+    it(`colunas fixas e rótulo do grupo não andam em nenhum ponto da rolagem (${rtl ? 'rtl' : 'ltr'})`, async () => {
+      const { box, grid } = await build(rtl);
+      const root = grid.shadowRoot!;
+      const label = root.querySelector<HTMLElement>('tr.group-row .grouping-label')!;
+      const actions = () => [...root.querySelectorAll<HTMLTableRowElement>('tbody.body-rows tr[role=row]:not(.group-row):not(.summary-row)')][0].lastElementChild!;
+      const max = box.scrollWidth - box.clientWidth;
+      expect(max).toBeGreaterThan(100);
+
+      const seen = new Set<string>();
+
+      for (const step of [0, 12, 24, 60, max - 30, max - 12, max]) {
+        box.scrollLeft = rtl ? -step : step;
+        await settle(grid);
+        const view = box.getBoundingClientRect();
+        // distância do rótulo à borda inicial e das ações à borda final (lógicas)
+        const labelGap = Math.round(rtl ? view.right - label.getBoundingClientRect().right : label.getBoundingClientRect().left - view.left);
+        const actionsGap = Math.round(rtl ? actions().getBoundingClientRect().left - view.left : view.right - actions().getBoundingClientRect().right);
+        seen.add(`${labelGap}|${actionsGap}`);
+      }
+
+      expect([...seen]).toHaveLength(1);
+    });
+  }
+
+  it('janela: scroll-padding-inline-start no <html> afasta a coluna fixa no início (menu lateral)', async () => {
+    document.documentElement.style.scrollPaddingInlineStart = '360px';
+    cleanups.push(() => document.documentElement.style.removeProperty('scroll-padding-inline-start'));
+    const { grid } = await make('window', { cols: 14 });
+    window.scrollTo({ left: 800, top: 0, behavior: 'instant' });
+    await settle(grid);
+    await settle(grid);
+
+    const fixed = grid.shadowRoot!.querySelector<HTMLElement>('tbody tr[part~=row] td.fixed-start')!;
+    expect(Math.round(fixed.getBoundingClientRect().left)).toBeGreaterThanOrEqual(360);
+    window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+  });
+});

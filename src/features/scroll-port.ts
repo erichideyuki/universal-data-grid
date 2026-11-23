@@ -442,6 +442,52 @@ export class ScrollPortController implements ReactiveController {
     });
   }
 
+  /**
+   * Recuos horizontais do que o grid gruda (colunas fixas, rótulo do grupo,
+   * barra…) dentro do contêiner, por lado lógico: o maior entre o
+   * `scroll-padding-inline` do contêiner (o que o hospedeiro gruda nele, como
+   * um menu lateral fixo — relato do click na 0.4.1) e a folga de repouso
+   * entre a borda do contêiner e a do grid (o recuo do layout: sem ela, o
+   * `sticky` prendia na borda do contêiner e as colunas fixas e o rótulo do
+   * grupo andavam essa folga nas pontas da rolagem). A folga só conta com o
+   * grid começando na 1ª metade da parte visível (não prende no meio da tela
+   * um grid posto longe, num quadro que rola de lado).
+   */
+  inlineInsets(table: HTMLElement | undefined): { start: number; end: number } {
+    const port = this.#port;
+    const host = this.#host;
+
+    if (!port || !table) {
+      return { start: 0, end: 0 };
+    }
+
+    const element = port.element;
+    const style = getComputedStyle(element);
+
+    const padding = (value: string) => {
+      const px = parseFloat(value);
+      return Number.isFinite(px) ? Math.max(0, px) : 0;
+    };
+
+    const rtl = getComputedStyle(host).direction === 'rtl';
+    const view = port.rect();
+    const width = view.right - view.left;
+    const scroll = Math.abs(port.isWindow ? (element.ownerDocument.defaultView?.scrollX ?? 0) : element.scrollLeft);
+    const max = Math.max(0, element.scrollWidth - (port.isWindow ? element.ownerDocument.documentElement.clientWidth : element.clientWidth));
+    const remaining = Math.max(0, max - scroll);
+    const box = host.getBoundingClientRect();
+    const tableBox = table.getBoundingClientRect();
+    // Folga de repouso no início (sem rolagem) e no fim (com a rolagem toda).
+    const gapStart = rtl ? view.right - box.right - scroll : box.left - view.left + scroll;
+    const gapEnd = rtl ? tableBox.left + remaining - view.left : view.right - (tableBox.right - remaining);
+    const cap = (gap: number) => gap > 0 && gap <= width / 2 ? Math.round(gap) : 0;
+
+    return {
+      start: Math.max(padding(style.scrollPaddingInlineStart), cap(gapStart)),
+      end: Math.max(padding(style.scrollPaddingInlineEnd), cap(gapEnd)),
+    };
+  }
+
   /** `scroll-padding` do contêiner (o que o hospedeiro gruda nele), em px. */
   padding(): { top: number; bottom: number } {
     const port = this.#port;

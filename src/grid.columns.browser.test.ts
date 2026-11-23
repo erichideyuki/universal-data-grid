@@ -697,6 +697,92 @@ describe('headerWrap', () => {
     expect(getComputedStyle(text()).webkitLineClamp).toBe('2');
   });
 
+  // Relato do click na 0.4.1: com column-auto-width a medida não reservava a seta da ordenação; ao
+  // ordenar, o texto estreitava e quebrava em 2 linhas enquanto as vizinhas seguiam numa.
+  for (const sortMode of ['single', 'multiple'] as const) {
+    it(`column-auto-width reserva a seta da ordenação (${sortMode}): ordenar não muda a largura nem quebra o texto`, async () => {
+      const grid = await createGrid({
+        columns: [
+          { path: 'a', label: '001 - Código de Ética', minWidth: 160, maxWidth: 280 },
+          { path: 'b', label: '002 - Conduta', minWidth: 160, maxWidth: 280 },
+        ],
+        items: [{ a: 'x', b: 'y' }],
+        configure: g => {
+          g.columnAutoWidth = true;
+          g.headerWrap = true;
+          g.sortMode = sortMode;
+          g.style.setProperty('--u-grid-header-cell-max-lines', '2');
+        },
+      });
+      await settle(grid);
+      await settle(grid);
+
+      const text = () => header(grid, 0).querySelector<HTMLElement>('.header-text')!;
+
+      const lines = () => {
+        const range = document.createRange();
+        range.selectNodeContents(text());
+        return new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top))).size;
+      };
+
+      const before = header(grid, 0).getBoundingClientRect().width;
+      expect(lines()).toBe(1);
+
+      grid.sortColumn(grid.columns[0], 'asc');
+
+      if (sortMode === 'multiple') {
+        grid.sortColumn(grid.columns[1], 'asc', { append: true });
+      }
+
+      await settle(grid);
+      await settle(grid);
+
+      expect(header(grid, 0).getBoundingClientRect().width).toBeCloseTo(before, 0);
+      expect(lines()).toBe(1);
+    });
+  }
+
+  // Relato do usuário: com header-wrap, o cabeçalho que quebrava centralizava o funil e o "⋮" entre as
+  // linhas e eles saíam da altura dos das outras colunas.
+  it('botões na altura da última linha do rótulo: iguais com e sem quebra', async () => {
+    const grid = await createGrid({
+      columns: [
+        { path: 'a', label: '004 - Gestão de riscos', width: 260 },
+        { path: 'b', label: '005 - Gestão dos Serviços Terceirizados', width: 200 },
+        { path: 'c', label: 'C' },
+      ],
+      items: [{ a: 1, b: 2, c: 3 }],
+      configure: g => {
+        g.headerWrap = true;
+        g.headerFilter = true;
+      },
+    });
+    await settle(grid);
+
+    const centerOf = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return (r.top + r.bottom) / 2;
+    };
+
+    const lastLineCenter = (index: number) => {
+      const range = document.createRange();
+      range.selectNodeContents(header(grid, index).querySelector('.header-text')!);
+      const rects = [...range.getClientRects()].filter(r => r.width > 0);
+      const last = rects.reduce((a, r) => r.bottom > a.bottom ? r : a);
+      return (last.top + last.bottom) / 2;
+    };
+
+    const menu = (index: number) => header(grid, index).querySelector('.column-header-menu-button')!;
+    const range = document.createRange();
+    range.selectNodeContents(header(grid, 1).querySelector('.header-text')!);
+    const wrappedLines = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top))).size;
+
+    expect(wrappedLines).toBeGreaterThanOrEqual(2);
+    expect(Math.abs(centerOf(menu(0)) - centerOf(menu(1)))).toBeLessThanOrEqual(1);
+    expect(Math.abs(centerOf(menu(1)) - lastLineCenter(1))).toBeLessThanOrEqual(3);
+    expect(Math.abs(centerOf(menu(0)) - lastLineCenter(0))).toBeLessThanOrEqual(3);
+  });
+
   it('<u-grid-column header-wrap> e header-wrap="false" contra o padrão do grid', async () => {
     const grid = document.createElement('u-grid');
     grid.style.cssText = 'display:block;height:300px';

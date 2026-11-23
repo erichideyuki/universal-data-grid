@@ -1324,6 +1324,11 @@ grid.scrollContainerElement = null;                // back to the grid's own scr
 - Something of yours stuck to the container (an app bar)? Give the container a
   **`scroll-padding-top`** (and `scroll-padding-bottom` for a bottom bar): the grid sticks its
   headers below it, and keyboard focus never stops under it (WCAG 2.4.11).
+- The same sideways: **`scroll-padding-inline-start`/`-end`** (a fixed side menu over the page)
+  keep fixed columns, group labels and the toolbar clear of it (start/end follow the direction; with
+  `window`, set it on `<html>`). Without it, the grid sticks those parts at its own edge when it sits
+  inset in the container (the padding of your layout), so nothing slides at the ends of a sideways
+  scroll; that inset is only used when the grid starts in the first half of the visible area.
 - Keyboard navigation, `focusCell` and `editCell` scroll the container. Keyboard and mouse scroll
   instantly; API calls follow the container's `scroll-behavior` (`smooth` animates, focus moves at
   once), except with `prefers-reduced-motion: reduce`.
@@ -3558,6 +3563,15 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): with `scroll-container`, fixed columns, group labels, band labels, detail
+and full-width rows and the toolbar stick at the container's `scroll-padding-inline-start/-end` and
+at the grid's own edge when it sits inset in the container — they no longer slide by that inset at the
+ends of a sideways scroll, nor hide under a fixed side menu; `column-auto-width` reserves the sort
+arrow (and, with `sort-mode="multiple"`, its priority number), so sorting no longer narrows and wraps
+the label; leaf header labels and their buttons sit at the bottom of the header row also without
+bands, so with `header-wrap` the buttons of every column line up with the last line of the labels;
+the arrow of a menu item that opens a submenu is visible again.
 
 In 0.4.1: in the Excel export, a total or group footer of your own aggregator that
 shows only its value (no `label`, no `format` function) is a number or date cell with the column's

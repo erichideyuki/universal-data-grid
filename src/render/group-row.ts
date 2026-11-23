@@ -54,11 +54,11 @@ export const renderGroupRowCells = ({
 
   return html`
     ${row.level
-      ? html`<td class="group-column sticky-cell" style="inset-inline-start: 0" role="presentation" colspan=${row.level}></td>`
+      ? html`<td class="group-column sticky-cell" style="inset-inline-start: var(--_port-inset-start, 0px)" role="presentation" colspan=${row.level}></td>`
       : nothing}
     <td
       class="group-column group-column-toggle sticky-cell ${classMap({ expanded: row.expanded })}"
-      style="inset-inline-start: calc(${row.level} * var(--_group-column-width))"
+      style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${row.level} * var(--_group-column-width))"
       role="presentation">
       <button
         class="group-toggle"
@@ -93,7 +93,7 @@ export const renderGroupRowCells = ({
       colspan=${Math.max(labelSpan ?? totalColumns - (row.level + 1), 1)}><span
         class="grouping-label"
         id=${ifDefined(alignedSummaries ? `${alignedSummaries.id}-label` : undefined)}
-        style="inset-inline-start: calc(${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${content === undefined
+        style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${row.level + 1} * var(--_group-column-width) + var(--_cell-inline-padding))">${content === undefined
           ? html`${label}${info
             ? html` <span class="group-info" part="group-count">${info}</span>`
             : nothing}`

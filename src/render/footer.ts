@@ -85,7 +85,7 @@ export const renderIndentCells = (groupColumns: number, groupColumnWidth: number
     <td
       role="presentation"
       class="group-column sticky-cell"
-      style="inset-inline-start: ${index * groupColumnWidth}px"></td>`)}`;
+      style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${index * groupColumnWidth}px)"></td>`)}`;
 
 export interface TotalFooterContext {
   layout: readonly SummaryColumnLayout[];

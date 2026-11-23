@@ -325,6 +325,33 @@ describe('itens do menu do cabeçalho (ordem do AG Grid)', () => {
 });
 
 describe('submenu "Fixar coluna": teclado, foco e anúncio', () => {
+  // Relato do usuário: o item com submenu não mostrava a seta (padding no <svg> deixava 1×1 px).
+  for (const dir of ['ltr', 'rtl'] as const) {
+    it(`o item com submenu mostra a seta inteira no fim (${dir})`, async () => {
+      const grid = await create(g => g.dir = dir);
+      menuButton(grid, 'City').click();
+      await settle(grid);
+
+      const pin = itemNamed(grid, 'Pin column');
+      const arrow = pin.querySelector<SVGElement>('.menu-item-arrow')!;
+      const drawn = arrow.querySelector('path')!.getBoundingClientRect();
+      const box = pin.getBoundingClientRect();
+      const text = pin.querySelector('.menu-item-text')!.getBoundingClientRect();
+
+      expect(drawn.width).toBeGreaterThan(5);
+      expect(drawn.height).toBeGreaterThan(9);
+
+      // no fim do item (direita em LTR, esquerda em RTL), sem encostar no texto
+      if (dir === 'ltr') {
+        expect(drawn.left).toBeGreaterThan(text.right);
+        expect(box.right - drawn.right).toBeLessThan(32);
+      } else {
+        expect(drawn.right).toBeLessThan(text.left);
+        expect(drawn.left - box.left).toBeLessThan(32);
+      }
+    });
+  }
+
   const script = async (dir: 'ltr' | 'rtl') => {
     // Janela larga: o submenu cabe do lado do fim.
     await page.viewport(1024, 768);

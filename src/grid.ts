@@ -11525,13 +11525,47 @@ export class DataGrid extends LitElement {
       // Cabeçalho: o conteúdo ocupa a célula toda (botões na ponta); mede com ele no tamanho natural.
       const header = cell.tagName === 'TH';
 
+      // Seta da ordenação reservada (relato do click na 0.4.1): sem ela na medida, ordenar a coluna
+      // estreitava o texto e o quebrava. Coluna ordenável sem a seta: uma seta de prova, oculta;
+      // na ordenação múltipla, com o número da prioridade.
+      let probe: HTMLElement | undefined;
+      let indexed: HTMLElement | undefined;
+
       if (header) {
         cell.classList.add('measuring');
+
+        if (this.#canSortByUser(column)) {
+          const multiple = this.sortMode === 'multiple';
+          const shown = cell.querySelector<HTMLElement>('.sort-indicator');
+
+          if (!shown) {
+            probe = document.createElement('span');
+            probe.className = 'sort-indicator asc';
+            probe.style.visibility = 'hidden';
+            probe.setAttribute('aria-hidden', 'true');
+            probe.append(Object.assign(document.createElement('span'), { style: 'display:inline-block;width:1em;height:1em' }));
+
+            if (multiple) {
+              probe.setAttribute('data-sort-index', '9');
+            }
+
+            cell.querySelector('.header-text')?.after(probe);
+          } else if (multiple && !shown.hasAttribute('data-sort-index')) {
+            indexed = shown;
+            shown.setAttribute('data-sort-index', '9');
+          }
+        }
       }
 
       width = Math.max(width ?? 0, measureContentWidth(cell));
 
       if (header) {
+        probe?.remove();
+
+        if (indexed) {
+          indexed.removeAttribute('data-sort-index');
+        }
+
         cell.classList.remove('measuring');
       }
     });
@@ -11727,11 +11761,15 @@ export class DataGrid extends LitElement {
     }
 
     const box = table.getBoundingClientRect();
-    const view = port.rect();
+    const rtl = this.matches(':dir(rtl)');
+    // A parte visível desconta os recuos horizontais (o que fica atrás do menu lateral não é visível).
+    const portRect = port.rect();
+    const insetLeft = rtl ? this.#portInline.end : this.#portInline.start;
+    const insetRight = rtl ? this.#portInline.start : this.#portInline.end;
+    const view = { left: portRect.left + insetLeft, right: Math.max(portRect.left + insetLeft, portRect.right - insetRight) };
     const left = Math.max(0, view.left - box.left);
     const right = Math.max(0, box.right - view.right);
     const visible = Math.max(0, Math.min(view.right, box.right) - Math.max(view.left, box.left));
-    const rtl = this.matches(':dir(rtl)');
 
     return { start: rtl ? right : left, end: rtl ? left : right, visible: Math.round(visible) };
   }
@@ -11869,10 +11907,10 @@ export class DataGrid extends LitElement {
 
       if (side === 'start') {
         classes.push(fixed[index + 1] === 'start' ? 'fixed fixed-start' : 'fixed fixed-start fixed-start-edge');
-        style = `inset-inline-start: ${offsets[index]}px`;
+        style = `inset-inline-start: calc(var(--_port-inset-start, 0px) + ${offsets[index]}px)`;
       } else if (side === 'end') {
         classes.push(fixed[index - 1] === 'end' ? 'fixed fixed-end' : 'fixed fixed-end fixed-end-edge');
-        style = `inset-inline-end: ${offsets[index]}px`;
+        style = `inset-inline-end: calc(var(--_port-inset-end, 0px) + ${offsets[index]}px)`;
       }
 
       if (alignment === 'center' || alignment === 'end') {
@@ -11887,8 +11925,8 @@ export class DataGrid extends LitElement {
       const minWidth = column.minWidth ?? null;
       const headerStyles: Record<string, string | undefined> = {
         minWidth: minWidth === null ? undefined : `${minWidth}px`,
-        insetInlineStart: side === 'start' ? `${offsets[index]}px` : undefined,
-        insetInlineEnd: side === 'end' ? `${offsets[index]}px` : undefined,
+        insetInlineStart: side === 'start' ? `calc(var(--_port-inset-start, 0px) + ${offsets[index]}px)` : undefined,
+        insetInlineEnd: side === 'end' ? `calc(var(--_port-inset-end, 0px) + ${offsets[index]}px)` : undefined,
       };
       const truncate = !column.wrap && !column.renderer && column.booleanDisplay !== 'icon' && column.booleanDisplay !== 'check';
       const bounds = this._boundsOf(column);
@@ -14224,6 +14262,8 @@ export class DataGrid extends LitElement {
   #revealInFlight = false;
   /** Margens horizontais do que gruda (colunas fixas, recuos), medidas no render. */
   #revealInline = { start: 0, end: 0 };
+  /** Recuos horizontais da porta externa (`--_port-inset-start/end`), por lado lógico. */
+  #portInline = { start: 0, end: 0 };
   #revealMarginsKey = '';
   #revealProbe: HTMLDivElement | undefined;
 
@@ -14249,9 +14289,20 @@ export class DataGrid extends LitElement {
     }
 
     const inset = this.#scrollPort.padding();
+    // Recuos horizontais (scroll-padding-inline e a folga do layout): o que o grid gruda na horizontal fica neles.
+    const inline = this.#portInline = this.#scrollPort.inlineInsets(this.#tableRef.value);
     // A barra de erro (56px) cobre o pé da parte visível.
     const error = this.#dataSource && this.#loader.error ? 56 : 0;
-    const values = [this.#stickyTop(), this.#stickyBottom() + error, this.#revealInline.start, this.#revealInline.end, inset.top, inset.bottom];
+    const values = [
+      this.#stickyTop(),
+      this.#stickyBottom() + error,
+      this.#revealInline.start + inline.start,
+      this.#revealInline.end + inline.end,
+      inset.top,
+      inset.bottom,
+      inline.start,
+      inline.end,
+    ];
     const key = values.join();
 
     if (key === this.#revealMarginsKey) {
@@ -14259,7 +14310,7 @@ export class DataGrid extends LitElement {
     }
 
     this.#revealMarginsKey = key;
-    const names = ['--_reveal-top', '--_reveal-bottom', '--_reveal-start', '--_reveal-end', '--_port-inset-top', '--_port-inset-bottom'];
+    const names = ['--_reveal-top', '--_reveal-bottom', '--_reveal-start', '--_reveal-end', '--_port-inset-top', '--_port-inset-bottom', '--_port-inset-start', '--_port-inset-end'];
     names.forEach((name, i) => layout.style.setProperty(name, `${values[i]}px`));
   }
 
@@ -15713,7 +15764,7 @@ export class DataGrid extends LitElement {
           <td
             role="presentation"
             class="group-column sticky-cell"
-            style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+            style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${index * GROUP_COLUMN_WIDTH}px)"></td>`)}
         ${this.#renderEmptyDetailToggleCell(null)}
         ${this.#showSelectionColumn
           ? html`<td
@@ -15721,7 +15772,7 @@ export class DataGrid extends LitElement {
             part="selection-cell"
             role="gridcell"
             aria-colindex=${this.#selectionCol + 1}
-            style="inset-inline-start: ${this.#selectionInset}px"></td>`
+            style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this.#selectionInset}px)"></td>`
           : nothing}
         ${this.#mapCells(layout, cell => html`${this.#spacerCell(cell.gapBefore)}${renderFilterCell({
           controller: this.#filterRow,
@@ -15794,7 +15845,7 @@ export class DataGrid extends LitElement {
                 role="presentation"
                 class="group-column sticky-cell"
                 rowspan=${ifDefined(levels > 1 ? levels : undefined)}
-                style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></th>`)
+                style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${index * GROUP_COLUMN_WIDTH}px)"></th>`)
             : nothing}
           ${this.#virtualColumns
             ? keyedRows(row, header => headerKeyOf(header), header => this.#renderHeaderSlot(header, cells, active, sorting))
@@ -15830,7 +15881,8 @@ export class DataGrid extends LitElement {
           data-level=${bottom}
           aria-describedby=${ifDefined(this.#adaptiveColumns.length ? 'adaptive-columns-description' : undefined)}
           tabindex=${active === column ? 0 : -1}
-          style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><span class="visually-hidden">${translation.rowDetails}</span>${this.#adaptiveColumns.length
+          style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px)"
+          ><span class="visually-hidden">${translation.rowDetails}</span>${this.#adaptiveColumns.length
             // Quem chega depois do anúncio (spec 21): o mesmo texto na descrição do cabeçalho.
             ? html`<span hidden id="adaptive-columns-description">${this.#adaptiveHeaderDescription()}</span>`
             : nothing}</th>`;
@@ -15849,7 +15901,7 @@ export class DataGrid extends LitElement {
           data-col=${selectionCol}
           data-level=${bottom}
           tabindex=${active === column ? 0 : -1}
-          style="inset-inline-start: ${this.#selectionInset}px"
+          style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this.#selectionInset}px)"
           @click=${() => this.#toggleAll()}>${this.#lazy
             ? html`<span class="visually-hidden">${translation.selectRow}</span>`
             : this.#renderCheckbox(this.#selectAllState(), translation.selectAllRows)}</th>`;
@@ -16852,7 +16904,7 @@ export class DataGrid extends LitElement {
         aria-colindex=${col + 1}
         data-col=${col}
         tabindex=${this.#isActive(rowIndex, col) ? 0 : -1}
-        style="inset-inline-start: ${this.#selectionInset}px"></td>`
+        style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this.#selectionInset}px)"></td>`
       : nothing;
   }
 
@@ -16866,7 +16918,7 @@ export class DataGrid extends LitElement {
         aria-colindex="1"
         data-col=${ifDefined(rowIndex === null ? undefined : 0)}
         tabindex=${ifDefined(rowIndex === null ? undefined : this.#isActive(rowIndex, 0) ? 0 : -1)}
-        style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"></td>`
+        style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px)"></td>`
       : nothing;
   }
 
@@ -16954,7 +17006,7 @@ export class DataGrid extends LitElement {
         <td
           role="presentation"
           class="group-column sticky-cell"
-          style="inset-inline-start: ${index * GROUP_COLUMN_WIDTH}px"></td>`)}
+          style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${index * GROUP_COLUMN_WIDTH}px)"></td>`)}
       ${this.#showDetailColumn && !this.#hasRowDetails(row) ? this.#renderEmptyDetailToggleCell(rowIndex) : nothing}
       ${this.#showDetailColumn && this.#hasRowDetails(row)
         ? html`
@@ -16969,7 +17021,7 @@ export class DataGrid extends LitElement {
             aria-invalid=${ifDefined(marks?.error ? 'true' : undefined)}
             aria-describedby=${ifDefined(marksDescription)}
             tabindex=${this.#isActive(rowIndex, 0) ? 0 : -1}
-            style="inset-inline-start: ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px"><button
+            style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this._groupColumns.length * GROUP_COLUMN_WIDTH}px)"><button
               class="detail-toggle"
               part="detail-toggle-button"
               type="button"
@@ -17002,7 +17054,7 @@ export class DataGrid extends LitElement {
             aria-colindex=${selectionCol + 1}
             data-col=${selectionCol}
             tabindex=${this.#isActive(rowIndex, selectionCol) ? 0 : -1}
-            style="inset-inline-start: ${this.#selectionInset}px">${row.skeleton
+            style="inset-inline-start: calc(var(--_port-inset-start, 0px) + ${this.#selectionInset}px)">${row.skeleton
               ? nothing
               : this.#renderCheckbox(selected ? 'true' : this.#recursiveOn && row.tree && this.#isNodePartial(row.tree.node) ? 'mixed' : 'false', this.#translation.selectRow)}</td>`
         : nothing}

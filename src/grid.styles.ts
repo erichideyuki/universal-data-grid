@@ -165,7 +165,7 @@ export const styles = css`
 
   .external-scroll > .pager {
     position: sticky;
-    inset-inline-start: 0;
+    inset-inline-start: var(--_port-inset-start, 0px);
   }
 
   /* O que o hospedeiro gruda no contêiner (\`scroll-padding\` dele) desloca o que o grid gruda. */
@@ -197,7 +197,7 @@ export const styles = css`
     contain: inline-size;
     inline-size: 100%;
     max-inline-size: var(--_viewport-inline-size, 100%);
-    inset-inline-start: 0;
+    inset-inline-start: var(--_port-inset-start, 0px);
   }
 
   /* Painel de carga: no centro da parte visível do grid (medido na rolagem). */
@@ -478,7 +478,7 @@ export const styles = css`
    */
   .detail-content {
     position: sticky;
-    inset-inline-start: var(--_cell-inline-padding);
+    inset-inline-start: calc(var(--_port-inset-start, 0px) + var(--_cell-inline-padding));
     max-inline-size: calc(var(--_viewport-inline-size, 100%) - 2 * var(--_cell-inline-padding));
   }
 
@@ -811,8 +811,8 @@ export const styles = css`
    */
   .band-header:not(.fixed) > .header-content {
     position: sticky;
-    inset-inline-start: calc(var(--_fixed-start, 0px) + var(--_cell-inline-padding, 16px));
-    inset-inline-end: calc(var(--_fixed-end, 0px) + var(--_cell-inline-padding, 16px));
+    inset-inline-start: calc(var(--_port-inset-start, 0px) + var(--_fixed-start, 0px) + var(--_cell-inline-padding, 16px));
+    inset-inline-end: calc(var(--_port-inset-end, 0px) + var(--_fixed-end, 0px) + var(--_cell-inline-padding, 16px));
   }
 
   /* Colunas fora do DOM (virtualização de colunas): só ocupam a largura. */
@@ -945,6 +945,22 @@ export const styles = css`
   }
 
   /*
+   * Botões e seta na altura da ÚLTIMA linha do rótulo (o rótulo da folha fica
+   * no pé da célula): com \`header-wrap\`, um rótulo de 2 linhas centralizava
+   * os botões entre elas e eles subiam em relação aos das outras colunas
+   * (relato do usuário). O centro do alvo de 24px fica no centro da linha.
+   */
+  .header-column > .header-content > .header-buttons {
+    align-self: flex-end;
+    margin-block-end: calc((1lh - 24px) / 2);
+  }
+
+  .header-column > .header-content > .sort-indicator {
+    align-self: flex-end;
+    margin-block-end: calc((1lh - 1em) / 2);
+  }
+
+  /*
    * Funil e "⋮" lado a lado, sem espaço entre os alvos (cada um já tem 24px,
    * WCAG 2.5.8), e avançando sobre o padding do fim até a alça de
    * redimensionar (que fica sobre esse padding): ~10px a mais para o rótulo.
@@ -1031,7 +1047,12 @@ export const styles = css`
   }
 
   /* Cabeçalho multinível: o rótulo das folhas fica embaixo, junto das células. */
-  thead:where(.grid-table > *):has(.band-header) .header-column {
+  /*
+   * Folhas no pé da linha (fim na vertical, como pedido na revisão do site),
+   * com ou sem bandas: numa linha em que um rótulo quebra (\`header-wrap\`), os
+   * de uma linha e os botões ficam na altura da última linha dele.
+   */
+  thead:where(.grid-table > *) .header-column {
     vertical-align: bottom;
   }
 
@@ -1108,7 +1129,7 @@ export const styles = css`
   .header {
     position: sticky;
     top: 0;
-    inset-inline-start: 0;
+    inset-inline-start: var(--_port-inset-start, 0px);
     background-color: var(--u-grid-header-background-color, var(--_background-color));
     display: flex;
     align-items: center;
@@ -1478,7 +1499,7 @@ export const styles = css`
 
   .full-width-content {
     position: sticky;
-    inset-inline-start: calc(var(--_full-width-start, 0px) + var(--_cell-inline-padding));
+    inset-inline-start: calc(var(--_port-inset-start, 0px) + var(--_full-width-start, 0px) + var(--_cell-inline-padding));
     max-inline-size: calc(var(--_viewport-inline-size, 100%) - var(--_full-width-start, 0px) - 2 * var(--_cell-inline-padding));
   }
 
@@ -1597,11 +1618,18 @@ export const styles = css`
     border-block-start: 1px solid var(--_border-color);
   }
 
-  /* Submenu ("Fixar coluna ▸"): seta no fim do item pai, espelhada em RTL. */
+  /*
+   * Submenu ("Fixar coluna ▸"): seta no fim do item pai, espelhada em RTL. O
+   * espaço vai no texto, não na seta: padding no \`<svg>\` (border-box) deixava
+   * 2px de desenho e a seta saía com 1×1 px, invisível (relato do usuário).
+   */
   .menu-item-arrow {
     flex: none;
     margin-inline-start: auto;
-    padding-inline-start: 16px;
+  }
+
+  .menu-item-parent > .menu-item-text {
+    padding-inline-end: 16px;
   }
 
   .menu-item-arrow:dir(rtl) {
