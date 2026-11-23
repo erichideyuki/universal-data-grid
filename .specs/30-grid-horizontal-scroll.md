@@ -1,8 +1,9 @@
 # 30 — Rolagem horizontal no grid com a vertical no contêiner externo
 
 > Estado: proposta revisada (2026-11-23: `webcomponent-api-reviewer` e
-> `a11y-reviewer`, achados em "Revisão do desenho"), aguardando o aval do
-> usuário. Depende da frente 27 (`scroll-container`), já na `main`. Sai numa
+> `a11y-reviewer`, achados em "Revisão do desenho") e APROVADA pelo
+> usuário em 2026-11-23 (API `scroll-container-axis`, novo padrão `block`
+> na 0.5.0, 150px para coluna sem largura). Depende da frente 27 (`scroll-container`), já na `main`. Sai numa
 > minor (0.5.0): muda o padrão visível do `scroll-container`.
 
 ## Objetivo
