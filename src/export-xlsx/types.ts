@@ -107,10 +107,10 @@ export interface GridXlsxCell<TItem = any> {
   readonly columnIndex: number;
   /**
    * Columns the cell spans (a band, the label of a group row); `1` otherwise.
-   * Never merged: `customizeCell` is called once for the spanning cell, and
-   * the empty cells it covers take its final style. Only `alignment:
-   * 'center'` spans the columns (center across selection); `start`/`end`
-   * align within the first one.
+   * A band cell is a merged range; a group label is never merged (`alignment:
+   * 'center'` centers it across the row; `start`/`end` align it within the
+   * first column). `customizeCell` is called once for the spanning cell, and
+   * the empty cells it covers take its final style.
    */
   readonly columnSpan: number;
   /** Header row of the cell, `0` = the top one (bands first, column labels last); `-1` outside the header. */
@@ -163,9 +163,10 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
   /** Header rows with the column labels (and the bands). Default `true`. */
   includeHeaders?: boolean;
   /**
-   * Band rows above the column labels, not merged: the label in the first
-   * column of the band, aligned by the band `alignment` (default `start`, as
-   * on screen; `center` centers it across the band). Default `true`.
+   * Band rows above the column labels: each band label merged across its
+   * columns (in its own row only; the column labels are never merged),
+   * aligned by the band `alignment` (default `start`, as on screen). Default
+   * `true`.
    */
   includeBands?: boolean;
   /**

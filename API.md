@@ -1512,7 +1512,7 @@ grid.columns = [
   band is a checkbox with its columns in a nested list: mixed (some columns hidden) → all visible →
   band hidden → back as it was before hiding (all visible, or mixed if the band was hidden while
   mixed); checking a column of a hidden band shows the band and keeps the others' state.
-- Only leaf columns sort, group, filter, resize and export (no band row in CSV; Excel writes the band rows above the column labels, not merged).
+- Only leaf columns sort, group, filter, resize and export (no band row in CSV; Excel writes the band rows above the column labels, each band label merged across its columns).
   `sortColumn`, `groupColumn` and `setColumnWidth` with a band do nothing, `focusCell` returns
   `false` and `autoSizeColumn` sizes each visible column of the band. A grouped column leaves its
   band in the header and returns to the end of it when ungrouped.
@@ -1709,10 +1709,12 @@ lets screen readers (JAWS) read the column titles; columns fixed at the start (`
 frozen too and read as row titles (`RowTitle`; with the header, a single `Title` on the corner cell, the
 JAWS convention for both; repeating them on printed pages waits for the writer; unfreeze them in Excel
 with View › Freeze Panes when they take too much room);
-band and group labels are **never merged** (merged cells break sorting, filtering and the
-accessibility checker of Office): a band label sits in its first column with the band `alignment`
-(default `start`, as on screen; `center` centers it across the band), a group label is text
-(`"Country: Brazil (3)"`) centered across the row, with the row outline of Excel (the collapse button
+a band label is a merged range across its columns, aligned by the band `alignment` (default
+`start`, as on screen), in its own header row only — the column labels, group rows and data are never
+merged, so sorting and filtering the data keep working and the column titles stay in one row (the
+accessibility checker of Office lists merged cells as a warning); a group label is text
+(`"Country: Brazil (3)"`) at the start of the row, as on screen (set `alignment: 'center'` in
+`customizeCell` to center it across the row), with the row outline of Excel (the collapse button
 on the group row); fixed rows are exported, not frozen. The document title and language
 (`dc:language`) come from the grid, and a right-to-left grid writes a right-to-left sheet. Cell
 templates (`renderer`) are not drawn — the sheet holds the values; restyle cells with `customizeCell`.
@@ -3566,7 +3568,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): with `scroll-container`, fixed columns, group labels, band labels, detail
+In 0.4.2: with `scroll-container`, fixed columns, group labels, band labels, detail
 and full-width rows and the toolbar stick at the container's `scroll-padding-inline-start/-end` and
 at the grid's own edge when it sits inset in the container — they no longer slide by that inset at the
 ends of a sideways scroll, nor hide under a fixed side menu, and scrolled content no longer shows in
@@ -3574,7 +3576,10 @@ the strip between the container's visible edge and them; `column-auto-width` res
 arrow (and, with `sort-mode="multiple"`, its priority number), so sorting no longer narrows and wraps
 the label; leaf header labels and their buttons sit at the bottom of the header row also without
 bands, so with `header-wrap` the buttons of every column line up with the last line of the labels;
-the arrow of a menu item that opens a submenu is visible again.
+the arrow of a menu item that opens a submenu is visible again; in the Excel export, the group label
+sits at the start of the row, as on screen and like the band labels, instead of centered across it,
+and each band label is merged across its columns (like the reference grids) instead of written in its
+first column.
 
 In 0.4.1: in the Excel export, a total or group footer of your own aggregator that
 shows only its value (no `label`, no `format` function) is a number or date cell with the column's

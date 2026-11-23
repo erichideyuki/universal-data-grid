@@ -103,8 +103,13 @@ fn cell(e: &mut Enc, c: &C<'_>) {
     }
 }
 
-/// Bloco: estilos novos (bytes já no protocolo) e linhas (outline, células).
+/// Bloco: estilos novos (bytes já no protocolo) e linhas (outline, células), sem áreas mescladas.
 fn block(styles: &[Vec<u8>], rows: &[(u8, Vec<C<'_>>)]) -> Vec<u8> {
+    merged_block(styles, rows, &[])
+}
+
+/// Bloco com áreas mescladas (1ª linha, 1ª coluna, última linha, última coluna; a partir de 1).
+fn merged_block(styles: &[Vec<u8>], rows: &[(u8, Vec<C<'_>>)], merges: &[(u32, u16, u32, u16)]) -> Vec<u8> {
     let mut e = Enc::default();
     e.u16(styles.len() as u16);
     for s in styles {
@@ -116,6 +121,10 @@ fn block(styles: &[Vec<u8>], rows: &[(u8, Vec<C<'_>>)]) -> Vec<u8> {
         for c in cells {
             cell(&mut e, c);
         }
+    }
+    e.u16(merges.len() as u16);
+    for &(r1, c1, r2, c2) in merges {
+        e.u32(r1).u16(c1).u32(r2).u16(c2);
     }
     e.0
 }
@@ -332,6 +341,36 @@ fn formato_invalido_cai_para_o_geral() {
     let long = "0".repeat(300);
     let p = run(&Begin::default(), &[block(&[style(1 | 32, 0, 0, 0, 0, &long)], &[(0, vec![C::Num(1.0, 1)])])]);
     assert!(!p["xl/styles.xml"].contains("000000000"), "{}", p["xl/styles.xml"]);
+}
+
+#[test]
+fn bandas_mescladas_na_horizontal() {
+    let header = style(1 | 8, 0, 0, 0xE6E6E6, 0, "");
+    let p = run(
+        &Begin { header_rows: 2, widths: &[100.0, 80.0, 60.0], ..Begin::default() },
+        &[merged_block(
+            &[header],
+            &[
+                (0, vec![C::Empty(1), C::Text("Region", 1), C::Empty(1)]),
+                (0, vec![C::Text("Name", 1), C::Text("Country", 1), C::Text("Amount", 1)]),
+            ],
+            &[(1, 2, 1, 3)],
+        )],
+    );
+    let s = sheet(&p);
+    assert!(s.contains(r#"<mergeCells count="1"><mergeCell ref="B1:C1"/></mergeCells>"#), "{s}");
+    // o nome de títulos continua na linha das folhas
+    let wb = &p["xl/workbook.xml"];
+    assert!(wb.contains("$A$2"), "{wb}");
+}
+
+#[test]
+fn mescla_sobreposta_e_erro() {
+    let mut e = Engine::new();
+    assert_eq!(e.begin(&config(&Begin::default())), code::OK);
+    let rows = [(0, vec![C::Text("a", 0), C::Empty(0), C::Empty(0)])];
+    assert_eq!(e.append(&merged_block(&[], &rows, &[(1, 1, 1, 2), (1, 2, 1, 3)])), code::INVALID);
+    assert!(e.error.contains("overlap"), "{}", e.error);
 }
 
 #[test]

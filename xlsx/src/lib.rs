@@ -17,7 +17,9 @@
 //! padrão). Depois `u32` linhas e por linha outline `u8`, `u16` células e por célula `kind u8`
 //! (0 vazia, 1 texto, 2 número, 3 falso, 4 verdadeiro, 5 data; `| 0x80` = link depois do valor),
 //! estilo `u32`, o valor (texto: string; número: `f64`; data: ano `i32`, mês, dia, hora, minuto,
-//! segundo `u8`, milissegundo `u16`) e o link (string).
+//! segundo `u8`, milissegundo `u16`) e o link (string). Por fim, as áreas mescladas do bloco: `u16`
+//! n e por área a 1ª linha `u32`, a 1ª coluna `u16`, a última linha `u32` e a última coluna `u16`
+//! (a partir de 1; as linhas são as da aba, não as do bloco).
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
@@ -278,6 +280,14 @@ impl Engine {
             }
             w.append_row(&RowOptions { outline_level: level, ..RowOptions::default() }, &cells).map_err(|e| writer_error(&e))?;
             self.rows += 1;
+        }
+        let merges = r.u16().map_err(invalid)?;
+        for _ in 0..merges {
+            let first_row = r.u32().map_err(invalid)?;
+            let first_col = u32::from(r.u16().map_err(invalid)?);
+            let last_row = r.u32().map_err(invalid)?;
+            let last_col = u32::from(r.u16().map_err(invalid)?);
+            w.merge(CellRange::new(first_row, first_col, last_row, last_col)).map_err(|e| writer_error(&e))?;
         }
         if !r.done() {
             return Err(invalid("trailing bytes in block".into()));

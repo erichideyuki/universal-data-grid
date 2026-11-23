@@ -118,8 +118,13 @@ o cabeçalho e os dados; larguras pelas do grid.
 ## Acessibilidade
 - Cor nunca sozinha: doc e exemplo gravam o estado como texto da célula; o
   JSDoc do `customizeCell` diz isso; contraste ≥ 4,5:1 (aviso igual ao PDF).
-- Sem `mergeCells` por padrão (verificador do Office): bandas e grupos com
-  `centerContinuous`.
+- Mescla só a faixa de cada banda, na horizontal, na própria linha (decisão
+  do usuário, 2026-11-23, "como o DevExtreme"; o verificador do Office lista
+  células mescladas como aviso): a linha das folhas, os grupos e os dados
+  nunca mesclam; o rótulo fica na 1ª célula da área. SEM mescla vertical
+  (a referência mescla a folha sem banda com a vazia acima): o valor
+  subiria para fora da linha do `ColumnTitle` e o leitor de tela anunciaria
+  título vazio (revisão de a11y). Rótulo de grupo no início da linha.
 - Títulos: nome definido com prefixo `ColumnTitle` (convenção do JAWS) no
   início da linha de folhas, sempre; títulos de impressão = todas as linhas
   de cabeçalho.
@@ -136,7 +141,8 @@ o cabeçalho e os dados; larguras pelas do grid.
   (validação do pacote e do XML; LibreOffice e Google Sheets fora do
   critério por decisão do usuário, 2026-11-23); tipos,
   `numFmt`, estilos sem repetição, outline, congelamento, títulos.
-- Navegador: sem `mergeCells` por padrão; nome `ColumnTitle`,
+- Navegador: `mergeCell` só nas linhas de banda, uma linha por área, nenhuma
+  na linha das folhas; nome `ColumnTitle`,
   `dc:language`, `rightToLeft`, títulos de impressão e nome da aba;
   `customizeCell` (mapa de calor); progresso e cancelamento; roteiro de
   teclado e axe do item "Exportar para Excel"; vazamento (worker solto).

@@ -198,7 +198,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.sheet.getElementsByTagName('sheetView')[0].getAttribute('rightToLeft')).toBeNull();
   });
 
-  it('bandas: linhas acima das folhas, rótulo na 1ª coluna com o alinhamento da banda (center = centralizar na seleção), sem mesclar; congela tudo', async () => {
+  it('bandas: linhas acima das folhas, rótulo mesclado na horizontal com o alinhamento da banda; folhas sem mesclar; congela tudo', async () => {
     const cols: GridColumnDef[] = [
       { path: 'name', label: 'Name' },
       { label: 'Sale', alignment: 'center', columns: [{ path: 'country', label: 'Country' }, { path: 'amount', label: 'Amount', dataType: 'number' }] },
@@ -207,12 +207,13 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     let book = await run(await create(undefined, cols));
 
     expect(book.cells.get('B1')?.value).toBe('Sale');
-    expect(book.styleOf('B1').horizontal).toBe('centerContinuous');
-    // a célula vazia da faixa tem o mesmo estilo (a centralização atravessa só células assim)
+    expect(book.styleOf('B1').horizontal).toBe('center');
+    // a célula coberta tem o mesmo estilo (fundo e bordas da área mesclada)
     expect(book.cells.get('C1')).toMatchObject({ value: null, style: book.cells.get('B1')!.style });
+    // só a banda mescla, na horizontal: a coluna sem banda (A1 vazia, A2 rótulo) e a linha das folhas não
+    expect([...book.sheet.getElementsByTagName('mergeCell')].map(m => m.getAttribute('ref'))).toEqual(['B1:C1']);
     expect(book.styleOf('A1')).toMatchObject({ fill: 'FFE6E6E6', horizontal: null });
     expect(['A2', 'B2', 'C2', 'D2'].map(ref => book.cells.get(ref)?.value)).toEqual(['Name', 'Country', 'Amount', 'When']);
-    expect(book.sheet.getElementsByTagName('mergeCell')).toHaveLength(0);
     expect(pane(book)?.getAttribute('ySplit')).toBe('2');
     expect(definedName(book, 'ColumnTitle')).toMatch(/!\$A\$2$/);
     expect(definedName(book, '_xlnm.Print_Titles')).toMatch(/!\$1:\$2$/);
@@ -415,8 +416,8 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.sheet.getElementsByTagName('sheetView')[0].getAttribute('rightToLeft')).toBe('1');
     expect(book.core.getElementsByTagName('dc:language')[0].textContent).toBe('ar');
     expect(book.cells.get('B1')?.value).toBe('البيع');
-    expect(book.styleOf('B1').horizontal).toBe('centerContinuous');
-    expect(book.sheet.getElementsByTagName('mergeCell')).toHaveLength(0);
+    expect(book.styleOf('B1').horizontal).toBe('center');
+    expect([...book.sheet.getElementsByTagName('mergeCell')].map(m => m.getAttribute('ref'))).toEqual(['B1:C1']);
     // a 1ª linha de dados (A3: banda, folhas): início = direita numa aba RTL, borda do início também
     const xf = [...book.styles.getElementsByTagName('cellXfs')[0].getElementsByTagName('xf')][book.cells.get('A3')!.style];
     expect(xf.getElementsByTagName('alignment')[0].getAttribute('horizontal')).toBe('right');
@@ -449,6 +450,46 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.styleOf('B1').horizontal).toBeNull();
     expect(book.cells.get('C1')).toMatchObject({ value: null, style: book.cells.get('B1')!.style });
     expect(seen).toEqual([{ column: 'Country', band: 'Sale', span: 2 }]);
+  });
+
+  it('bandas aninhadas: cada nível mescla a própria faixa; customizeCell `center` centraliza na banda e, no rótulo de grupo, na seleção', async () => {
+    const cols: GridColumnDef[] = [
+      { path: 'name', label: 'Name' },
+      {
+        label: 'Sale',
+        columns: [
+          { path: 'country', label: 'Country' },
+          { label: 'Value', columns: [{ path: 'amount', label: 'Amount', dataType: 'number' }, { path: 'when', label: 'When', dataType: 'date' }] },
+        ],
+      },
+    ];
+    const grid = await create(undefined, cols);
+    grid.groupColumn(grid.columns[0]);
+    await settle(grid);
+    const book = await run(grid, {
+      customizeCell: cell => {
+        if ((cell.rowType === 'header' && cell.band) || cell.rowType === 'group') {
+          cell.style = { ...cell.style, alignment: 'center' };
+        }
+      },
+    });
+
+    // Sale (nível 0) e Value (nível 1): uma área por banda
+    const refs = [...book.sheet.getElementsByTagName('mergeCell')].map(m => m.getAttribute('ref'));
+    expect(refs).toHaveLength(2);
+
+    // cada área é de uma linha só e fica nas linhas de banda (1 e 2), nunca na das folhas (3)
+    for (const ref of refs) {
+      const [, row1, row2] = (/^[A-Z]+(\d+):[A-Z]+(\d+)$/).exec(ref!)!;
+      expect(row1).toBe(row2);
+      expect(['1', '2']).toContain(row1);
+    }
+
+    const top = refs.find(ref => ref!.endsWith('1'))!;
+    expect(book.styleOf(top.split(':')[0]).horizontal).toBe('center');
+    // rótulo de grupo (não mesclado): centralizar na seleção
+    const group = [...book.cells.entries()].find(([, c]) => typeof c.value === 'string' && c.value.startsWith('Name:'))![0];
+    expect(book.styleOf(group).horizontal).toBe('centerContinuous');
   });
 
   it('language: dc:language e os formatos de número e data; o padrão é o do grid', async () => {

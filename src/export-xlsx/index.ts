@@ -817,7 +817,8 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
       }
     }
 
-    const final = specOf(cell.style, cell.numFmt, base.columnSpan > 1, rtl, !!link);
+    // banda: área mesclada, "centralizar" é o comum; rótulo de grupo (não mesclado): centralizar na seleção
+    const final = specOf(cell.style, cell.numFmt, base.columnSpan > 1 && !base.band, rtl, !!link);
     let out = cell.cellValue;
 
     if (out !== null && typeof out !== 'string' && typeof out !== 'number' && typeof out !== 'boolean' && !(out instanceof Date)) {
@@ -855,19 +856,34 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
     await client.begin(configOf(ctx, headerRows, headerRows > 0 && options.freezeHeader !== false));
     const w = new Writer();
     let count = 0;
+    /** Áreas mescladas ainda não enviadas (as faixas das bandas): [1ª linha, 1ª coluna, última linha, última coluna]. */
+    const merges: [number, number, number, number][] = [];
     // Um bloco em voo: o worker escreve um enquanto a thread principal serializa o próximo.
     const pipe: { inflight: Promise<void> | null } = { inflight: null };
 
     const flush = async () => {
       const { count: styleCount, bytes: styleBytes } = styles.take();
       const rows = w.take();
-      const block = new Uint8Array(2 + styleBytes.length + 4 + rows.length);
+      // áreas mescladas do bloco: u16 n e por área linha u32, coluna u16, linha u32, coluna u16 (a partir de 1)
+      const mergeAt = 6 + styleBytes.length + rows.length;
+      const block = new Uint8Array(mergeAt + 2 + merges.length * 12);
       const view = new DataView(block.buffer);
       view.setUint16(0, styleCount, true);
       block.set(styleBytes, 2);
       view.setUint32(2 + styleBytes.length, count, true);
       block.set(rows, 6 + styleBytes.length);
+      view.setUint16(mergeAt, merges.length, true);
+
+      for (const [i, [firstRow, firstCol, lastRow, lastCol]] of merges.entries()) {
+        const at = mergeAt + 2 + i * 12;
+        view.setUint32(at, firstRow, true);
+        view.setUint16(at + 4, firstCol, true);
+        view.setUint32(at + 6, lastRow, true);
+        view.setUint16(at + 10, lastCol, true);
+      }
+
       count = 0;
+      merges.length = 0;
 
       if (pipe.inflight) {
         await pipe.inflight;
@@ -911,9 +927,9 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
         }
 
         const label = columnText(run.band);
-        // o alinhamento da banda, como na tela (padrão `start`); `center` centraliza na seleção
+        // o alinhamento da banda, como na tela (padrão `start`), dentro da área mesclada (como a referência)
         const alignment = run.band.alignment ?? 'start';
-        let spec = headerSpec(alignment === 'center' ? span > 1 ? Align.CenterContinuous : Align.Center : ALIGN_OF[alignment] ?? Align.None);
+        let spec = headerSpec(ALIGN_OF[alignment] ?? Align.None);
         let value: CellValue = label;
         let style = styles.id(spec);
         let link: string | undefined;
@@ -930,9 +946,15 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
 
         emit(w, value, style, link);
 
-        // o resto da faixa: vazias com o mesmo estilo ("centralizar na seleção" atravessa só células assim)
+        // o resto da faixa: vazias com o mesmo estilo (fundo e bordas da área mesclada), mescladas com a 1ª.
+        // Só na horizontal: o rótulo da folha fica na linha dos títulos (\`ColumnTitle\`), sem mesclar com
+        // a vazia acima (revisão de a11y; a referência mescla também na vertical).
         for (let i = run.start + 1; i < run.end; i++) {
           emit(w, null, style);
+        }
+
+        if (span > 1) {
+          merges.push([d + 1, run.start + 1, d + 1, run.end]);
         }
       }
     }

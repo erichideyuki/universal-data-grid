@@ -6,7 +6,7 @@ import { makeOrders } from '../shared/data.js';
 
 export const meta = {
   title: 'Excel and the Export button',
-  description: '`export-formats="csv xlsx"` adds an **Export** button to the toolbar (with "Export selected rows" entries when rows can be selected). Excel goes through the optional `export-xlsx` entry point: a WebAssembly engine writes the file in a Web Worker, with no dependency of yours. Bands become header rows above the column labels (centered across their columns, never merged), the header is frozen and repeats on printed pages, groups become the row outline of Excel, and numbers and dates are typed cells. `createXlsxExporter` gives the toolbar its **Export to Excel** entry (it becomes **Cancel export** while running); `downloadXlsx` takes the sheet name, `customizeCell` and `onProgress`.',
+  description: '`export-formats="csv xlsx"` adds an **Export** button to the toolbar (with "Export selected rows" entries when rows can be selected). Excel goes through the optional `export-xlsx` entry point: a WebAssembly engine writes the file in a Web Worker, with no dependency of yours. Bands become header rows above the column labels (each label merged across its columns), the header is frozen and repeats on printed pages, groups become the row outline of Excel, and numbers and dates are typed cells. `createXlsxExporter` gives the toolbar its **Export to Excel** entry (it becomes **Cancel export** while running); `downloadXlsx` takes the sheet name, `customizeCell` and `onProgress`.',
 };
 
 export default (host: HTMLElement) => {
