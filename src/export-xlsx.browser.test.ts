@@ -174,6 +174,13 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     book = await run(await create(), { sheetName: 'History' });
     expect(book.workbook.getElementsByTagName('sheet')[0].getAttribute('name')).toBe('Data');
 
+    // Relato do click na 0.4.0: o nome longo era cortado no meio da palavra ("…de aceite d").
+    cleanup();
+    book = await run(await create(g => g.setAttribute('aria-label', 'Relatório analítico de aceite de documentos')));
+    const long = book.workbook.getElementsByTagName('sheet')[0].getAttribute('name')!;
+    expect(long).toBe('Relatório analítico de aceite…');
+    expect(long.length).toBeLessThanOrEqual(31);
+
     cleanup();
     book = await run(await create(g => {
       g.removeAttribute('aria-label');
@@ -241,6 +248,20 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.sheet.getElementsByTagName('mergeCell')).toHaveLength(0);
     const texts = [...book.cells.values()].map(c => c.value);
     expect(texts.filter(t => t?.startsWith('Sum'))).toHaveLength(3);
+  });
+
+  // Relato do click na 0.4.0: total de agregador próprio que devolve número saía como texto ('14').
+  it('total de agregador próprio com número sai tipado, com o formato da coluna; o "Sum:" segue texto', async () => {
+    const sum = (values: readonly unknown[]) => values.reduce<number>((total, value) => total + (Number(value) || 0), 0);
+    const grid = await create(g => {
+      g.summary = { total: [{ column: 'amount', type: sum }, { column: 'name', type: 'count' }] };
+    });
+    const book = await run(grid);
+
+    expect(book.cells.get('C5')).toMatchObject({ value: '1495.5', type: null });
+    expect(book.styleOf('C5')).toMatchObject({ bold: true, numFmt: book.styleOf('C2').numFmt });
+    expect(book.cells.get('A5')).toMatchObject({ type: 's' });
+    expect(book.cells.get('A5')?.value).toMatch(/^Count/);
   });
 
   it('customizeCell: mapa de calor (fundo por valor + o estado no texto), link, formato; contraste ruim sai com aviso', async () => {

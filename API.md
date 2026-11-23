@@ -1730,7 +1730,10 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 cell, after the adapter chose its value, number format and style. Read `rowType` (`'header'` includes
 the band rows), `row`, `column` (the `GridExportColumn`, as in the PDF; in a band cell, the first column
 of the band; `null` in the label of a group row), `band` (the band of a band cell, else `null`),
-`columnIndex`, `columnSpan`, `headerRow` and `value` (the source value); change `cellValue` (a string
+`columnIndex`, `columnSpan`, `headerRow` and `value` (the source value). `column` is the export column
+(`{ column, label, dataType, alignment, width }`), not your definition: test your column through
+`cell.column?.column` — `cell.column?.column.name === 'actions'` or `cell.column?.column.path ===
+'status'` (`cell.column.name` is always `undefined`). Change `cellValue` (a string
 is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
 `numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (a `GridExportLink` `{ url,
 description? }`: `http:`, `https:` or `mailto:`; without a color of yours, or when yours fails the
@@ -1746,7 +1749,8 @@ const tone = pct => pct < 50 ? '#f8696b' : pct < 80 ? '#ffeb84' : '#63be7b';
 await downloadXlsx(grid, {
   fileName: 'compliance.xlsx',
   customizeCell: cell => {
-    if (cell.rowType === 'data' && typeof cell.value === 'number') {
+    // your definition is cell.column.column (cell.column is the export column)
+    if (cell.rowType === 'data' && cell.column?.column.path === 'progress' && typeof cell.value === 'number') {
       const pct = cell.value;
       cell.text = `${pct}% ${pct < 50 ? 'overdue' : pct < 80 ? 'in progress' : 'done'}`;
       cell.style = { ...cell.style, backgroundColor: tone(pct) };     // contrast checked
@@ -3554,6 +3558,11 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): in the Excel export, a total or group footer of your own aggregator that
+shows only its value (no `label`, no `format` function) is a number or date cell with the column's
+number format (it was text); a sheet name over 31 characters is cut at the last whole word with "…"
+(it was cut mid-word).
 
 In 0.4.0: Excel export without ExcelJS — `exportXlsx(grid, options)`,
 `downloadXlsx` and `createXlsxExporter(options)` write the file in a WebAssembly engine in a Web

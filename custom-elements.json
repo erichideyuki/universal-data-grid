@@ -4696,7 +4696,7 @@
               }
             }
           ],
-          "description": "Overrides part (or all) of a built-in translation. Missing keys keep their\nprevious value, so a partial object is enough. The deprecated key names\n(`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`) are still accepted, with a\nconsole warning."
+          "description": "Overrides part (or all) of a built-in translation. Missing keys keep their\nprevious value, so a partial object is enough. The deprecated key names\n(`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`, `pdfDefaultTitle`) are still\naccepted, with a console warning; `fixStartLabel`/`fixEndLabel` are ignored (see `GridI18nInput`)."
         },
         {
           "kind": "function",

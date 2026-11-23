@@ -75,7 +75,10 @@ export interface GridPdfCell<TItem = any> {
   readonly rowType: GridExportRow['rowType'] | 'header';
   /** The exported row (`null` in the header). */
   readonly row: GridExportRow<TItem> | null;
-  /** The column (`null` for the label cell of a group row). */
+  /**
+   * The export column (`null` for the label cell of a group row). Your definition is `column.column`:
+   * test `cell.column?.column.name` or `.path`.
+   */
   readonly column: GridExportColumn<TItem> | null;
   /** Index in `columns` (`-1` for the label cell of a group row). */
   readonly columnIndex: number;

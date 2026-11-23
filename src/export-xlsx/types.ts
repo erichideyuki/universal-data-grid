@@ -96,7 +96,10 @@ export interface GridXlsxCell<TItem = any> {
   readonly rowType: GridExportRow['rowType'] | 'header';
   /** The exported row (`null` in the header). */
   readonly row: GridExportRow<TItem> | null;
-  /** The column (in a band cell, the first column of the band); `null` for the label cell of a group row. */
+  /**
+   * The export column (in a band cell, the first column of the band); `null` for the label cell of a
+   * group row. Your definition is `column.column`: test `cell.column?.column.name` or `.path`.
+   */
   readonly column: GridExportColumn<TItem> | null;
   /** The band of a band cell; `null` in every other cell. */
   readonly band: GridColumnDef<TItem> | null;

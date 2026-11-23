@@ -15,7 +15,7 @@ import { downloadBlob } from '../export/download.js';
 import { contrast as contrastOf, parseColor as parseCssColor, Writer } from '../export/serialize.js';
 import { createSlicer, yieldToHost } from '../export/slice.js';
 import type { GridExportColumn, GridExporter, GridExportLink, GridExportProgress, GridExportRow } from '../export/types.js';
-import type { GridColumnAlignment, GridColumnDef } from '../grid-column-def.js';
+import type { GridColumnAlignment, GridColumnDef, GridSummaryValue } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 import { columnText } from '../row-model/columns.js';
 import { toDate, toNumber } from '../row-model/format.js';
@@ -541,6 +541,65 @@ const typedValue = (plan: ColumnPlan, value: unknown, shown: string): CellValue 
 
 const isTyped = (value: CellValue) => typeof value === 'number' || value instanceof Date;
 
+/**
+ * Resumo que vira número ou data na planilha: um só na célula, mostrando SÓ
+ * o valor (agregador próprio, sem `label` nem `format` função) e com número
+ * finito ou data válida. Com rótulo ("Sum: 87") fica o texto, como na tela.
+ * O `numFmt` vem do `format` do resumo (opções do Intl) ou da coluna
+ * (relato do click na 0.4.0: o total "14" saía como texto).
+ */
+const typedSummary = (
+  list: readonly GridSummaryValue[] | undefined,
+  plan: ColumnPlan,
+  language: string | undefined,
+): { value: number | Date; numFmt: string | null } | undefined => {
+  if (list?.length !== 1) {
+    return undefined;
+  }
+
+  const [{ item, value }] = list;
+
+  if (typeof item.type !== 'function' || item.label || typeof item.format === 'function') {
+    return undefined;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const own = item.format ? numberFormatOf(item.format, language) ?? null : null;
+    return { value, numFmt: own ?? (plan.type === 'number' ? plan.numFmt : null) };
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { value, numFmt: plan.type === 'date' ? plan.numFmt : datePatternOf('date', language) };
+  }
+
+  return undefined;
+};
+
+/** Limite do Excel para o nome da aba (em unidades UTF-16, o mais estrito). */
+const SHEET_NAME_MAX = 31;
+
+/**
+ * Nome de aba válido e legível: sem `[]:*?/\`, espaços juntados e, passando de
+ * 31, cortado na última palavra inteira com "…" (o corte seco do `uo-xlsx`
+ * deixava "…de aceite d"; relato do click na 0.4.0). Um nome sem espaço útil
+ * é cortado no limite, também com "…".
+ */
+const shortSheetName = (name: string): string => {
+  const clean = name.replace(/[[\]:*?/\\]/g, '').replace(/\s+/g, ' ')
+    .trim();
+
+  if (clean.length <= SHEET_NAME_MAX) {
+    return clean;
+  }
+
+  const room = clean.slice(0, SHEET_NAME_MAX - 1);
+  const space = room.lastIndexOf(' ');
+  const cut = space >= SHEET_NAME_MAX / 3 ? room.slice(0, space) : room;
+
+  // Não termina em pontuação solta nem parte um par substituto (emoji).
+  return `${cut.replace(/[\s.,;\-–—]+$/u, '').replace(/[\uD800-\uDBFF]$/, '')}…`;
+};
+
 // ------------------------------------------------------------------ contexto
 
 interface Context {
@@ -599,7 +658,7 @@ const contextOf = (grid: DataGrid, options: GridXlsxOptions): Context => {
 
   return {
     title: options.title?.trim() || name || fallback,
-    sheetName: options.sheetName?.trim() || name || fallback,
+    sheetName: shortSheetName(options.sheetName?.trim() || name || fallback) || fallback,
     fallbackName: fallback,
     language: language ?? validLanguage(grid._exportLanguages.content) ?? 'en',
     rtl: (options.direction ?? getComputedStyle(grid).direction) === 'rtl',
@@ -976,16 +1035,21 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
 
           for (let i = 0; i < n; i++) {
             const text = r.texts[i] ?? '';
+            const typed = typedSummary(r.summaries[i], plans[i], ctx.numberLanguage);
+            const spec = total ? totalSpecs[i] : footerSpecs[i];
+            const typedSpec = typed ? { ...spec, numFmt: typed.numFmt } : spec;
 
             if (customize) {
               const c = custom(
                 { rowType: r.rowType, row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.summaries[i] },
-                text || null,
+                typed ? typed.value : text || null,
                 text,
-                null,
-                total ? totalSpecs[i] : footerSpecs[i],
+                typed ? typed.numFmt : null,
+                typedSpec,
               );
               emit(w, c.value, c.style, c.link);
+            } else if (typed) {
+              emit(w, typed.value, styles.id(typedSpec));
             } else {
               emit(w, text || null, total ? totalCell[i] : footerCell[i]);
             }
