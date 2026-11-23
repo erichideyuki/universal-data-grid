@@ -192,15 +192,17 @@ impl Engine {
             ..WorkbookOptions::default()
         };
         let headers = header_rows > 0;
-        let mut names = Vec::new();
-        // convenção dos leitores de tela (JAWS): `ColumnTitle` na 1ª célula da linha das folhas (títulos
-        // de coluna à direita dela); `RowTitle` no topo da coluna de títulos de linha (a 1ª fixa)
-        if headers {
-            names.push(DefinedName { name: "ColumnTitle".into(), range: CellRange::cell(header_rows, 1), sheet_scope: true });
-        }
-        if fixed_cols > 0 {
-            names.push(DefinedName { name: "RowTitle".into(), range: CellRange::cell(header_rows.max(1), 1), sheet_scope: true });
-        }
+        // convenção dos leitores de tela (JAWS), na 1ª célula da linha das folhas: `ColumnTitle` (títulos de
+        // coluna à direita dela), `RowTitle` (títulos de linha abaixo: a 1ª coluna fixa no início) ou, com os
+        // dois, `Title`; sem cabeçalho, `RowTitle` em A1
+        let title = match (headers, fixed_cols > 0) {
+            (true, true) => Some(("Title", header_rows)),
+            (true, false) => Some(("ColumnTitle", header_rows)),
+            (false, true) => Some(("RowTitle", 1)),
+            (false, false) => None,
+        };
+        let names: Vec<DefinedName> =
+            title.map(|(name, row)| DefinedName { name: name.into(), range: CellRange::cell(row, 1), sheet_scope: true }).into_iter().collect();
         let sheet = SheetOptions {
             name: uo_xlsx::sanitize_sheet_name(name, fallback),
             right_to_left: flags & 1 != 0,

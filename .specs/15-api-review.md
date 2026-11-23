@@ -79,6 +79,18 @@ booleana `groupPanelMenu`; sufixo `Label` dos nomes acessíveis), alias em
 `setGridTranslation` com aviso, como #28. Como em #28, quebra só de tipo
 para quem declara um objeto `GridI18n` completo (a chave some do tipo).
 
+Frente 29 (xlsx), aval do usuário em 2026-11-23 (detalhes na spec 29,
+"Decisões do usuário depois da entrega"): chave `pdfDefaultTitle` →
+`exportDefaultTitle` (PDF e xlsx), alias em `setGridTranslation` com aviso,
+como #28; `GridExportLink` comum em `src/export/types.ts`, com
+`GridPdfLink` como alias SEM deprecação (como `GridPdfCellStyle` →
+`GridExportCellStyle`); `GridXlsxCell.column` sempre o `GridExportColumn`
+(na banda, a 1ª folha) + `readonly band` (mesmo radical do `band` de
+`u-grid-column-reorder`); opção `language` no xlsx como no PDF; o rótulo da
+banda segue o `alignment` da banda; `GridXlsxBorderSides` nomeia a borda por
+lado. As formas com o ExcelJS de `exportXlsx`/`downloadXlsx`/
+`createXlsxExporter` ficam `@deprecated` até a próxima major.
+
 ## Decisões tomadas na implementação
 
 - #2/#13: conversor `booleanAttribute(padrão)` em `src/attribute-converters.ts`

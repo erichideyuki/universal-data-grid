@@ -62,8 +62,10 @@ declare const __U_GRID_ASSETS__: string | undefined;
 // ------------------------------------------------------------------ padrões
 
 const WHITE = 0xffffff;
-/** Cor de hiperlink do Excel (5,9:1 sobre branco). */
+/** Cor de hiperlink do Excel: 5,9:1 sobre branco, 3,6:1 contra o texto preto vizinho (sem sublinhado ainda, é a pista). */
 const LINK_COLOR = 0x0563c1;
+/** Cor de link num fundo escuro (8,7:1 sobre #000080). */
+const LINK_COLOR_ON_DARK = 0x9dc3e6;
 /** Cor "automática" do texto no Excel. */
 const BLACK = 0x000000;
 const HEADER_FILL = 0xe6e6e6;
@@ -345,14 +347,14 @@ const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | nu
 
   const background = fill ?? WHITE;
 
-  // link sem cor do hospedeiro: a cor de link do Excel, se passar no contraste
-  if (color === undefined && link && contrast(LINK_COLOR, background) >= MIN_CONTRAST) {
-    color = LINK_COLOR;
-  }
-
   if (color !== undefined && contrast(color, background) < MIN_CONTRAST) {
     warnOnce(`cell:${color}:${background}`, 'a cell color has a contrast below 4.5:1 with its background; the automatic color was used.');
     color = undefined;
+  }
+
+  // link sem cor (do hospedeiro, ou a dele reprovada): a cor de link do Excel, ou a clara num fundo escuro
+  if (color === undefined && link) {
+    color = [LINK_COLOR, LINK_COLOR_ON_DARK].find(c => contrast(c, background) >= MIN_CONTRAST);
   }
 
   // texto automático (preto) reprovado num fundo escuro: branco antes de tirar o fundo
@@ -502,12 +504,15 @@ const planOf = (column: GridExportColumn, language: string | undefined, styles: 
     return text;
   }
 
+  // número, data e booleano no início como na tela (o "Geral" do Excel os alinharia à direita ou ao centro)
+  const typedAlign = align === Align.None ? Align.Start : align;
+
   if (dataType === 'boolean') {
-    return { ...text, type: 'boolean' };
+    return { ...text, type: 'boolean', align: typedAlign, typed: styles.id({ align: typedAlign }) };
   }
 
   const numFmt = (dataType === 'number' ? numberFormatOf(definition.format, language) : datePatternOf(dataType, language)) ?? null;
-  return { type: dataType === 'number' ? 'number' : 'date', numFmt, align, typed: numFmt ? styles.id({ align, numFmt }) : plain, plain };
+  return { type: dataType === 'number' ? 'number' : 'date', numFmt, align: typedAlign, typed: styles.id({ align: typedAlign, numFmt }), plain };
 };
 
 /** Valor tipado da célula de dados; o texto exibido quando o valor não é do tipo da coluna. */
@@ -901,7 +906,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
             const plan = plans[i];
             const shown = r.texts[i] ?? '';
             const value = typedValue(plan, r.values[i], shown);
-            const typed = isTyped(value);
+            const typed = isTyped(value) || typeof value === 'boolean';
 
             if (customize) {
               const c = custom(

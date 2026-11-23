@@ -126,13 +126,18 @@ export interface GridXlsxCell<TItem = any> {
   text: string;
   /** Excel number format code (`'#,##0.00'`, `'dd/mm/yyyy'`); `null` = General. */
   numFmt: string | null;
-  /** Style of the cell (replace the object or change its fields). */
+  /**
+   * Style of the cell (replace the object or change its fields). Keep
+   * `...cell.style` when replacing it: it carries the column alignment of
+   * typed cells.
+   */
   style: GridXlsxCellStyle;
   /**
    * A native hyperlink (`http:`, `https:`, `mailto:`; others are ignored
-   * with a warning). Without a `style.color` of yours the cell gets the link
-   * color (`#0563c1`, contrast checked); no underline yet (the writer has
-   * none). `description` is ignored for now (no link tooltip yet).
+   * with a warning). Without a `style.color` of yours, or when yours fails the
+   * contrast check, the cell gets the link color (`#0563c1`, or `#9dc3e6` on
+   * a dark background); no underline yet (the writer has none).
+   * `description` is ignored for now (no link tooltip yet).
    */
   link?: GridExportLink;
 }
@@ -171,8 +176,9 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
    * Changes each cell after the adapter chose its value, format and style
    * (see {@link GridXlsxCell}). Never let a color be the only signal: write
    * the state as text too. A text color below 4.5:1 contrast with the
-   * background is dropped (with a warning); when the automatic (black) text
-   * is below 4.5:1 too, the background is dropped as well.
+   * background is dropped (with a warning); when the automatic black text
+   * is below 4.5:1, the text turns white (only when white is below 4.5:1 too
+   * is the background dropped, with a warning).
    */
   customizeCell?: ((cell: GridXlsxCell) => void) | null;
   /** Called about every 250 ms and once at the end (never after an abort); `pageCount` is always 0. */

@@ -215,13 +215,17 @@ fn cabecalho_congelado_titulos_e_nome_columntitle() {
 }
 
 #[test]
-fn colunas_fixas_congeladas_e_rowtitle() {
+fn colunas_fixas_congeladas_e_nomes_de_titulo() {
     let p = run(&Begin { header_rows: 2, fixed: 1, widths: &[100.0, 80.0], ..Begin::default() }, &[block(&[], &[(0, vec![C::Text("a", 0)])])]);
     let s = sheet(&p);
     assert!(s.contains(r#"<pane xSplit="1" ySplit="2" topLeftCell="B3" activePane="bottomRight" state="frozen"/>"#), "{s}");
     let wb = &p["xl/workbook.xml"];
-    assert!(wb.contains(r#"<definedName name="RowTitle" localSheetId="0">'Sales'!$A$2</definedName>"#), "{wb}");
-    assert!(wb.contains(r#"<definedName name="ColumnTitle" localSheetId="0">'Sales'!$A$2</definedName>"#), "{wb}");
+    // cabeçalho e coluna fixa: um nome só, `Title`, no canto (convenção do JAWS)
+    assert!(wb.contains(r#"<definedName name="Title" localSheetId="0">'Sales'!$A$2</definedName>"#), "{wb}");
+    assert!(!wb.contains("ColumnTitle") && !wb.contains("RowTitle"), "{wb}");
+    // só a coluna fixa: `RowTitle` em A1
+    let p = run(&Begin { header_rows: 0, fixed: 1, ..Begin::default() }, &[block(&[], &[])]);
+    assert!(p["xl/workbook.xml"].contains(r#"<definedName name="RowTitle" localSheetId="0">'Sales'!$A$1</definedName>"#), "{}", p["xl/workbook.xml"]);
     // sem congelar o cabeçalho: só as colunas
     let p = run(&Begin { freeze: false, fixed: 1, ..Begin::default() }, &[block(&[], &[])]);
     assert!(sheet(&p).contains(r#"xSplit="1""#), "{}", sheet(&p));

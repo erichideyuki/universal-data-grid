@@ -158,6 +158,8 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     // 2024-11-22 = 45618; 2024-01-15 13:30 = 45306.5625
     expect(book.cells.get('D2')?.value).toBe('45618');
     expect(book.styleOf('D2').numFmt).toBe('mm/dd/yyyy');
+    // a data no início, como na tela (o Geral do Excel a poria à direita)
+    expect(book.styleOf('D2').horizontal).toBe('left');
     expect(book.cells.get('D3')?.value).toBe('45306.5625');
     expect(book.cells.get('D4')).toMatchObject({ value: 'n/a', type: 's' });
     // larguras do grid (a 1ª: 140 px)
@@ -271,7 +273,8 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.styleOf('C3')).toMatchObject({ fill: 'FFF8696B', bold: true });
     expect(book.cells.get('C2')?.value).toBe('1200.5');
     expect(book.cells.get('B2')?.value).toBe('Brazil (state)');
-    expect(book.styleOf('A2').color).toBeNull();
+    // a cor do hospedeiro reprovou o contraste: num link, a cor de link no lugar dela
+    expect(book.styleOf('A2').color).toBe('FF0563C1');
     expect(warn.mock.calls.some(([m]) => String(m).includes('contrast'))).toBe(true);
     expect(book.parts.get('xl/worksheets/_rels/sheet1.xml.rels')).toContain('mailto:ana@example.com');
     expect(book.sheet.getElementsByTagName('hyperlink')).toHaveLength(3);
@@ -462,7 +465,7 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.core.getElementsByTagName('dc:title')[0].textContent).toBe('Planilha');
   });
 
-  it('link: cor de link quando o hospedeiro não dá cor; num fundo escuro, texto branco', async () => {
+  it('link: cor de link sem cor do hospedeiro ou com a dele reprovada; num fundo escuro, a cor de link clara', async () => {
     const book = await run(await create(), {
       customizeCell: cell => {
         if (cell.rowType === 'data' && cell.columnIndex === 0) {
@@ -475,31 +478,68 @@ describe('exportXlsx (motor uo-xlsx)', () => {
           if (cell.text === 'Caio') {
             cell.style.color = '#006400';
           }
+
+          if (cell.text === 'Ana') {
+            cell.style.color = '#eeeeee';
+          }
         }
       },
     });
 
+    // Ana: a cor dela reprova o contraste → a cor de link; Bob: fundo escuro → a cor de link clara
     expect(book.styleOf('A2').color).toBe('FF0563C1');
-    expect(book.styleOf('A3')).toMatchObject({ color: 'FFFFFFFF', fill: 'FF000080' });
+    expect(book.styleOf('A3')).toMatchObject({ color: 'FF9DC3E6', fill: 'FF000080' });
     expect(book.styleOf('A4').color).toBe('FF006400');
     expect(book.sheet.getElementsByTagName('hyperlink')).toHaveLength(3);
   });
 
-  it('colunas `fixed: \'start\'`: congeladas (xSplit) e títulos de linha (RowTitle)', async () => {
+  it('colunas `fixed: \'start\'`: congeladas (xSplit) e títulos de linha (Title com o cabeçalho, RowTitle sem ele)', async () => {
     const cols = columns().map((c, i) => i === 0 ? { ...c, fixed: 'start' as const } : c);
     let book = await run(await create(undefined, cols));
     expect(pane(book)?.getAttribute('xSplit')).toBe('1');
     expect(pane(book)?.getAttribute('ySplit')).toBe('1');
-    expect(definedName(book, 'RowTitle')).toMatch(/!\$A\$1$/);
-    expect(definedName(book, 'ColumnTitle')).toMatch(/!\$A\$1$/);
+    // cabeçalho e coluna fixa: um nome só no canto (convenção do JAWS para os dois)
+    expect(definedName(book, 'Title')).toMatch(/!\$A\$1$/);
+    expect(definedName(book, 'RowTitle')).toBeNull();
+    expect(definedName(book, 'ColumnTitle')).toBeNull();
 
     book = await run(await create(), {});
     expect(pane(book)?.getAttribute('xSplit')).toBeNull();
-    expect(definedName(book, 'RowTitle')).toBeNull();
+    expect(definedName(book, 'Title')).toBeNull();
+    expect(definedName(book, 'ColumnTitle')).toMatch(/!\$A\$1$/);
 
     book = await run(await create(undefined, cols), { freezeHeader: false });
     expect(pane(book)?.getAttribute('xSplit')).toBe('1');
     expect(pane(book)?.getAttribute('ySplit')).toBeNull();
+
+    // sem cabeçalho: RowTitle em A1, nenhum ColumnTitle
+    book = await run(await create(undefined, cols), { includeHeaders: false });
+    expect(definedName(book, 'RowTitle')).toMatch(/!\$A\$1$/);
+    expect(definedName(book, 'ColumnTitle')).toBeNull();
+    expect(pane(book)?.getAttribute('xSplit')).toBe('1');
+
+    // bandas + coluna fixa: o canto é a linha das folhas
+    const banded: GridColumnDef[] = [
+      { path: 'name', label: 'Name', fixed: 'start' },
+      { label: 'Sale', columns: [{ path: 'country', label: 'Country' }, { path: 'amount', label: 'Amount', dataType: 'number' }] },
+    ];
+    book = await run(await create(undefined, banded));
+    expect(definedName(book, 'Title')).toMatch(/!\$A\$2$/);
+    expect(pane(book)?.getAttribute('ySplit')).toBe('2');
+    expect(pane(book)?.getAttribute('xSplit')).toBe('1');
+  });
+
+  it('RTL: células tipadas no início (à direita) e coluna `fixed: \'start\'` congelada', async () => {
+    const cols = columns().map((c, i) => i === 0 ? { ...c, fixed: 'start' as const } : c);
+    const book = await run(await create(g => {
+      g.language = 'ar';
+      g.setAttribute('dir', 'rtl');
+    }, cols));
+    expect(book.sheet.getElementsByTagName('sheetView')[0].getAttribute('rightToLeft')).toBe('1');
+    expect(pane(book)?.getAttribute('xSplit')).toBe('1');
+    expect(definedName(book, 'Title')).toMatch(/!\$A\$1$/);
+    // a data (coluna `start`) no início, que numa aba RTL é a direita
+    expect(book.styleOf('D2').horizontal).toBe('right');
   });
 
   it('formas com o ExcelJS: avisam uma vez (obsoletas) e continuam funcionando', async () => {

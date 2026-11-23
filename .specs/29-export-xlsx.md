@@ -199,17 +199,45 @@ o cabeçalho e os dados; larguras pelas do grid.
   contraste, axe com o menu aberto em `ar`). Ficaram para o usuário (mudam
   o contrato aprovado ou o padrão visível) — ver "Em aberto".
 
+## Decisões do usuário depois da entrega (2026-11-23)
+Aceitas as 8 recomendações da revisão na entrega (mudam a API aprovada
+acima; valem sobre ela):
+1. **Rótulo da banda** segue o `alignment` da banda (padrão `start`, como
+   na tela); `center` centraliza na seleção (`centerContinuous`) — antes
+   era sempre centralizado.
+2. **`GridXlsxCell.column`** é sempre o `GridExportColumn` (na célula de
+   banda, a 1ª folha; paridade com o PDF) + `readonly band: GridColumnDef
+   | null` (a banda; `null` fora dela).
+3. **`GridExportLink`** comum em `src/export/types.ts` (`GridPdfLink` vira
+   alias); no xlsx o `description` é ignorado até o `uo-xlsx` gravar a
+   dica do link.
+4. **`language`** em `GridXlsxOptions`, como no PDF (padrão: o idioma do
+   grid): `dc:language` e os formatos de número e data.
+5. **Chave i18n `exportDefaultTitle`** no lugar de `pdfDefaultTitle` (14
+   idiomas); `pdfDefaultTitle` continua aceita no `setGridTranslation`,
+   obsoleta (aviso uma vez por página), como as outras chaves renomeadas.
+6. **Link com a cor de link** do Excel (`#0563c1`, contraste conferido)
+   sem cor do hospedeiro; o sublinhado espera o `uo-xlsx` ter sublinhado.
+7. **Texto branco** antes de descartar um fundo escuro que reprova o
+   contraste com o preto (com texto branco ou preto sempre passa: só um
+   fundo inválido cai).
+8. **Colunas `fixed: 'start'`** congeladas (divisão de colunas, sempre,
+   independente de `freezeHeader`) e lidas como títulos de linha
+   (convenção do JAWS): com cabeçalho, um nome só, `Title`, na 1ª célula da
+   linha das folhas (títulos de coluna e de linha a partir dele; o
+   `ColumnTitle` "sempre" da seção Acessibilidade vale só sem colunas
+   fixas); sem cabeçalho, `RowTitle` em A1. O link sem cor (ou com a do
+   hospedeiro reprovada) usa a cor de link, ou `#9dc3e6` num fundo escuro. Títulos de impressão por coluna esperam o `uo-xlsx` (ele só
+   grava os de linha e recusa nomes `_xlnm.`). Protocolo do motor: versão 2
+   da configuração (+ `u16` de colunas fixas).
+
+Da conferência no Excel 365 (COM + PDF) das amostras: células de dados
+tipadas (número, data, booleano) numa coluna `start` ganham alinhamento
+explícito ao início, como na tela (o "Geral" do Excel as punha à direita).
+Ficam para o `uo-xlsx`: `quotePrefix` no texto que parece fórmula (editar
+a célula a converteria), configuração de página (ajustar à largura).
+
 ## Em aberto
-- Levados ao usuário pela revisão na entrega: o rótulo da banda seguir o
-  `alignment` da banda (na tela o padrão é `start`; o xlsx centraliza
-  sempre); `column` da célula de banda = a 1ª folha + campo `band`
-  (hoje `column` é a banda, `GridExportColumn | GridColumnDef`);
-  `GridExportLink` comum (com `description` como dica do link, que o
-  `uo-xlsx` ainda não grava); opção `language` (o PDF tem); chave i18n
-  `exportDefaultTitle` no lugar de `pdfDefaultTitle`; link com sinal
-  visual (sublinhado + cor; o `uo-xlsx` não tem sublinhado); texto branco
-  antes de tirar um fundo escuro; colunas fixas no início congeladas e
-  como títulos de linha (`Title` em vez de `ColumnTitle`).
 - Abrir os arquivos no LibreOffice e no Google Sheets (o autor do
   `uo-xlsx` validou só no Excel 365) — conferência manual.
 - Formas com o ExcelJS: remover na próxima major.

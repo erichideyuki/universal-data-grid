@@ -1689,7 +1689,8 @@ const blob = await exportXlsx(grid, { selectedOnly: true, sheetName: 'Orders 202
 
 What goes in the sheet: the visible columns in their current order and widths, the filter, the
 sorting, the groups, the summaries and the [bands](#bands-multi-level-headers), like
-[`getExportData`](#export-data-excel-pdf-anything). Numbers, dates and booleans are typed cells with a
+[`getExportData`](#export-data-excel-pdf-anything). Cells keep the column alignment, as on screen (a
+`start` date is not pushed right by Excel's General). Numbers, dates and booleans are typed cells with a
 number format close to the column `format` (dates by their wall-clock time, no time zone); columns
 with `displayValue`, a `format` function, `booleanDisplay` or their own `trueText`/`falseText` are
 written as their displayed text, and so is a value that is not of the column type (`'n/a'` in a date
@@ -1698,7 +1699,9 @@ column). Text is always a text cell (never a formula), so it needs no `'` prefix
 The sheet is built for spreadsheet users and screen readers alike: the header rows (bands and column
 labels) are frozen and repeat on every printed page; a `ColumnTitle` name on the first column label
 lets screen readers (JAWS) read the column titles; columns fixed at the start (`fixed: 'start'`) are
-frozen too and named `RowTitle` (row titles; repeating them on printed pages waits for the writer);
+frozen too and read as row titles (`RowTitle`; with the header, a single `Title` on the corner cell, the
+JAWS convention for both; repeating them on printed pages waits for the writer; unfreeze them in Excel
+with View › Freeze Panes when they take too much room);
 band and group labels are **never merged** (merged cells break sorting, filtering and the
 accessibility checker of Office): a band label sits in its first column with the band `alignment`
 (default `start`, as on screen; `center` centers it across the band), a group label is text
@@ -1730,9 +1733,9 @@ of the band; `null` in the label of a group row), `band` (the band of a band cel
 `columnIndex`, `columnSpan`, `headerRow` and `value` (the source value); change `cellValue` (a string
 is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
 `numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (a `GridExportLink` `{ url,
-description? }`: `http:`, `https:` or `mailto:`; without a color of yours the cell gets the link color
-`#0563c1` — no underline yet — and `description` is ignored for now: the writer has no link tooltip
-yet). The last write wins.
+description? }`: `http:`, `https:` or `mailto:`; without a color of yours, or when yours fails the
+contrast check, the cell gets the link color — `#0563c1`, or `#9dc3e6` on a dark background; no underline
+yet — and `description` is ignored for now: the writer has no link tooltip yet). The last write wins.
 
 **Color is never the only signal.** When a background tells a state, write the state in the cell too:
 
@@ -3416,6 +3419,8 @@ import {
   type GridExportFormat,    // 'csv' | 'xlsx' | 'pdf'
   type GridExporter,        // (grid, { selectedOnly, signal, onProgress? }) => Promise<void>
   type GridExportProgress,  // { rowCount, totalCount, pageCount }
+  type GridExportCellStyle, // { bold?, italic?, color?, backgroundColor?, alignment? } (customizeCell of the PDF and xlsx)
+  type GridExportLink,      // { url, description? } (cell.link of the PDF and xlsx)
   type GridExportingEventDetail, // { format, selectedOnly }
   type GridExportEventDetail,    // { format, selectedOnly }
   type GridExportErrorEventDetail, // { format, selectedOnly, error }
@@ -3557,7 +3562,9 @@ in the toolbar; the ExcelJS forms are deprecated. Visible changes of the new for
 exported above the column labels (`includeBands`, default `true`: the data starts lower) and the
 header rows are frozen (`freezeHeader`, default `true`); the default sheet name is the grid's
 accessible name (else "Data", translated) instead of `Sheet1`; group labels are centered across the
-row instead of merged, and the outline button sits on the group row; `fixed: 'start'` columns are frozen. New self-contained
+row instead of merged, and the outline button sits on the group row; `fixed: 'start'` columns are frozen
+(and named `RowTitle`, or `Title` with the header, for screen readers); typed cells keep the column
+alignment, as on screen; link cells without a color of yours get the Excel link color. New self-contained
 `export-xlsx.min.js` and `export-pdf.min.js` for pages without a bundler; the export workers are now
 one file each. `GridPdfCellStyle` and `GridPdfLink` are now aliases of the shared `GridExportCellStyle` and
 `GridExportLink`; the i18n key `pdfDefaultTitle` is renamed `exportDefaultTitle` (the old name still

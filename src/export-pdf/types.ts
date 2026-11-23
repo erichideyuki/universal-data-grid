@@ -62,6 +62,7 @@ export interface GridPdfImage {
 }
 
 /** A link on the cell text (`http:`, `https:` or `mailto:` only). */
+/** A link on the cell text: the shared {@link GridExportLink}. */
 export type GridPdfLink = GridExportLink;
 
 /**

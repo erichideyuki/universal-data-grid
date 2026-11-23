@@ -3565,8 +3565,8 @@ export const resolveGridTranslation = (language?: string): GridI18n =>
 /**
  * Overrides part (or all) of a built-in translation. Missing keys keep their
  * previous value, so a partial object is enough. The deprecated key names
- * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`) are still accepted, with a
- * console warning.
+ * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`, `pdfDefaultTitle`) are still
+ * accepted, with a console warning; `fixStartLabel`/`fixEndLabel` are ignored (see `GridI18nInput`).
  */
 export const setGridTranslation = (language: string, translation: GridI18nInput): void => {
 
