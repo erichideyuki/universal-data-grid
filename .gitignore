@@ -33,3 +33,6 @@ perf-results.json
 
 # Build do motor PDF (Rust/WASM, spec 26); o .wasm versionado fica em src/export-pdf/
 pdf/target
+
+# Build do motor xlsx (Rust/WASM, spec 29); o .wasm versionado fica em src/export-xlsx/
+xlsx/target

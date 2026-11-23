@@ -81,6 +81,8 @@
     "build": "npm run clean && tsc -p src && node -e \"require('fs').copyFileSync('src/export-pdf/grid-pdf.wasm','dist/export-pdf/grid-pdf.wasm')\"",
     "build:pdf": "cargo build --manifest-path pdf/Cargo.toml --release --lib --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('pdf/target/wasm32-unknown-unknown/release/grid_pdf.wasm','src/export-pdf/grid-pdf.wasm')\"",
     "test:pdf-engine": "cargo test --manifest-path pdf/Cargo.toml --release",
+    "build:xlsx": "cargo build --manifest-path xlsx/Cargo.toml --release --lib --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('xlsx/target/wasm32-unknown-unknown/release/grid_xlsx.wasm','src/export-xlsx/grid-xlsx.wasm')\"",
+    "test:xlsx-engine": "cargo test --manifest-path xlsx/Cargo.toml --release",
     "bundle": "rollup -c",
     "bundle:browser": "esbuild src/grid.ts --bundle --format=esm --minify --outfile=dist/grid.min.js",
     "typecheck": "tsc --noEmit -p src && tsc --noEmit -p tsconfig.json && tsc --noEmit -p docs",

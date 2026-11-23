@@ -1,0 +1,25 @@
+[package]
+name = "grid-xlsx"
+version = "0.1.0"
+description = "Excel (xlsx) export engine of <u-grid> (@universal-material/data-grid/export-xlsx): a thin layer over Universal Office's uo-xlsx writer, compiled to WebAssembly"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# escritor de xlsx (Universal Office, branch rust-core; trocar por um commit da main quando a migração para o Rust acabar)
+uo-xlsx = { git = "https://github.com/erichideyuki/universal-office", rev = "8d0d00049f7ae18959c8c21d896c5f02ba071711" }
+
+[dev-dependencies]
+# zip, inflate e XML estrito para ler de volta o arquivo nos testes (mesmo commit do uo-xlsx)
+uo-opc = { git = "https://github.com/erichideyuki/universal-office", rev = "8d0d00049f7ae18959c8c21d896c5f02ba071711" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+strip = true

@@ -1,6 +1,6 @@
 # Validação automática: lint, tipos, testes (Node + Chromium headless),
 # auditoria das dependências de runtime, build do pacote e do site de
-# documentação; e os testes do motor de PDF (Rust). O projeto de desempenho
+# documentação; e os testes dos motores de PDF e de xlsx (Rust). O projeto de desempenho
 # (`npm run test:perf`) fica fora: mede contra uma máquina de referência
 # (spec 16) e não faz sentido num runner compartilhado.
 name: CI
@@ -53,7 +53,7 @@ jobs:
         run: npm run docs:build
 
   pdf-engine:
-    name: PDF engine (Rust)
+    name: PDF and xlsx engines (Rust)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -69,6 +69,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             pdf/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('pdf/Cargo.lock', 'pdf/Cargo.toml') }}
+            xlsx/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('pdf/Cargo.lock', 'pdf/Cargo.toml', 'xlsx/Cargo.lock', 'xlsx/Cargo.toml') }}
 
       - run: cargo test --manifest-path pdf/Cargo.toml --release
+
+      - run: cargo test --manifest-path xlsx/Cargo.toml --release
+
+      # o .wasm versionado em src/export-xlsx/ compila (o motor de xlsx é só a camada sobre o uo-xlsx)
+      - run: cargo build --manifest-path xlsx/Cargo.toml --release --lib --target wasm32-unknown-unknown
