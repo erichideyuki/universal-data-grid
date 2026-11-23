@@ -2897,7 +2897,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `showGroupPanel`   | `show-group-panel`    | `boolean` | `true`  | Show the group panel in the toolbar (where columns are dropped to group). |
 | `showColumnHeaders`| `show-column-headers` | `boolean` | `true`  | Show the column header row. |
 | `showRowLines`     | `show-row-lines`      | `boolean` | `true`  | Horizontal row separators. |
-| `showColumnLines`  | `show-column-lines`   | `boolean` | `false` | Vertical column separators. |
+| `showColumnLines`  | `show-column-lines`   | `boolean` | `false` | Vertical column separators. With bands, the header always has them; this option sets the body. |
 | `columnResizing`   | `column-resizing`     | `boolean` | `false` | Let the user resize columns. See [Column features](#column-features). |
 | `resizeMode`       | `resize-mode`         | `'widget' \| 'next-column'` | `'widget'` | How a resize affects the other columns. |
 | `columnChooser`    | `column-chooser`      | `boolean` | `false` | Show the column chooser button (and "Choose columns" in the column header menu): search, show all, show/hide, reorder. See [Column chooser](#column-chooser). |
@@ -3579,7 +3579,8 @@ bands, so with `header-wrap` the buttons of every column line up with the last l
 the arrow of a menu item that opens a submenu is visible again; in the Excel export, the group label
 sits at the start of the row, as on screen and like the band labels, instead of centered across it,
 and each band label is merged across its columns (like the reference grids) instead of written in its
-first column.
+first column; with bands, every header cell has its vertical separator also without
+`show-column-lines` (it now sets only the body), so the columns under a band are told apart.
 
 In 0.4.1: in the Excel export, a total or group footer of your own aggregator that
 shows only its value (no `label`, no `format` function) is a number or date cell with the column's

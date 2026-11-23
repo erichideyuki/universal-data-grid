@@ -1077,12 +1077,13 @@ export const styles = css`
   }
 
   /*
-   * Cabeçalho multinível com linhas de coluna: a folha que é a última da SUA
-   * \`<tr>\` (ex.: a última de uma banda, ao lado de uma folha com rowspan)
-   * não está na borda do grid — leva a linha do fim; só a da última posição
-   * (\`.last-column\`) fica sem (revisão do site).
+   * Cabeçalho multinível: linhas verticais em todo o cabeçalho, com ou sem
+   * \`show-column-lines\` (como a referência: o corpo segue a opção). A folha
+   * que é a última da SUA \`<tr>\` (ex.: a última de uma banda, ao lado de uma
+   * folha com rowspan) não está na borda do grid — leva a linha do fim; só a
+   * da última posição (\`.last-column\`) fica sem (revisão do site).
    */
-  .column-lines thead:where(.grid-table > *):has(.band-header) th:where(.grid-table > * > * > *).header-column:not(.last-column) {
+  thead:where(.grid-table > *):has(.band-header) th:where(.grid-table > * > * > *).header-column:not(.last-column) {
     --_col-line: inset calc(var(--_column-lines-width) * -1 * var(--_dir)) 0 0 0 var(--_border-color);
     box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
@@ -2177,6 +2178,7 @@ export const styles = css`
 
     .column-lines td:not(.group-column):not(:last-child),
     .column-lines th:not(.group-column):not(:last-child),
+    thead:has(.band-header) th.header-column:not(.last-column),
     .fixed-start-edge {
       border-inline-end: 1px solid CanvasText;
     }

@@ -445,6 +445,18 @@ describe('revisão do site de documentação', () => {
     expect(getComputedStyle(total).boxShadow).not.toMatch(/-1px 0px 0px 0px inset/);
   });
 
+  it('bandas sem linhas de coluna: o cabeçalho todo tem as linhas verticais (como a referência); o corpo não', async () => {
+    const grid = await createGrid({ columns: bandColumns(), items: orders(5) });
+    const country = headerCell(grid, 'Country');
+    const total = headerCell(grid, 'Total');
+    const cell = root(grid).querySelector<HTMLElement>('tbody.body-rows td[data-col="0"]')!;
+
+    expect(grid.showColumnLines).toBe(false);
+    expect(getComputedStyle(country).boxShadow).toMatch(/-1px 0px 0px 0px inset/);
+    expect(getComputedStyle(total).boxShadow).not.toMatch(/-1px 0px 0px 0px inset/);
+    expect(getComputedStyle(cell).boxShadow).not.toMatch(/-1px 0px 0px 0px inset/);
+  });
+
   it.each(['template', 'nested grid'])('master-detail (%s): rolar mostra as linhas virtualizadas (nenhuma faixa vazia)', async kind => {
     const grid = await createGrid({
       columns: columns(),

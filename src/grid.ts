@@ -3628,7 +3628,7 @@ export class DataGrid extends LitElement {
   /** Horizontal row separators. Default `true`; `show-row-lines="false"` hides them. */
   @property({ type: Boolean, converter: booleanAttribute(true), attribute: 'show-row-lines' }) showRowLines = true;
 
-  /** Vertical column separators. */
+  /** Vertical column separators. With bands, the header always has them; this option sets the body. */
   @property({ type: Boolean, converter: booleanAttribute(false), attribute: 'show-column-lines' }) showColumnLines = false;
 
   /** Shows the number of rows in group rows (`"Country: Brazil (3)"`). Default `true`; `show-group-count="false"` hides it. */

@@ -1059,7 +1059,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Vertical column separators.",
+              "description": "Vertical column separators. With bands, the header always has them; this option sets the body.",
               "attribute": "show-column-lines"
             },
             {
@@ -3112,7 +3112,7 @@
                 "text": "boolean"
               },
               "default": "false",
-              "description": "Vertical column separators.",
+              "description": "Vertical column separators. With bands, the header always has them; this option sets the body.",
               "fieldName": "showColumnLines"
             },
             {
