@@ -3434,7 +3434,7 @@ filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
 
-Next release (unreleased): with `autoHideColumns`, resizing a column while the grid has room no
+In 0.3.7: with `autoHideColumns`, resizing a column while the grid has room no
 longer hides it (dragging fixed the stretched width of the column taking the leftover, so the first
 pixel overflowed); the hidden set also holds still during the drag and is recomputed on release.
 
