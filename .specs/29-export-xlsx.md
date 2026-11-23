@@ -131,8 +131,9 @@ o cabeçalho e os dados; larguras pelas do grid.
   `exportCompleteAnnouncement` com `{format}` = "Excel".
 
 ## Testes (critério de pronto)
-- Rust (`uo-xlsx`, `grid-xlsx`): o xlsx gerado abre sem reparo no Excel,
-  LibreOffice e Google Sheets (validação do pacote e do XML); tipos,
+- Rust (`uo-xlsx`, `grid-xlsx`): o xlsx gerado abre sem reparo no Excel
+  (validação do pacote e do XML; LibreOffice e Google Sheets fora do
+  critério por decisão do usuário, 2026-11-23); tipos,
   `numFmt`, estilos sem repetição, outline, congelamento, títulos.
 - Navegador: sem `mergeCells` por padrão; nome `ColumnTitle`,
   `dc:language`, `rightToLeft`, títulos de impressão e nome da aba;
@@ -238,6 +239,7 @@ Ficam para o `uo-xlsx`: `quotePrefix` no texto que parece fórmula (editar
 a célula a converteria), configuração de página (ajustar à largura).
 
 ## Em aberto
-- Abrir os arquivos no LibreOffice e no Google Sheets (o autor do
-  `uo-xlsx` validou só no Excel 365) — conferência manual.
+- Conferência só no Excel (decisão do usuário, 2026-11-23): feita no
+  Excel 365 em três rodadas, sem reparo. LibreOffice e Google Sheets não
+  foram conferidos.
 - Formas com o ExcelJS: remover na próxima major.
