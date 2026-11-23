@@ -1146,7 +1146,7 @@
                 "text": "GridExporter | null"
               },
               "default": "null",
-              "description": "Builds and downloads the Excel file of the export UI (property only):\n`createXlsxExporter(ExcelJS, options)` from\n`@universal-material/data-grid/export-xlsx`. Without it the `xlsx`\nentries are not shown."
+              "description": "Builds and downloads the Excel file of the export UI (property only):\n`createXlsxExporter(options)` from\n`@universal-material/data-grid/export-xlsx`. Without it the `xlsx`\nentries are not shown."
             },
             {
               "kind": "field",

@@ -3740,7 +3740,7 @@ export class DataGrid extends LitElement {
 
   /**
    * Builds and downloads the Excel file of the export UI (property only):
-   * `createXlsxExporter(ExcelJS, options)` from
+   * `createXlsxExporter(options)` from
    * `@universal-material/data-grid/export-xlsx`. Without it the `xlsx`
    * entries are not shown.
    */

@@ -1715,7 +1715,7 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 | `customizeCell` | — | `(cell) => void`, see below. |
 | `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void` (`pageCount` is 0), about every 250 ms and once at the end. |
 | `worker` | `true` | `false` writes on the main thread in time slices; a function returns a new `Worker` of `worker.js` (CDN, strict CSP: see below) and is called once per export. |
-| `assetsUrl` | next to the module | Where `grid-xlsx.wasm` and `worker.js` are served from. |
+| `assetsUrl` | next to the module | The folder `grid-xlsx.wasm` and `worker.js` are served from (relative to the page). |
 | `selectedOnly`, `includeGroups`, `includeSummaries`, `includeFixedRows`, `signal` | | As in [`getExportData`](#export-data-excel-pdf-anything). An aborted `signal` rejects with its reason. |
 | `fileName` | `'export.xlsx'` | `downloadXlsx()` only. |
 
@@ -1736,7 +1736,7 @@ const tone = pct => pct < 50 ? '#f8696b' : pct < 80 ? '#ffeb84' : '#63be7b';
 await downloadXlsx(grid, {
   fileName: 'compliance.xlsx',
   customizeCell: cell => {
-    if (cell.rowType === 'data' && cell.columnIndex > 0) {
+    if (cell.rowType === 'data' && typeof cell.value === 'number') {
       const pct = cell.value;
       cell.text = `${pct}% ${pct < 50 ? 'overdue' : pct < 80 ? 'in progress' : 'done'}`;
       cell.style = { ...cell.style, backgroundColor: tone(pct) };     // contrast checked
@@ -1747,8 +1747,11 @@ await downloadXlsx(grid, {
 
 `cell.style`: `bold`, `italic`, `color`, `backgroundColor`, `alignment` (the same `GridExportCellStyle`
 as the PDF), plus `wrap` and `border` (`true`, one `{ color?, style?: 'thin' | 'medium' }` for every
-side, or `{ top?, bottom?, start?, end? }`). A text color below 4.5:1 contrast with its background is
-dropped (with a console warning); unsupported values are ignored with a warning.
+side, or `GridXlsxBorderSides` `{ top?, bottom?, start?, end? }`). A text color below 4.5:1 contrast
+with its background is dropped (with a console warning) — and when the automatic black text does not
+reach 4.5:1 either, so is the background; unsupported values are ignored with a warning. A band or
+group label spans its columns without merging: `customizeCell` sees it once (`columnSpan`), the
+covered cells take its final style, and only `alignment: 'center'` centers across them.
 
 For the toolbar Export button, `createXlsxExporter(options?)` returns the exporter to assign to
 `grid.xlsxExporter` (see [Export button](#export-button)); while it runs, the Excel entry becomes
@@ -1779,9 +1782,10 @@ assets in the `export-xlsx/` and `export-pdf/` folders beside them and use the g
   import { createXlsxExporter } from 'https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/export-xlsx.min.js';
 
   const assets = 'https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/export-xlsx/';
+  // a Worker from another origin is blocked: start it from a same-origin Blob URL (made once)
+  const workerUrl = URL.createObjectURL(new Blob([`import '${assets}worker.js';`], { type: 'text/javascript' }));
   document.querySelector('u-grid').xlsxExporter = createXlsxExporter({
-    // a Worker from another origin is blocked: start it from a same-origin Blob URL
-    worker: () => new Worker(URL.createObjectURL(new Blob([`import '${assets}worker.js';`], { type: 'text/javascript' })), { type: 'module' }),
+    worker: () => new Worker(workerUrl, { type: 'module' }),
   });
 </script>
 ```
@@ -3452,6 +3456,7 @@ import {
   type GridXlsxCell,       // customizeCell argument: readonly rowType, row, column, columnIndex, columnSpan, headerRow, value; cellValue, text, numFmt, style, link
   type GridXlsxCellStyle,  // GridExportCellStyle + { wrap?, border? }
   type GridXlsxBorder,     // { color?, style?: 'thin' | 'medium' }
+  type GridXlsxBorderSides, // { top?, bottom?, start?, end? }: boolean | GridXlsxBorder each
   type GridExportCellStyle, // { bold?, italic?, color?, backgroundColor?, alignment? } (shared with the PDF)
   type GridPdfLink,        // { url, description? } (cell.link)
   type GridXlsxExcelJSOptions, // deprecated: options of the ExcelJS forms ({ sheetName?, includeHeaders?, customize? })

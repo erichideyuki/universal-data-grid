@@ -47,6 +47,7 @@ export type {
   ExcelJSWorkbook,
   ExcelJSWorksheet,
   GridXlsxBorder,
+  GridXlsxBorderSides,
   GridXlsxCell,
   GridXlsxCellStyle,
   GridXlsxDownloadOptions,
@@ -315,6 +316,10 @@ const bordersOf = (border: GridXlsxCellStyle['border'], rtl: boolean): Borders |
   }
 
   if ('top' in border || 'bottom' in border || 'start' in border || 'end' in border) {
+    if ('color' in border || 'style' in border) {
+      warnOnce('border-mix', 'a border has sides (top, bottom, start, end) and color/style together; color/style were ignored (set them per side).');
+    }
+
     const start = lineOf(border.start);
     const end = lineOf(border.end);
     return [rtl ? end : start, rtl ? start : end, lineOf(border.top), lineOf(border.bottom)];
@@ -594,9 +599,20 @@ const configOf = (ctx: Context, headerRows: number, freeze: boolean): Uint8Array
 
 // ------------------------------------------------------------------ exportação
 
+/** A pasta de `assetsUrl` (relativa ao documento; com a `/` final que faltar). */
+const assetsOf = (assetsUrl: string | URL): URL => {
+  const url = new URL(assetsUrl, typeof document === 'undefined' ? undefined : document.baseURI);
+
+  if (!url.pathname.endsWith('/')) {
+    url.pathname += '/';
+  }
+
+  return url;
+};
+
 const wasmUrl = (options: GridXlsxOptions): string =>
   options.assetsUrl
-    ? new URL('grid-xlsx.wasm', options.assetsUrl).href
+    ? new URL('grid-xlsx.wasm', assetsOf(options.assetsUrl)).href
     : typeof __U_GRID_ASSETS__ === 'string'
       ? new URL(__U_GRID_ASSETS__ + 'grid-xlsx.wasm', import.meta.url).href
       : new URL('./grid-xlsx.wasm', import.meta.url).href;
@@ -613,7 +629,7 @@ const clientOf = async (options: GridXlsxOptions): Promise<XlsxClient> => {
   const worker = typeof factory === 'function'
     ? factory()
     : options.assetsUrl
-      ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
+      ? new Worker(new URL('worker.js', assetsOf(options.assetsUrl)), { type: 'module' })
       : typeof __U_GRID_ASSETS__ === 'string'
         ? new Worker(new URL(__U_GRID_ASSETS__ + 'worker.js', import.meta.url), { type: 'module' })
         : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
@@ -889,16 +905,20 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
 
           emit(w, label.value, label.style, label.link);
 
-          for (let i = 1; i < n; i++) {
+          // dentro da faixa do rótulo: vazias com o estilo final dele (a centralização atravessa só
+          // células assim); o `customizeCell` já viu a faixa inteira no rótulo (`columnSpan`)
+          for (let i = 1; i < span; i++) {
+            emit(w, null, label.style);
+          }
+
+          for (let i = span; i < n; i++) {
             const text = r.texts[i] ?? '';
-            // dentro da faixa do rótulo: o estilo dele (a centralização atravessa a célula)
-            const spec = i < span ? label.spec : groupCellSpecs[i];
 
             if (customize) {
-              const c = custom({ rowType: 'group', row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.summaries[i] }, text || null, text, null, spec);
+              const c = custom({ rowType: 'group', row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.summaries[i] }, text || null, text, null, groupCellSpecs[i]);
               emit(w, c.value, c.style, c.link);
             } else {
-              emit(w, text || null, i < span ? label.style : groupCell[i]);
+              emit(w, text || null, groupCell[i]);
             }
           }
 

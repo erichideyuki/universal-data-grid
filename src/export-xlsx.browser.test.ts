@@ -324,6 +324,86 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(done.at(-1)).toBe(30_000);
   }, 30_000);
 
+  it('rótulo de grupo com customizeCell: chamado uma vez pela faixa; as cobertas mantêm o estilo dele', async () => {
+    const grid = await create();
+    grid.groupColumn(grid.columns.find(c => c.path === 'country')!);
+    await settle(grid);
+    const spans: number[] = [];
+    const book = await run(grid, {
+      customizeCell: cell => {
+        if (cell.rowType === 'group') {
+          spans.push(cell.columnSpan);
+        }
+      },
+    });
+
+    // 2 grupos, só o rótulo (a coluna agrupada sai; a faixa cobre as 3 que ficam: sem resumo alinhado)
+    expect(spans).toEqual([3, 3]);
+    expect(book.styleOf('A2').horizontal).toBe('centerContinuous');
+    expect(['B2', 'C2'].map(ref => book.cells.get(ref))).toEqual(['B2', 'C2'].map(() => ({ value: null, type: null, style: book.cells.get('A2')!.style })));
+  });
+
+  it('contraste: cor clara no cabeçalho sai; fundo escuro sem cor de texto sai; texto e fundo bons ficam', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const book = await run(await create(), {
+      customizeCell: cell => {
+        if (cell.rowType === 'header' && cell.columnIndex === 0) {
+          cell.style.color = '#999999';
+        }
+
+        if (cell.rowType === 'data' && cell.columnIndex === 0) {
+          cell.style.backgroundColor = '#000080';
+        }
+
+        if (cell.rowType === 'data' && cell.columnIndex === 1) {
+          cell.style = { color: '#ffffff', backgroundColor: '#000080' };
+        }
+      },
+    });
+
+    expect(book.styleOf('A1')).toMatchObject({ color: null, fill: 'FFE6E6E6' });
+    expect(book.styleOf('A2')).toMatchObject({ color: null, fill: null });
+    expect(book.styleOf('B2')).toMatchObject({ color: 'FFFFFFFF', fill: 'FF000080' });
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('contrast')).length).toBeGreaterThan(0);
+    warn.mockRestore();
+  });
+
+  it('RTL: dc:language do grid, start/end e bordas espelhados, bandas e grupos', async () => {
+    const cols: GridColumnDef[] = [
+      { path: 'name', label: 'الاسم' },
+      { label: 'البيع', columns: [{ path: 'country', label: 'البلد' }, { path: 'amount', label: 'المبلغ', dataType: 'number' }] },
+      { path: 'when', label: 'التاريخ', dataType: 'date' },
+    ];
+    const grid = await create(g => {
+      g.language = 'ar';
+      g.setAttribute('dir', 'rtl');
+    }, cols);
+    const book = await run(grid, {
+      customizeCell: cell => {
+        if (cell.rowType === 'data' && cell.columnIndex === 0) {
+          cell.style = { alignment: 'start', border: { start: { style: 'medium' } } };
+        }
+      },
+    });
+
+    expect(book.sheet.getElementsByTagName('sheetView')[0].getAttribute('rightToLeft')).toBe('1');
+    expect(book.core.getElementsByTagName('dc:language')[0].textContent).toBe('ar');
+    expect(book.cells.get('B1')?.value).toBe('البيع');
+    expect(book.styleOf('B1').horizontal).toBe('centerContinuous');
+    expect(book.sheet.getElementsByTagName('mergeCell')).toHaveLength(0);
+    // a 1ª linha de dados (A3: banda, folhas): início = direita numa aba RTL, borda do início também
+    const xf = [...book.styles.getElementsByTagName('cellXfs')[0].getElementsByTagName('xf')][book.cells.get('A3')!.style];
+    expect(xf.getElementsByTagName('alignment')[0].getAttribute('horizontal')).toBe('right');
+    const border = [...book.styles.getElementsByTagName('borders')[0].getElementsByTagName('border')][Number(xf.getAttribute('borderId'))];
+    expect(border.getElementsByTagName('right')[0].getAttribute('style')).toBe('medium');
+    expect(border.getElementsByTagName('left')[0].getAttribute('style')).toBeNull();
+  });
+
+  it('assetsUrl relativo à página, sem a barra final', async () => {
+    const book = await run(await create(), { worker: false, assetsUrl: '/src/export-xlsx' });
+    expect(book.cells.get('A2')?.value).toBe('Ana');
+  });
+
   it('formas com o ExcelJS: avisam uma vez (obsoletas) e continuam funcionando', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const grid = await create();
@@ -455,6 +535,103 @@ describe('interface (Exportar para Excel)', () => {
     await begun;
     await settle(grid);
     expect((await axe.run(grid as unknown as Element)).violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+    grid.cancelExport();
+  });
+
+  it('"Exporting…" só depois de 1 s, sem anúncio do progresso', async () => {
+    const { exporter, begun } = pending();
+    const grid = await create(g => {
+      g.exportFormats = ['xlsx'];
+      g.xlsxExporter = exporter;
+    });
+    await settle(grid);
+    shadow(grid).querySelector<HTMLButtonElement>('.export-button')!.click();
+    await begun;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(live(grid).textContent.trim()).toBe('');
+    await vi.waitFor(() => expect(live(grid).textContent.trim()).toBe('Exporting…'), { timeout: 2000 });
+    expect(live(grid).textContent).not.toContain('%');
+    grid.cancelExport();
+  });
+
+  it('exportador real pelo teclado: progresso na descrição, Enter cancela, foco no botão, worker encerrado', async () => {
+    const rows = Array.from({ length: 60_000 }, (_, n) => ({ name: `N${n}`, country: `C${n % 7}`, amount: n, when: new Date(2024, 0, 1 + (n % 300)) }));
+    const workers: Worker[] = [];
+    const terminated = new Set<Worker>();
+
+    const tracked = () => {
+      const w = worker();
+      const terminate = w.terminate.bind(w);
+
+      w.terminate = () => {
+        terminated.add(w);
+        terminate();
+      };
+
+      workers.push(w);
+      return w;
+    };
+
+    const grid = await createGrid({ columns: columns(), items: rows, configure: g => {
+      g.language = 'en';
+      g.exportFormats = ['xlsx'];
+      // lento de propósito (customizeCell na thread principal), para dar tempo de cancelar
+      g.xlsxExporter = createXlsxExporter({
+        worker: tracked,
+        customizeCell: () => {
+          const until = performance.now() + 0.02;
+
+          while (performance.now() < until) {
+            // espera ativa
+          }
+        },
+      });
+    } });
+    await settle(grid);
+    const button = shadow(grid).querySelector<HTMLButtonElement>('.export-button')!;
+    button.focus();
+    await userEvent.keyboard('{Enter}');
+    await vi.waitFor(() => {
+      const described = shadow(grid).getElementById(button.getAttribute('aria-describedby') ?? '');
+      expect(described?.textContent).toMatch(/^Exporting… \d+%$/);
+    }, { timeout: 10_000 });
+    expect(button.getAttribute('aria-label')).toBe('Cancel export');
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await userEvent.keyboard('{Enter}');
+    await vi.waitFor(() => expect(live(grid).textContent.trim()).toBe('Export canceled'), { timeout: 5000 });
+    expect(shadow(grid).activeElement).toBe(button);
+    expect(workers).toHaveLength(1);
+    expect(terminated.has(workers[0])).toBe(true);
+  }, 30_000);
+
+  it('axe sem violações com o menu aberto durante a exportação, em RTL (ar), navegando com as setas', async () => {
+    const { exporter, begun } = pending();
+    const grid = await create(g => {
+      g.language = 'ar';
+      g.setAttribute('dir', 'rtl');
+      g.exportFormats = ['csv', 'xlsx'];
+      g.xlsxExporter = exporter;
+    });
+    await settle(grid);
+    const button = shadow(grid).querySelector<HTMLButtonElement>('.export-button')!;
+    button.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Enter}');
+    await begun;
+    await settle(grid);
+    await userEvent.keyboard('{ArrowDown}');
+    await settle(grid);
+    expect(items(grid)).toHaveLength(3);
+    expect(shadow(grid).activeElement).toBe(items(grid)[0]);
+    await userEvent.keyboard('{ArrowDown}');
+    expect(shadow(grid).activeElement).toBe(items(grid)[1]);
+    await userEvent.keyboard('{ArrowUp}');
+    expect(shadow(grid).activeElement).toBe(items(grid)[0]);
+    expect((await axe.run(grid as unknown as Element)).violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)).toEqual([]);
+    await userEvent.keyboard('{Escape}');
     grid.cancelExport();
   });
 });

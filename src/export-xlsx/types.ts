@@ -63,20 +63,24 @@ export interface GridXlsxBorder {
   style?: 'thin' | 'medium';
 }
 
+/**
+ * Borders per side: `start`/`end` follow the direction of the sheet; `true`
+ * is a thin automatic line. Do not mix with the `color`/`style` of a single
+ * {@link GridXlsxBorder} (they are ignored, with a warning).
+ */
+export interface GridXlsxBorderSides {
+  top?: boolean | GridXlsxBorder;
+  bottom?: boolean | GridXlsxBorder;
+  start?: boolean | GridXlsxBorder;
+  end?: boolean | GridXlsxBorder;
+}
+
 /** Style of one xlsx cell (`customizeCell`): the shared {@link GridExportCellStyle} and what only a sheet has. */
 export interface GridXlsxCellStyle extends GridExportCellStyle {
   /** Wraps the text inside the cell (the row grows). */
   wrap?: boolean;
-  /**
-   * Borders: `true` (thin, every side), one line for every side, or per side
-   * (`start`/`end` follow the direction of the sheet; `true` = thin).
-   */
-  border?: boolean | GridXlsxBorder | {
-    top?: boolean | GridXlsxBorder;
-    bottom?: boolean | GridXlsxBorder;
-    start?: boolean | GridXlsxBorder;
-    end?: boolean | GridXlsxBorder;
-  };
+  /** Borders: `true` (thin, every side), one line for every side, or per side ({@link GridXlsxBorderSides}). */
+  border?: boolean | GridXlsxBorder | GridXlsxBorderSides;
 }
 
 /**
@@ -97,7 +101,13 @@ export interface GridXlsxCell<TItem = any> {
   readonly column: GridExportColumn<TItem> | GridColumnDef<TItem> | null;
   /** Index in `columns`: in a band, its first column; `-1` for the label cell of a group row. */
   readonly columnIndex: number;
-  /** Columns the cell spans (a band, the label of a group row); `1` otherwise. Never merged. */
+  /**
+   * Columns the cell spans (a band, the label of a group row); `1` otherwise.
+   * Never merged: `customizeCell` is called once for the spanning cell, and
+   * the empty cells it covers take its final style. Only `alignment:
+   * 'center'` spans the columns (center across selection); `start`/`end`
+   * align within the first one.
+   */
   readonly columnSpan: number;
   /** Header row of the cell, `0` = the top one (bands first, column labels last); `-1` outside the header. */
   readonly headerRow: number;
@@ -108,7 +118,10 @@ export interface GridXlsxCell<TItem = any> {
    * a boolean, a date (wall clock, no time zone) or `null` (empty).
    */
   cellValue: string | number | boolean | Date | null;
-  /** Reading gives the displayed text; writing sets `cellValue` to the text and `numFmt` to `null`. */
+  /**
+   * Reading gives the text the grid displayed (not updated by writes to
+   * `cellValue`); writing sets `cellValue` to the text and `numFmt` to `null`.
+   */
   text: string;
   /** Excel number format code (`'#,##0.00'`, `'dd/mm/yyyy'`); `null` = General. */
   numFmt: string | null;
@@ -142,8 +155,9 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
   /**
    * Changes each cell after the adapter chose its value, format and style
    * (see {@link GridXlsxCell}). Never let a color be the only signal: write
-   * the state as text too. Text colors below 4.5:1 contrast with the
-   * background are dropped (with a warning).
+   * the state as text too. A text color below 4.5:1 contrast with the
+   * background is dropped (with a warning); when the automatic (black) text
+   * is below 4.5:1 too, the background is dropped as well.
    */
   customizeCell?: ((cell: GridXlsxCell) => void) | null;
   /** Called about every 250 ms and once at the end (never after an abort); `pageCount` is always 0. */
@@ -164,7 +178,7 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
   customize?: ((worksheet: TWorksheet, workbook: TWorkbook) => void | Promise<void>) | null;
 }
 
-/** Options of `downloadXlsx()`. The type parameters are deprecated and unused. */
+/** Options of `downloadXlsx()`. The type parameters are deprecated (they only type the deprecated `customize`). */
 export interface GridXlsxDownloadOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = ExcelJSWorksheet> extends GridXlsxOptions<TWorkbook, TWorksheet> {
   /** Name of the downloaded file. Default `export.xlsx`. */
   fileName?: string;

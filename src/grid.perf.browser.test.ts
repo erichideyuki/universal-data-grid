@@ -754,6 +754,7 @@ const xlsxScenario = (rows: number, label: string) => {
 
     const worker = () => new Worker(new URL('./export-xlsx/worker.ts', import.meta.url), { type: 'module' });
     const tones = ['#f8696b', '#fcaa78', '#ffeb84', '#b1d580', '#63be7b'];
+
     const heat = (cell: GridXlsxCell) => {
       if (cell.rowType === 'data' && cell.columnIndex > 0) {
         const value = cell.value as number;
@@ -761,6 +762,7 @@ const xlsxScenario = (rows: number, label: string) => {
         cell.text = `${value}% ${value < 40 ? 'low' : 'ok'}`;
       }
     };
+
     let size = 0;
     const { best: plain } = await bestOfQuiet(() => measureBlocking(async () => {
       size = (await exportXlsx(grid, { worker })).size;

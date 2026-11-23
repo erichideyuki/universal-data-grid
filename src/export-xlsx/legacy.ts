@@ -19,12 +19,23 @@ const MAX_OUTLINE = 7;
 /** px → largura de coluna do Excel (caracteres do "0" na fonte padrão). */
 const PX_PER_CHAR = 7;
 
+/** Opções só da forma nova: a obsoleta as ignora (com aviso uma vez por módulo). */
+const NEW_ONLY = ['title', 'includeBands', 'freezeHeader', 'direction', 'customizeCell', 'onProgress', 'worker', 'assetsUrl'] as const;
+let warnedIgnored = false;
+
 /** O arquivo pelo ExcelJS do hospedeiro (forma obsoleta de `exportXlsx`). */
 export const exportXlsxWithExcelJS = async <M extends ExcelJSModule>(
   grid: DataGrid,
   excelJS: M,
   options: GridXlsxExcelJSOptions<WorkbookOf<M>, WorksheetOf<M>> = {},
 ): Promise<Blob> => {
+  const ignored = NEW_ONLY.filter(key => (options as Record<string, unknown>)[key] !== undefined);
+
+  if (ignored.length && !warnedIgnored) {
+    warnedIgnored = true;
+    console.warn(`<u-grid> xlsx: ${ignored.join(', ')} only work without ExcelJS (exportXlsx(grid, options)); they were ignored.`);
+  }
+
   const data = await grid.getExportData(options);
   options.signal?.throwIfAborted();
 

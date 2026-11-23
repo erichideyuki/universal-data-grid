@@ -162,9 +162,13 @@ o cabeçalho e os dados; larguras pelas do grid.
   linhas). Bandas por `_bandChainOf`. Compartilhado com o PDF:
   `export/wasm.ts` (compilar o `.wasm`), `export/serialize.ts` (`Writer`,
   cores, contraste) e `GridExportCellStyle`.
-- **Decisões de detalhe** (dentro da spec): `GridXlsxBorder` por lado é um
-  objeto `{ top?, bottom?, start?, end? }` sem nome próprio (start/end pela
-  direção, como o alinhamento); `alignment: 'center'` numa célula que
+- **Decisões de detalhe** (dentro da spec): borda por lado é
+  `GridXlsxBorderSides` `{ top?, bottom?, start?, end? }` (start/end pela
+  direção, como o alinhamento; misturar com `color`/`style` avisa); a
+  célula que abrange várias (banda, rótulo de grupo) passa UMA vez pelo
+  `customizeCell` e as cobertas, vazias, levam o estilo final dela;
+  `assetsUrl` é uma pasta relativa à página (a `/` final que faltar é
+  posta; vale também para o PDF); `alignment: 'center'` numa célula que
   abrange várias (banda, rótulo de grupo) vira `centerContinuous`; o
   `customize` obsoleto continua tipado em `GridXlsxOptions` (é o único uso
   dos genéricos obsoletos) e, sem ExcelJS, é ignorado com aviso; links só
@@ -184,7 +188,28 @@ o cabeçalho e os dados; larguras pelas do grid.
   `src/test/unzip.ts`) e `src/export-xlsx.memory.browser.test.ts`; perf
   `xlsx-10k` (spec 16).
 
+- **Revisão na entrega** (API e a11y, 2026-11-23): corrigidos o rótulo de
+  grupo com `customizeCell` (as cobertas perdiam o "centralizar na
+  seleção"), o nome `GridXlsxBorderSides`, o aviso das opções novas na
+  forma com o ExcelJS, o `assetsUrl` relativo, a fábrica de worker do
+  exemplo de CDN (uma Blob URL só, sem vazar), JSDoc/doc (contraste também
+  tira o fundo; `text` não acompanha `cellValue`; só `center` atravessa) e
+  testes (anúncio de 1 s, exportador real pelo teclado com cancelamento e
+  worker encerrado, RTL com `dc:language`/start/end/bordas, ramos do
+  contraste, axe com o menu aberto em `ar`). Ficaram para o usuário (mudam
+  o contrato aprovado ou o padrão visível) — ver "Em aberto".
+
 ## Em aberto
+- Levados ao usuário pela revisão na entrega: o rótulo da banda seguir o
+  `alignment` da banda (na tela o padrão é `start`; o xlsx centraliza
+  sempre); `column` da célula de banda = a 1ª folha + campo `band`
+  (hoje `column` é a banda, `GridExportColumn | GridColumnDef`);
+  `GridExportLink` comum (com `description` como dica do link, que o
+  `uo-xlsx` ainda não grava); opção `language` (o PDF tem); chave i18n
+  `exportDefaultTitle` no lugar de `pdfDefaultTitle`; link com sinal
+  visual (sublinhado + cor; o `uo-xlsx` não tem sublinhado); texto branco
+  antes de tirar um fundo escuro; colunas fixas no início congeladas e
+  como títulos de linha (`Title` em vez de `ColumnTitle`).
 - Abrir os arquivos no LibreOffice e no Google Sheets (o autor do
   `uo-xlsx` validou só no Excel 365) — conferência manual.
 - Formas com o ExcelJS: remover na próxima major.

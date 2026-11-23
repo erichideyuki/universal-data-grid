@@ -491,13 +491,24 @@ const KIND = { data: 0, group: 1, 'group-footer': 2, total: 3 } as const;
 
 // ------------------------------------------------------------------ exportação
 
+/** A pasta de `assetsUrl` (relativa ao documento; com a `/` final que faltar). */
+const assetsOf = (assetsUrl: string | URL): URL => {
+  const url = new URL(assetsUrl, typeof document === 'undefined' ? undefined : document.baseURI);
+
+  if (!url.pathname.endsWith('/')) {
+    url.pathname += '/';
+  }
+
+  return url;
+};
+
 /** Pasta dos assets no bundle autocontido (`dist/export-pdf.min.js` → `./export-pdf/`); no ESM, indefinido. */
 declare const __U_GRID_ASSETS__: string | undefined;
 
 const clientOf = async (options: GridPdfOptions): Promise<Client> => {
   // `new URL('./…', import.meta.url)` literal: os bundlers (Vite, webpack, esbuild) copiam o arquivo
   const wasm = options.assetsUrl
-    ? new URL('grid-pdf.wasm', options.assetsUrl).href
+    ? new URL('grid-pdf.wasm', assetsOf(options.assetsUrl)).href
     : typeof __U_GRID_ASSETS__ === 'string'
       ? new URL(__U_GRID_ASSETS__ + 'grid-pdf.wasm', import.meta.url).href
       : new URL('./grid-pdf.wasm', import.meta.url).href;
@@ -511,7 +522,7 @@ const clientOf = async (options: GridPdfOptions): Promise<Client> => {
   const create = typeof factory === 'function'
     ? factory
     : () => options.assetsUrl
-      ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
+      ? new Worker(new URL('worker.js', assetsOf(options.assetsUrl)), { type: 'module' })
       : typeof __U_GRID_ASSETS__ === 'string'
         ? new Worker(new URL(__U_GRID_ASSETS__ + 'worker.js', import.meta.url), { type: 'module' })
         : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
