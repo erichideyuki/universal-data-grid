@@ -45,7 +45,7 @@ Vue or Svelte.
   templates for cells, headers, group rows and empty states.
 - **Also included:** cell-range selection with copy and paste, column resize, pin, hide, bands and
   responsive auto-hide, a toolbar and context menus, state persistence, and export to CSV, Excel
-  and tagged PDF.
+  (styled per cell, written in a Web Worker, no dependency) and tagged PDF.
 
 ## See it in action
 

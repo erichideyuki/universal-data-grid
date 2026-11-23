@@ -21,7 +21,7 @@ For live examples of every feature, see the [documentation site](https://univers
 - [Selection & keyboard](#selection--keyboard) (row selection, cell ranges, keyboard navigation, accessibility)
 - [Data sources, keys & paging](#data-sources-keys--paging) (`keyExpr`, `dataSource`, remote operations, paging, infinite scrolling, scrolling with the page or a parent)
 - [Column features](#column-features) (resizing, fixed columns, column chooser, auto width, bands, column virtualization, responsive columns)
-- [Export & clipboard](#export--clipboard) (CSV, Excel adapter, Ctrl+C)
+- [Export & clipboard](#export--clipboard) (CSV, Excel, PDF, Ctrl+C)
 - [Toolbar & context menus](#toolbar--context-menus) (built-in and custom toolbar items, "More actions", export button, context menus)
 - [Templates & master-detail](#templates--master-detail) (cell, header, group, empty and detail renderers, fixed rows, full-width rows)
 - [State persistence](#state-persistence) (`getState`/`setState`, `localStorage`/`sessionStorage` or your own storage)
@@ -81,8 +81,8 @@ For live examples of every feature, see the [documentation site](https://univers
   that move, fix and hide as a block, and column virtualization: hundreds of columns × millions of
   rows scroll smoothly on both axes.
 - **Export & clipboard** — CSV of what the user sees (columns, order, filter, groups, summaries,
-  selected rows only), an optional Excel adapter with ExcelJS injected by you, export data for any
-  other format (PDF…), and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
+  selected rows only), optional Excel (styled per cell, frozen header, no dependency) and accessible
+  PDF entry points, export data for any other format, and Ctrl+C as text and HTML table. Spreadsheet formula injection is blocked
   by default; a million rows export without freezing the page.
 - **Toolbar & context menus** — a configurable toolbar (built-in items, your buttons and content,
   overflow into "More actions", export button) and context menus on headers, the group panel and
@@ -854,7 +854,7 @@ virtualization keep working; a million nodes expand, filter and scroll without f
   carry `parentKey`. Saving with `items` rebuilds a copy (nested: only the path that changed).
   Deleting a node marks only it — cascading is up to you.
 - **Export** writes the expanded nodes in screen order, with `level` = depth (also with
-  `includeGroups: false`; the Excel adapter indents by it; CSV has no indent). `selectedOnly`
+  `includeGroups: false`; Excel writes it as the row outline; CSV has no indent). `selectedOnly`
   writes every selected node, also inside collapsed branches. A `column` node summary replaces the
   value (an array when a column has several).
 - **Not combined** with grouping (ignored, restored when `tree-mode` is back to `none`),
@@ -1505,7 +1505,7 @@ grid.columns = [
   band is a checkbox with its columns in a nested list: mixed (some columns hidden) → all visible →
   band hidden → back as it was before hiding (all visible, or mixed if the band was hidden while
   mixed); checking a column of a hidden band shows the band and keeps the others' state.
-- Only leaf columns sort, group, filter, resize and export (no band row in CSV/Excel).
+- Only leaf columns sort, group, filter, resize and export (no band row in CSV; Excel writes the band rows above the column labels, not merged).
   `sortColumn`, `groupColumn` and `setColumnWidth` with a band do nothing, `focusCell` returns
   `false` and `autoSizeColumn` sizes each visible column of the band. A grouped column leaves its
   band in the header and returns to the end of it when ungrouped.
@@ -1674,32 +1674,125 @@ are joined in `texts[i]` with the list separator of the language, as on screen.
 
 ### Excel (`export-xlsx`)
 
-An optional entry point writes an `.xlsx` with [ExcelJS](https://github.com/exceljs/exceljs). The
-grid does not depend on ExcelJS: install it yourself and pass the module.
+An optional entry point writes an `.xlsx` of what the user sees, with no dependency of yours: the file
+is written by a WebAssembly engine ([Universal Office](https://github.com/erichideyuki/universal-office)'s
+`uo-xlsx` writer) in a Web Worker, so 10,000 rows × 40 styled columns do not freeze the page. The
+`.wasm` (~95 KB gzip) and the worker are only downloaded on the first export; the grid bundle does not
+change.
 
 ```js
-import ExcelJS from 'exceljs';
 import { downloadXlsx, exportXlsx } from '@universal-material/data-grid/export-xlsx';
 
-await downloadXlsx(grid, ExcelJS, { fileName: 'orders.xlsx', sheetName: 'Orders' });
+await downloadXlsx(grid, { fileName: 'orders.xlsx' });
+const blob = await exportXlsx(grid, { selectedOnly: true, sheetName: 'Orders 2026' });
+```
 
-const blob = await exportXlsx(grid, ExcelJS, {
-  selectedOnly: true,
-  customize: (worksheet, workbook) => {  // typed with ExcelJS's own types
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FF1565C0' } };
+What goes in the sheet: the visible columns in their current order and widths, the filter, the
+sorting, the groups, the summaries and the [bands](#bands-multi-level-headers), like
+[`getExportData`](#export-data-excel-pdf-anything). Numbers, dates and booleans are typed cells with a
+number format close to the column `format` (dates by their wall-clock time, no time zone); columns
+with `displayValue`, a `format` function, `booleanDisplay` or their own `trueText`/`falseText` are
+written as their displayed text, and so is a value that is not of the column type (`'n/a'` in a date
+column). Text is always a text cell (never a formula), so it needs no `'` prefix.
+
+The sheet is built for spreadsheet users and screen readers alike: the header rows (bands and column
+labels) are frozen and repeat on every printed page; a `ColumnTitle` name on the first column label
+lets screen readers (JAWS) read the column titles; band labels and group labels are **centered across
+their columns, never merged** (merged cells break sorting, filtering and the accessibility checker of
+Office); group rows are text (`"Country: Brazil (3)"`) with the row outline of Excel (the collapse
+button on the group row); fixed rows are exported, not frozen. The document title and language
+(`dc:language`) come from the grid, and a right-to-left grid writes a right-to-left sheet. Cell
+templates (`renderer`) are not drawn — the sheet holds the values; restyle cells with `customizeCell`.
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `sheetName` | accessible name of the grid, else "Data" (translated) | Tab name, always cleaned: `[ ] : * ? / \` removed, cut to 31 characters, never `History`. |
+| `title` | accessible name of the grid, else "Data" (translated) | Document title (metadata). |
+| `includeHeaders` | `true` | The header rows (bands and column labels). |
+| `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, centered across it). |
+| `freezeHeader` | `true` | Freezes every header row. |
+| `direction` | direction of the grid | `'rtl'` writes a right-to-left sheet; `start`/`end` alignments follow it. |
+| `customizeCell` | — | `(cell) => void`, see below. |
+| `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void` (`pageCount` is 0), about every 250 ms and once at the end. |
+| `worker` | `true` | `false` writes on the main thread in time slices; a function returns a new `Worker` of `worker.js` (CDN, strict CSP: see below) and is called once per export. |
+| `assetsUrl` | next to the module | Where `grid-xlsx.wasm` and `worker.js` are served from. |
+| `selectedOnly`, `includeGroups`, `includeSummaries`, `includeFixedRows`, `signal` | | As in [`getExportData`](#export-data-excel-pdf-anything). An aborted `signal` rejects with its reason. |
+| `fileName` | `'export.xlsx'` | `downloadXlsx()` only. |
+
+`customizeCell(cell)` runs synchronously for every header, band, data, group, group footer and totals
+cell, after the adapter chose its value, number format and style. Read `rowType` (`'header'` includes
+the band rows), `row`, `column` (the band in a band cell, `null` in the label of a group row),
+`columnIndex`, `columnSpan`, `headerRow` and `value` (the source value); change `cellValue` (a string
+is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
+`numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (`{ url }`: `http:`, `https:`
+or `mailto:`). The last write wins.
+
+**Color is never the only signal.** When a background tells a state, write the state in the cell too:
+
+```js
+// a heat map: the background reinforces the text, it does not replace it
+const tone = pct => pct < 50 ? '#f8696b' : pct < 80 ? '#ffeb84' : '#63be7b';
+
+await downloadXlsx(grid, {
+  fileName: 'compliance.xlsx',
+  customizeCell: cell => {
+    if (cell.rowType === 'data' && cell.columnIndex > 0) {
+      const pct = cell.value;
+      cell.text = `${pct}% ${pct < 50 ? 'overdue' : pct < 80 ? 'in progress' : 'done'}`;
+      cell.style = { ...cell.style, backgroundColor: tone(pct) };     // contrast checked
+    }
   },
 });
 ```
 
-For the toolbar Export button, `createXlsxExporter(ExcelJS, options?)` returns the exporter to
-assign to `grid.xlsxExporter` (see [Export button](#export-button)).
+`cell.style`: `bold`, `italic`, `color`, `backgroundColor`, `alignment` (the same `GridExportCellStyle`
+as the PDF), plus `wrap` and `border` (`true`, one `{ color?, style?: 'thin' | 'medium' }` for every
+side, or `{ top?, bottom?, start?, end? }`). A text color below 4.5:1 contrast with its background is
+dropped (with a console warning); unsupported values are ignored with a warning.
 
-Group rows become Excel row outline levels; numbers, dates and booleans are typed cells with a
-number format close to the column `format`; columns with `displayValue`, a `format` function,
-`booleanDisplay` or their own `trueText`/`falseText` are written as their displayed text. Text is always a text cell (never a
-formula), so it needs no `'` prefix. Options: the `getExportData` ones plus `sheetName`
-(`'Sheet1'`), `includeHeaders` (`true`), `customize` and, for `downloadXlsx`, `fileName`
-(`'export.xlsx'`).
+For the toolbar Export button, `createXlsxExporter(options?)` returns the exporter to assign to
+`grid.xlsxExporter` (see [Export button](#export-button)); while it runs, the Excel entry becomes
+"Cancel export" and the button describes the progress.
+
+**ExcelJS forms (deprecated).** `exportXlsx(grid, ExcelJS, options)`, `downloadXlsx(grid, ExcelJS,
+options)` and `createXlsxExporter(ExcelJS, options)` still work, with a console warning once: they
+write the file through the [ExcelJS](https://github.com/exceljs/exceljs) module you pass, with only
+their old options (`sheetName`, default `'Sheet1'`; `includeHeaders`; `customize(worksheet,
+workbook)`) — no bands, frozen header nor `customizeCell`. Drop the ExcelJS argument to switch; they
+will be removed in the next major version.
+
+#### Without a bundler: `/vendor` or a CDN
+
+Bundlers (Vite, webpack, esbuild) copy the `.wasm` and `worker.js` from `new URL('./…',
+import.meta.url)`. Without one, load the self-contained modules next to `grid.min.js`: they find their
+assets in the `export-xlsx/` and `export-pdf/` folders beside them and use the grid already on the page
+(no second copy).
+
+| Module | Assets beside it |
+| ------ | ---------------- |
+| `dist/export-xlsx.min.js` | `dist/export-xlsx/worker.js`, `dist/export-xlsx/grid-xlsx.wasm` |
+| `dist/export-pdf.min.js` | `dist/export-pdf/worker.js`, `dist/export-pdf/grid-pdf.wasm` |
+
+```html
+<script type="module">
+  import 'https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/grid.min.js';
+  import { createXlsxExporter } from 'https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/export-xlsx.min.js';
+
+  const assets = 'https://cdn.jsdelivr.net/npm/@universal-material/data-grid@0.3/dist/export-xlsx/';
+  document.querySelector('u-grid').xlsxExporter = createXlsxExporter({
+    // a Worker from another origin is blocked: start it from a same-origin Blob URL
+    worker: () => new Worker(URL.createObjectURL(new Blob([`import '${assets}worker.js';`], { type: 'text/javascript' })), { type: 'module' }),
+  });
+</script>
+```
+
+Use the same version for `grid.min.js` and the export modules. Served from your own origin
+(`/vendor`), no factory is needed. The PDF takes the same factory (it calls it twice per export).
+
+**Content Security Policy.** The exports need `worker-src 'self'` (or `blob:` with the factory above),
+`script-src 'wasm-unsafe-eval'` (to compile the `.wasm`) and `connect-src` for the `.wasm` (and, for
+the PDF, the fonts). Serve `.wasm` files as `application/wasm`; otherwise the engine compiles only
+after the whole file has downloaded.
 
 ### PDF (`export-pdf`)
 
@@ -1906,11 +1999,10 @@ group chips (mirrored in RTL), `Home`/`End` go to the first/last one. The search
 ```
 
 ```js
-import ExcelJS from 'exceljs';
 import { createXlsxExporter } from '@universal-material/data-grid/export-xlsx';
 import { createPdfExporter } from '@universal-material/data-grid/export-pdf';
 
-grid.xlsxExporter = createXlsxExporter(ExcelJS, { fileName: 'orders.xlsx' }); // without it, no Excel entry
+grid.xlsxExporter = createXlsxExporter({ fileName: 'orders.xlsx' });          // without it, no Excel entry
 grid.pdfExporter = createPdfExporter({ fonts, fileName: 'orders.pdf' });     // without it, no PDF entry
 grid.csvExportOptions = { fileName: 'orders.csv' };
 ```
@@ -2766,7 +2858,7 @@ paint, set the grid's `language` explicitly to avoid a mismatch on hydration.
 | `rowMenu`          | `row-menu`            | `boolean` | `false` | Built-in items of the row menu (copy, export selected, edit, delete, details; group rows: expand/collapse, ungroup). With `cell-selection-mode`, the cell menu also opens with the range items. |
 | `toolbarItems`     | *(property only)*     | `readonly (GridToolbarItemName \| GridToolbarItem)[] \| null` | `null` | Items of the toolbar (`null`: `GRID_DEFAULT_TOOLBAR_ITEMS`; `[]`: no bar). See [Toolbar](#toolbar). |
 | `exportFormats`    | `export-formats`      | `readonly GridExportFormat[]` | `[]` | Export UI formats (`'csv'`, `'xlsx'`, `'pdf'`; attribute `"csv xlsx pdf"`). See [Export button](#export-button). |
-| `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter(ExcelJS)`). |
+| `xlsxExporter`     | *(property only)*     | `GridExporter \| null` | `null` | Excel exporter of the export UI (`createXlsxExporter()`). |
 | `pdfExporter`      | *(property only)*     | `GridExporter \| null` | `null` | PDF exporter of the export UI (`createPdfExporter({ fonts })`). See [PDF](#pdf-export-pdf). |
 | `csvExportOptions` | *(property only)*     | `Omit<GridCsvDownloadOptions, 'selectedOnly' \| 'signal'> \| null` | `null` | Options of the CSV exported from the UI. |
 | `sortMode`         | `sort-mode`           | `'none' \| 'single' \| 'multiple'` | `'single'` | How the user sorts by clicking headers. See [Sorting](#sorting). |
@@ -3351,12 +3443,18 @@ import {
 } from '@universal-material/data-grid';
 
 import {
-  exportXlsx,              // (grid, ExcelJS, GridXlsxOptions?) => Promise<Blob>
-  downloadXlsx,            // (grid, ExcelJS, GridXlsxDownloadOptions?) => Promise<void>
-  createXlsxExporter,      // (ExcelJS, GridXlsxExporterOptions?) => GridExporter — for grid.xlsxExporter
-  type GridXlsxExporterOptions, // GridXlsxDownloadOptions without selectedOnly and signal
-  type GridXlsxOptions,    // GridExportOptions + { sheetName?, includeHeaders?, customize? }
+  exportXlsx,              // (grid, GridXlsxOptions?) => Promise<Blob>; deprecated: (grid, ExcelJS, GridXlsxExcelJSOptions?)
+  downloadXlsx,            // (grid, GridXlsxDownloadOptions?) => Promise<void>; deprecated: (grid, ExcelJS, options?)
+  createXlsxExporter,      // (GridXlsxExporterOptions?) => GridExporter — for grid.xlsxExporter; deprecated: (ExcelJS, options?)
+  type GridXlsxOptions,    // GridExportOptions + { sheetName?, title?, includeHeaders?, includeBands?, freezeHeader?, direction?, customizeCell?, onProgress?, worker?, assetsUrl? }
   type GridXlsxDownloadOptions, // + { fileName? }
+  type GridXlsxExporterOptions, // GridXlsxDownloadOptions without selectedOnly and signal
+  type GridXlsxCell,       // customizeCell argument: readonly rowType, row, column, columnIndex, columnSpan, headerRow, value; cellValue, text, numFmt, style, link
+  type GridXlsxCellStyle,  // GridExportCellStyle + { wrap?, border? }
+  type GridXlsxBorder,     // { color?, style?: 'thin' | 'medium' }
+  type GridExportCellStyle, // { bold?, italic?, color?, backgroundColor?, alignment? } (shared with the PDF)
+  type GridPdfLink,        // { url, description? } (cell.link)
+  type GridXlsxExcelJSOptions, // deprecated: options of the ExcelJS forms ({ sheetName?, includeHeaders?, customize? })
   type ExcelJSModule,      // the minimal ExcelJS shape the adapter needs ({ Workbook })
   type ExcelJSWorkbook,    // the part of an ExcelJS workbook it uses
   type ExcelJSWorksheet,   // the part of an ExcelJS worksheet it uses
@@ -3380,7 +3478,8 @@ import {
   type GridPdfOrientation, // 'auto' | 'portrait' | 'landscape'
   type GridPdfTheme,
   type GridPdfCell,        // customizeCell argument
-  type GridPdfCellStyle,   // { bold?, italic?, color?, backgroundColor?, alignment? }
+  type GridPdfCellStyle,   // = GridExportCellStyle { bold?, italic?, color?, backgroundColor?, alignment? }
+  type GridExportCellStyle,
   type GridPdfImage,       // { data, format: 'png' | 'jpeg', width, height, alt } (pt)
   type GridPdfLink,        // { url, description? }
   type GridPdfProgress,    // = GridExportProgress
@@ -3397,6 +3496,7 @@ They will be removed in the next major version.
 | attributes `rowheight`, `showrowlines`, `showcolumnlines` | `row-height`, `show-row-lines`, `show-column-lines` |
 | `sorting` / attribute `sorting`, type `GridSortingMode` | `sortMode` / `sort-mode`, `GridSortMode` |
 | `stripped`, `showHeader` | `striped`, `showGroupPanel` |
+| `exportXlsx(grid, ExcelJS, …)`, `downloadXlsx(grid, ExcelJS, …)`, `createXlsxExporter(ExcelJS, …)` (warn once per page), the type parameters of `GridXlsxOptions` and its `customize` | the same functions without ExcelJS, `customizeCell` |
 | `sortBy()` | `sortColumn()` |
 | `showColumnChooser()` | `openColumnChooser()` |
 | `<u-grid-column data-type>` | `type` attribute |
@@ -3435,6 +3535,17 @@ attribute; band labels default to `start` (set `alignment: 'center'` for the old
 filter row editor is a menu button (`::part(filter-editor)` is a `<button>`, its menu uses
 `menuitemradio`) instead of a native `<select>`; with every column width set, the last column
 absorbs the leftover width.
+
+Next release (unreleased): Excel export without ExcelJS — `exportXlsx(grid, options)`,
+`downloadXlsx` and `createXlsxExporter(options)` write the file in a WebAssembly engine in a Web
+Worker, with `customizeCell` (per-cell values, formats, styles, links), progress and "Cancel export"
+in the toolbar; the ExcelJS forms are deprecated. Visible changes of the new forms: band rows are
+exported above the column labels (`includeBands`, default `true`: the data starts lower) and the
+header rows are frozen (`freezeHeader`, default `true`); the default sheet name is the grid's
+accessible name (else "Data", translated) instead of `Sheet1`; group labels are centered across the
+row instead of merged, and the outline button sits on the group row. New self-contained
+`export-xlsx.min.js` and `export-pdf.min.js` for pages without a bundler; the export workers are now
+one file each. `GridPdfCellStyle` is now an alias of the shared `GridExportCellStyle`.
 
 In 0.3.8: the header filter shows a `=`/`<>` of one value on its own column
 (an initial `filterValue`) as its selection — it listed only the matching values and couldn't widen

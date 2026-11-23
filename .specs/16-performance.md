@@ -139,6 +139,7 @@ percentual, data ISO com `dataType: 'date'`, booleano). Grid de 600 px.
 | `responsive-1m` | 1 milhão × 8 colunas com `autoHideColumns`, frente 21 | 1º render; estreitar 1366 → 520 px (`resizeHide`, colunas saem) e alargar (`resizeShow`): do quadro da troca de largura ao fim do `ResizeObserver` do grid e do render pedido, com o layout; rolar estreito com 5 linhas adaptativas abertas (`adaptive.`); nós |
 | `tree-1m` | 1,1 milhão de nós em 6 níveis (10 filhos por nó), entrada plana, frente 25 | 1º render (índice + raízes); expandir tudo; rolar; filtrar (`contains`, com ancestrais); ordenar por nível; recolher tudo; nós; heap |
 | `wide-1m`, `bands-1m` | 1 milhão × 300 colunas calculadas (`valueGetter` do `id`; sem e com bandas de 10), frente 13 | 1º render; rolar na vertical; rolar na horizontal (`horizontal.`: 40 passos de 120 px e 20 saltos pela largura); rolar na vertical com a janela de colunas no meio (`middle.`); nós; heap |
+| `xlsx-10k` | 10 mil usuários × 40 colunas (mapa de calor do clickCompliance), frente 29 | exportar xlsx no worker sem e com `customizeCell` (fundo por valor + estado no texto): maior bloqueio da thread principal (`xlsxSliceMs`, `xlsxHeatSliceMs`, sonda `user-blocking`) e tempo total (`xlsxTotalMs`, `xlsxHeatTotalMs`) |
 
 - **5 milhões × 24 colunas não cabe** no heap de 1 GiB: só os itens passam
   de ~900 MiB (24 propriedades + `double`s em caixa + nome único por linha).
@@ -333,3 +334,17 @@ situação, `between` no total e a busca com as 2 calculadas a mais. Medido
 `computedAnyOfMs` 25,8, `searchMs` 158,9 (orçamento 200). Entrou só a
 entrada do cenário novo na linha de base; os demais cenários ficaram dentro
 da tolerância e não foram regravados.
+
+## Linha de base: exportação xlsx (frente 29, 2026-11-23)
+
+Cenário novo `xlsx-10k`: o arquivo do mapa de calor (10 mil × 40) escrito
+pelo `uo-xlsx` em WebAssembly num worker; a thread principal lê, decide
+valor/formato/estilo, roda o `customizeCell` e serializa em fatias de 4 ms
+(o relógio é lido a cada 256 células com `customizeCell`, a cada ~2 mil sem
+ele) e blocos de 500 linhas, com um bloco em voo. Medido (máquina fraca,
+maior de 2 execuções): `xlsxSliceMs` 21,3 e `xlsxHeatSliceMs` 24,8
+(orçamento 50), `xlsxTotalMs` 908,9 e `xlsxHeatTotalMs` 1.493,2 (orçamento
+2.000). O que custou na 1ª versão: espalhar objetos (`...cond ? {} : {}`)
+por célula no estilo normalizado (2,2 s → 1,4 s) e a fatia contada por
+linha (62 ms com 40 `customizeCell` por linha). Entrou só a entrada do
+cenário novo na linha de base.

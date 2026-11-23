@@ -1,7 +1,8 @@
 # 29 — Exportação em Excel (xlsx) pelo escritor do Universal Office
 
 Estado: **aprovada** pelo usuário (2026-11-23), depois de 2 rodadas de
-revisão (API e a11y). Implementação aguarda o crate `uo-xlsx`.
+revisão (API e a11y). **Implementada** (2026-11-23) sobre o `uo-xlsx` do
+`rust-core` (`8d0d0004`); ver "Implementação".
 
 ## Objetivo
 Exportar para xlsx o que o usuário vê (colunas visíveis na ordem atual,
@@ -139,6 +140,51 @@ o cabeçalho e os dados; larguras pelas do grid.
   teclado e axe do item "Exportar para Excel"; vazamento (worker solto).
 - Perf: 10 mil × 40 sem travar (fatias/worker), cenário novo na spec 16.
 
+## Implementação (2026-11-23)
+- **Motor**: crate `xlsx/` (`grid-xlsx`, `cdylib`), `uo-xlsx` por git `rev`
+  `8d0d0004`. Protocolo binário em `xlsx/src/lib.rs`: configuração (título,
+  idioma, aba e nome de reserva, RTL, congelar, linhas de cabeçalho,
+  níveis de outline, larguras em px → `column_width_from_px(px, 7)`) e
+  blocos (estilos novos numerados pelo JS + linhas). O nome `ColumnTitle`
+  (escopo da aba) fica na 1ª célula da linha das folhas; títulos de
+  impressão = 1..linhas de cabeçalho; `summary_above` (o botão do outline na
+  linha de grupo, como o DevExtreme); formato que o Excel recusa cai para o
+  Geral. `npm run build:xlsx` / `test:xlsx-engine`; CI testa e compila.
+- **`.wasm`**: 230.061 bytes, 95.968 gzip -9 (perfil `opt-level = 3` do
+  `grid-pdf`). Dentro da estimativa.
+- **JS** (`src/export-xlsx/`): `index.ts` (API, decisão de valor/formato/
+  estilo, `customizeCell`, serialização em fatias de 4 ms com o relógio
+  lido a cada 256 células com `customizeCell`, blocos de 500 linhas, um em
+  voo), `client.ts` (worker ou thread principal, blocos de 100 linhas com
+  cessão de vez entre eles), `worker.ts`, `engine.ts`, `legacy.ts` (formas
+  com o ExcelJS, obsoletas, aviso uma vez por módulo), `types.ts`.
+  `_exportStream` ganhou `maxLevel` (o outline é declarado antes das
+  linhas). Bandas por `_bandChainOf`. Compartilhado com o PDF:
+  `export/wasm.ts` (compilar o `.wasm`), `export/serialize.ts` (`Writer`,
+  cores, contraste) e `GridExportCellStyle`.
+- **Decisões de detalhe** (dentro da spec): `GridXlsxBorder` por lado é um
+  objeto `{ top?, bottom?, start?, end? }` sem nome próprio (start/end pela
+  direção, como o alinhamento); `alignment: 'center'` numa célula que
+  abrange várias (banda, rótulo de grupo) vira `centerContinuous`; o
+  `customize` obsoleto continua tipado em `GridXlsxOptions` (é o único uso
+  dos genéricos obsoletos) e, sem ExcelJS, é ignorado com aviso; links só
+  `http:`, `https:`, `mailto:` (o `GridPdfLink`); o estilo padrão é
+  cabeçalho e bandas em negrito com fundo `#e6e6e6`, grupo em negrito,
+  total em negrito.
+- **Bundles**: `scripts/bundle-exports.mjs` — `worker.js` de cada formato
+  num arquivo (no `build`) e `dist/export-{xlsx,pdf}.min.js` (no
+  `bundle:browser`, assets em `./export-*/` por `__U_GRID_ASSETS__`);
+  falha se o metafile tiver `lit`/`@lit/*`. Para isso o PDF sem grid
+  (`exportPdf(data)`) lê as traduções pela ponte
+  `Symbol.for('u-grid-resolve-translation')` que o `grid-i18n.ts` registra
+  (inglês sem o grid carregado) — antes importava a tabela e o
+  @lit/context.
+- **Testes**: Rust (`xlsx/tests/engine.rs`, lido de volta pelo `uo-opc`);
+  navegador `src/export-xlsx.browser.test.ts` (zip aberto por
+  `src/test/unzip.ts`) e `src/export-xlsx.memory.browser.test.ts`; perf
+  `xlsx-10k` (spec 16).
+
 ## Em aberto
-- Tamanho do `.wasm` (estimativa 150–300 KB) — medir no protótipo.
+- Abrir os arquivos no LibreOffice e no Google Sheets (o autor do
+  `uo-xlsx` validou só no Excel 365) — conferência manual.
 - Formas com o ExcelJS: remover na próxima major.

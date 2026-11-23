@@ -290,5 +290,11 @@
     "middle.jumpWorstMs": 43.8,
     "domNodes": 538,
     "gridHeapMiB": 1.2
+  },
+  "xlsx-10k": {
+    "xlsxSliceMs": 21.3,
+    "xlsxTotalMs": 908.9,
+    "xlsxHeatSliceMs": 24.8,
+    "xlsxHeatTotalMs": 1493.2
   }
 }

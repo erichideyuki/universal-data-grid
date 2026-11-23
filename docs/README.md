@@ -52,8 +52,7 @@ só o site já construído; a raiz é o build Angular de
 2. No repositório do Pages: commit da pasta `data-grid/` e push.
 
 Visual: segue o site do Universal Material (Roboto, Material Symbols, paleta
-padrão em `site/tokens.css`). Fontes e ícones vêm do Google Fonts; o exemplo
-de Excel carrega o ExcelJS do jsDelivr na hora do clique.
+padrão em `site/tokens.css`). Fontes e ícones vêm do Google Fonts.
 
 ## GIFs do README
 

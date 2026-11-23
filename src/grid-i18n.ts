@@ -3551,6 +3551,15 @@ export const resolveGridTranslation = (language?: string): GridI18n =>
   findTranslation(language) ?? gridTranslations[DEFAULT_GRID_LANGUAGE];
 
 /**
+ * Ponte para as exportações sem grid (`exportPdf(data)`, spec 29): os bundles
+ * autocontidos (`export-pdf.min.js`) não carregam esta tabela nem o
+ * @lit/context; leem as traduções do grid carregado por este símbolo
+ * (inclusive as de `setGridTranslation`). Ver `src/export/i18n.ts`.
+ */
+// eslint-disable-next-line no-undef -- `globalThis` (ES2020; também no SSR) falta nos globais do lint
+(globalThis as Record<symbol, unknown>)[Symbol.for('u-grid-resolve-translation')] = resolveGridTranslation;
+
+/**
  * Overrides part (or all) of a built-in translation. Missing keys keep their
  * previous value, so a partial object is enough. The deprecated key names
  * (`clearSorting`, `pinStart`, `pinEnd`, `unpin`, `groupPanelMenu`) are still accepted, with a

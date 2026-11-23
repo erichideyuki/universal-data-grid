@@ -2,7 +2,7 @@ import type { DocPage } from '../site/types.js';
 
 export default {
   title: 'Export & clipboard',
-  intro: 'The grid exports **what the user sees** — visible columns in their order, the filter, the sorting, the groups and the summaries — to CSV, to Excel (through the optional `export-xlsx` adapter), to an accessible PDF (the optional `export-pdf` entry point) or as plain data for any other format. `Ctrl`+`C` copies rows, cells or ranges in a spreadsheet-friendly form, and `Ctrl`+`V` pastes back into editable cells.',
+  intro: 'The grid exports **what the user sees** — visible columns in their order, the filter, the sorting, the groups and the summaries — to CSV, to Excel (the optional `export-xlsx` entry point, styled per cell), to an accessible PDF (the optional `export-pdf` entry point) or as plain data for any other format. `Ctrl`+`C` copies rows, cells or ranges in a spreadsheet-friendly form, and `Ctrl`+`V` pastes back into editable cells.',
   readme: '#export--clipboard',
-  examples: ['csv', 'excel', 'pdf', 'export-data', 'clipboard'],
+  examples: ['csv', 'excel', 'heat-map', 'pdf', 'export-data', 'clipboard'],
 } satisfies DocPage;

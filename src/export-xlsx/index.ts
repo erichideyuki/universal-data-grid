@@ -13,7 +13,7 @@
  */
 import type { GridPdfLink } from '../export-pdf/types.js';
 import { downloadBlob } from '../export/download.js';
-import { contrast, parseColor, Writer } from '../export/serialize.js';
+import { contrast as contrastOf, parseColor as parseCssColor, Writer } from '../export/serialize.js';
 import { createSlicer, yieldToHost } from '../export/slice.js';
 import type { GridExportColumn, GridExporter, GridExportProgress, GridExportRow } from '../export/types.js';
 import type { GridColumnAlignment, GridColumnDef } from '../grid-column-def.js';
@@ -68,7 +68,7 @@ const BLACK = 0x000000;
 const HEADER_FILL = 0xe6e6e6;
 const MIN_CONTRAST = 4.5;
 /** Linhas por bloco no worker e na thread principal (lá cada bloco é uma chamada síncrona). */
-const BATCH_ROWS = 1000;
+const BATCH_ROWS = 500;
 const LOCAL_BATCH_ROWS = 100;
 /** Estilos novos por bloco (o protocolo conta em `u16`). */
 const MAX_BLOCK_STYLES = 60_000;
@@ -97,6 +97,39 @@ const warnExcelJS = () => {
     console.warn('<u-grid> xlsx: passing ExcelJS to exportXlsx/downloadXlsx/createXlsxExporter is deprecated: call them without it '
       + '(the grid writes the file itself, with bands, a frozen header and customizeCell). The ExcelJS forms will be removed in the next major version.');
   }
+};
+
+// ------------------------------------------------------------------ cores (com cache: o mapa de calor repete poucas cores em muitas células)
+
+const colors = new LruCache<string, number | null>(256);
+
+const parseColor = (color: string | undefined | null): number | undefined => {
+  if (!color) {
+    return undefined;
+  }
+
+  let rgb = colors.get(color);
+
+  if (rgb === undefined) {
+    rgb = parseCssColor(color) ?? null;
+    colors.set(color, rgb);
+  }
+
+  return rgb ?? undefined;
+};
+
+const contrasts = new LruCache<number, number>(256);
+
+const contrast = (a: number, b: number): number => {
+  const key = a * 0x1000000 + b;
+  let ratio = contrasts.get(key);
+
+  if (ratio === undefined) {
+    ratio = contrastOf(a, b);
+    contrasts.set(key, ratio);
+  }
+
+  return ratio;
 };
 
 const isExcelJS = (value: unknown): value is ExcelJSModule =>
@@ -328,12 +361,12 @@ const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | nu
   return {
     bold: !!s.bold,
     italic: !!s.italic,
-    ...color !== undefined ? { color } : {},
-    ...fill !== undefined ? { fill } : {},
+    color,
+    fill,
     // "centralizar" numa célula que abrange várias (banda, rótulo de grupo) é "centralizar na seleção", sem mesclar
     align: alignment === Align.Center && span ? Align.CenterContinuous : s.alignment === 'start' ? Align.Start : alignment ?? Align.None,
     wrap: !!s.wrap,
-    borders: bordersOf(s.border, rtl),
+    borders: s.border ? bordersOf(s.border, rtl) : undefined,
     numFmt: code,
   };
 };
@@ -907,7 +940,12 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
         await flush();
       }
 
-      const pause = slicer.tick();
+      // o relógio é lido a cada 256 unidades: com `customizeCell` a unidade é a célula, senão ~8 células
+      let pause: Promise<void> | undefined;
+
+      for (let k = customize ? n : n >> 3; k >= 0 && !pause; k--) {
+        pause = slicer.tick();
+      }
 
       if (pause) {
         await pause;

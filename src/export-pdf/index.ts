@@ -8,10 +8,10 @@
  * O `.wasm` e o worker só são baixados ao exportar.
  */
 import { downloadBlob } from '../export/download.js';
+import { type ExportTexts, exportTranslation } from '../export/i18n.js';
 import { contrast, parseColor, Writer } from '../export/serialize.js';
 import { createSlicer } from '../export/slice.js';
 import type { GridExportColumn, GridExportData, GridExporter, GridExportRow } from '../export/types.js';
-import { type GridI18n, resolveGridTranslation } from '../grid-i18n.js';
 import type { DataGrid } from '../grid.js';
 import { LruCache } from '../row-model/lru.js';
 import { type Client, localClient, workerClient } from './client.js';
@@ -166,7 +166,7 @@ interface Context {
   language: string;
   textLanguage: string;
   rtl: boolean;
-  translation: GridI18n;
+  translation: ExportTexts;
   striped: boolean;
   autoHide: boolean;
   gridFontPx: number;
@@ -217,7 +217,7 @@ const contextOf = (source: DataGrid | GridExportData, options: GridPdfOptions): 
   }
 
   const language = validLanguage(options.language) ?? 'en';
-  const translation = resolveGridTranslation(language);
+  const translation = exportTranslation(language);
 
   return {
     title: options.title?.trim() || translation.pdfDefaultTitle,
@@ -491,9 +491,16 @@ const KIND = { data: 0, group: 1, 'group-footer': 2, total: 3 } as const;
 
 // ------------------------------------------------------------------ exportação
 
+/** Pasta dos assets no bundle autocontido (`dist/export-pdf.min.js` → `./export-pdf/`); no ESM, indefinido. */
+declare const __U_GRID_ASSETS__: string | undefined;
+
 const clientOf = async (options: GridPdfOptions): Promise<Client> => {
   // `new URL('./…', import.meta.url)` literal: os bundlers (Vite, webpack, esbuild) copiam o arquivo
-  const wasm = options.assetsUrl ? new URL('grid-pdf.wasm', options.assetsUrl).href : new URL('./grid-pdf.wasm', import.meta.url).href;
+  const wasm = options.assetsUrl
+    ? new URL('grid-pdf.wasm', options.assetsUrl).href
+    : typeof __U_GRID_ASSETS__ === 'string'
+      ? new URL(__U_GRID_ASSETS__ + 'grid-pdf.wasm', import.meta.url).href
+      : new URL('./grid-pdf.wasm', import.meta.url).href;
   const factory = options.worker;
 
   if (factory === false || (typeof factory !== 'function' && typeof Worker === 'undefined')) {
@@ -505,7 +512,9 @@ const clientOf = async (options: GridPdfOptions): Promise<Client> => {
     ? factory
     : () => options.assetsUrl
       ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
-      : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+      : typeof __U_GRID_ASSETS__ === 'string'
+        ? new Worker(new URL(__U_GRID_ASSETS__ + 'worker.js', import.meta.url), { type: 'module' })
+        : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   const engine = create();
   let assembler: Worker | undefined;
 

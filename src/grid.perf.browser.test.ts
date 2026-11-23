@@ -13,6 +13,7 @@ import { html } from 'lit';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { exportPdf, type GridPdfFont } from './export-pdf/index.js';
+import { exportXlsx, type GridXlsxCell } from './export-xlsx/index.js';
 import type { GridColumnDef } from './grid-column-def.js';
 import type { DataGrid, GridDataSource, GridLoadOptions } from './grid.js';
 import { cleanup } from './test/fixture.js';
@@ -726,6 +727,62 @@ const measureBlocking = async (work: () => Promise<unknown>): Promise<{ sliceMs:
   const end = performance.now();
 
   return { sliceMs: perf.weak(worst), totalMs: perf.weak(end - start) };
+};
+
+/**
+ * Frente 29: exportar xlsx (worker) do mapa de calor do clickCompliance:
+ * 10 mil usuários × 40 colunas (39 de documentos), sem e com
+ * `customizeCell` (fundo por valor + o estado no texto).
+ */
+const xlsxScenario = (rows: number, label: string) => {
+  it(`${label} linhas × 40 colunas: exportar xlsx (worker), simples e mapa de calor com customizeCell`, async () => {
+    const documents = Array.from({ length: 39 }, (_, d) => `doc${d}`);
+    let items: object[] | undefined = Array.from({ length: rows }, (_, n) => {
+      const item: Record<string, unknown> = { user: `user${n}@example.com` };
+      documents.forEach((doc, d) => item[doc] = (n * 7 + d * 13) % 101);
+      return item;
+    });
+    const columns: GridColumnDef[] = [
+      { path: 'user', label: 'User', width: 220 },
+      ...documents.map(doc => ({ path: doc, label: doc, dataType: 'number' as const, width: 80 })),
+    ];
+
+    await perf.throttle();
+    const { grid } = await bestFirstRender(items, columns);
+    grid.language = 'en';
+    await painted(grid);
+
+    const worker = () => new Worker(new URL('./export-xlsx/worker.ts', import.meta.url), { type: 'module' });
+    const tones = ['#f8696b', '#fcaa78', '#ffeb84', '#b1d580', '#63be7b'];
+    const heat = (cell: GridXlsxCell) => {
+      if (cell.rowType === 'data' && cell.columnIndex > 0) {
+        const value = cell.value as number;
+        cell.style.backgroundColor = tones[Math.min(4, Math.floor(value / 20))];
+        cell.text = `${value}% ${value < 40 ? 'low' : 'ok'}`;
+      }
+    };
+    let size = 0;
+    const { best: plain } = await bestOfQuiet(() => measureBlocking(async () => {
+      size = (await exportXlsx(grid, { worker })).size;
+    }), { repeats: 3 });
+    const { best: heatMap } = await bestOfQuiet(() => measureBlocking(async () => {
+      await exportXlsx(grid, { worker, customizeCell: heat });
+    }), { repeats: 3, warmUp: 0 });
+
+    await perf.unthrottle();
+    grid.remove();
+    items = undefined;
+
+    const metrics = {
+      xlsxSliceMs: plain.sliceMs,
+      xlsxTotalMs: plain.totalMs,
+      xlsxHeatSliceMs: heatMap.sliceMs,
+      xlsxHeatTotalMs: heatMap.totalMs,
+    };
+
+    checkBudgets(rows, metrics, perf.report(`xlsx-${label}`, metrics));
+    expect(size).toBeGreaterThan(rows * 40);
+  });
 };
 
 /** Frente 26: exportar PDF (worker) de 100 mil e 1 milhão de linhas, plano e agrupado com totais. */
@@ -1707,6 +1764,7 @@ describe('perfil de máquina fraca', () => {
   exportScenario(1_000_000, '1m');
   pdfScenario(100_000, '100k');
   pdfScenario(1_000_000, '1m');
+  xlsxScenario(10_000, '10k');
   detailScenario(1_000_000, '1m');
   fixedRowsScenario(1_000_000, '1m');
   stateScenario(1_000_000, '1m');
