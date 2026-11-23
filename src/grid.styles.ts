@@ -283,28 +283,36 @@ export const styles = css`
     position: relative;
   }
 
+  /*
+   * As três faixas rolam na horizontal com \`auto\` e a barra oculta (a visível
+   * é a própria, no rodapé). Cabeçalho e rodapé também \`auto\`, não
+   * \`hidden\`: o Chromium pinta a área \`overflow: hidden\` num deslocamento
+   * fracionário de pixel físico (escala de 110%, grid num x fracionário) e as
+   * linhas dela saíam 1 px fora das do corpo (relato do ClickCompliance,
+   * 0.5.0); com \`auto\` as três caem no mesmo pixel. Rolar o cabeçalho ou o
+   * rodapé direto (toque, roda) chega ao corpo pela sincronização.
+   */
   .band {
     /* Bloco de contenção dos absolutos da tabela (linha ativa fora da janela, textos do leitor), como o \`.scroll-container\`. */
     position: relative;
-    overflow-x: hidden;
+    overflow-x: auto;
     overflow-y: hidden;
+    scrollbar-width: none;
     /* Sem âncora de rolagem: o virtualizador troca as linhas (spec 27). */
     overflow-anchor: none;
   }
 
-  /* A única rolagem horizontal nativa (toque, trackpad, Ctrl+F, Tab); a barra visível é a própria, no rodapé. */
-  .band-body {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  /* Focável só por programa (clique no vazio): sem anel; o foco visível é o das células. */
-  .band-body:focus {
-    outline: none;
-  }
-
-  .band-body::-webkit-scrollbar {
+  .band::-webkit-scrollbar {
     display: none;
+  }
+
+  /*
+   * Focáveis só por programa (\`tabindex="-1"\`: área rolável fora do Tab, que
+   * o Chromium tornaria parada sem nome; o teclado é o das células). Clique
+   * no vazio: sem anel; o foco visível é o das células.
+   */
+  .band:focus {
+    outline: none;
   }
 
   /* Cabeçalho (rótulos, linha de filtro, fixas do topo) e rodapé (fixas do fundo, totais, barra) grudam na porta. */

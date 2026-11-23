@@ -3547,7 +3547,7 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### 0.5.0 (unreleased)
+### 0.5.0
 
 **Breaking:** with `scroll-container`, the container now scrolls only vertically and the grid
 scrolls its columns sideways inside itself (new `scrollContainerAxis` / `scroll-container-axis`,
@@ -3555,9 +3555,10 @@ default `block`): the grid keeps the width it is given instead of growing to the
 columns, so the page (or panel) no longer scrolls sideways; headers, body and totals scroll
 together, with a horizontal scrollbar of the grid stuck to the bottom of the container. In this mode
 a column without `width` is 150px (or its `column-auto-width` measure) instead of sized by its
-content, and the headers, body and totals are three tables in the shadow root (`role="grid"` moves
-from the `<table>` to the element that holds them; CSS that targeted the shadow `<table>`,
-`<thead>` or `<tbody>` is not supported, the `::part`s are unchanged). To keep the 0.4.x behavior,
+content, and the headers, pinned rows, body and totals are separate tables in the shadow root, each
+in its own `rowgroup` (`role="grid"` moves from the `<table>` to the element that holds them; CSS
+that targeted the shadow `<table>`, `<thead>` or `<tbody>` is not supported, the `::part`s are
+unchanged). To keep the 0.4.x behavior,
 set `scroll-container-axis="both"`. Also: in RTL the grid's live region no longer pokes 1px past
 the grid's edge (the page could scroll sideways by 1px).
 

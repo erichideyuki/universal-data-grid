@@ -333,6 +333,35 @@ Nenhum texto novo.
   `'block'` com a janela como contêiner: rolagem horizontal e vertical sem
   frame longo; linha de base sem piora.
 
+## Correção depois da entrega (2026-11-23, relato do ClickCompliance)
+Em escala de 110% (`devicePixelRatio` 1,1) e com o grid num x fracionário
+(centralizado no contêiner), a célula fixa do cabeçalho saía ~1 pixel
+físico fora das linhas das bandas, sobretudo depois de rolar na vertical e
+voltar ao zero. Medido em pixel físico (screenshot do CDP; o do Playwright
+reamostra para CSS e esconde o defeito): a faixa do cabeçalho com
+`overflow-x: hidden` era pintada num deslocamento fracionário (a linha da
+emenda dividida entre dois pixels, 99/78), a do corpo (`auto`) não
+(205/0). Desligar o sticky da faixa ou da célula, alinhar a origem das
+faixas ao pixel físico e `will-change: scroll-position` NÃO resolveram;
+`overflow-x: auto` resolveu (216/16, o mesmo pixel do corpo).
+- Toda faixa passa a `overflow-x: auto` com a barra oculta; rolar
+  cabeçalho/rodapé direto chega ao corpo pela sincronização (que já era
+  nos dois sentidos).
+- Área rolável sem célula com `tabindex="0"` vira parada de Tab no
+  Chromium: toda faixa ganha `tabindex="-1"` e, para ser filho válido de
+  `role="grid"`, `role="rowgroup"`; `<thead>`, `<tfoot>` e os `<tbody>` das
+  fixas ficam `presentation` dentro delas. Para as linhas fixas manterem o
+  `rowgroup` com nome (spec 20), cada lado vira uma faixa própria
+  (`band-fixed-top`, `band-fixed-bottom`, com o `aria-label`); o sticky
+  fica num invólucro que não rola (`.band-head`; o `.band-foot` já era).
+- Faixas: `band-head-rows`, `band-fixed-top`, `band-body`,
+  `band-fixed-bottom`, `band-foot-rows` — até cinco tabelas com o mesmo
+  `<colgroup>`.
+- Testes: `src/horizontal-scroll.paint.browser.test.ts` (escala 1,1 pelo
+  CDP, comandos `emulateScale`/`captureDevicePixels` no
+  `vitest.config.ts`; falhava antes) e "cada faixa é um rowgroup fora do
+  Tab" em `src/horizontal-scroll.browser.test.ts`.
+
 ## Critério de pronto
 Global da spec 00 + os testes acima + conferência manual no demo e no
 ClickCompliance (build local, script de cópia) antes de publicar.

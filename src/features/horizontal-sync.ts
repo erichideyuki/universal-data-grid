@@ -8,7 +8,10 @@ export interface HorizontalBands {
   table: HTMLElement | null | undefined;
   /** Faixa do cabeçalho (`overflow-x: hidden`). */
   head: HTMLElement | null | undefined;
-  /** Faixa das linhas do rodapé (`overflow-x: hidden`). */
+  /** Faixas das linhas fixas de cima e de baixo. */
+  fixedTop?: HTMLElement | null | undefined;
+  fixedBottom?: HTMLElement | null | undefined;
+  /** Faixa dos totais. */
   foot: HTMLElement | null | undefined;
   /** Barra horizontal própria (no rodapé grudado) e o espaçador dela. */
   bar: HTMLElement | null | undefined;
@@ -74,7 +77,7 @@ export class HorizontalSyncController implements ReactiveController {
 
   /** Liga às faixas do render atual; só refaz o que mudou. */
   attach(bands: HorizontalBands): void {
-    const slots: Slot[] = ['body', 'head', 'foot', 'bar'];
+    const slots: Slot[] = ['body', 'head', 'fixedTop', 'fixedBottom', 'foot', 'bar'];
 
     if (!bands.body) {
       this.detach();
@@ -96,8 +99,8 @@ export class HorizontalSyncController implements ReactiveController {
         const abort = new AbortController();
         element.addEventListener('scroll', this.#onScroll, { passive: true, signal: abort.signal });
 
-        // Cabeçalho e rodapé não rolam sozinhos (`overflow: hidden`): a roda horizontal vai ao corpo.
-        if (slot === 'head' || slot === 'foot') {
+        // Faixas além do corpo: a roda horizontal vai ao corpo (que leva as outras junto).
+        if (slot !== 'body' && slot !== 'bar') {
           element.addEventListener('wheel', this.#onWheel, { passive: false, signal: abort.signal });
         }
 

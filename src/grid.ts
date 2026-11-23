@@ -1363,6 +1363,13 @@ interface GridTableParts {
   foot: unknown;
   hasHead: boolean;
   hasFoot: boolean;
+  /** Há rótulos ou linha de filtro (`<thead>`). */
+  hasHeadRows: boolean;
+  /** Há linhas fixas em cima / embaixo. */
+  hasFixedTop: boolean;
+  hasFixedBottom: boolean;
+  /** Há rodapé de totais (`<tfoot>`). */
+  hasTotals: boolean;
 }
 
 /** Antes de medir (SSR, 1º render): largura suposta da área visível. */
@@ -4052,8 +4059,15 @@ export class DataGrid extends LitElement {
   /** Quem tem o `role="grid"`: a tabela, ou a `div` das faixas no eixo `block`. */
   readonly #gridRef: Ref<HTMLElement> = createRef();
   readonly #headTableRef: Ref<HTMLTableElement> = createRef();
+  readonly #fixedTopTableRef: Ref<HTMLTableElement> = createRef();
+  readonly #fixedBottomTableRef: Ref<HTMLTableElement> = createRef();
   readonly #footTableRef: Ref<HTMLTableElement> = createRef();
+  /** Invólucro grudado do cabeçalho (rótulos e fixas do topo); não rola. */
   readonly #headBandRef: Ref<HTMLDivElement> = createRef();
+  /** Faixas roláveis (\`rowgroup\`) dos rótulos e das fixas de cima e de baixo. */
+  readonly #headRowsRef: Ref<HTMLDivElement> = createRef();
+  readonly #fixedTopBandRef: Ref<HTMLDivElement> = createRef();
+  readonly #fixedBottomBandRef: Ref<HTMLDivElement> = createRef();
   readonly #bodyBandRef: Ref<HTMLDivElement> = createRef();
   readonly #footBandRef: Ref<HTMLDivElement> = createRef();
   readonly #footRowsRef: Ref<HTMLDivElement> = createRef();
@@ -4081,7 +4095,7 @@ export class DataGrid extends LitElement {
 
   /** Tabelas do grid: a única, ou as das faixas (cabeçalho, corpo, rodapé) no eixo `block`. */
   #tables(): HTMLTableElement[] {
-    return [this.#headTableRef.value, this.#tableRef.value, this.#footTableRef.value]
+    return [this.#headTableRef.value, this.#fixedTopTableRef.value, this.#tableRef.value, this.#fixedBottomTableRef.value, this.#footTableRef.value]
       .filter((table): table is HTMLTableElement => !!table?.isConnected);
   }
 
@@ -12025,14 +12039,15 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const head = this.#headBandRef.value;
-    const foot = this.#footRowsRef.value;
+    const connected = (element: HTMLDivElement | undefined) => element?.isConnected ? element : null;
 
     this.#horizontalSync.attach({
       body: this.#bodyBandRef.value,
       table: this.#tableRef.value,
-      head: head?.isConnected ? head : null,
-      foot: foot?.isConnected ? foot : null,
+      head: connected(this.#headRowsRef.value),
+      fixedTop: connected(this.#fixedTopBandRef.value),
+      fixedBottom: connected(this.#fixedBottomBandRef.value),
+      foot: connected(this.#footRowsRef.value),
       bar: this.#barRef.value,
       spacer: this.#barSpacerRef.value,
     });
@@ -15832,6 +15847,10 @@ export class DataGrid extends LitElement {
       foot: footerRows ? this.#renderTotalFooter(layout, this.#ariaRowIndexOf(this.#rows.length, headerRows)) : nothing,
       hasHead: this.showColumnHeaders || this.showFilterRow || fixedTop.length > 0,
       hasFoot: footerRows > 0 || fixedBottom.length > 0,
+      hasHeadRows: this.showColumnHeaders || this.showFilterRow,
+      hasFixedTop: fixedTop.length > 0,
+      hasFixedBottom: fixedBottom.length > 0,
+      hasTotals: footerRows > 0,
     };
 
     // Coluna flex: a área do grid e o pager (que pode quebrar linha) dividem a altura.
@@ -15934,15 +15953,25 @@ export class DataGrid extends LitElement {
       @focusin=${this.#onGridFocusIn}
       @focusout=${this.#onGridFocusOut}>
       ${table.hasHead
-        ? html`<div class="band band-head" style=${grid.scrollPadding} ${ref(this.#headBandRef)}><table
-            class=${table.className} role="presentation" ${ref(this.#headTableRef)}>${table.colgroup()}${table.head}${table.fixedTop}</table></div>`
+        ? html`<div class="band-head" ${ref(this.#headBandRef)}>${table.hasHeadRows
+          ? html`<div class="band band-head-rows" role="rowgroup" tabindex="-1" style=${grid.scrollPadding} ${ref(this.#headRowsRef)}><table
+              class=${table.className} role="presentation" ${ref(this.#headTableRef)}>${table.colgroup()}${table.head}</table></div>`
+          : nothing}${table.hasFixedTop
+          ? html`<div class="band band-fixed-top" role="rowgroup" tabindex="-1" aria-label=${this.#translation.fixedTopRowsLabel}
+              style=${grid.scrollPadding} ${ref(this.#fixedTopBandRef)}><table
+              class=${table.className} role="presentation" ${ref(this.#fixedTopTableRef)}>${table.colgroup()}${table.fixedTop}</table></div>`
+          : nothing}</div>`
         : nothing}
       <div class="band band-body" role="rowgroup" tabindex="-1" style=${grid.scrollPadding} ${ref(this.#bodyBandRef)}><table
         class=${table.className} role="presentation" ${ref(this.#tableRef)}>${table.colgroup()}${table.body}</table></div>
       <div class="band-foot" ${ref(this.#footBandRef)}>
-        ${table.hasFoot
-          ? html`<div class="band band-foot-rows" style=${grid.scrollPadding} ${ref(this.#footRowsRef)}><table
-              class=${table.className} role="presentation" ${ref(this.#footTableRef)}>${table.colgroup()}${table.fixedBottom}${table.foot}</table></div>`
+        ${table.hasFixedBottom
+          ? html`<div class="band band-fixed-bottom" role="rowgroup" tabindex="-1" aria-label=${this.#translation.fixedBottomRowsLabel}
+              style=${grid.scrollPadding} ${ref(this.#fixedBottomBandRef)}><table
+              class=${table.className} role="presentation" ${ref(this.#fixedBottomTableRef)}>${table.colgroup()}${table.fixedBottom}</table></div>`
+          : nothing}${table.hasTotals
+          ? html`<div class="band band-foot-rows" role="rowgroup" tabindex="-1" style=${grid.scrollPadding} ${ref(this.#footRowsRef)}><table
+              class=${table.className} role="presentation" ${ref(this.#footTableRef)}>${table.colgroup()}${table.foot}</table></div>`
           : nothing}
         <div class="hscroll" aria-hidden="true" tabindex="-1" hidden ${ref(this.#barRef)}><div
           class="hscroll-spacer" .inert=${true} ${ref(this.#barSpacerRef)}></div></div>
@@ -16065,7 +16094,7 @@ export class DataGrid extends LitElement {
     }
 
     return html`
-      <thead role="rowgroup">
+      <thead role=${this.#bands ? 'presentation' : 'rowgroup'}>
         ${this.showColumnHeaders ? this.#renderHeaderRows(layout) : nothing}
         ${this.showFilterRow ? this.#renderFilterRow(layout) : nothing}
       </thead>
@@ -16628,8 +16657,8 @@ export class DataGrid extends LitElement {
       <tbody
         class="fixed-rows fixed-${fixed}-rows"
         part="fixed-${fixed}-row-group"
-        role="rowgroup"
-        aria-label=${fixed === 'top' ? translation.fixedTopRowsLabel : translation.fixedBottomRowsLabel}>
+        role=${this.#bands ? 'presentation' : 'rowgroup'}
+        aria-label=${ifDefined(this.#bands ? undefined : fixed === 'top' ? translation.fixedTopRowsLabel : translation.fixedBottomRowsLabel)}>
         ${keyedRows(
           rows,
           row => row.key,
@@ -17257,6 +17286,7 @@ export class DataGrid extends LitElement {
     const rowIndex = this.#rows.length;
 
     return renderTotalFooter({
+      role: this.#bands ? 'presentation' : 'rowgroup',
       layout,
       texts: this.#textsByColumn(this.#totalSpecs, this.#totals, () => true),
       groupColumns: this._groupColumns.length,

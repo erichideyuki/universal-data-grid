@@ -41,7 +41,7 @@ const holder = (): HTMLDivElement => {
 
 const exercise = async (grid: DataGrid, scroller: HTMLElement): Promise<void> => {
   const body = grid.shadowRoot!.querySelector<HTMLElement>('.band-body')!;
-  const head = grid.shadowRoot!.querySelector<HTMLElement>('.band-head')!;
+  const head = grid.shadowRoot!.querySelector<HTMLElement>('.band-head-rows')!;
 
   for (const top of [2000, 9000, 300]) {
     scroller.scrollTo({ top, behavior: 'instant' });

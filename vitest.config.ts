@@ -26,6 +26,39 @@ const emulateMedia: BrowserCommand<[options: {
   reducedMotion?: 'reduce' | 'no-preference' | null;
 }]> = ({ page }, options) => page.emulateMedia(options);
 
+/**
+ * Escala da tela (`devicePixelRatio`, ex.: 1.1 = Windows em 110%) pelo CDP,
+ * para conferir na pintura o que só aparece em pixel físico fracionário.
+ * `null` volta ao padrão. A sessão CDP fica aberta até voltar ao padrão:
+ * fechá-la desfaz a emulação.
+ */
+let scaleSession: Awaited<ReturnType<ReturnType<Parameters<BrowserCommand<[]>>[0]['page']['context']>['newCDPSession']>> | undefined;
+
+const emulateScale: BrowserCommand<[factor: number | null]> = async ({ page }, factor) => {
+  scaleSession ??= await page.context().newCDPSession(page);
+
+  if (factor) {
+    const { width, height } = page.viewportSize() ?? { width: 1280, height: 720 };
+    await scaleSession.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: factor, mobile: false });
+  } else {
+    await scaleSession.send('Emulation.clearDeviceMetricsOverride');
+    await scaleSession.detach();
+    scaleSession = undefined;
+  }
+};
+
+/** Screenshot da página inteira em pixel físico (PNG em base64), com a escala de `emulateScale`. */
+const captureDevicePixels: BrowserCommand<[]> = async ({ page }) => {
+  const session = scaleSession ?? await page.context().newCDPSession(page);
+  const { data } = await session.send('Page.captureScreenshot', { format: 'png' });
+
+  if (session !== scaleSession) {
+    await session.detach();
+  }
+
+  return data;
+};
+
 // ------------------------------------------------------- perfil "máquina fraca"
 // Spec 16. O teste de perf lê a linha de base e grava os resultados pelo Node
 // (o navegador não acessa o disco).
@@ -117,7 +150,7 @@ export default defineConfig({
             headless: true,
             provider: playwright(),
             instances: [{ browser: 'chromium' }],
-            commands: { renderGridSsr, emulateMedia },
+            commands: { renderGridSsr, emulateMedia, emulateScale, captureDevicePixels },
           },
         },
       },

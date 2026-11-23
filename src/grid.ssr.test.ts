@@ -72,7 +72,7 @@ describe('SSR', () => {
 
     expect(block).toContain('layout external-scroll axis-block');
     expect(block).toMatch(/<div[^>]*class="grid-bands"[^>]*role="treegrid"/);
-    expect(block).toContain('band band-head');
+    expect(block).toContain('band band-head-rows');
     expect(block).toContain('band band-body');
     expect(block).toContain('band band-foot-rows');
     expect(block).toMatch(/class="hscroll"[^>]*aria-hidden="true"[^>]*tabindex="-1"[^>]*hidden/);

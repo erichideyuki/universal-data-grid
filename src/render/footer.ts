@@ -109,6 +109,8 @@ export interface TotalFooterContext {
   keyOf?: (cell: SummaryColumnLayout) => unknown;
   /** `aria-level` da linha (árvore: 1). */
   level?: number;
+  /** Papel do \`<tfoot>\`: \`presentation\` dentro de uma faixa do eixo \`block\` (a faixa é o \`rowgroup\`). */
+  role?: 'rowgroup' | 'presentation';
 }
 
 /** Rodapé de totais: `rowgroup` próprio, fixo embaixo (fora do virtualizador). */
@@ -126,8 +128,9 @@ export const renderTotalFooter = ({
   trailingGap = 0,
   keyOf,
   level,
+  role = 'rowgroup',
 }: TotalFooterContext): TemplateResult => html`
-  <tfoot class="total-footer" role="rowgroup">
+  <tfoot class="total-footer" role=${role}>
     <tr class="summary-row total-row" part="summary-row total-row" role="row" aria-rowindex=${rowIndex} aria-level=${ifDefined(level)}>
       ${groupColumns ? renderIndentCells(groupColumns, groupColumnWidth) : nothing}
       ${leading}

@@ -99,7 +99,7 @@ const make = async (port: Port, options: MakeOptions = {}) => {
 };
 
 const sh = (grid: DataGrid) => grid.shadowRoot!;
-const band = (grid: DataGrid, name: 'head' | 'body' | 'foot-rows') => sh(grid).querySelector<HTMLElement>(`.band-${name}`)!;
+const band = (grid: DataGrid, name: 'head' | 'body' | 'foot-rows') => sh(grid).querySelector<HTMLElement>(`.band-${name === 'head' ? 'head-rows' : name}`)!;
 const bar = (grid: DataGrid) => sh(grid).querySelector<HTMLElement>('.hscroll')!;
 
 const scrollBody = async (grid: DataGrid, left: number) => {
@@ -379,7 +379,7 @@ describe('rolagem horizontal no grid (spec 30, eixo block)', () => {
     }
 
     expect(visited).not.toContain(bar(grid));
-    expect(visited.some(element => element.classList.contains('band'))).toBe(false);
+    expect(visited.filter(element => element.classList.contains('band')).map(element => element.className)).toEqual([]);
 
     // E de volta com Shift+Tab, também com a linha de filtro e sem dados.
     grid.showFilterRow = true;
@@ -390,6 +390,40 @@ describe('rolagem horizontal no grid (spec 30, eixo block)', () => {
       await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
       const active = sh(grid).activeElement;
       expect(active === bar(grid) || !!active?.classList.contains('band')).toBe(false);
+    }
+  });
+
+  it('cada faixa é um rowgroup fora do Tab; as linhas fixas mantêm o nome; Tab não para em faixa nenhuma', async () => {
+    const { grid } = await make('element', {
+      cols: 20,
+      configure: g => {
+        g.fixedTopItems = [g.items[0]];
+        g.fixedBottomItems = [g.items[1]];
+      },
+    });
+    const root = sh(grid);
+    const bands = [...root.querySelectorAll<HTMLElement>('.band')];
+
+    expect(bands.map(element => element.className)).toEqual([
+      'band band-head-rows', 'band band-fixed-top', 'band band-body', 'band band-fixed-bottom', 'band band-foot-rows',
+    ]);
+    expect(bands.every(element => element.getAttribute('role') === 'rowgroup' && element.tabIndex === -1)).toBe(true);
+    expect(root.querySelector('.band-fixed-top')!.getAttribute('aria-label')).toBe('Pinned rows at top');
+    expect(root.querySelector('.band-fixed-bottom')!.getAttribute('aria-label')).toBe('Pinned rows at bottom');
+    // Dentro das faixas, as partes da tabela não são outro rowgroup.
+    expect([...root.querySelectorAll('.grid-bands thead, .grid-bands tbody, .grid-bands tfoot')].map(part => part.getAttribute('role'))
+      .every(role => role === 'presentation')).toBe(true);
+
+    // Com a célula ativa no corpo (nenhum tabindex=0 no cabeçalho nem no rodapé), Tab entra e sai sem parar nas faixas.
+    expect(grid.focusCell('r5', 'c3')).toBe(true);
+    await settle(grid);
+    const before = document.createElement('button');
+    grid.before(before);
+    before.focus();
+
+    for (let i = 0; i < 4; i++) {
+      await userEvent.keyboard('{Tab}');
+      expect(!!sh(grid).activeElement?.classList.contains('band')).toBe(false);
     }
   });
 
@@ -509,7 +543,7 @@ describe('rolagem horizontal no grid (spec 30, eixo block)', () => {
     await settle(grid);
     const container = sh(grid).querySelector('.container')!;
     expect(container.classList.contains('bands-scroll')).toBe(true);
-    expect(getComputedStyle(band(grid, 'head')).position).toBe('relative');
+    expect(getComputedStyle(sh(grid).querySelector('.band-head')!).position).toBe('relative');
 
     await scrollTo(3000);
     expect(grid.focusCell('r500', 'c3')).toBe(true);
@@ -523,7 +557,7 @@ describe('rolagem horizontal no grid (spec 30, eixo block)', () => {
     await settle(grid);
     await settle(grid);
     expect(container.classList.contains('bands-scroll')).toBe(false);
-    expect(getComputedStyle(band(grid, 'head')).position).toBe('sticky');
+    expect(getComputedStyle(sh(grid).querySelector('.band-head')!).position).toBe('sticky');
   });
 
   it('valor inválido: block, com um aviso por valor', async () => {

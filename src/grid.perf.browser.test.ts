@@ -1813,7 +1813,7 @@ const horizontalBandsScenario = (rows: number, label: string) => {
     const root = grid.shadowRoot!;
 
     // O cabeçalho acompanha o corpo e a página não rola de lado.
-    expect(root.querySelector<HTMLElement>('.band-head')!.scrollLeft).toBe(root.querySelector<HTMLElement>('.band-body')!.scrollLeft);
+    expect(root.querySelector<HTMLElement>('.band-head-rows')!.scrollLeft).toBe(root.querySelector<HTMLElement>('.band-body')!.scrollLeft);
     expect(document.scrollingElement!.scrollWidth).toBe(document.scrollingElement!.clientWidth);
     expect(root.querySelectorAll('tbody.body-rows tr[role=row]').length, 'linhas no DOM').toBeLessThan(60);
     page.remove();
