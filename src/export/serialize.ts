@@ -1,7 +1,8 @@
 /* eslint-disable no-bitwise -- protocolo binário do motor e cores 0xRRGGBB. */
 /**
- * Protocolo binário JS → motor (o mesmo de `pdf/src/input.rs`): configuração
- * e blocos de linhas, little endian, strings em UTF-8 com o tamanho antes.
+ * Protocolo binário JS → motores (`pdf/src/input.rs`, `xlsx/src/lib.rs`):
+ * configuração e blocos de linhas, little endian, strings em UTF-8 com o
+ * tamanho antes. E as cores CSS → RGB com o contraste WCAG.
  */
 
 const encoder = new TextEncoder();
@@ -54,6 +55,12 @@ export class Writer {
     this.#room(4);
     this.#view.setFloat32(this.#len, v, true);
     this.#len += 4;
+  }
+
+  f64(v: number) {
+    this.#room(8);
+    this.#view.setFloat64(this.#len, v, true);
+    this.#len += 8;
   }
 
   str(v: string) {

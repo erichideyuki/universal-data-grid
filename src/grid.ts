@@ -29,7 +29,7 @@ import {
 } from './data/data-source.js';
 import { flattenRemote, type LoaderQuery, remoteGroupNodes, RemoteLoader } from './data/remote-loader.js';
 import { downloadBlob } from './export/download.js';
-import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportRows } from './export/rows.js';
+import { type ExportColumnSource, type ExportSource, type ExportSummarySource, exportMaxLevel, exportRows } from './export/rows.js';
 import type {
   GridCsvDownloadOptions,
   GridCsvOptions,
@@ -396,6 +396,7 @@ export type {
 export type {
   GridCsvDownloadOptions,
   GridCsvOptions,
+  GridExportCellStyle,
   GridExportColumn,
   GridExportData,
   GridExportDataRow,
@@ -8494,31 +8495,38 @@ export class DataGrid extends LitElement {
   }
 
   /**
-   * @internal Leitura em blocos para a exportação PDF (spec 26): as colunas e um
-   * iterador das linhas do instantâneo (sem montar todas as linhas de uma vez),
-   * com a contagem de itens de dados para o progresso.
+   * @internal Leitura em blocos para a exportação PDF e xlsx (specs 26 e 29):
+   * as colunas e um iterador das linhas do instantâneo (sem montar todas as
+   * linhas de uma vez), com a contagem de itens de dados para o progresso e o
+   * nível mais fundo das linhas (o outline do xlsx é declarado antes delas).
    */
-  _exportStream(options: GridExportOptions): { columns: GridExportData['columns']; rows: Iterator<GridExportData['rows'][number]>; totalCount: number } {
+  _exportStream(options: GridExportOptions): {
+    columns: GridExportData['columns'];
+    rows: Iterator<GridExportData['rows'][number]>;
+    totalCount: number;
+    maxLevel: number;
+  } {
     const source = this.#exportSource(options);
 
     return {
       columns: source.columns.map(column => column.info),
       rows: exportRows(source),
       totalCount: source.items.length + (source.fixedTop?.length ?? 0) + (source.fixedBottom?.length ?? 0),
+      maxLevel: exportMaxLevel(source),
     };
   }
 
-  /** @internal Textos da i18n no idioma efetivo (exportação PDF). */
+  /** @internal Textos da i18n no idioma efetivo (exportação PDF e xlsx). */
   get _exportTranslation(): GridI18n {
     return this.#translation;
   }
 
-  /** @internal Idioma efetivo (o do conteúdo) e o dos textos da i18n (exportação PDF). */
+  /** @internal Idioma efetivo (o do conteúdo) e o dos textos da i18n (exportação PDF e xlsx). */
   get _exportLanguages(): { content: string | undefined; text: string } {
     return { content: this.#effectiveLanguage, text: this.#textLanguage };
   }
 
-  /** @internal Nome acessível do grid (`aria-label`/`aria-labelledby`), para o título do PDF. */
+  /** @internal Nome acessível do grid (`aria-label`/`aria-labelledby`), para o título do PDF e o nome da aba do xlsx. */
   get _exportName(): string {
     return this.#hostLabel.name;
   }

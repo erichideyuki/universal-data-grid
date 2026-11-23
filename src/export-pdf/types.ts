@@ -1,5 +1,4 @@
-import type { GridExportColumn, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
-import type { GridColumnAlignment } from '../grid-column-def.js';
+import type { GridExportCellStyle, GridExportColumn, GridExportOptions, GridExportProgress, GridExportRow } from '../export/types.js';
 
 /** A font for the PDF. Every font is embedded (subset); the order is the fallback order per character. */
 export interface GridPdfFont {
@@ -45,17 +44,8 @@ export interface GridPdfTheme {
   lineColor?: string;
 }
 
-/** Style of one PDF cell (`customizeCell`). */
-export interface GridPdfCellStyle {
-  bold?: boolean;
-  italic?: boolean;
-  /** Text color (CSS). Must keep a contrast of 4.5:1 with the background. */
-  color?: string;
-  /** Background color (CSS). */
-  backgroundColor?: string;
-  /** Logical alignment of the text (`start`/`end` follow the direction). */
-  alignment?: GridColumnAlignment;
-}
+/** Style of one PDF cell (`customizeCell`): the shared {@link GridExportCellStyle}. */
+export type GridPdfCellStyle = GridExportCellStyle;
 
 /** An image in a cell, above its text. Sizes in pt. */
 export interface GridPdfImage {

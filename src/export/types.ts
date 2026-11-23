@@ -140,6 +140,23 @@ export interface GridExportData<TItem = any> {
 /** Formats offered by the export UI (`exportFormats`). May gain members in minor versions. */
 export type GridExportFormat = 'csv' | 'xlsx' | 'pdf';
 
+/**
+ * Style of one exported cell (`customizeCell` of the PDF and xlsx exports):
+ * the same object in both formats. Text colors must keep a contrast of at
+ * least 4.5:1 with the background (a color that does not is dropped, with a
+ * warning). Never let a color be the only signal: write the state as text too.
+ */
+export interface GridExportCellStyle {
+  bold?: boolean;
+  italic?: boolean;
+  /** Text color (CSS). Must keep a contrast of 4.5:1 with the background. */
+  color?: string;
+  /** Background color (CSS). */
+  backgroundColor?: string;
+  /** Logical alignment of the text (`start`/`end` follow the direction). */
+  alignment?: GridColumnAlignment;
+}
+
 /** Progress of an export (`onProgress`): data rows done, data rows in total, pages so far (PDF). */
 export interface GridExportProgress {
   readonly rowCount: number;

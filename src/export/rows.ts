@@ -242,6 +242,28 @@ export function* exportRows(source: ExportSource): Generator<GridExportRow, void
   }
 }
 
+/**
+ * Nível mais fundo das linhas que `exportRows` vai gerar (sem percorrê-las):
+ * o número de níveis de grupo, ou a profundidade da árvore. O xlsx declara o
+ * outline antes das linhas (spec 29).
+ */
+export const exportMaxLevel = (source: ExportSource): number => {
+  const levels = source.itemLevels;
+
+  if (levels) {
+    let max = 0;
+
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of -- `ArrayLike` (Int32Array da árvore) sem iterador garantido
+    for (let i = 0; i < levels.length; i++) {
+      max = Math.max(max, levels[i]);
+    }
+
+    return max;
+  }
+
+  return source.includeGroups ? levelsOf(source.groups) : 0;
+};
+
 const levelsOf = (groups: readonly GroupNode[]): number => {
   let levels = 0;
   let nodes = groups;

@@ -1,218 +1,446 @@
+/* eslint-disable no-bitwise -- flags e bordas no protocolo do motor, cores 0xRRGGBB. */
 /**
- * Adaptador opcional de Excel (frente 12): `@universal-material/data-grid/export-xlsx`.
+ * Exportação em Excel (frente 29): `@universal-material/data-grid/export-xlsx`.
  *
- * O grid NÃO depende do ExcelJS: o hospedeiro importa a biblioteca e a
- * injeta (`exportXlsx(grid, ExcelJS)`). Este módulo só usa a API pública do
- * grid (`getExportData`) e tipos estruturais mínimos do ExcelJS — os
- * genéricos devolvem ao hospedeiro os tipos reais do módulo que ele passou.
+ * O xlsx é escrito pelo `uo-xlsx` do Universal Office (crate Rust) num
+ * motor WebAssembly (`grid-xlsx.wasm`, crate `xlsx/`) num Web Worker: lê o
+ * que o usuário vê em blocos (`_exportStream`), decide valor, formato e
+ * estilo de cada célula, aplica `customizeCell`, serializa e manda ao motor;
+ * o arquivo volta no fim. O `.wasm` e o worker só são baixados ao exportar.
+ *
+ * As formas com o ExcelJS no 2º argumento (frente 12) continuam, obsoletas,
+ * em `legacy.ts`.
  */
+import type { GridPdfLink } from '../export-pdf/types.js';
 import { downloadBlob } from '../export/download.js';
-import type { GridExportColumn, GridExporter, GridExportOptions, GridExportRow } from '../export/types.js';
+import { contrast, parseColor, Writer } from '../export/serialize.js';
+import { createSlicer, yieldToHost } from '../export/slice.js';
+import type { GridExportColumn, GridExporter, GridExportProgress, GridExportRow } from '../export/types.js';
+import type { GridColumnAlignment, GridColumnDef } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
+import { columnText } from '../row-model/columns.js';
 import { toDate, toNumber } from '../row-model/format.js';
+import { LruCache } from '../row-model/lru.js';
+import { localClient, workerClient, type XlsxClient } from './client.js';
+import { XlsxEngineCode, XlsxEngineError } from './engine.js';
 import { datePatternOf, numberFormatOf } from './formats.js';
+import { exportXlsxWithExcelJS, XLSX_TYPE } from './legacy.js';
+import type {
+  ExcelJSModule,
+  GridXlsxBorder,
+  GridXlsxCell,
+  GridXlsxCellStyle,
+  GridXlsxDownloadOptions,
+  GridXlsxExcelJSOptions,
+  GridXlsxExporterOptions,
+  GridXlsxOptions,
+  WorkbookOf,
+  WorksheetOf,
+} from './types.js';
 
-/** The part of an ExcelJS cell the adapter writes. */
-export interface ExcelJSCell {
-  value: unknown;
-  numFmt?: string;
-}
+export type { GridPdfLink } from '../export-pdf/types.js';
+export type { GridExportCellStyle } from '../export/types.js';
+export type {
+  ExcelJSCell,
+  ExcelJSModule,
+  ExcelJSRow,
+  ExcelJSWorkbook,
+  ExcelJSWorksheet,
+  GridXlsxBorder,
+  GridXlsxCell,
+  GridXlsxCellStyle,
+  GridXlsxDownloadOptions,
+  GridXlsxExcelJSOptions,
+  GridXlsxExporterOptions,
+  GridXlsxOptions,
+  WorkbookOf,
+  WorksheetOf,
+} from './types.js';
 
-/** The part of an ExcelJS row the adapter writes. */
-export interface ExcelJSRow {
-  outlineLevel?: number;
-  font?: unknown;
-  getCell(index: number): ExcelJSCell;
-}
+/** Pasta dos assets no bundle autocontido (`dist/export-xlsx.min.js` → `./export-xlsx/`); no ESM, indefinido. */
+declare const __U_GRID_ASSETS__: string | undefined;
 
-/** The part of an ExcelJS worksheet the adapter uses. */
-export interface ExcelJSWorksheet {
-  addRow(values: unknown[]): ExcelJSRow;
-  getColumn(index: number): { width?: number };
-  mergeCells(top: number, left: number, bottom: number, right: number): void;
-  properties: { outlineLevelRow?: number };
-}
+// ------------------------------------------------------------------ padrões
 
-/** The part of an ExcelJS workbook the adapter uses. */
-export interface ExcelJSWorkbook {
-  addWorksheet(name?: string): ExcelJSWorksheet;
-  xlsx: { writeBuffer(): Promise<ArrayBuffer | ArrayBufferView> };
-}
-
-/** The ExcelJS module (`import ExcelJS from 'exceljs'`), injected by the host. */
-export interface ExcelJSModule {
-  Workbook: new () => ExcelJSWorkbook;
-}
-
-/** Workbook type of the injected module. */
-export type WorkbookOf<M extends ExcelJSModule> = InstanceType<M['Workbook']>;
-
-/** Worksheet type of the injected module. */
-export type WorksheetOf<M extends ExcelJSModule> = ReturnType<WorkbookOf<M>['addWorksheet']>;
-
-/** Options of `exportXlsx()`. */
-export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = ExcelJSWorksheet> extends GridExportOptions {
-  /** Worksheet name. Default `Sheet1`. */
-  sheetName?: string;
-  /** First row with the column labels (bold). Default `true`. */
-  includeHeaders?: boolean;
-  /** Called after the rows are written and before the file is built: style or add to the sheet. */
-  customize?: ((worksheet: TWorksheet, workbook: TWorkbook) => void | Promise<void>) | null;
-}
-
-/** Options of `downloadXlsx()`. */
-export interface GridXlsxDownloadOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = ExcelJSWorksheet> extends GridXlsxOptions<TWorkbook, TWorksheet> {
-  /** Name of the downloaded file. Default `export.xlsx`. */
-  fileName?: string;
-}
-
-const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-
-/** Níveis de outline que o Excel aceita. */
+const WHITE = 0xffffff;
+/** Cor "automática" do texto no Excel. */
+const BLACK = 0x000000;
+const HEADER_FILL = 0xe6e6e6;
+const MIN_CONTRAST = 4.5;
+/** Linhas por bloco no worker e na thread principal (lá cada bloco é uma chamada síncrona). */
+const BATCH_ROWS = 1000;
+const LOCAL_BATCH_ROWS = 100;
+/** Estilos novos por bloco (o protocolo conta em `u16`). */
+const MAX_BLOCK_STYLES = 60_000;
+const PROGRESS_MS = 250;
+/** Orçamento de uma fatia de serialização na thread principal (ms de relógio). */
+const XLSX_SLICE_MS = 4;
 const MAX_OUTLINE = 7;
+const MAX_NUMFMT = 255;
 
-/** px → largura de coluna do Excel (caracteres do "0" na fonte padrão). */
-const PX_PER_CHAR = 7;
+// ------------------------------------------------------------------ avisos limitados
 
-/**
- * The rows the user sees (`grid.getExportData(options)`) in an Excel file:
- * header, group rows with the row outline of Excel, group footers and
- * totals. Numbers, dates and booleans are typed cells with a number format
- * close to the column `format`; columns with `displayValue`, a `format`
- * function, `booleanDisplay` or their own `trueText`/`falseText` are written
- * as their displayed text. Text is
- * always a text cell (never a formula).
- */
-export const exportXlsx = async <M extends ExcelJSModule>(
-  grid: DataGrid,
-  excelJS: M,
-  options: GridXlsxOptions<WorkbookOf<M>, WorksheetOf<M>> = {},
-): Promise<Blob> => {
-  const data = await grid.getExportData(options);
-  options.signal?.throwIfAborted();
+const warned = new LruCache<string, true>(64);
 
-  const workbook = new excelJS.Workbook() as WorkbookOf<M>;
-  const worksheet = workbook.addWorksheet(options.sheetName || 'Sheet1') as WorksheetOf<M>;
-
-  writeSheet(worksheet, data.columns, data.rows, grid.language, options.includeHeaders !== false);
-  await options.customize?.(worksheet, workbook);
-  options.signal?.throwIfAborted();
-
-  const buffer = await workbook.xlsx.writeBuffer();
-
-  return new Blob([buffer as BlobPart], { type: XLSX_TYPE });
+const warnOnce = (key: string, message: string) => {
+  if (!warned.get(key)) {
+    warned.set(key, true);
+    console.warn(`<u-grid> xlsx: ${message}`);
+  }
 };
 
-/** Builds the file (`exportXlsx`) and downloads it as `fileName` (default `export.xlsx`). */
-export const downloadXlsx = async <M extends ExcelJSModule>(
-  grid: DataGrid,
-  excelJS: M,
-  options: GridXlsxDownloadOptions<WorkbookOf<M>, WorksheetOf<M>> = {},
-): Promise<void> => {
-  downloadBlob(await exportXlsx(grid, excelJS, options), options.fileName || 'export.xlsx');
+let warnedExcelJS = false;
+
+const warnExcelJS = () => {
+  if (!warnedExcelJS) {
+    warnedExcelJS = true;
+    console.warn('<u-grid> xlsx: passing ExcelJS to exportXlsx/downloadXlsx/createXlsxExporter is deprecated: call them without it '
+      + '(the grid writes the file itself, with bands, a frozen header and customizeCell). The ExcelJS forms will be removed in the next major version.');
+  }
 };
 
-/** Options of `createXlsxExporter()`: those of `downloadXlsx` without `selectedOnly` and `signal` (set by the grid). */
-export type GridXlsxExporterOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = ExcelJSWorksheet> = Omit<GridXlsxDownloadOptions<TWorkbook, TWorksheet>, 'selectedOnly' | 'signal'>;
+const isExcelJS = (value: unknown): value is ExcelJSModule =>
+  !!value && typeof (value as Partial<ExcelJSModule>).Workbook === 'function';
 
-/**
- * The Excel entry of the grid export UI: `grid.xlsxExporter =
- * createXlsxExporter(ExcelJS, options)` (with `export-formats="csv xlsx"`).
- * The grid passes `selectedOnly` ("Export selected rows") and an
- * `AbortSignal` (aborted when it disconnects).
- */
-export const createXlsxExporter = <M extends ExcelJSModule>(
-  excelJS: M,
-  options: GridXlsxExporterOptions<WorkbookOf<M>, WorksheetOf<M>> = {},
-): GridExporter => (grid, { selectedOnly, signal }) => downloadXlsx(grid, excelJS, { ...options, selectedOnly, signal });
+// ------------------------------------------------------------------ estilos
 
-// ----------------------------------------------------------------- planilha
+/** Alinhamento no protocolo do motor. */
+const Align = { None: 0, Left: 1, Center: 2, Right: 3, Start: 4, End: 5, CenterContinuous: 6 } as const;
+type AlignCode = typeof Align[keyof typeof Align];
 
-/** Como gravar cada coluna: tipado (com `numFmt`) ou o texto exibido. */
-interface CellWriter {
-  write(value: unknown, text: string): unknown;
-  numFmt?: string;
+interface Edge {
+  medium: boolean;
+  color?: number;
 }
 
-const writeSheet = (
-  worksheet: ExcelJSWorksheet,
-  columns: readonly GridExportColumn[],
-  rows: readonly GridExportRow[],
-  language: string | undefined,
-  headers: boolean,
-): void => {
-  const writers = columns.map(column => writerOf(column, language));
-  const count = Math.max(columns.length, 1);
-  let index = 0;
-  let outline = 0;
+/** Estilo normalizado (cores em RGB), o mesmo `Style` do `uo-xlsx`. */
+interface StyleSpec {
+  bold?: boolean;
+  italic?: boolean;
+  color?: number;
+  fill?: number;
+  align?: AlignCode;
+  wrap?: boolean;
+  /** esquerda, direita, cima, baixo (físicos) */
+  borders?: [Edge | undefined, Edge | undefined, Edge | undefined, Edge | undefined];
+  numFmt?: string | null;
+}
 
-  const add = (values: unknown[], level = 0, bold = false): ExcelJSRow => {
-    const row = worksheet.addRow(values);
-    index++;
+const edgeKey = (e: Edge | undefined): string => e ? `${e.medium ? 'm' : 't'}${e.color ?? ''}` : '';
 
-    if (level) {
-      row.outlineLevel = Math.min(level, MAX_OUTLINE);
-      outline = Math.max(outline, row.outlineLevel);
-    }
+/**
+ * Estilos do arquivo: cada descrição nova ganha o próximo número local (1, 2…;
+ * 0 = padrão) e vai no próximo bloco, antes das linhas que a usam.
+ */
+class StyleTable {
+  readonly #ids = new Map<string, number>();
+  #next = 1;
+  readonly #pending = new Writer();
+  #count = 0;
 
-    if (bold) {
-      row.font = { bold: true };
-    }
-
-    return row;
-  };
-
-  if (headers) {
-    add(columns.map(column => column.label), 0, true);
+  get pendingCount(): number {
+    return this.#count;
   }
 
-  for (const row of rows) {
-    switch (row.rowType) {
-      case 'data': {
-        const added = add(row.values.map((value, i) => writers[i].write(value, row.texts[i])), row.level);
+  id(s: StyleSpec): number {
+    const flags = (s.bold ? 1 : 0) | (s.italic ? 2 : 0) | (s.color !== undefined ? 4 : 0) | (s.fill !== undefined ? 8 : 0)
+      | (s.wrap ? 16 : 0) | (s.numFmt ? 32 : 0);
+    const b = s.borders;
+    const key = `${flags}|${s.align ?? 0}|${s.color ?? ''}|${s.fill ?? ''}|${b ? b.map(edgeKey).join(',') : ''}|${s.numFmt ?? ''}`;
+    let id = this.#ids.get(key);
 
-        writers.forEach((writer, i) => {
-          if (writer.numFmt && added.getCell(i + 1).value !== null) {
-            added.getCell(i + 1).numFmt = writer.numFmt;
-          }
-        });
-        break;
-      }
+    if (id !== undefined) {
+      return id;
+    }
 
-      case 'group': {
-        add([row.label, ...row.texts.slice(1).map(textCell)], row.level, true);
+    if (flags === 0 && !s.align && !b?.some(Boolean)) {
+      this.#ids.set(key, 0);
+      return 0;
+    }
 
-        // Rótulo mesclado sobre as colunas quando não há resumo alinhado (como o DevExtreme).
-        if (count > 1 && row.texts.every(text => !text)) {
-          worksheet.mergeCells(index, 1, index, count);
+    id = this.#next++;
+    this.#ids.set(key, id);
+    const w = this.#pending;
+    w.u8(flags);
+    w.u8(s.align ?? 0);
+
+    if (s.color !== undefined) {
+      w.u32(s.color);
+    }
+
+    if (s.fill !== undefined) {
+      w.u32(s.fill);
+    }
+
+    const sides = b ? b.reduce((mask, e, i) => mask | (e ? 1 << i : 0), 0) : 0;
+    w.u8(sides);
+
+    for (const e of b ?? []) {
+      if (e) {
+        w.u8(e.medium ? 1 : 0);
+        w.u8(e.color !== undefined ? 1 : 0);
+
+        if (e.color !== undefined) {
+          w.u32(e.color);
         }
-
-        break;
       }
+    }
 
-      default:
-        add(row.texts.map(textCell), row.level, row.rowType === 'total');
+    if (s.numFmt) {
+      w.str(s.numFmt);
+    }
+
+    this.#count++;
+    return id;
+  }
+
+  /** Os estilos novos desde o último bloco (e recomeça). */
+  take(): { count: number; bytes: Uint8Array } {
+    const out = { count: this.#count, bytes: this.#pending.take() };
+    this.#count = 0;
+    return out;
+  }
+}
+
+const ALIGN_OF: Record<GridColumnAlignment, AlignCode> = { start: Align.None, center: Align.Center, end: Align.End };
+const ALIGNMENT_OF: Partial<Record<AlignCode, GridColumnAlignment>> = {
+  [Align.Center]: 'center',
+  [Align.CenterContinuous]: 'center',
+  [Align.Start]: 'start',
+  [Align.Left]: 'start',
+  [Align.End]: 'end',
+  [Align.Right]: 'end',
+};
+
+const hex = (rgb: number) => `#${rgb.toString(16).padStart(6, '0')}`;
+
+/** O estilo interno como o hospedeiro o vê em `customizeCell`. */
+const publicStyle = (s: StyleSpec): GridXlsxCellStyle => {
+  const style: GridXlsxCellStyle = {};
+
+  if (s.bold) {
+    style.bold = true;
+  }
+
+  if (s.italic) {
+    style.italic = true;
+  }
+
+  if (s.color !== undefined) {
+    style.color = hex(s.color);
+  }
+
+  if (s.fill !== undefined) {
+    style.backgroundColor = hex(s.fill);
+  }
+
+  const alignment = s.align ? ALIGNMENT_OF[s.align] : undefined;
+
+  if (alignment) {
+    style.alignment = alignment;
+  }
+
+  if (s.wrap) {
+    style.wrap = true;
+  }
+
+  return style;
+};
+
+const lineOf = (value: boolean | GridXlsxBorder | undefined): Edge | undefined => {
+  if (value === true) {
+    return { medium: false };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const color = parseColor(value.color);
+
+  if (value.color && color === undefined) {
+    warnOnce(`color:${value.color}`, `"${value.color}" is not a color; the border is automatic.`);
+  }
+
+  return { medium: value.style === 'medium', ...color !== undefined ? { color } : {} };
+};
+
+type Borders = NonNullable<StyleSpec['borders']>;
+
+const bordersOf = (border: GridXlsxCellStyle['border'], rtl: boolean): Borders | undefined => {
+  if (!border) {
+    return undefined;
+  }
+
+  if (border === true) {
+    const line = { medium: false };
+    return [line, line, line, line];
+  }
+
+  if (typeof border !== 'object') {
+    return undefined;
+  }
+
+  if ('top' in border || 'bottom' in border || 'start' in border || 'end' in border) {
+    const start = lineOf(border.start);
+    const end = lineOf(border.end);
+    return [rtl ? end : start, rtl ? start : end, lineOf(border.top), lineOf(border.bottom)];
+  }
+
+  const line = lineOf(border as GridXlsxBorder);
+  return [line, line, line, line];
+};
+
+/** Estilo do hospedeiro → normalizado, com a regra de contraste do PDF (a cor reprovada sai, com aviso). */
+const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | null, span: boolean, rtl: boolean): StyleSpec => {
+  const s = style ?? {};
+  let color = parseColor(s.color);
+  let fill = parseColor(s.backgroundColor);
+
+  if (s.color && color === undefined) {
+    warnOnce(`color:${s.color}`, `"${s.color}" is not a color; it was ignored.`);
+  }
+
+  if (s.backgroundColor && fill === undefined) {
+    warnOnce(`color:${s.backgroundColor}`, `"${s.backgroundColor}" is not a color; it was ignored.`);
+  }
+
+  const background = fill ?? WHITE;
+
+  if (contrast(color ?? BLACK, background) < MIN_CONTRAST) {
+    warnOnce(`cell:${color ?? BLACK}:${background}`, 'a cell color has a contrast below 4.5:1 with its background; the automatic colors were used.');
+    color = undefined;
+
+    if (fill !== undefined && contrast(BLACK, fill) < MIN_CONTRAST) {
+      fill = undefined;
     }
   }
 
-  columns.forEach((column, i) => {
-    if (column.width) {
-      worksheet.getColumn(i + 1).width = Math.max(Math.round(column.width / PX_PER_CHAR), 4);
-    }
-  });
+  let code = numFmt;
 
-  if (outline) {
-    worksheet.properties.outlineLevelRow = outline;
+  if (code !== null && (typeof code !== 'string' || code.length === 0 || code.length > MAX_NUMFMT)) {
+    warnOnce('numfmt', 'a number format must be a string of 1 to 255 characters; General was used.');
+    code = null;
+  }
+
+  const alignment = s.alignment ? ALIGN_OF[s.alignment] : undefined;
+
+  return {
+    bold: !!s.bold,
+    italic: !!s.italic,
+    ...color !== undefined ? { color } : {},
+    ...fill !== undefined ? { fill } : {},
+    // "centralizar" numa célula que abrange várias (banda, rótulo de grupo) é "centralizar na seleção", sem mesclar
+    align: alignment === Align.Center && span ? Align.CenterContinuous : s.alignment === 'start' ? Align.Start : alignment ?? Align.None,
+    wrap: !!s.wrap,
+    borders: bordersOf(s.border, rtl),
+    numFmt: code,
+  };
+};
+
+// ------------------------------------------------------------------ células
+
+type CellValue = string | number | boolean | Date | null;
+
+/** Escreve uma célula: `kind`, estilo, valor e link (protocolo de `xlsx/src/lib.rs`). */
+const emit = (w: Writer, value: CellValue, style: number, link?: string): void => {
+  const flag = link ? 0x80 : 0;
+
+  if (typeof value === 'string' && value !== '') {
+    w.u8(1 | flag);
+    w.u32(style);
+    w.str(value);
+  } else if (typeof value === 'number') {
+    w.u8(2 | flag);
+    w.u32(style);
+    w.f64(value);
+  } else if (typeof value === 'boolean') {
+    w.u8((value ? 4 : 3) | flag);
+    w.u32(style);
+  } else if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // relógio de parede: a planilha não tem fuso
+    w.u8(5 | flag);
+    w.u32(style);
+    w.u32(value.getFullYear());
+    w.u8(value.getMonth() + 1);
+    w.u8(value.getDate());
+    w.u8(value.getHours());
+    w.u8(value.getMinutes());
+    w.u8(value.getSeconds());
+    w.u16(value.getMilliseconds());
+  } else {
+    w.u8(flag);
+    w.u32(style);
+  }
+
+  if (link) {
+    w.str(link);
   }
 };
 
-const textCell = (text: string): string | null => text === '' ? null : text;
+/** A célula de `customizeCell`. */
+class XlsxCell implements GridXlsxCell {
+  readonly rowType: GridXlsxCell['rowType'];
+  readonly row: GridExportRow | null;
+  readonly column: GridExportColumn | GridColumnDef | null;
+  readonly columnIndex: number;
+  readonly columnSpan: number;
+  readonly headerRow: number;
+  readonly value: unknown;
+  cellValue: CellValue;
+  numFmt: string | null;
+  style: GridXlsxCellStyle;
+  link?: GridPdfLink;
+  #text: string;
 
-const writerOf = (column: GridExportColumn, language: string | undefined): CellWriter => {
+  constructor(
+    base: Pick<GridXlsxCell, 'rowType' | 'row' | 'column' | 'columnIndex' | 'columnSpan' | 'headerRow' | 'value'>,
+    cellValue: CellValue,
+    text: string,
+    numFmt: string | null,
+    style: GridXlsxCellStyle,
+  ) {
+    this.rowType = base.rowType;
+    this.row = base.row;
+    this.column = base.column;
+    this.columnIndex = base.columnIndex;
+    this.columnSpan = base.columnSpan;
+    this.headerRow = base.headerRow;
+    this.value = base.value;
+    this.cellValue = cellValue;
+    this.#text = text;
+    this.numFmt = numFmt;
+    this.style = style;
+  }
+
+  get text(): string {
+    return this.#text;
+  }
+
+  set text(text: string) {
+    this.#text = typeof text === 'string' ? text : String(text ?? '');
+    this.cellValue = this.#text;
+    this.numFmt = null;
+  }
+}
+
+/** Como gravar os dados de uma coluna: tipado (com `numFmt`) ou o texto exibido. */
+interface ColumnPlan {
+  type: 'text' | 'number' | 'boolean' | 'date';
+  numFmt: string | null;
+  align: AlignCode;
+  /** estilo dos valores tipados (com o formato) */
+  typed: number;
+  /** estilo do texto (sem formato) */
+  plain: number;
+}
+
+const planOf = (column: GridExportColumn, language: string | undefined, styles: StyleTable): ColumnPlan => {
   const { dataType } = column;
   const definition = column.column;
-  const text: CellWriter = { write: (_, value) => textCell(value) };
-
+  const align = ALIGN_OF[column.alignment] ?? Align.None;
+  const plain = styles.id({ align });
+  const text: ColumnPlan = { type: 'text', numFmt: null, align, typed: plain, plain };
   // O texto depende do item ou é ícone/texto traduzido: grava o que a tela mostra.
   const ownBooleanText = dataType === 'boolean' && (definition.booleanDisplay || definition.trueText || definition.falseText);
 
@@ -220,39 +448,597 @@ const writerOf = (column: GridExportColumn, language: string | undefined): CellW
     return text;
   }
 
-  const format = definition.format;
-
-  if (dataType === 'number') {
-    return {
-      numFmt: numberFormatOf(format, language),
-      write: (value, shown) => {
-        const numeric = toNumber(value);
-
-        if (typeof numeric === 'bigint') {
-          return Number.isSafeInteger(Number(numeric)) ? Number(numeric) : textCell(shown);
-        }
-
-        return numeric !== undefined && Number.isFinite(numeric) ? numeric : textCell(shown);
-      },
-    };
-  }
-
   if (dataType === 'boolean') {
-    return { write: (value, shown) => typeof value === 'boolean' ? value : textCell(shown) };
+    return { ...text, type: 'boolean' };
   }
+
+  const numFmt = (dataType === 'number' ? numberFormatOf(definition.format, language) : datePatternOf(dataType, language)) ?? null;
+  return { type: dataType === 'number' ? 'number' : 'date', numFmt, align, typed: numFmt ? styles.id({ align, numFmt }) : plain, plain };
+};
+
+/** Valor tipado da célula de dados; o texto exibido quando o valor não é do tipo da coluna. */
+const typedValue = (plan: ColumnPlan, value: unknown, shown: string): CellValue => {
+  switch (plan.type) {
+    case 'number': {
+      const numeric = toNumber(value);
+
+      if (typeof numeric === 'bigint') {
+        return Number.isSafeInteger(Number(numeric)) ? Number(numeric) : shown || null;
+      }
+
+      return numeric !== undefined && Number.isFinite(numeric) ? numeric : shown || null;
+    }
+
+    case 'boolean':
+      return typeof value === 'boolean' ? value : shown || null;
+
+    case 'date':
+      return toDate(value) ?? (shown || null);
+
+    default:
+      return shown || null;
+  }
+};
+
+const isTyped = (value: CellValue) => typeof value === 'number' || value instanceof Date;
+
+// ------------------------------------------------------------------ contexto
+
+interface Context {
+  title: string;
+  sheetName: string;
+  fallbackName: string;
+  language: string;
+  rtl: boolean;
+  columns: GridExportColumn[];
+  rows: Iterator<GridExportRow>;
+  totalCount: number;
+  maxLevel: number;
+  /** Bandas acima de cada coluna (de cima para baixo), quando `includeBands`. */
+  chains: GridColumnDef[][];
+  numberLanguage: string | undefined;
+}
+
+const validLanguage = (language: string | undefined): string | undefined => {
+  if (!language) {
+    return undefined;
+  }
+
+  try {
+    return Intl.getCanonicalLocales(language)[0];
+  } catch {
+    return undefined;
+  }
+};
+
+const isGrid = (source: unknown): source is DataGrid =>
+  !!source && typeof (source as Partial<DataGrid>)._exportStream === 'function';
+
+const contextOf = (grid: DataGrid, options: GridXlsxOptions): Context => {
+  if (!isGrid(grid)) {
+    throw new TypeError('<u-grid> xlsx: exportXlsx needs a <u-grid> element.');
+  }
+
+  const stream = grid._exportStream(options);
+  const translation = grid._exportTranslation;
+  const name = grid._exportName.trim();
+  const fallback = translation.pdfDefaultTitle;
+  const bands = options.includeBands !== false && options.includeHeaders !== false;
 
   return {
-    numFmt: datePatternOf(dataType, language),
-    write: (value, shown) => {
-      const date = toDate(value);
-      return date ? excelDate(date) : textCell(shown);
-    },
+    title: options.title?.trim() || name || fallback,
+    sheetName: options.sheetName?.trim() || name || fallback,
+    fallbackName: fallback,
+    language: validLanguage(grid._exportLanguages.content) ?? 'en',
+    rtl: (options.direction ?? getComputedStyle(grid).direction) === 'rtl',
+    columns: stream.columns,
+    rows: stream.rows,
+    totalCount: stream.totalCount,
+    maxLevel: Math.min(MAX_OUTLINE, stream.maxLevel),
+    chains: bands ? stream.columns.map(column => grid._bandChainOf(column.column)) : stream.columns.map(() => []),
+    numberLanguage: grid.language,
   };
 };
 
+const configOf = (ctx: Context, headerRows: number, freeze: boolean): Uint8Array => {
+  const w = new Writer();
+  w.u8(1);
+  w.str(ctx.title);
+  w.str(ctx.language);
+  w.str(ctx.sheetName);
+  w.str(ctx.fallbackName);
+  w.u8((ctx.rtl ? 1 : 0) | (freeze ? 2 : 0));
+  w.u8(headerRows);
+  w.u8(ctx.maxLevel);
+  w.u16(ctx.columns.length);
+
+  for (const c of ctx.columns) {
+    w.f32(c.width ?? 0);
+  }
+
+  return w.take();
+};
+
+// ------------------------------------------------------------------ exportação
+
+const wasmUrl = (options: GridXlsxOptions): string =>
+  options.assetsUrl
+    ? new URL('grid-xlsx.wasm', options.assetsUrl).href
+    : typeof __U_GRID_ASSETS__ === 'string'
+      ? new URL(__U_GRID_ASSETS__ + 'grid-xlsx.wasm', import.meta.url).href
+      : new URL('./grid-xlsx.wasm', import.meta.url).href;
+
+const clientOf = async (options: GridXlsxOptions): Promise<XlsxClient> => {
+  const wasm = wasmUrl(options);
+  const factory = options.worker;
+
+  if (factory === false || (typeof factory !== 'function' && typeof Worker === 'undefined')) {
+    return localClient(wasm);
+  }
+
+  // `new URL('./…', import.meta.url)` literal: os bundlers (Vite, webpack, esbuild) copiam o arquivo
+  const worker = typeof factory === 'function'
+    ? factory()
+    : options.assetsUrl
+      ? new Worker(new URL('worker.js', options.assetsUrl), { type: 'module' })
+      : typeof __U_GRID_ASSETS__ === 'string'
+        ? new Worker(new URL(__U_GRID_ASSETS__ + 'worker.js', import.meta.url), { type: 'module' })
+        : new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+
+  try {
+    return await workerClient(worker, wasm);
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
+};
+
+const rethrow = (error: unknown): never => {
+  if (error instanceof XlsxEngineError) {
+    throw error.code === XlsxEngineCode.Limit
+      ? new RangeError(`<u-grid> xlsx: ${error.message} (a limit of Excel).`)
+      : new Error(`<u-grid> xlsx: ${error.message}`);
+  }
+
+  throw error;
+};
+
+/** Faixas de uma linha de banda: `[início, fim)` e a banda (`undefined` = sem banda nesse nível). */
+const bandRuns = (chains: GridColumnDef[][], depth: number): { start: number; end: number; band: GridColumnDef | undefined }[] => {
+  const runs: { start: number; end: number; band: GridColumnDef | undefined }[] = [];
+
+  for (let i = 0; i < chains.length;) {
+    const band = chains[i][depth];
+    let j = i + 1;
+
+    while (j < chains.length && chains[j][depth] === band) {
+      j++;
+    }
+
+    runs.push({ start: i, end: j, band });
+    i = j;
+  }
+
+  return runs;
+};
+
+const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise<Blob> => {
+  const signal = options.signal;
+  signal?.throwIfAborted();
+
+  if (options.customize) {
+    warnOnce('customize', '"customize" only works with the deprecated ExcelJS forms and was ignored; use "customizeCell".');
+  }
+
+  const ctx = contextOf(grid, options);
+  const customize = typeof options.customizeCell === 'function' ? options.customizeCell : null;
+  const headers = options.includeHeaders !== false;
+  const depth = headers ? Math.max(0, ...ctx.chains.map(chain => chain.length)) : 0;
+  const headerRows = headers ? depth + 1 : 0;
+  const rtl = ctx.rtl;
+  const n = ctx.columns.length;
+
+  const styles = new StyleTable();
+  const plans = ctx.columns.map(column => planOf(column, ctx.numberLanguage, styles));
+  const headerSpec = (align: AlignCode): StyleSpec => ({ bold: true, fill: HEADER_FILL, align });
+  const groupLabelSpec: StyleSpec = { bold: true, align: Align.CenterContinuous };
+  const groupCellSpecs = plans.map(plan => ({ bold: true, align: plan.align }));
+  const footerSpecs = plans.map(plan => ({ align: plan.align }));
+  const totalSpecs = plans.map(plan => ({ bold: true, align: plan.align }));
+  const groupLabel = styles.id(groupLabelSpec);
+  const groupCell = groupCellSpecs.map(spec => styles.id(spec));
+  const footerCell = footerSpecs.map(spec => styles.id(spec));
+  const totalCell = totalSpecs.map(spec => styles.id(spec));
+
+  /** `customizeCell` sobre a célula; devolve valor, estilo e link finais. */
+  const custom = (
+    base: Pick<GridXlsxCell, 'rowType' | 'row' | 'column' | 'columnIndex' | 'columnSpan' | 'headerRow' | 'value'>,
+    value: CellValue,
+    text: string,
+    numFmt: string | null,
+    spec: StyleSpec,
+  ): { value: CellValue; style: number; link?: string; spec: StyleSpec } => {
+    const cell = new XlsxCell(base, value, text, numFmt, publicStyle(spec));
+    customize!(cell);
+    const final = specOf(cell.style, cell.numFmt, base.columnSpan > 1, rtl);
+    let link: string | undefined;
+
+    if (cell.link) {
+      const url = String(cell.link.url ?? '').trim();
+
+      if ((/^(https?:|mailto:)/i).test(url)) {
+        link = url;
+      } else {
+        warnOnce(`link:${url.slice(0, 20)}`, `link "${url.slice(0, 40)}" was ignored (only http:, https: and mailto:).`);
+      }
+    }
+
+    let out = cell.cellValue;
+
+    if (out !== null && typeof out !== 'string' && typeof out !== 'number' && typeof out !== 'boolean' && !(out instanceof Date)) {
+      warnOnce('cell-value', 'cellValue must be a string, number, boolean, Date or null; the text was used.');
+      out = cell.text;
+    }
+
+    return { value: out, style: styles.id(final), link, spec: final };
+  };
+
+  const client = await clientOf(options);
+  const onAbort = () => client.dispose();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  const batchRows = client.local ? LOCAL_BATCH_ROWS : BATCH_ROWS;
+  let rowCount = 0;
+  let lastProgress = 0;
+
+  const progress = (force = false) => {
+    const now = performance.now();
+
+    if (options.onProgress && !signal?.aborted && (force || now - lastProgress >= PROGRESS_MS)) {
+      lastProgress = now;
+
+      try {
+        options.onProgress({ rowCount, totalCount: Math.max(ctx.totalCount, rowCount), pageCount: 0 } satisfies GridExportProgress);
+      } catch (error) {
+        console.error('<u-grid> xlsx: onProgress failed.', error);
+      }
+    }
+  };
+
+  let file: Uint8Array;
+
+  try {
+    await client.begin(configOf(ctx, headerRows, headerRows > 0 && options.freezeHeader !== false));
+    const w = new Writer();
+    let count = 0;
+    // Um bloco em voo: o worker escreve um enquanto a thread principal serializa o próximo.
+    const pipe: { inflight: Promise<void> | null } = { inflight: null };
+
+    const flush = async () => {
+      const { count: styleCount, bytes: styleBytes } = styles.take();
+      const rows = w.take();
+      const block = new Uint8Array(2 + styleBytes.length + 4 + rows.length);
+      const view = new DataView(block.buffer);
+      view.setUint16(0, styleCount, true);
+      block.set(styleBytes, 2);
+      view.setUint32(2 + styleBytes.length, count, true);
+      block.set(rows, 6 + styleBytes.length);
+      count = 0;
+
+      if (pipe.inflight) {
+        await pipe.inflight;
+      }
+
+      signal?.throwIfAborted();
+      const inflight = client.append(block).then(() => progress());
+      // Falha do bloco em voo: tratada aqui e relançada no próximo `await` (sem "unhandled rejection").
+      inflight.catch(() => undefined);
+      pipe.inflight = inflight;
+
+      if (client.local) {
+        await inflight;
+        pipe.inflight = null;
+        await yieldToHost();
+      }
+    };
+
+    const row = (level: number, cells: number) => {
+      w.u8(Math.min(MAX_OUTLINE, level));
+      w.u16(cells);
+      count++;
+    };
+
+    // cabeçalho: bandas (de cima para baixo) e a linha das colunas
+    for (let d = 0; d < depth; d++) {
+      row(0, n);
+
+      for (const run of bandRuns(ctx.chains, d)) {
+        const span = run.end - run.start;
+
+        if (!run.band) {
+          // sem banda neste nível: célula de cabeçalho vazia (o fundo continua)
+          const filler = styles.id(headerSpec(Align.None));
+
+          for (let i = run.start; i < run.end; i++) {
+            emit(w, null, filler, undefined);
+          }
+
+          continue;
+        }
+
+        const label = columnText(run.band);
+        let spec = headerSpec(Align.CenterContinuous);
+        let value: CellValue = label;
+        let style = styles.id(spec);
+        let link: string | undefined;
+
+        if (customize) {
+          ({ value, style, link, spec } = custom(
+            { rowType: 'header', row: null, column: run.band, columnIndex: run.start, columnSpan: span, headerRow: d, value: label },
+            label,
+            label,
+            null,
+            spec,
+          ));
+        }
+
+        emit(w, value, style, link);
+
+        // o resto da faixa: vazias com o mesmo estilo ("centralizar na seleção" atravessa só células assim)
+        for (let i = run.start + 1; i < run.end; i++) {
+          emit(w, null, style);
+        }
+      }
+    }
+
+    if (headers) {
+      row(0, n);
+
+      for (const [i, column] of ctx.columns.entries()) {
+        const spec = headerSpec(plans[i].align);
+
+        if (customize) {
+          const c = custom({ rowType: 'header', row: null, column, columnIndex: i, columnSpan: 1, headerRow: depth, value: column.label }, column.label, column.label, null, spec);
+          emit(w, c.value, c.style, c.link);
+        } else {
+          emit(w, column.label, styles.id(spec));
+        }
+      }
+    }
+
+    const slicer = createSlicer(XLSX_SLICE_MS);
+    let next = ctx.rows.next();
+
+    while (!next.done) {
+      const r = next.value;
+
+      switch (r.rowType) {
+        case 'data': {
+          row(r.level, n);
+
+          for (let i = 0; i < n; i++) {
+            const plan = plans[i];
+            const shown = r.texts[i] ?? '';
+            const value = typedValue(plan, r.values[i], shown);
+            const typed = isTyped(value);
+
+            if (customize) {
+              const c = custom(
+                { rowType: 'data', row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.values[i] },
+                value,
+                shown,
+                typed ? plan.numFmt : null,
+                { align: plan.align, numFmt: typed ? plan.numFmt : null },
+              );
+              emit(w, c.value, c.style, c.link);
+            } else {
+              emit(w, value, typed ? plan.typed : plan.plain);
+            }
+          }
+
+          rowCount++;
+          break;
+        }
+
+        case 'group': {
+          // rótulo em texto na 1ª coluna ("País: Brasil (3)"), centralizado sobre as vazias à frente, sem mesclar
+          let span = 1;
+
+          while (span < n && !r.texts[span]) {
+            span++;
+          }
+
+          row(r.level, Math.max(n, 1));
+          let label: { value: CellValue; style: number; link?: string; spec: StyleSpec } = { value: r.label, style: groupLabel, spec: groupLabelSpec };
+
+          if (customize) {
+            label = custom({ rowType: 'group', row: r, column: null, columnIndex: -1, columnSpan: span, headerRow: -1, value: r.value }, r.label, r.label, null, groupLabelSpec);
+          }
+
+          emit(w, label.value, label.style, label.link);
+
+          for (let i = 1; i < n; i++) {
+            const text = r.texts[i] ?? '';
+            // dentro da faixa do rótulo: o estilo dele (a centralização atravessa a célula)
+            const spec = i < span ? label.spec : groupCellSpecs[i];
+
+            if (customize) {
+              const c = custom({ rowType: 'group', row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.summaries[i] }, text || null, text, null, spec);
+              emit(w, c.value, c.style, c.link);
+            } else {
+              emit(w, text || null, i < span ? label.style : groupCell[i]);
+            }
+          }
+
+          break;
+        }
+
+        default: {
+          if (r.rowType !== 'group-footer' && r.rowType !== 'total') {
+            const type = String((r as { rowType?: unknown }).rowType);
+            warnOnce(`row:${type}`, `rows of type "${type}" are not supported and were left out.`);
+            break;
+          }
+
+          const total = r.rowType === 'total';
+
+          row(r.level, n);
+
+          for (let i = 0; i < n; i++) {
+            const text = r.texts[i] ?? '';
+
+            if (customize) {
+              const c = custom(
+                { rowType: r.rowType, row: r, column: ctx.columns[i], columnIndex: i, columnSpan: 1, headerRow: -1, value: r.summaries[i] },
+                text || null,
+                text,
+                null,
+                total ? totalSpecs[i] : footerSpecs[i],
+              );
+              emit(w, c.value, c.style, c.link);
+            } else {
+              emit(w, text || null, total ? totalCell[i] : footerCell[i]);
+            }
+          }
+
+        }
+      }
+
+      if (count >= batchRows || styles.pendingCount >= MAX_BLOCK_STYLES) {
+        await flush();
+      }
+
+      const pause = slicer.tick();
+
+      if (pause) {
+        await pause;
+        signal?.throwIfAborted();
+      }
+
+      next = ctx.rows.next();
+    }
+
+    await flush();
+
+    if (pipe.inflight) {
+      await pipe.inflight;
+    }
+
+    const result = await client.finish();
+    signal?.throwIfAborted();
+    file = result.file;
+
+    if (result.stats.droppedLinks) {
+      warnOnce('dropped-links', `${result.stats.droppedLinks} link(s) were left out (not http:, https: or mailto:, or longer than 2,079 characters).`);
+    }
+
+    if (result.stats.cutTexts) {
+      warnOnce('cut-texts', `${result.stats.cutTexts} text(s) longer than 32,767 characters (the limit of an Excel cell) were cut.`);
+    }
+
+    progress(true);
+  } catch (error) {
+    client.dispose();
+
+    if (signal?.aborted) {
+      throw signal.reason;
+    }
+
+    return rethrow(error);
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
+
+  client.dispose();
+
+  return new Blob([file as BlobPart], { type: XLSX_TYPE });
+};
+
+// ------------------------------------------------------------------ API
+
+/* eslint-disable prefer-arrow/prefer-arrow-functions, no-redeclare, padding-line-between-statements -- sobrecargas (a forma com o ExcelJS é obsoleta) */
+
 /**
- * O ExcelJS grava a data pelo instante UTC; a planilha não tem fuso, então
- * passa a hora LOCAL como se fosse UTC (senão 00:00 em UTC-3 vira 03:00).
+ * The Excel file of what the user sees: visible columns in the current
+ * order, filter, sorting, groups (with the row outline of Excel), group
+ * footers, totals and bands, with a frozen header. Numbers, dates and
+ * booleans are typed cells with a number format close to the column
+ * `format`; columns with `displayValue`, a `format` function,
+ * `booleanDisplay` or their own `trueText`/`falseText` are written as their
+ * displayed text. Text is always a text cell (never a formula). Written in a
+ * Web Worker by a WebAssembly engine; the `.wasm` and the worker load on the
+ * first export.
  */
-const excelDate = (date: Date): Date =>
-  new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds()));
+export function exportXlsx(grid: DataGrid, options?: GridXlsxOptions): Promise<Blob>;
+/**
+ * The file through the ExcelJS module the host passes.
+ * @deprecated Call `exportXlsx(grid, options)` without ExcelJS: the grid writes the file itself (bands, frozen header, `customizeCell`).
+ */
+export function exportXlsx<M extends ExcelJSModule>(grid: DataGrid, excelJS: M, options?: GridXlsxExcelJSOptions<WorkbookOf<M>, WorksheetOf<M>>): Promise<Blob>;
+export function exportXlsx(grid: DataGrid, second?: unknown, third?: unknown): Promise<Blob> {
+  return exportEither(grid, second, third);
+}
+
+/** As duas formas: com o ExcelJS (obsoleta) ou pelo motor. */
+const exportEither = (grid: DataGrid, second: unknown, third: unknown): Promise<Blob> => {
+  if (isExcelJS(second)) {
+    warnExcelJS();
+    return exportXlsxWithExcelJS(grid, second, (third ?? {}) as GridXlsxExcelJSOptions);
+  }
+
+  return exportXlsxFile(grid, second ?? {});
+};
+
+/** Builds the file (`exportXlsx`) and downloads it as `fileName` (default `export.xlsx`). */
+export function downloadXlsx(grid: DataGrid, options?: GridXlsxDownloadOptions): Promise<void>;
+/**
+ * Builds the file through the ExcelJS module the host passes and downloads it.
+ * @deprecated Call `downloadXlsx(grid, options)` without ExcelJS.
+ */
+export function downloadXlsx<M extends ExcelJSModule>(
+  grid: DataGrid,
+  excelJS: M,
+  options?: GridXlsxExcelJSOptions<WorkbookOf<M>, WorksheetOf<M>> & { fileName?: string },
+): Promise<void>;
+export async function downloadXlsx(grid: DataGrid, second?: unknown, third?: unknown): Promise<void> {
+  const options = ((isExcelJS(second) ? third : second) ?? {}) as { fileName?: string };
+  downloadBlob(await exportEither(grid, second, third), options.fileName || 'export.xlsx');
+}
+
+/**
+ * The Excel entry of the grid export UI: `grid.xlsxExporter =
+ * createXlsxExporter(options)` (with `export-formats="… xlsx"`). The grid
+ * passes `selectedOnly`, a `signal` (cancel, disconnect) and `onProgress`
+ * (shown in the export button).
+ */
+export function createXlsxExporter(options?: GridXlsxExporterOptions): GridExporter;
+/**
+ * The Excel entry of the grid export UI through the ExcelJS module the host passes.
+ * @deprecated Call `createXlsxExporter(options)` without ExcelJS.
+ */
+export function createXlsxExporter<M extends ExcelJSModule>(
+  excelJS: M,
+  options?: Omit<GridXlsxExcelJSOptions<WorkbookOf<M>, WorksheetOf<M>>, 'selectedOnly' | 'signal'> & { fileName?: string },
+): GridExporter;
+export function createXlsxExporter(first?: unknown, second?: unknown): GridExporter {
+  if (isExcelJS(first)) {
+    const excelJS = first;
+    const options = (second ?? {}) as GridXlsxExcelJSOptions & { fileName?: string };
+    warnExcelJS();
+
+    return (grid, { selectedOnly, signal }) => downloadXlsx(grid, excelJS, { ...options, selectedOnly, signal });
+  }
+
+  const options = (first ?? {}) as GridXlsxExporterOptions;
+
+  return (grid, { selectedOnly, signal, onProgress }) => downloadXlsx(grid, {
+    ...options,
+    selectedOnly,
+    signal,
+    onProgress: progress => {
+      options.onProgress?.(progress);
+      onProgress?.(progress);
+    },
+  });
+}
+
+/* eslint-enable prefer-arrow/prefer-arrow-functions, no-redeclare, padding-line-between-statements */

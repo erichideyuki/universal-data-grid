@@ -8,6 +8,7 @@
  * O `.wasm` e o worker só são baixados ao exportar.
  */
 import { downloadBlob } from '../export/download.js';
+import { contrast, parseColor, Writer } from '../export/serialize.js';
 import { createSlicer } from '../export/slice.js';
 import type { GridExportColumn, GridExportData, GridExporter, GridExportRow } from '../export/types.js';
 import { type GridI18n, resolveGridTranslation } from '../grid-i18n.js';
@@ -15,7 +16,6 @@ import type { DataGrid } from '../grid.js';
 import { LruCache } from '../row-model/lru.js';
 import { type Client, localClient, workerClient } from './client.js';
 import { EngineCode, EngineError, readFileUrl } from './engine.js';
-import { contrast, parseColor, Writer } from './serialize.js';
 import type {
   GridPdfCell,
   GridPdfCellStyle,
@@ -27,6 +27,7 @@ import type {
   GridPdfProgress,
 } from './types.js';
 
+export type { GridExportCellStyle } from '../export/types.js';
 export type {
   GridPdfCell,
   GridPdfCellStyle,

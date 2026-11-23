@@ -3,7 +3,8 @@
  * (fatias de tempo). A API é a mesma; o PDF volta em blocos.
  */
 import { yieldToHost } from '../export/slice.js';
-import { compileEngine, Engine, EngineError } from './engine.js';
+import { compileEngine } from '../export/wasm.js';
+import { Engine, EngineError } from './engine.js';
 
 export interface RowsResult {
   chunks: Uint8Array[];
