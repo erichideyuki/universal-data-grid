@@ -102,6 +102,42 @@ const fieldTexts = (row: Element): string[] =>
   ].join('='));
 
 describe('colunas ocultas por falta de espaço', () => {
+  // Mockup do clickCompliance: alargar "Ativo" (hidingPriority 0) com o grid sobrando a fazia
+  // sumir no 1º px — o arrasto congelava a largura esticada da última coluna (a sobra).
+  it('redimensionar com sobra no grid não esconde a coluna arrastada (nem outra)', async () => {
+    type Row = { name: string; active: number; done: number };
+    const cols: GridColumnDef<Row>[] = [
+      { path: 'name', label: 'Nome', fixed: 'start' },
+      { path: 'active', label: 'Ativo', dataType: 'number', hidingPriority: 0 },
+      { path: 'done', label: 'Concluído', dataType: 'number', hidingPriority: 1 },
+    ];
+    const rows = [{ name: 'Paulo Henrique', active: 1, done: 2 }];
+    const grid = await createResponsive(900, g => {
+      g.columnAutoWidth = true;
+      g.columnResizing = true;
+    }, rows as never, cols as never);
+    await settle(grid);
+
+    const header = () => [...root(grid).querySelectorAll<HTMLElement>('th.header-column')].find(th => th.textContent.trim().startsWith('Ativo'));
+    const before = header()!.getBoundingClientRect().width;
+    const handle = header()!.querySelector<HTMLElement>('.resize-handle')!;
+    const rect = handle.getBoundingClientRect();
+    const init = { bubbles: true, composed: true, pointerId: 11, button: 0, isPrimary: true, clientY: rect.top + 2 };
+    const x = rect.left + rect.width / 2;
+
+    handle.dispatchEvent(new PointerEvent('pointerdown', { ...init, clientX: x }));
+    handle.dispatchEvent(new PointerEvent('pointermove', { ...init, clientX: x + 40 }));
+    await settle(grid);
+    expect(grid.getAdaptiveColumns()).toEqual([]);
+    expect(header()).toBeDefined();
+
+    handle.dispatchEvent(new PointerEvent('pointerup', { ...init, clientX: x + 40 }));
+    await settle(grid);
+    await settle(grid);
+    expect(grid.getAdaptiveColumns()).toEqual([]);
+    expect(header()!.getBoundingClientRect().width).toBeCloseTo(before + 40, 0);
+  });
+
   // Relato da 0.3.2 (click): "Nome" fixa sem width, com column-auto-width, ficava com a largura do
   // conteúdo; escondidas as outras, a tabela seguia mais larga que o grid (a capa pulava as fixas).
   it('column-auto-width: a fixa larga encolhe até caber (nunca abaixo do minWidth)', async () => {

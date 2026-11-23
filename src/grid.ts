@@ -10630,7 +10630,8 @@ export class DataGrid extends LitElement {
 
   /** Editor aberto, popover ou menu ancorado: o conjunto de ocultas não muda agora. */
   #adaptiveFrozen(): boolean {
-    if (this.#editor || this.#contextMenu.open || this.#toolbarMenu.open || this.#headerFilterPopover.open) {
+    // Arrasto de redimensionar: a coluna segurada não some no meio do gesto; recalcula ao soltar.
+    if (this.#editor || this.#contextMenu.open || this.#toolbarMenu.open || this.#headerFilterPopover.open || this.#resize.active) {
       return true;
     }
 
@@ -11424,7 +11425,10 @@ export class DataGrid extends LitElement {
         continue;
       }
 
-      const width = this.#renderedWidths.get(column) ?? this.#widthOf(column);
+      // A largura da coluna (escolhida ou medida pelo auto-width), não a esticada pela
+      // sobra do grid: congelar a esticada somava a largura do grid e qualquer px a
+      // mais do arrasto fazia o responsivo esconder a própria coluna (relato do mockup).
+      const width = this.#widthOf(column) ?? this.#renderedWidths.get(column);
 
       if (width !== undefined) {
         this.#userWidths.set(column, Math.round(width));
@@ -11450,6 +11454,12 @@ export class DataGrid extends LitElement {
   /** @internal */
   _setResizing(active: boolean): void {
     this._containerRef.value?.classList.toggle('resizing', active);
+
+    // Fim do arrasto: o responsivo, congelado durante o gesto, refaz a conta.
+    if (!active && this.autoHideColumns) {
+      this.#adaptiveDirty = true;
+      this.requestUpdate();
+    }
   }
 
   /** @internal */
