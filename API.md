@@ -3561,7 +3561,8 @@ that targeted the shadow `<table>`, `<thead>` or `<tbody>` is not supported, the
 unchanged). To keep the 0.4.x behavior,
 set `scroll-container-axis="both"`. Also: in RTL the grid's live region no longer pokes 1px past
 the grid's edge (the page could scroll sideways by 1px); dragging a column that cannot be grouped
-(`groupable: false`) over the group panel no longer shows the drop indicator.
+(`groupable: false`) over the group panel no longer shows the drop indicator; the toolbar keeps its
+bottom line also without `show-column-lines`.
 
 ### Deprecated names
 

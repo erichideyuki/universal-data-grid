@@ -508,7 +508,8 @@ export const styles = css`
     box-shadow: var(--_col-line), var(--_row-line), var(--_edge-line), var(--_edge-shadow);
   }
 
-  .column-lines .header,
+  /* A barra (painel de grupos, botões) tem linha embaixo sempre, com ou sem \`show-column-lines\` (como a referência). */
+  .header,
   .group-row,
   thead:where(.grid-table > *),
   .row-lines :is(tbody, tfoot) > tr:where(.grid-table > * > *):not(.last):not(:last-child),

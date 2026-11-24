@@ -479,6 +479,14 @@ describe('revisão do site de documentação', () => {
     expect(getComputedStyle(total).boxShadow).not.toMatch(/-1px 0px 0px 0px inset/);
   });
 
+  it('barra de ferramentas com linha embaixo também sem linhas de coluna (relato do ClickCompliance)', async () => {
+    const grid = await createGrid({ columns: bandColumns(), items: orders(5) });
+    const toolbar = root(grid).querySelector<HTMLElement>('.header')!;
+
+    expect(grid.showColumnLines).toBe(false);
+    expect(getComputedStyle(toolbar).boxShadow).toMatch(/0px -1px 0px 0px inset/);
+  });
+
   it('bandas sem linhas de coluna: o cabeçalho todo tem as linhas verticais (como a referência); o corpo não', async () => {
     const grid = await createGrid({ columns: bandColumns(), items: orders(5) });
     const country = headerCell(grid, 'Country');
