@@ -129,6 +129,13 @@ fn merged_block(styles: &[Vec<u8>], rows: &[(u8, Vec<C<'_>>)], merges: &[(u32, u
     e.0
 }
 
+/// Estilo com formato embutido por id (flag 64), sem mais nada.
+fn builtin_style(id: u16) -> Vec<u8> {
+    let mut e = Enc::default();
+    e.u8(64).u8(0).u8(0).u16(id);
+    e.0
+}
+
 /// Estilo: flags (1 negrito, 2 itálico, 4 cor, 8 fundo, 16 quebra, 32 formato), alinhamento, cores, bordas, formato.
 fn style(flags: u8, align: u8, color: u32, fill: u32, borders: u8, fmt: &str) -> Vec<u8> {
     let mut e = Enc::default();
@@ -341,6 +348,26 @@ fn formato_invalido_cai_para_o_geral() {
     let long = "0".repeat(300);
     let p = run(&Begin::default(), &[block(&[style(1 | 32, 0, 0, 0, 0, &long)], &[(0, vec![C::Num(1.0, 1)])])]);
     assert!(!p["xl/styles.xml"].contains("000000000"), "{}", p["xl/styles.xml"]);
+}
+
+#[test]
+fn formato_embutido_por_id_sai_como_id() {
+    // 22 (data e hora) e 14 (data curta): o Excel mostra no padrão regional de quem abre
+    let p = run(
+        &Begin::default(),
+        &[block(
+            &[builtin_style(22), builtin_style(14)],
+            &[(0, vec![C::Num(45618.0, 1), C::Num(45618.5625, 2)])],
+        )],
+    );
+    let styles = &p["xl/styles.xml"];
+    assert!(styles.contains(r#"numFmtId="22""#), "{styles}");
+    assert!(styles.contains(r#"numFmtId="14""#), "{styles}");
+    assert!(!styles.contains("<numFmt "), "{styles}");
+    // id desconhecido: o estilo fica sem formato (o JS avisa), a exportação segue
+    let mut e = Engine::new();
+    assert_eq!(e.begin(&config(&Begin::default())), code::OK);
+    assert_eq!(e.append(&block(&[builtin_style(200)], &[(0, vec![C::Num(1.0, 1)])])), 1);
 }
 
 #[test]

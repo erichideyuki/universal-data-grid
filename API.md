@@ -1752,6 +1752,7 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 | `sheetName` | accessible name of the grid, else "Data" (translated) | Tab name, always cleaned: `[ ] : * ? / \` removed, cut to 31 characters, never `History`. |
 | `title` | accessible name of the grid, else "Data" (translated) | Document title (metadata). |
 | `language` | language of the grid | Language of the file (BCP 47): `dc:language` and the number and date formats. |
+| `dateFormat` | `'language'` | Date and date-time columns: `'language'` writes the order of `language` (`dd/mm/yyyy` in `pt-BR`); `'reader'` writes the Excel built-in formats `14` (date) and `22` (date and time), which Excel shows in the regional settings of whoever opens the file, chosen by the column. |
 | `includeHeaders` | `true` | The header rows (bands and column labels). |
 | `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, aligned by the band `alignment`). |
 | `freezeHeader` | `true` | Freezes every header row (the `fixed: 'start'` columns are always frozen). |
@@ -1772,7 +1773,9 @@ of the band; `null` in the label of a group row), `band` (the band of a band cel
 `cell.column?.column` — `cell.column?.column.name === 'actions'` or `cell.column?.column.path ===
 'status'` (`cell.column.name` is always `undefined`). Change `cellValue` (a string
 is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
-`numFmt` to `null`), `numFmt` (an Excel format code), `style` and `link` (a `GridExportLink` `{ url,
+`numFmt` to `null`), `numFmt` (an Excel format code written as is, or the id of a built-in date/time
+format — `14` short date, `22` date and time, 15–21, 45–47 — shown in the reader's regional settings;
+other ids fall back to General with a warning; a `Date` with no format gets `14` or `22`), `style` and `link` (a `GridExportLink` `{ url,
 description? }`: `http:`, `https:` or `mailto:`; without a color of yours, or when yours fails the
 contrast check, the cell gets the link color — `#0563c1`, or `#9dc3e6` on a dark background; no underline
 yet — and `description` is ignored for now: the writer has no link tooltip yet). The last write wins.
@@ -3546,6 +3549,13 @@ import {
   type GridPdfProgress,    // = GridExportProgress
 } from '@universal-material/data-grid/export-pdf';
 ```
+
+### Next release (unreleased)
+
+Excel export: `dateFormat: 'reader'` writes date columns with the built-in formats `14` (date) and
+`22` (date and time), which Excel shows in the regional settings of whoever opens the file (the
+default `'language'` keeps the order of the file language); `GridXlsxCell.numFmt` also takes the id of
+a built-in date/time format (`cell.numFmt = 22`), so its type is now `string | number | null`.
 
 ### 0.5.1
 

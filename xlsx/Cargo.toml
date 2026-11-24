@@ -11,11 +11,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # escritor de xlsx (Universal Office, branch rust-core; trocar por um commit da main quando a migração para o Rust acabar)
-uo-xlsx = { git = "https://github.com/erichideyuki/universal-office", rev = "8d0d00049f7ae18959c8c21d896c5f02ba071711" }
+uo-xlsx = { git = "https://github.com/erichideyuki/universal-office", rev = "784b3031683a8957b048b16443a202501b48c278" }
 
 [dev-dependencies]
 # zip, inflate e XML estrito para ler de volta o arquivo nos testes (mesmo commit do uo-xlsx)
-uo-opc = { git = "https://github.com/erichideyuki/universal-office", rev = "8d0d00049f7ae18959c8c21d896c5f02ba071711" }
+uo-opc = { git = "https://github.com/erichideyuki/universal-office", rev = "784b3031683a8957b048b16443a202501b48c278" }
 
 [profile.release]
 lto = true

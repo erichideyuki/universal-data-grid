@@ -127,8 +127,15 @@ export interface GridXlsxCell<TItem = any> {
    * `cellValue`); writing sets `cellValue` to the text and `numFmt` to `null`.
    */
   text: string;
-  /** Excel number format code (`'#,##0.00'`, `'dd/mm/yyyy'`); `null` = General. */
-  numFmt: string | null;
+  /**
+   * Excel number format: a code (`'#,##0.00'`, `'dd/mm/yyyy'`, written as
+   * is) or the id of a built-in date/time format (`14` short date, `22` date
+   * and time, 15-21, 45-47), which Excel shows in the regional settings of
+   * whoever opens the file. Other ids fall back to General (with a warning).
+   * `null` = General; a `Date` without a format gets `14` (midnight) or `22`.
+   * With `dateFormat: 'reader'`, date columns read `14` or `22` here.
+   */
+  numFmt: string | number | null;
   /**
    * Style of the cell (replace the object or change its fields). Keep
    * `...cell.style` when replacing it: it carries the column alignment of
@@ -160,6 +167,14 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
    * formats. Default: the language of the grid.
    */
   language?: string;
+  /**
+   * Date and date-time columns: `'language'` (default) writes the order of
+   * {@link GridXlsxOptions.language} (`dd/mm/yyyy` in `pt-BR`); `'reader'`
+   * writes the Excel built-in formats `14` (date) and `22` (date and time),
+   * which Excel shows in the regional settings of whoever opens the file,
+   * chosen by the column (a midnight value of a date-time column keeps `22`).
+   */
+  dateFormat?: 'language' | 'reader';
   /** Header rows with the column labels (and the bands). Default `true`. */
   includeHeaders?: boolean;
   /**

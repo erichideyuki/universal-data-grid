@@ -207,6 +207,21 @@ o cabeçalho e os dados; larguras pelas do grid.
   contraste, axe com o menu aberto em `ar`). Ficaram para o usuário (mudam
   o contrato aprovado ou o padrão visível) — ver "Em aberto".
 
+## Formato embutido de data (2026-11-24, pedido do ClickCompliance)
+O EPPlus do servidor deles grava `m/d/yy h:mm` como o embutido 22, que o
+Excel mostra no padrão regional de quem abre; o grid gravava o código do
+idioma como formato próprio, literal. Revisado pelo
+`webcomponent-api-reviewer` e escolhido pelo usuário:
+- `dateFormat?: 'language' | 'reader'` em `GridXlsxOptions` (padrão
+  `'language'`, o de antes): `'reader'` grava 14 nas colunas `date` e 22
+  nas `datetime`, pela coluna (meia-noite numa `datetime` fica 22).
+- `GridXlsxCell.numFmt: string | number | null`: número = id de formato
+  embutido de data/hora (14–22, 45–47); outro id vira General com aviso.
+  Recusados: mapear códigos canônicos (`m/d/yy h:mm` → 22, regra oculta
+  que muda o sentido de um código literal) e um campo separado.
+- Motor: flag 64 no estilo do protocolo (`u16` do id) e
+  `uo_xlsx::Style::builtin_num_fmt` (commit `784b3031` do `rust-core`).
+
 ## Decisões do usuário depois da entrega (2026-11-23)
 Aceitas as 8 recomendações da revisão na entrega (mudam a API aprovada
 acima; valem sobre ela):

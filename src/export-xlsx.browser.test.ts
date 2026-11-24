@@ -492,6 +492,56 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.styleOf(group).horizontal).toBe('centerContinuous');
   });
 
+  // Pedido do click (0.5.1): datas no padrão regional de quem abre, como o EPPlus com o embutido 22.
+  it('dateFormat \'reader\': datas com os embutidos 14 (date) e 22 (datetime), escolhidos pela coluna', async () => {
+    const cols: GridColumnDef[] = [
+      { path: 'name', label: 'Name' },
+      { path: 'when', label: 'When', dataType: 'date' },
+      { path: 'when', name: 'at', label: 'At', dataType: 'datetime' },
+    ];
+    const seen: unknown[] = [];
+    const book = await run(await create(undefined, cols), {
+      dateFormat: 'reader',
+      customizeCell: cell => {
+        if (cell.rowType === 'data' && cell.columnIndex > 0) {
+          seen.push(cell.numFmt);
+        }
+      },
+    });
+
+    // A2: data à meia-noite → 14 na coluna date e 22 na datetime (a coluna decide, não o valor)
+    expect(book.styleOf('B2').numFmt).toBe('builtin:14');
+    expect(book.styleOf('C2').numFmt).toBe('builtin:22');
+    expect(book.styleOf('C3').numFmt).toBe('builtin:22');
+    expect(book.parts.get('xl/styles.xml')).not.toContain('<numFmt ');
+    expect(seen.slice(0, 4)).toEqual([14, 22, 14, 22]);
+
+    // padrão: o formato do idioma, literal
+    const language = await run(await create(undefined, cols));
+    expect(language.styleOf('B2').numFmt).toBe('mm/dd/yyyy');
+  });
+
+  it('customizeCell: numFmt numérico grava o embutido; id fora dos aceitos vira General com aviso', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const book = await run(await create(), {
+      customizeCell: cell => {
+        if (cell.rowType === 'data' && cell.columnIndex === 3 && cell.row?.rowType === 'data' && cell.row.values[0] === 'Ana') {
+          cell.numFmt = 22;
+        }
+
+        // número com id fora dos aceitos: General
+        if (cell.rowType === 'data' && cell.columnIndex === 2 && cell.row?.rowType === 'data' && cell.row.values[0] === 'Bob') {
+          cell.numFmt = 99;
+        }
+      },
+    });
+
+    expect(book.styleOf('D2').numFmt).toBe('builtin:22');
+    expect(book.styleOf('C3').numFmt).toBeNull();
+    expect(book.styleOf('C2').numFmt).toMatch(/^#,##0.00/);
+    expect(warn.mock.calls.some(([message]) => String(message).includes('99 is not a supported built-in number format'))).toBe(true);
+  });
+
   it('language: dc:language e os formatos de número e data; o padrão é o do grid', async () => {
     const cols: GridColumnDef[] = [
       { path: 'name', label: 'Name' },

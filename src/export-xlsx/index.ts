@@ -159,8 +159,18 @@ interface StyleSpec {
   wrap?: boolean;
   /** esquerda, direita, cima, baixo (físicos) */
   borders?: [Edge | undefined, Edge | undefined, Edge | undefined, Edge | undefined];
-  numFmt?: string | null;
+  /** Código (texto) ou id de um formato embutido do Excel (número). */
+  numFmt?: string | number | null;
 }
+
+/**
+ * Formatos embutidos do Excel aceitos por id (\`numFmt\` numérico): as datas e
+ * horas, que o Excel mostra no padrão regional de quem abre a planilha
+ * (14 data curta, 22 data e hora; 45–47 minutos e segundos).
+ */
+const BUILTIN_NUMFMTS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+const BUILTIN_SHORT_DATE = 14;
+const BUILTIN_DATE_TIME = 22;
 
 const edgeKey = (e: Edge | undefined): string => e ? `${e.medium ? 'm' : 't'}${e.color ?? ''}` : '';
 
@@ -180,9 +190,11 @@ class StyleTable {
 
   id(s: StyleSpec): number {
     const flags = (s.bold ? 1 : 0) | (s.italic ? 2 : 0) | (s.color !== undefined ? 4 : 0) | (s.fill !== undefined ? 8 : 0)
-      | (s.wrap ? 16 : 0) | (s.numFmt ? 32 : 0);
+      | (s.wrap ? 16 : 0) | (typeof s.numFmt === 'string' && s.numFmt ? 32 : 0) | (typeof s.numFmt === 'number' ? 64 : 0);
     const b = s.borders;
-    const key = `${flags}|${s.align ?? 0}|${s.color ?? ''}|${s.fill ?? ''}|${b ? b.map(edgeKey).join(',') : ''}|${s.numFmt ?? ''}`;
+    // id embutido com `#` na chave: o id 14 e o código "14" são estilos diferentes
+    const format = typeof s.numFmt === 'number' ? `#${s.numFmt}` : s.numFmt ?? '';
+    const key = `${flags}|${s.align ?? 0}|${s.color ?? ''}|${s.fill ?? ''}|${b ? b.map(edgeKey).join(',') : ''}|${format}`;
     let id = this.#ids.get(key);
 
     if (id !== undefined) {
@@ -222,8 +234,12 @@ class StyleTable {
       }
     }
 
-    if (s.numFmt) {
+    if (typeof s.numFmt === 'string' && s.numFmt) {
       w.str(s.numFmt);
+    }
+
+    if (typeof s.numFmt === 'number') {
+      w.u16(s.numFmt);
     }
 
     this.#count++;
@@ -332,7 +348,7 @@ const bordersOf = (border: GridXlsxCellStyle['border'], rtl: boolean): Borders |
 };
 
 /** Estilo do hospedeiro → normalizado, com a regra de contraste do PDF (a cor reprovada sai, com aviso). */
-const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | null, span: boolean, rtl: boolean, link = false): StyleSpec => {
+const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | number | null, span: boolean, rtl: boolean, link = false): StyleSpec => {
   const s = style ?? {};
   let color = parseColor(s.color);
   let fill = parseColor(s.backgroundColor);
@@ -369,8 +385,13 @@ const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | nu
 
   let code = numFmt;
 
-  if (code !== null && (typeof code !== 'string' || code.length === 0 || code.length > MAX_NUMFMT)) {
-    warnOnce('numfmt', 'a number format must be a string of 1 to 255 characters; General was used.');
+  if (typeof code === 'number') {
+    if (!BUILTIN_NUMFMTS.has(code)) {
+      warnOnce(`numfmt-id:${code}`, `${code} is not a supported built-in number format (14-22, 45-47); General was used.`);
+      code = null;
+    }
+  } else if (code !== null && (typeof code !== 'string' || code.length === 0 || code.length > MAX_NUMFMT)) {
+    warnOnce('numfmt', 'a number format must be a string of 1 to 255 characters or a built-in id; General was used.');
     code = null;
   }
 
@@ -443,7 +464,7 @@ class XlsxCell implements GridXlsxCell {
   readonly headerRow: number;
   readonly value: unknown;
   cellValue: CellValue;
-  numFmt: string | null;
+  numFmt: string | number | null;
   style: GridXlsxCellStyle;
   link?: GridExportLink;
   #text: string;
@@ -452,7 +473,7 @@ class XlsxCell implements GridXlsxCell {
     base: CellBase,
     cellValue: CellValue,
     text: string,
-    numFmt: string | null,
+    numFmt: string | number | null,
     style: GridXlsxCellStyle,
   ) {
     this.rowType = base.rowType;
@@ -483,7 +504,7 @@ class XlsxCell implements GridXlsxCell {
 /** Como gravar os dados de uma coluna: tipado (com `numFmt`) ou o texto exibido. */
 interface ColumnPlan {
   type: 'text' | 'number' | 'boolean' | 'date';
-  numFmt: string | null;
+  numFmt: string | number | null;
   align: AlignCode;
   /** estilo dos valores tipados (com o formato) */
   typed: number;
@@ -491,7 +512,11 @@ interface ColumnPlan {
   plain: number;
 }
 
-const planOf = (column: GridExportColumn, language: string | undefined, styles: StyleTable): ColumnPlan => {
+/** Formato das datas: o padrão do idioma do arquivo, ou o embutido que o Excel mostra no padrão de quem lê. */
+const dateFormatOf = (dataType: 'date' | 'datetime', language: string | undefined, reader: boolean): string | number =>
+  reader ? dataType === 'datetime' ? BUILTIN_DATE_TIME : BUILTIN_SHORT_DATE : datePatternOf(dataType, language);
+
+const planOf = (column: GridExportColumn, language: string | undefined, styles: StyleTable, reader = false): ColumnPlan => {
   const { dataType } = column;
   const definition = column.column;
   const align = ALIGN_OF[column.alignment] ?? Align.None;
@@ -511,7 +536,9 @@ const planOf = (column: GridExportColumn, language: string | undefined, styles: 
     return { ...text, type: 'boolean', align: typedAlign, typed: styles.id({ align: typedAlign }) };
   }
 
-  const numFmt = (dataType === 'number' ? numberFormatOf(definition.format, language) : datePatternOf(dataType, language)) ?? null;
+  const numFmt = (dataType === 'number'
+    ? numberFormatOf(definition.format, language)
+    : dateFormatOf(dataType === 'datetime' ? 'datetime' : 'date', language, reader)) ?? null;
   return { type: dataType === 'number' ? 'number' : 'date', numFmt, align: typedAlign, typed: styles.id({ align: typedAlign, numFmt }), plain };
 };
 
@@ -552,7 +579,8 @@ const typedSummary = (
   list: readonly GridSummaryValue[] | undefined,
   plan: ColumnPlan,
   language: string | undefined,
-): { value: number | Date; numFmt: string | null } | undefined => {
+  reader = false,
+): { value: number | Date; numFmt: string | number | null } | undefined => {
   if (list?.length !== 1) {
     return undefined;
   }
@@ -569,7 +597,7 @@ const typedSummary = (
   }
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return { value, numFmt: plan.type === 'date' ? plan.numFmt : datePatternOf('date', language) };
+    return { value, numFmt: plan.type === 'date' ? plan.numFmt : dateFormatOf('date', language, reader) };
   }
 
   return undefined;
@@ -617,6 +645,8 @@ interface Context {
   /** Bandas acima de cada coluna (de cima para baixo), quando `includeBands`. */
   chains: GridColumnDef[][];
   numberLanguage: string | undefined;
+  /** \`dateFormat: 'reader'\`: datas com os formatos embutidos 14/22 (padrão regional de quem lê). */
+  readerDates: boolean;
 }
 
 const validLanguage = (language: string | undefined): string | undefined => {
@@ -650,6 +680,12 @@ const contextOf = (grid: DataGrid, options: GridXlsxOptions): Context => {
     warnOnce(`lang:${options.language}`, `"${options.language}" is not a valid language tag; the language of the grid was used.`);
   }
 
+  const dateFormat = options.dateFormat ?? 'language';
+
+  if (dateFormat !== 'language' && dateFormat !== 'reader') {
+    warnOnce(`dateFormat:${String(dateFormat)}`, `dateFormat "${String(dateFormat)}" is not "language" or "reader"; "language" was used.`);
+  }
+
   let fixedStart = 0;
 
   while (fixedStart < stream.columns.length && grid._fixedOf(stream.columns[fixedStart].column) === 'start') {
@@ -669,6 +705,7 @@ const contextOf = (grid: DataGrid, options: GridXlsxOptions): Context => {
     fixedStart,
     chains: bands ? stream.columns.map(column => grid._bandChainOf(column.column)) : stream.columns.map(() => []),
     numberLanguage: language ?? grid.language,
+    readerDates: dateFormat === 'reader',
   };
 };
 
@@ -783,7 +820,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
   const n = ctx.columns.length;
 
   const styles = new StyleTable();
-  const plans = ctx.columns.map(column => planOf(column, ctx.numberLanguage, styles));
+  const plans = ctx.columns.map(column => planOf(column, ctx.numberLanguage, styles, ctx.readerDates));
   const headerSpec = (align: AlignCode): StyleSpec => ({ bold: true, fill: HEADER_FILL, align });
   // No início da linha, como na tela e como o rótulo da banda (relato de uso: centralizado, ficava solto no meio).
   const groupLabelSpec: StyleSpec = { bold: true, align: Align.None };
@@ -800,7 +837,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
     base: CellBase,
     value: CellValue,
     text: string,
-    numFmt: string | null,
+    numFmt: string | number | null,
     spec: StyleSpec,
   ): { value: CellValue; style: number; link?: string; spec: StyleSpec } => {
     const cell = new XlsxCell(base, value, text, numFmt, publicStyle(spec));
@@ -1058,7 +1095,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
 
           for (let i = 0; i < n; i++) {
             const text = r.texts[i] ?? '';
-            const typed = typedSummary(r.summaries[i], plans[i], ctx.numberLanguage);
+            const typed = typedSummary(r.summaries[i], plans[i], ctx.numberLanguage, ctx.readerDates);
             const spec = total ? totalSpecs[i] : footerSpecs[i];
             const typedSpec = typed ? { ...spec, numFmt: typed.numFmt } : spec;
 

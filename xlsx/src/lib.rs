@@ -10,10 +10,10 @@
 //! largura `f32` em px (≤ 0 = padrão). Strings: `u32` de bytes + UTF-8.
 //!
 //! Bloco (`append`): estilos novos — `u16` n e por estilo flags `u8` (1 negrito, 2 itálico, 4 cor,
-//! 8 fundo, 16 quebra, 32 formato), alinhamento `u8` (0 nenhum, 1 esquerda, 2 centro, 3 direita,
+//! 8 fundo, 16 quebra, 32 formato, 64 formato embutido do Excel por id), alinhamento `u8` (0 nenhum, 1 esquerda, 2 centro, 3 direita,
 //! 4 início, 5 fim, 6 centralizar na seleção), [cor `u32`], [fundo `u32`], bordas `u8` (bits 1
 //! esquerda, 2 direita, 4 cima, 8 baixo) e por lado presente estilo `u8` (0 fina, 1 média) + tem cor
-//! `u8` + [cor `u32`], [formato]; os estilos são numerados na ordem de chegada a partir de 1 (0 =
+//! `u8` + [cor `u32`], [formato], [id do formato embutido `u16`]; os estilos são numerados na ordem de chegada a partir de 1 (0 =
 //! padrão). Depois `u32` linhas e por linha outline `u8`, `u16` células e por célula `kind u8`
 //! (0 vazia, 1 texto, 2 número, 3 falso, 4 verdadeiro, 5 data; `| 0x80` = link depois do valor),
 //! estilo `u32`, o valor (texto: string; número: `f64`; data: ano `i32`, mês, dia, hora, minuto,
@@ -126,7 +126,19 @@ fn read_style(r: &mut Rd<'_>) -> Result<Style, String> {
         }
     }
     let num_fmt = if flags & 32 != 0 { Some(r.str()?.to_owned()) } else { None };
-    Ok(Style { num_fmt, bold: flags & 1 != 0, italic: flags & 2 != 0, color, fill, border, align, wrap: flags & 16 != 0 })
+    // id de um formato embutido (14 data curta, 22 data e hora…): o Excel mostra no padrão regional de quem lê
+    let builtin_num_fmt = if flags & 64 != 0 { Some(u32::from(r.u16()?)) } else { None };
+    Ok(Style {
+        num_fmt,
+        builtin_num_fmt,
+        bold: flags & 1 != 0,
+        italic: flags & 2 != 0,
+        color,
+        fill,
+        border,
+        align,
+        wrap: flags & 16 != 0,
+    })
 }
 
 /// Uma exportação: `begin` → `append`… → `finish`.
@@ -238,9 +250,10 @@ impl Engine {
         for _ in 0..new_styles {
             let mut style = read_style(&mut r).map_err(invalid)?;
             let id = match w.add_style(&style) {
-                // formato que o Excel recusa: o estilo fica sem ele (o JS já avisou)
+                // formato que o Excel recusa (código ou id embutido desconhecido): o estilo fica sem ele (o JS já avisou)
                 Err(Error::NumFmt) => {
                     style.num_fmt = None;
+                    style.builtin_num_fmt = None;
                     w.add_style(&style)
                 }
                 other => other,

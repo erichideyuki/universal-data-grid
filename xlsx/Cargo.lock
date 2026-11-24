@@ -34,7 +34,7 @@ checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 [[package]]
 name = "uo-jsnum"
 version = "0.10.0-dev"
-source = "git+https://github.com/erichideyuki/universal-office?rev=8d0d00049f7ae18959c8c21d896c5f02ba071711#8d0d00049f7ae18959c8c21d896c5f02ba071711"
+source = "git+https://github.com/erichideyuki/universal-office?rev=784b3031683a8957b048b16443a202501b48c278#784b3031683a8957b048b16443a202501b48c278"
 dependencies = [
  "ryu-js",
 ]
@@ -42,7 +42,7 @@ dependencies = [
 [[package]]
 name = "uo-numfmt"
 version = "0.10.0-dev"
-source = "git+https://github.com/erichideyuki/universal-office?rev=8d0d00049f7ae18959c8c21d896c5f02ba071711#8d0d00049f7ae18959c8c21d896c5f02ba071711"
+source = "git+https://github.com/erichideyuki/universal-office?rev=784b3031683a8957b048b16443a202501b48c278#784b3031683a8957b048b16443a202501b48c278"
 dependencies = [
  "uo-jsnum",
  "uo-text",
@@ -51,7 +51,7 @@ dependencies = [
 [[package]]
 name = "uo-opc"
 version = "0.10.0-dev"
-source = "git+https://github.com/erichideyuki/universal-office?rev=8d0d00049f7ae18959c8c21d896c5f02ba071711#8d0d00049f7ae18959c8c21d896c5f02ba071711"
+source = "git+https://github.com/erichideyuki/universal-office?rev=784b3031683a8957b048b16443a202501b48c278#784b3031683a8957b048b16443a202501b48c278"
 dependencies = [
  "miniz_oxide",
  "uo-jsnum",
@@ -60,7 +60,7 @@ dependencies = [
 [[package]]
 name = "uo-text"
 version = "0.10.0-dev"
-source = "git+https://github.com/erichideyuki/universal-office?rev=8d0d00049f7ae18959c8c21d896c5f02ba071711#8d0d00049f7ae18959c8c21d896c5f02ba071711"
+source = "git+https://github.com/erichideyuki/universal-office?rev=784b3031683a8957b048b16443a202501b48c278#784b3031683a8957b048b16443a202501b48c278"
 dependencies = [
  "uo-jsnum",
 ]
@@ -68,7 +68,7 @@ dependencies = [
 [[package]]
 name = "uo-xlsx"
 version = "0.10.0-dev"
-source = "git+https://github.com/erichideyuki/universal-office?rev=8d0d00049f7ae18959c8c21d896c5f02ba071711#8d0d00049f7ae18959c8c21d896c5f02ba071711"
+source = "git+https://github.com/erichideyuki/universal-office?rev=784b3031683a8957b048b16443a202501b48c278#784b3031683a8957b048b16443a202501b48c278"
 dependencies = [
  "uo-jsnum",
  "uo-numfmt",
