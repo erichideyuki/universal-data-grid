@@ -3550,7 +3550,7 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### Next release (unreleased)
+### 0.6.0
 
 Excel export: `dateFormat: 'reader'` writes date columns with the built-in formats `14` (date) and
 `22` (date and time), which Excel shows in the regional settings of whoever opens the file (the
