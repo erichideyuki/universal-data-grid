@@ -5726,7 +5726,10 @@ export class DataGrid extends LitElement {
       this.#measureFullWidth();
     }
 
-    if (this.#layoutDirty) {
+    // Sem caixa de layout (o grid ou um ancestral com \`display: none\`, largura 0) nada se mede: o texto
+    // mede 0 e o \`column-auto-width\` fixava a largura mínima (relato do click na 0.5.0). A medida fica
+    // pendente; o \`ResizeObserver\` do host, quando ele volta a ter tamanho, marca o layout de novo.
+    if (this.#layoutDirty && this.offsetWidth > 0) {
       this.#layoutDirty = false;
 
       const autoWidthsChanged = this.#applyAutoWidths();

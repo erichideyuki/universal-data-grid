@@ -3547,6 +3547,13 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
+### Next release (unreleased)
+
+`column-auto-width` no longer measures while the grid has no layout box (the grid or an ancestor
+with `display: none`): columns without `width` kept the minimum width (40px) when the rows changed
+while the grid was hidden; the measure now waits and runs when the grid is shown again. Widths the
+user resized are kept.
+
 ### 0.5.0
 
 **Breaking:** with `scroll-container`, the container now scrolls only vertically and the grid

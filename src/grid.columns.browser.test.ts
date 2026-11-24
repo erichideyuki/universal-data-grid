@@ -267,6 +267,41 @@ describe('redimensionar', () => {
     const [a, b] = widths(grid);
     expect(b).toBeGreaterThan(a * 3);
   });
+
+  // Relato do click na 0.5.0: o contêiner do app alterna `display: none` no carregamento; os dados
+  // chegavam com o grid escondido, a medida dava só o padding (40px, a largura mínima) e ficava
+  // assim ao reaparecer.
+  it.each(['rolagem interna', 'scroll-container (faixas)'])('column-auto-width não mede com o grid escondido e remede ao reaparecer (%s)', async mode => {
+    const text = 'a much longer piece of text in this column';
+    const grid = await createGrid({
+      columns: [{ path: 'a', label: 'A' }, { path: 'b', label: 'B' }, { path: 'c', label: 'C' }],
+      items: [{ a: 'x', b: text, c: text }],
+      configure: g => {
+        g.columnAutoWidth = true;
+        g.columnRenderingMode = 'standard';
+
+        if (mode !== 'rolagem interna') {
+          g.setAttribute('scroll-container', 'window');
+        }
+      },
+    });
+    const before = widths(grid);
+    expect(before[1]).toBeGreaterThan(150);
+
+    const parent = grid.parentElement!;
+    parent.style.display = 'none';
+    grid.items = grid.items.map(item => ({ ...item }));
+    await settle(grid);
+    await settle(grid);
+
+    parent.style.display = '';
+    await settle(grid);
+    await settle(grid);
+
+    const after = widths(grid);
+    expect(after[1]).toBeGreaterThan(150);
+    expect(Math.abs(after[1] - before[1])).toBeLessThanOrEqual(1);
+  });
 });
 
 describe('colunas fixas', () => {
