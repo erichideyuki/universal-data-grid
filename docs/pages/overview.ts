@@ -4,5 +4,6 @@ export default {
   title: 'Overview',
   intro: '`<u-grid>` is a data grid **web component** built with Lit: virtualized rows (millions of them), sorting, filtering, grouping, summaries, tree data, editing, export, i18n in 14 languages and server-side rendering — in any framework or none. Every example on this site is live; open **Show code** to see exactly what runs.',
   readme: '#quick-start',
-  examples: ['basic', 'declarative', 'appearance', 'browser-support'],
+  lead: 'getting-started',
+  examples: ['basic', 'declarative', 'appearance'],
 } satisfies DocPage;

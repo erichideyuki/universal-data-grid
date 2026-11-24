@@ -1,6 +1,7 @@
 import './tokens.css';
 import './site.css';
 
+import { gettingStarted } from './getting-started.js';
 import { highlight, inline } from './highlight.js';
 import { NAV } from './nav.js';
 import type { DocPage, ExampleCleanup, ExampleMeta, ExampleMount } from './types.js';
@@ -352,8 +353,10 @@ const render = async () => {
   const toc = el('nav', { className: 'toc', ariaLabel: 'On this page' }, el('h2', {}, icon('toc'), 'On this page'),
     el('ul', {}, ...cards.map(card => el('li', {}, el('a', { href: `#/${pageId}/${card.id.split('--')[1]}` }, card.querySelector('h2')!.textContent!)))));
 
+  const lead = page.lead === 'getting-started' ? [gettingStarted(() => icon('content_copy'))] : [];
+
   content.replaceChildren(el('div', { className: 'page' },
-    el('article', { className: 'article' }, header, ...cards, pager(pageId)),
+    el('article', { className: 'article' }, header, ...lead, ...cards, pager(pageId)),
     ...(cards.length > 1 ? [toc] : [])));
 
   observer = new IntersectionObserver(entries => {

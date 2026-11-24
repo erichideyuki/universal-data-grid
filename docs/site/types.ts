@@ -16,6 +16,8 @@ export interface DocPage {
   intro: string;
   /** Âncora da seção no API.md, a referência completa (`#sorting`). */
   readme?: string;
+  /** Bloco logo abaixo do título (o topo do Overview: instalação e navegadores). */
+  lead?: 'getting-started';
   /** Ids dos exemplos, na ordem (arquivos em `docs/examples/<página>/`). */
   examples: readonly string[];
   /**
