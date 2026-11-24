@@ -160,9 +160,19 @@ React 19+, and `:columns.prop` in Vue. Import the package before the first rende
 
 ## Browser support
 
-Current evergreen browsers: Chrome and Edge 114+, Firefox 125+, and Safari 17+. The grid relies on
-ES2022, the Popover API and modern CSS (`color-mix()`, `:has()`). Internet Explorer and legacy
-Edge are not supported.
+| Browser | Minimum version | Tested on real browsers (BrowserStack) |
+| ------- | --------------- | -------------------------------------- |
+| Chrome | 114 | 114 and 158 on Windows |
+| Edge | 114 | 114 and 157 on Windows |
+| Firefox | 125 | 125 and 160 on Windows |
+| Safari (macOS) | 17 | 17.3 and 27 |
+| Safari (iOS and iPadOS) | 17 | iOS 26 on an iPhone 17 |
+| Chrome (Android) | 114 | Android 15 on a Galaxy S25 |
+
+Each test renders the grid, exports to Excel and PDF, and groups and sorts a million rows, with no
+console errors. Chrome and Edge 114 to 119 need 0.6.1 or later (before it, the header and group
+labels were invisible there). The grid relies on ES2022, the Popover API and modern CSS
+(`color-mix()`, `:has()`). Internet Explorer and legacy Edge are not supported.
 
 ## Sponsor
 

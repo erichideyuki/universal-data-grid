@@ -3550,6 +3550,13 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
+### Next release (unreleased)
+
+Fixed on Chrome and Edge 114 to 119: the header labels, the group rows and the muted texts were
+invisible (`currentColor` inside `color-mix()` in a text color is transparent before Chromium 120),
+and the icons were black squares (unprefixed `mask` is Chromium 120+). The README now lists the
+minimum browser versions, tested on real browsers.
+
 ### 0.6.0
 
 Excel export: `dateFormat: 'reader'` writes date columns with the built-in formats `14` (date) and
