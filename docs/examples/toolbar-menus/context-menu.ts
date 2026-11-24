@@ -71,7 +71,8 @@ export default (host: HTMLElement) => {
       );
     }
 
-    if (target === 'header') {
+    // Not on the Actions column: its header has no menu (`headerMenu: false`).
+    if (target === 'header' && event.detail.column?.headerMenu !== false) {
       const sort = menuItems.findIndex(item => item.name === 'clearColumnSorting');
 
       if (sort >= 0) {

@@ -1604,6 +1604,17 @@ const isRenderResult = (value: unknown): value is GridRenderResult =>
 type ActiveRef = { key: unknown } | { detailOf: unknown } | { rowKey: string } | { totals: true }
   | { fixed: 'top' | 'bottom'; fixedKey: unknown; position: number; detail?: true };
 
+/** Itens do menu do cabeçalho que `headerMenu: false` tira (ficam só as alternativas ao arrasto). */
+const FULL_HEADER_MENU_ONLY: readonly GridContextMenuItemName[] = [
+  'sortColumnAscending',
+  'sortColumnDescending',
+  'clearColumnSorting',
+  'fixColumn',
+  'autoSizeAllColumns',
+  'openColumnChooser',
+  'resetColumns',
+];
+
 /**
  * Data grid with row virtualization, grouping, sorting, filtering (filter
  * row, header filter, search panel), column resizing, fixing, hiding and
@@ -5629,6 +5640,12 @@ export class DataGrid extends LitElement {
       !menuColumn
       || !(this._isBand(menuColumn) ? this._isColumnVisible(menuColumn) : this._visibleColumns.includes(menuColumn)))) {
       this.#contextMenu.hide();
+    }
+
+    // `headerMenu` virou `false` com o menu aberto: os itens já não valem; o foco volta à célula (WCAG 2.4.3).
+    if (openMenu?.target === 'header' && menuColumn?.headerMenu === false
+      && FULL_HEADER_MENU_ONLY.some(name => this.#contextMenu.data?.available.has(name))) {
+      this.#contextMenu.hide(true);
     }
 
     if (openMenu?.target === 'group-panel' && (
@@ -19176,6 +19193,7 @@ export class DataGrid extends LitElement {
   #builtInMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
     switch (request.target) {
       case 'header':
+        // Como `#hasColumnMenu`, sem excluir a coluna agrupada (o cabeçalho dela, quando visível, tem os itens de sempre).
         return request.column && this.columnHeaderMenu && (request.column.headerMenu !== false || this.#keepsDragAlternatives(request.column))
           ? this.#headerMenuItems(request.column)
           : [];
@@ -19272,7 +19290,8 @@ export class DataGrid extends LitElement {
       ]);
     }
 
-    if (!band && !grouped && isColumnGroupable(column)) {
+    // Reduzido (`headerMenu: false`): agrupar só como alternativa ao arrasto para o painel de grupos.
+    if (!band && !grouped && isColumnGroupable(column) && (full || this.#canDragToGroupPanel)) {
       section([{ name: 'groupColumn', text: translation.groupColumn }]);
     }
 
@@ -19308,8 +19327,13 @@ export class DataGrid extends LitElement {
   #keepsDragAlternatives(column: GridColumnDef): boolean {
     const band = this._isBand(column);
     const resizable = !band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column));
-    const groupable = !band && !this._groupColumns.includes(column) && isColumnGroupable(column);
+    const groupable = !band && !this._groupColumns.includes(column) && isColumnGroupable(column) && this.#canDragToGroupPanel;
     return resizable || groupable || this.#hasMovableNeighbor(column);
+  }
+
+  /** Há painel de grupos para onde arrastar um cabeçalho (sem ele, "Agrupar" não substitui arrasto nenhum). */
+  get #canDragToGroupPanel(): boolean {
+    return this.showGroupPanel && !this.#treeOn;
   }
 
   #groupPanelMenuItems(column: GridColumnDef | null): BuiltInMenuItem[] {

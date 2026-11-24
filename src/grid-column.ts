@@ -222,7 +222,14 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** `show-in-chooser="false"` removes the column from the chooser (the user cannot hide it). */
   @property({ converter: optionalBoolean, attribute: 'show-in-chooser' }) showInChooser: boolean | null = null;
 
-  /** `header-menu="false"` removes this column's header menu (see `GridColumnDef.headerMenu`). */
+  /**
+   * `header-menu="false"` removes this column's header menu ("⋮" and the
+   * built-in items); the single-pointer alternatives to the drags this column
+   * still allows stay (WCAG 2.5.7), with the "⋮" while there are any;
+   * `u-grid-context-menu-opening` still fires. Unset or `true`: the grid's
+   * `column-header-menu`, which wins. On a band, the band header only. The
+   * group panel chip menu is not affected.
+   */
   @property({ converter: optionalBoolean, attribute: 'header-menu' }) headerMenu: boolean | null = null;
 
   /** Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`. */

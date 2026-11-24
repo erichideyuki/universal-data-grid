@@ -1115,7 +1115,8 @@ reach it. "Select all" selects the rows that pass the filter and the search.
   the column header menu (the "⋮" button, right-click, a long press on touch screens, `Shift+F10`
   or the menu key) groups, moves, pins and resizes columns; the column chooser moves columns with
   `Alt+Shift+↑/↓`; the group panel menu moves chips. With
-  `column-header-menu="false"` the host must provide its own alternative.
+  `column-header-menu="false"` the host must provide its own alternative; `headerMenu: false` on a
+  column keeps the items that replace a drag the column still allows.
 - Headers expose `aria-keyshortcuts` and a description with what is not visible to a screen
   reader: the sort priority (only the first sorted column has `aria-sort`, as ARIA asks), pinned and
   filtered. A filtered column's funnel shows a dot, not only a color.
@@ -2090,7 +2091,7 @@ group row. Column headers also have an always visible "⋮" button that opens th
 
 | Target | Built-in items (only those that apply) | Turned off by |
 | ------ | -------------------------------------- | ------------- |
-| `header` | Sort ascending / descending / Clear sorting (when sorted); **Pin column ▸** (`fixColumn`: Pin to start / end / Unpin, `column-fixing`); Auto-size column, Auto-size all columns (`autoSizeAllColumns`), Increase / Decrease width (`column-resizing`); Move left / right; Group by this column; Choose columns (`openColumnChooser`, with `column-chooser`), Reset columns (`resetColumns`) — in AG Grid's order | `column-header-menu="false"`, or `headerMenu: false` on one column |
+| `header` | Sort ascending / descending / Clear sorting (when sorted); **Pin column ▸** (`fixColumn`: Pin to start / end / Unpin, `column-fixing`); Auto-size column, Auto-size all columns (`autoSizeAllColumns`), Increase / Decrease width (`column-resizing`); Move left / right; Group by this column; Choose columns (`openColumnChooser`, with `column-chooser`), Reset columns (`resetColumns`) — in AG Grid's order | `column-header-menu="false"`; on one column `headerMenu: false` (keeps the drag alternatives, see below) |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
 | `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | shown with `cell-selection-mode` (Paste: also needs `clipboard-mode="copy-paste"`), even without `row-menu`; without cell ranges, Paste only with `row-menu`. To keep the browser menu, remove them in `u-grid-context-menu-opening` |
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details; tree data: Expand / Collapse (`expandNode`/`collapseNode`), Add child row (`addChildRow`, with `allow-adding`) | **off by default**: `row-menu` turns them on |
@@ -2112,15 +2113,20 @@ grid.columns = [
   menu key); the header no longer announces Shift+F10 or F2.
 - The items that are the single-pointer alternative to a drag the column still allows stay (WCAG
   2.5.7): Auto-size column and Increase / Decrease width while it is resizable, Move left / right while
-  it has a movable neighbor, Group by this column while it is groupable — with the "⋮" while there are
+  it has a movable neighbor, Group by this column while it is groupable and there is a group panel to
+  drag it to — with the "⋮" while there are
   any. Turn those drags off (`resizable`, `groupable`, a fixed or single column) to remove the menu
   entirely.
 - `u-grid-context-menu-opening` still fires, so the host may add its own items (the menu opens by
   right-click, long press, Shift+F10 and the context menu key, without a "⋮"); without items the
   browser menu is kept.
 - The other headers keep the grid-wide items (auto-size all, choose columns, reset columns).
-- `true` and `null` (default) follow the grid's `column-header-menu`, which always wins.
-- Give the column a `label` even when its header looks empty: it names the column for screen readers.
+- `true` and `null` (default) follow the grid's `column-header-menu`, which always wins. The group
+  panel chip menu of the column is not affected.
+- The header still needs a name for screen readers: a `label` (visible), or a `headerRenderer` with
+  the text in a visually hidden element.
+- With only host items, `aria-keyshortcuts` does not list `Shift+F10` (the grid cannot know about
+  them before the event): mention the key in the column's help if that menu matters.
 
 
 On a [full-width row](#full-width-rows-rowrenderer) the `row` menu has `cellType: 'full-width'` and

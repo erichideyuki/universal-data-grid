@@ -4238,6 +4238,16 @@
             },
             {
               "kind": "field",
+              "name": "headerMenu",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "`header-menu=\"false\"` removes this column's header menu (\"⋮\" and the\nbuilt-in items); the single-pointer alternatives to the drags this column\nstill allows stay (WCAG 2.5.7), with the \"⋮\" while there are any;\n`u-grid-context-menu-opening` still fires. Unset or `true`: the grid's\n`column-header-menu`, which wins. On a band, the band header only. The\ngroup panel chip menu is not affected.",
+              "attribute": "header-menu"
+            },
+            {
+              "kind": "field",
               "name": "sortable",
               "type": {
                 "text": "boolean | null"
@@ -4559,6 +4569,15 @@
               "default": "null",
               "description": "`show-in-chooser=\"false\"` removes the column from the chooser (the user cannot hide it).",
               "fieldName": "showInChooser"
+            },
+            {
+              "name": "header-menu",
+              "type": {
+                "text": "boolean | null"
+              },
+              "default": "null",
+              "description": "`header-menu=\"false\"` removes this column's header menu (\"⋮\" and the\nbuilt-in items); the single-pointer alternatives to the drags this column\nstill allows stay (WCAG 2.5.7), with the \"⋮\" while there are any;\n`u-grid-context-menu-opening` still fires. Unset or `true`: the grid's\n`column-header-menu`, which wins. On a band, the band header only. The\ngroup panel chip menu is not affected.",
+              "fieldName": "headerMenu"
             },
             {
               "name": "sortable",

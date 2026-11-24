@@ -220,7 +220,8 @@ export interface GridColumnDef<TItem = any> {
    * still fires (without items the browser menu is kept). The menus of the
    * other headers keep the grid-wide items (column chooser, reset columns).
    * `true`/`null` (default) follow the grid's `columnHeaderMenu`, which
-   * always wins. On a band, applies to the band header only.
+   * always wins. On a band, applies to the band header only. The group panel
+   * chip menu of this column is not affected.
    */
   headerMenu?: boolean | null;
   /**

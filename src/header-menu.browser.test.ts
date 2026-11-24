@@ -268,6 +268,91 @@ describe('headerMenu: false numa coluna', () => {
     expect(menuButton(grid, 'Name')).toBeNull();
     expect(focused(grid)).toBe(headerCell(grid, 'Name'));
   });
+
+  it('banda com headerMenu: false: só o cabeçalho da banda perde os itens (fica Mover); as filhas mantêm o menu', async () => {
+    const grid = await create(undefined, [
+      { path: 'name', label: 'Name', name: 'name' },
+      { label: 'Place', headerMenu: false, columns: [{ path: 'city', label: 'City', name: 'city' }, { path: 'age', label: 'Age', name: 'age' }] },
+    ]);
+    const band = [...root(grid).querySelectorAll<HTMLElement>('th.band-header')].find(th => th.textContent.includes('Place'))!;
+
+    band.focus();
+    await settle(grid);
+    await key(grid, band, 'F10', { shiftKey: true });
+    expect(menuTexts(grid)).toEqual(['Move left', 'Move right']);
+    await key(grid, focused(grid)!, 'Escape');
+
+    // Coluna dentro de banda não se fixa (só o nível de cima): o resto do menu completo fica.
+    menuButton(grid, 'City').click();
+    await settle(grid);
+    expect(menuTexts(grid)).toEqual(expect.arrayContaining(['Sort ascending', 'Group by this column', 'Reset columns']));
+  });
+
+  it('RTL, axe com o menu reduzido aberto, e sem painel de grupos "Agrupar" não segura o menu', async () => {
+    const cols = columns();
+    cols[1] = { ...cols[1], headerMenu: false, resizable: false };
+    const grid = await create(g => {
+      g.dir = 'rtl';
+      g.language = 'ar';
+    }, cols);
+
+    menuButton(grid, 'City').click();
+    await settle(grid);
+    expect(itemsOf(menu(grid))).toHaveLength(3); // mover ×2, agrupar
+    expect(await axeRun(grid)).toEqual([]);
+    await key(grid, itemsOf(menu(grid))[0], 'Escape');
+
+    grid.showGroupPanel = false;
+    await settle(grid);
+    menuButton(grid, 'City').click();
+    await settle(grid);
+    expect(itemsOf(menu(grid))).toHaveLength(2); // só mover
+    await key(grid, itemsOf(menu(grid))[0], 'Escape');
+
+    // Sem vizinha (as outras escondidas): nada a substituir, o "⋮" some.
+    grid.columns = [cols[1]];
+    await settle(grid);
+    expect(menuButton(grid, 'City')).toBeNull();
+  });
+
+  it('header-menu="false" mudado com o menu aberto: o menu fecha e o foco volta à célula', async () => {
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '300px';
+    grid.innerHTML = `
+      <u-grid-column path="name">Name</u-grid-column>
+      <u-grid-column name="actions" fixed="end" sortable="false" groupable="false">Actions</u-grid-column>`;
+    document.body.append(grid);
+    grid.items = people();
+    await settle(grid);
+
+    menuButton(grid, 'Actions').click();
+    await settle(grid);
+    expect(menu(grid)).toBeTruthy();
+
+    grid.querySelectorAll('u-grid-column')[1].setAttribute('header-menu', 'false');
+    await settle(grid);
+    expect(menu(grid)).toBeNull();
+    expect(menuButton(grid, 'Actions')).toBeNull();
+    expect(focused(grid)).toBe(headerCell(grid, 'Actions'));
+    grid.remove();
+  });
+
+  it('<u-grid-column header-menu="false"> dentro de um <u-grid>: o "⋮" some só dela', async () => {
+    const grid = document.createElement('u-grid');
+    grid.style.display = 'block';
+    grid.style.height = '300px';
+    grid.innerHTML = `
+      <u-grid-column path="name">Name</u-grid-column>
+      <u-grid-column name="actions" fixed="end" sortable="false" groupable="false" header-menu="false">Actions</u-grid-column>`;
+    document.body.append(grid);
+    grid.items = people();
+    await settle(grid);
+
+    expect(menuButton(grid, 'Name')).toBeTruthy();
+    expect(menuButton(grid, 'Actions')).toBeNull();
+    grid.remove();
+  });
 });
 
 describe('layout do cabeçalho pelo alinhamento lógico', () => {
