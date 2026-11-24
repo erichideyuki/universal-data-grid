@@ -1760,7 +1760,7 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 | `includeHeaders` | `true` | The header rows (bands and column labels). |
 | `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, aligned by the band `alignment`). |
 | `freezeHeader` | `true` | Freezes every header row (the `fixed: 'start'` columns are always frozen). |
-| `autoFilter` | `true` (off with group rows or without headers) | Excel's filter buttons on the column labels, over the data rows (totals left out), so whoever opens the file can sort and filter it. The grid sort shows as the arrow when every sort key is an exported column without its own `comparator`, the grid is not grouped and there are no fixed rows (they are in the range, as data). With group rows or tree levels it is left out (sorting in Excel would scramble them), with a warning only when set to `true`. New form only. |
+| `autoFilter` | `true` (off with group rows, tree levels or without headers) | Excel's filter buttons on the column labels, over the data rows (totals left out), so whoever opens the file can sort and filter it. The grid sort shows as the arrow when every sort key is an exported column without its own `comparator` written as its value (not as `displayValue`/`format` text), the grid is not grouped, there are data rows and no fixed rows (they are in the range, as data); Excel puts empty cells last when it sorts again. With group rows or tree levels it is left out (sorting in Excel would scramble them), with a warning only when set to `true`. New form only. |
 | `direction` | direction of the grid | `'rtl'` writes a right-to-left sheet; `start`/`end` alignments follow it. |
 | `customizeCell` | — | `(cell) => void`, see below. |
 | `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void` (`pageCount` is 0), about every 250 ms and once at the end. |
@@ -3589,9 +3589,10 @@ import {
 
 ### Next release (unreleased)
 
-Visible change: Excel exports without group rows now have Excel's filter buttons on the column
-labels, with the grid sort shown as the arrow (`autoFilter`, default `true`; `autoFilter: false`
-turns it off), including the toolbar's Export to Excel.
+Visible change: Excel exports without group rows or tree levels now have Excel's filter buttons on
+the column labels, with the grid sort shown as the arrow (`autoFilter`, default `true`;
+`autoFilter: false` turns it off — for the toolbar, `createXlsxExporter({ autoFilter: false })`),
+including the toolbar's Export to Excel.
 
 New: `headerMenu: false` on a column (`header-menu="false"`) removes its header menu — see "Header
 menu of one column". The items that are the single-pointer alternative to a drag the column still

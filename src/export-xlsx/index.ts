@@ -826,11 +826,19 @@ const filterOf = (headerRow: number, lastDataRow: number, n: number, sort: { col
 };
 
 /**
- * Chaves de ordenação do arquivo (colunas a partir de 1), ou nenhuma quando a ordem do arquivo não é a
- * que o Excel reaplicaria: grid agrupado (a ordem dos grupos vem antes), coluna fora da exportação ou
- * com comparador próprio, mais de 64 chaves.
+ * A célula guarda o que o grid ordena: valor tipado (número, data, booleano) ou texto que é o próprio
+ * valor. Texto exibido no lugar do valor (`displayValue`, `format` função, texto booleano próprio,
+ * tipo desconhecido) não: o grid ordena pelo valor de origem e a seta mentiria.
  */
-const sortKeysOf = (grid: DataGrid, columns: readonly GridExportColumn[]): { col: number; descending: boolean }[] => {
+const sortsAsWritten = (column: GridExportColumn, plan: ColumnPlan): boolean => plan.type !== 'text'
+  || (column.dataType === 'string' && !column.column.displayValue && typeof column.column.format !== 'function');
+
+/**
+ * Chaves de ordenação do arquivo (colunas a partir de 1), ou nenhuma quando a ordem do arquivo não é a
+ * que o Excel reaplicaria: grid agrupado (a ordem dos grupos vem antes), coluna fora da exportação, com
+ * comparador próprio ou gravada como texto exibido, mais de 64 chaves. Nunca parcial.
+ */
+const sortKeysOf = (grid: DataGrid, columns: readonly GridExportColumn[], plans: readonly ColumnPlan[]): { col: number; descending: boolean }[] => {
   if (grid._groupColumns.length) {
     return [];
   }
@@ -840,7 +848,7 @@ const sortKeysOf = (grid: DataGrid, columns: readonly GridExportColumn[]): { col
   for (const { column, order } of grid.getSorting()) {
     const index = columns.findIndex(c => c.column === column);
 
-    if (index < 0 || column.comparator) {
+    if (index < 0 || column.comparator || !sortsAsWritten(columns[index], plans[index])) {
       return [];
     }
 
@@ -869,7 +877,7 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
   const autoFilter = options.autoFilter !== false && headers && n > 0 && ctx.maxLevel === 0;
 
   if (options.autoFilter === true && !autoFilter) {
-    warnOnce('autoFilter', 'autoFilter needs the header row and an export without group rows; the filter was left out.');
+    warnOnce('autoFilter', 'autoFilter needs the header row, at least one column and an export without group rows or tree levels; the filter was left out.');
   }
 
   /** Linhas da aba escritas até aqui (a última de dado fecha o AutoFilter). */
@@ -1204,9 +1212,10 @@ const exportXlsxFile = async (grid: DataGrid, options: GridXlsxOptions): Promise
       await pipe.inflight;
     }
 
-    // Linhas fixas ficam no intervalo como dado, mas fora da ordenação: sem estado de ordenação.
+    // Linhas fixas ficam no intervalo como dado, mas fora da ordenação; sem linha de dado não há o que ordenar.
+    const hasData = lastDataRow > headerRows;
     const result = await client.finish(autoFilter
-      ? filterOf(headerRows, Math.max(headerRows, lastDataRow), n, fixedRows ? [] : sortKeysOf(grid, ctx.columns))
+      ? filterOf(headerRows, hasData ? lastDataRow : headerRows, n, fixedRows || !hasData ? [] : sortKeysOf(grid, ctx.columns, plans))
       : undefined);
     signal?.throwIfAborted();
     file = result.file;

@@ -598,6 +598,45 @@ describe('exportXlsx (motor uo-xlsx)', () => {
       expect(sortConditions(book)).toEqual([]);
     });
 
+    it('sem linha de dado: só a linha dos rótulos, sem estado de ordenação', async () => {
+      const grid = await create();
+      grid.sortColumn(grid.columns.find(c => c.path === 'amount')!, 'desc');
+      grid.searchText = 'nothing matches this';
+      await settle(grid);
+      const book = await run(grid);
+
+      expect(autoFilterOf(book)?.getAttribute('ref')).toBe('A1:D1');
+      expect(sortConditions(book)).toEqual([]);
+    });
+
+    it('coluna gravada como texto exibido (displayValue) não leva seta; texto que é o próprio valor leva', async () => {
+      const cols: GridColumnDef[] = [
+        { path: 'name', label: 'Name' },
+        { path: 'amount', label: 'Amount', dataType: 'number', displayValue: value => Number(value) > 0 ? 'positive' : 'other' },
+      ];
+      const grid = await create(undefined, cols);
+      grid.sortColumn(grid.columns[1], 'asc');
+      expect(sortConditions(await run(grid))).toEqual([]);
+
+      grid.sortColumn(grid.columns[0], 'asc');
+      expect(sortConditions(await run(grid))).toEqual(['A2:A4']);
+    });
+
+    it('árvore com níveis: sem filtro', async () => {
+      const grid = await createGrid({
+        columns: [{ path: 'name', label: 'Name' }],
+        items: [{ id: 1, parentId: null, name: 'Root' }, { id: 2, parentId: 1, name: 'Child' }],
+        setBeforeConnect: true,
+        configure: g => {
+          g.treeMode = 'flat';
+          g.keyExpr = 'id';
+          g.parentKeyExpr = 'parentId';
+          g.autoExpandNodes = true;
+        },
+      });
+      expect(autoFilterOf(await run(grid))).toBeNull();
+    });
+
     it('fora: autoFilter false, sem cabeçalho e com linhas de grupo (aviso só com true explícito)', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       warn.mockClear();

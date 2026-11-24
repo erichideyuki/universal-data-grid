@@ -57,7 +57,7 @@ Entrada `@universal-material/data-grid/export-xlsx` (a mesma de hoje).
 `includeGroups`, `includeSummaries`, `includeFixedRows`, `signal`):
 - `sheetName` — padrão: o nome acessível do grid (a mesma fonte do título
   do PDF), senão o texto da i18n (`pdfDefaultTitle`); sempre limpo
-  (`[]:*?/\` fora, 31 caracteres, nunca `History`), também quando vem do
+  (`[]:*?/` fora, 31 caracteres, nunca `History`), também quando vem do
   hospedeiro. `title` (metadado) com o mesmo padrão.
 - `includeHeaders` (padrão `true`).
 - `includeBands` (padrão `true`): linhas de banda acima das folhas, SEM
@@ -224,23 +224,28 @@ idioma como formato próprio, literal. Revisado pelo
 
 ## AutoFilter (2026-11-24, pedido do usuário)
 "O xlsx já sair com ordenação e filtro": os botões de filtro do Excel nos
-rótulos. Revisado pelo \`webcomponent-api-reviewer\` e aprovado pelo usuário:
-- \`autoFilter?: boolean\` em \`GridXlsxOptions\`, padrão \`true\` (mudança
-  visível, como \`freezeHeader\` na 0.4.0); \`false\` desliga. Só na forma nova
-  (\`NEW_ONLY\` do legacy).
+rótulos. Revisado pelo `webcomponent-api-reviewer` e aprovado pelo usuário:
+- `autoFilter?: boolean` em `GridXlsxOptions`, padrão `true` (mudança
+  visível, como `freezeHeader` na 0.4.0); `false` desliga. Só na forma nova
+  (`NEW_ONLY` do legacy).
 - Intervalo: da última linha de cabeçalho (os rótulos, abaixo das bandas) à
   última linha de dado; o total fica fora; sem dado, só a linha dos rótulos.
-- Fora quando não há cabeçalho ou o arquivo tem outline (\`ctx.maxLevel > 0\`:
-  linhas de grupo ou árvore). Agrupado exportado plano (\`includeGroups:
-  false\`) tem filtro. Aviso só com \`true\` explícito.
+- Fora quando não há cabeçalho ou o arquivo tem outline (`ctx.maxLevel > 0`:
+  linhas de grupo ou árvore). Agrupado exportado plano (`includeGroups:
+  false`) tem filtro. Aviso só com `true` explícito.
 - Estado de ordenação (a seta) só quando é verdade no arquivo: todas as chaves
-  de \`getSorting()\` são colunas exportadas sem \`comparator\`, o grid não está
+  de `getSorting()` são colunas exportadas sem `comparator`, o grid não está
   agrupado e não há linhas fixas (elas ficam no intervalo, como dado). Senão,
   nenhum (nunca parcial).
-- Motor: \`finish\` recebe o AutoFilter (protocolo no topo de
-  \`xlsx/src/lib.rs\`) e chama \`XlsxWriter::set_auto_filter\` do \`uo-xlsx\`
-  (commit \`842f5b2d\` do \`rust-core\`), que grava \`<autoFilter>\`/\`<sortState>\` e
-  o nome oculto \`_xlnm._FilterDatabase\`. \`SortKey::col\` é a partir de 1.
+- Revisão de entrega: sem linha de dado, sem estado de ordenação; coluna
+  gravada como texto exibido (`displayValue`, `format` função, texto
+  booleano próprio) não leva seta (o grid ordena pelo valor). Diferença aceita:
+  o grid põe vazios no início em `asc`, o Excel sempre no fim ao reaplicar;
+  com dados remotos a seta segue `getSorting()`.
+- Motor: `finish` recebe o AutoFilter (protocolo no topo de
+  `xlsx/src/lib.rs`) e chama `XlsxWriter::set_auto_filter` do `uo-xlsx`
+  (commit `842f5b2d` do `rust-core`), que grava `<autoFilter>`/`<sortState>` e
+  o nome oculto `_xlnm._FilterDatabase`. `SortKey::col` é a partir de 1.
 
 ## Decisões do usuário depois da entrega (2026-11-23)
 Aceitas as 8 recomendações da revisão na entrega (mudam a API aprovada

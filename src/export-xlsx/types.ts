@@ -195,10 +195,13 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
    * the data rows (totals are left out), so whoever opens the file can sort
    * and filter it. The current grid sort is shown as the sort state (the
    * arrow) when every sort key is an exported column without its own
-   * `comparator`, the grid is not grouped and there are no fixed rows (they
-   * are inside the range, as data). Default `true`; left out without
-   * headers or when the export has group rows or tree levels (sorting in
-   * Excel would scramble them), with a warning only when set to `true`.
+   * `comparator` written as its value (not as `displayValue`/`format` text),
+   * the grid is not grouped, there are data rows and no fixed rows (they are
+   * inside the range, as data); Excel puts empty cells last when it sorts
+   * again. Default `true`; left out without headers or when the export has
+   * group rows or tree levels (sorting in Excel would scramble them), with a
+   * warning only when set to `true`. For the toolbar:
+   * `createXlsxExporter({ autoFilter: false })`.
    * New form only (ignored by the deprecated ExcelJS forms).
    */
   autoFilter?: boolean;
