@@ -3547,7 +3547,7 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### Next release (unreleased)
+### 0.5.1
 
 `column-auto-width` no longer measures while the grid has no layout box (the grid or an ancestor
 with `display: none`): columns without `width` kept the minimum width (40px) when the rows changed
