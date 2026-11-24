@@ -80,7 +80,8 @@ export interface GridColumnDef<TItem = any> {
    * Nested columns: a column with at least one nested column is a BAND (a
    * header over its columns, no cells). In a band only `label`,
    * `headerRenderer`, `alignment` (of the label; default `start`), `fixed`,
-   * `visible` and `showInChooser` apply; the other fields are ignored. A band
+   * `visible`, `showInChooser` and `headerMenu` (of the band header only)
+   * apply; the other fields are ignored. A band
    * is shown while it is visible and has a visible column. Columns reorder
    * only inside their own band; only leaf columns sort, group and export.
    * `null` or `[]` = a regular column.
@@ -207,6 +208,21 @@ export interface GridColumnDef<TItem = any> {
   visible?: boolean | null;
   /** `false` removes the column from the chooser (the user cannot hide it). */
   showInChooser?: boolean | null;
+  /**
+   * `false` removes this column's header menu: no "⋮" button and no built-in
+   * items from any opener (button, right-click, long press, Shift+F10,
+   * context menu key), e.g. for an actions column whose header shows only its
+   * title. The items that are the single-pointer alternative to a drag the
+   * column still allows stay (widen/narrow and auto-size it when resizable,
+   * move left/right when it has a movable neighbor, group by it when
+   * groupable — WCAG 2.5.7), with the "⋮" while there are any; turn those
+   * drags off to remove the menu entirely. `u-grid-context-menu-opening`
+   * still fires (without items the browser menu is kept). The menus of the
+   * other headers keep the grid-wide items (column chooser, reset columns).
+   * `true`/`null` (default) follow the grid's `columnHeaderMenu`, which
+   * always wins. On a band, applies to the band header only.
+   */
+  headerMenu?: boolean | null;
   /**
    * Value used to GROUP by this column instead of the cell value: a range or
    * bucket (decade, initial letter). Groups are identified, sorted and shown

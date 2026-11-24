@@ -328,6 +328,8 @@ interface GridColumnDef<TItem = any> {
   visible?: boolean | null;
   /** `false` hides the column from the column chooser. Default `true`. */
   showInChooser?: boolean | null;
+  /** `false` removes this column's header menu ("⋮" and built-in items); drag alternatives stay while the column can be dragged. See "Header menu of one column". */
+  headerMenu?: boolean | null;
   /** Value to GROUP by instead of the cell value (a range: decade, initial letter) — see "Grouping". */
   groupValueGetter?: ((item: TItem) => unknown) | null;
   /** Lets the user group by this column. Default: true when it has a `path`, `valueGetter` or `groupValueGetter`. */
@@ -357,7 +359,7 @@ interface GridColumnDef<TItem = any> {
 primitive ones are kebab-case attributes (`min-width`, `group-index`, `empty-text`, …); `dataType`
 is the `type` attribute (`data-*` attributes belong to the page author). Boolean options turn off
 with `"false"`: `visible="false"`, `resizable="false"`, `sortable="false"`, `groupable="false"`,
-`show-in-chooser="false"`, `wrap="false"`, `filterable="false"`, `exportable="false"`, `editable="false"`. `filter-operations` takes a space separated list.
+`show-in-chooser="false"`, `header-menu="false"`, `wrap="false"`, `filterable="false"`, `exportable="false"`, `editable="false"`. `filter-operations` takes a space separated list.
 
 `path` supports nested access via dots. Missing values resolve to an empty string.
 
@@ -1529,7 +1531,8 @@ grid.columns = [
 ```
 
 - In a band only `label`, `headerRenderer`, `alignment` (of the label; default `start`), `fixed`,
-  `visible` and `showInChooser` apply; the other fields are ignored. With `<u-grid-column>`, the
+  `visible`, `showInChooser` and `headerMenu` (of the band header only) apply; the other fields are
+  ignored. With `<u-grid-column>`, the
   band's `label` is its own text (without the nested columns) and `columns` is a read-only list of
   the nested elements (`null` without them).
 - **Reordering**: a column moves only among the columns of its band (drag and drop, `Alt+Shift+←/→`
@@ -2087,11 +2090,38 @@ group row. Column headers also have an always visible "⋮" button that opens th
 
 | Target | Built-in items (only those that apply) | Turned off by |
 | ------ | -------------------------------------- | ------------- |
-| `header` | Sort ascending / descending / Clear sorting (when sorted); **Pin column ▸** (`fixColumn`: Pin to start / end / Unpin, `column-fixing`); Auto-size column, Auto-size all columns (`autoSizeAllColumns`), Increase / Decrease width (`column-resizing`); Move left / right; Group by this column; Choose columns (`openColumnChooser`, with `column-chooser`), Reset columns (`resetColumns`) — in AG Grid's order | `column-header-menu="false"` |
+| `header` | Sort ascending / descending / Clear sorting (when sorted); **Pin column ▸** (`fixColumn`: Pin to start / end / Unpin, `column-fixing`); Auto-size column, Auto-size all columns (`autoSizeAllColumns`), Increase / Decrease width (`column-resizing`); Move left / right; Group by this column; Choose columns (`openColumnChooser`, with `column-chooser`), Reset columns (`resetColumns`) — in AG Grid's order | `column-header-menu="false"`, or `headerMenu: false` on one column |
 | `group-panel` | Ungroup, Move left / right, Ungroup all, Expand / Collapse all groups | `group-panel-menu="false"` |
 | `row` (cell ranges) | Copy selected cells, Paste, Extend selection to this cell, Add cell to selection (see below) | shown with `cell-selection-mode` (Paste: also needs `clipboard-mode="copy-paste"`), even without `row-menu`; without cell ranges, Paste only with `row-menu`. To keep the browser menu, remove them in `u-grid-context-menu-opening` |
 | `row` | Copy (the cell), Copy selected rows, Export selected rows, Edit, Delete / Restore, Show / Hide details; tree data: Expand / Collapse (`expandNode`/`collapseNode`), Add child row (`addChildRow`, with `allow-adding`) | **off by default**: `row-menu` turns them on |
 | `group-row` | Expand / Collapse group, Expand / Collapse all groups, Ungroup | `row-menu` (off by default) |
+
+### Header menu of one column
+
+`headerMenu: false` on a column (`header-menu="false"` on `<u-grid-column>`) removes its header
+menu, for example on an actions column whose header shows only its title:
+
+```js
+grid.columns = [
+  ...columns,
+  { name: 'actions', label: 'Actions', fixed: 'end', sortable: false, groupable: false, resizable: false, headerMenu: false },
+];
+```
+
+- No "⋮" and no built-in items from any opener (button, right-click, long press, Shift+F10, context
+  menu key); the header no longer announces Shift+F10 or F2.
+- The items that are the single-pointer alternative to a drag the column still allows stay (WCAG
+  2.5.7): Auto-size column and Increase / Decrease width while it is resizable, Move left / right while
+  it has a movable neighbor, Group by this column while it is groupable — with the "⋮" while there are
+  any. Turn those drags off (`resizable`, `groupable`, a fixed or single column) to remove the menu
+  entirely.
+- `u-grid-context-menu-opening` still fires, so the host may add its own items (the menu opens by
+  right-click, long press, Shift+F10 and the context menu key, without a "⋮"); without items the
+  browser menu is kept.
+- The other headers keep the grid-wide items (auto-size all, choose columns, reset columns).
+- `true` and `null` (default) follow the grid's `column-header-menu`, which always wins.
+- Give the column a `label` even when its header looks empty: it names the column for screen readers.
+
 
 On a [full-width row](#full-width-rows-rowrenderer) the `row` menu has `cellType: 'full-width'` and
 `column: null`: Copy copies the row (like `Ctrl+C`), there is no Edit, and Delete / Restore and
@@ -3236,7 +3266,7 @@ CSS property and part for IDEs and tooling.
 | Tag | Description |
 | --- | ----------- |
 | `<u-grid>` | The grid. Class: `DataGrid`. Properties and attributes in [Appearance & behavior](#appearance--behavior). |
-| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `true-text`, `false-text`, `wrap`, `header-wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
+| `<u-grid-column>` | Declarative column. Class: `DataGridColumn`. Attributes: `path`, `name`, `width`, `min-width`, `max-width`, `hiding-priority`, `group-index`, `type`, `alignment`, `boolean-display`, `true-text`, `false-text`, `wrap`, `header-wrap`, `empty-text`, `sortable`, `groupable`, `sort-order`, `sort-index`, `fixed`, `visible`, `resizable`, `show-in-chooser`, `header-menu`, `filterable`, `filter-operations`, `default-filter-operation`, `exportable`, `editable`; properties only: `format`, `valueGetter`, `displayValue`, `renderer`, `headerRenderer`, `groupRenderer`, `comparator`, `groupValueGetter`, `editorRenderer`, `validationRules`, `valueSetter`; label = text content. |
 
 ### `<u-grid>` methods
 
@@ -3550,7 +3580,11 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### 0.6.1
+### Next release (unreleased)
+
+New: `headerMenu: false` on a column (`header-menu="false"`) removes its header menu — see "Header
+menu of one column". The items that are the single-pointer alternative to a drag the column still
+allows stay.
 
 Fixed on Chrome and Edge 114 to 119: the header labels, the group rows and the muted texts were
 invisible (`currentColor` inside `color-mix()` in a text color is transparent before Chromium 120),

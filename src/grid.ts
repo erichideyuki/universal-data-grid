@@ -19176,7 +19176,9 @@ export class DataGrid extends LitElement {
   #builtInMenuItems(request: ContextMenuRequest): BuiltInMenuItem[] {
     switch (request.target) {
       case 'header':
-        return request.column && this.columnHeaderMenu ? this.#headerMenuItems(request.column) : [];
+        return request.column && this.columnHeaderMenu && (request.column.headerMenu !== false || this.#keepsDragAlternatives(request.column))
+          ? this.#headerMenuItems(request.column)
+          : [];
       case 'group-panel':
         return this.groupPanelMenu && this._groupColumns.length ? this.#groupPanelMenuItems(request.column) : [];
 
@@ -19210,6 +19212,8 @@ export class DataGrid extends LitElement {
     const items: BuiltInMenuItem[] = [];
     const band = this._isBand(column);
     const grouped = this._groupColumns.includes(column);
+    // `headerMenu: false`: só as alternativas de ponteiro único aos arrastos que a coluna ainda permite (WCAG 2.5.7).
+    const full = column.headerMenu !== false;
 
     const section = (entries: BuiltInMenuItem[]) => {
       if (entries.length) {
@@ -19218,7 +19222,7 @@ export class DataGrid extends LitElement {
       }
     };
 
-    if (!band && !grouped && this.#canSortByUser(column)) {
+    if (full && !band && !grouped && this.#canSortByUser(column)) {
       const order = this.#orderOf(column);
       section([
         { name: 'sortColumnAscending', text: translation.sortColumnAscending, disabled: order === 'asc' },
@@ -19227,7 +19231,7 @@ export class DataGrid extends LitElement {
       ]);
     }
 
-    if (this.#canUserFix(column)) {
+    if (full && this.#canUserFix(column)) {
       const fixed = this._fixedOf(column);
       section([
         {
@@ -19245,7 +19249,7 @@ export class DataGrid extends LitElement {
     const resizable = !band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column));
     section([
       ...resizable ? [{ name: 'autoSizeColumn' as const, text: translation.autoSizeColumn }] : [],
-      ...this._visibleColumns.some(leaf => this.#isResizable(leaf)) ? [{ name: 'autoSizeAllColumns' as const, text: translation.autoSizeAllColumns }] : [],
+      ...full && this._visibleColumns.some(leaf => this.#isResizable(leaf)) ? [{ name: 'autoSizeAllColumns' as const, text: translation.autoSizeAllColumns }] : [],
       // Alternativa de teclado/ponteiro único ao arrasto da borda (WCAG 2.5.7).
       ...resizable
         ? [
@@ -19272,10 +19276,12 @@ export class DataGrid extends LitElement {
       section([{ name: 'groupColumn', text: translation.groupColumn }]);
     }
 
-    section([
-      ...this.columnChooser ? [{ name: 'openColumnChooser' as const, text: translation.openColumnChooser, hasPopup: 'dialog' as const }] : [],
-      { name: 'resetColumns', text: translation.resetColumns },
-    ]);
+    if (full) {
+      section([
+        ...this.columnChooser ? [{ name: 'openColumnChooser' as const, text: translation.openColumnChooser, hasPopup: 'dialog' as const }] : [],
+        { name: 'resetColumns', text: translation.resetColumns },
+      ]);
+    }
 
     return items;
   }
@@ -19290,7 +19296,20 @@ export class DataGrid extends LitElement {
    * SSR). "Redefinir colunas" vale sempre, como no AG Grid.
    */
   #hasColumnMenu(column: GridColumnDef): boolean {
-    return this.columnHeaderMenu && !this._groupColumns.includes(column);
+    return this.columnHeaderMenu && !this._groupColumns.includes(column) && (column.headerMenu !== false || this.#keepsDragAlternatives(column));
+  }
+
+  /**
+   * `headerMenu: false` ainda deixa itens: a coluna se redimensiona, tem
+   * irmã para trocar de lugar ou agrupa por arrasto, e o menu é a alternativa
+   * de ponteiro único a esses arrastos (WCAG 2.5.7; mesmas condições de
+   * `#headerMenuItems`, sem medir a direção).
+   */
+  #keepsDragAlternatives(column: GridColumnDef): boolean {
+    const band = this._isBand(column);
+    const resizable = !band && this.#isResizable(column) && (this.resizeMode !== 'next-column' || !!this._resizeNeighbor(column));
+    const groupable = !band && !this._groupColumns.includes(column) && isColumnGroupable(column);
+    return resizable || groupable || this.#hasMovableNeighbor(column);
   }
 
   #groupPanelMenuItems(column: GridColumnDef | null): BuiltInMenuItem[] {

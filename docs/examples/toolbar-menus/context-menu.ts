@@ -8,18 +8,24 @@ import { makeOrders, type Order } from '../shared/data.js';
 
 export const meta = {
   title: 'Context menus',
-  description: 'Click the **⋮** button of a header — or right-click (long-press, `Shift`+`F10`, the menu key) a header, a group chip or a row. Headers have built-in items (sort, a **Pin column ▸** submenu, auto-size, move, group, choose and reset columns); rows get theirs with `row-menu` (copy, edit, delete). Before any menu opens, `u-grid-context-menu-opening` lets you change `detail.menuItems` in place — here it adds **Open order** and **Mark as priority** to rows, adds **Column statistics** to headers, removes **Clear sorting**, and lists the pin submenu (`fixColumn`, whose `items` are the three sides). The "⋯" button in each row calls `openContextMenu()`.',
+  description: 'Click the **⋮** button of a header — or right-click (long-press, `Shift`+`F10`, the menu key) a header, a group chip or a row. Headers have built-in items (sort, a **Pin column ▸** submenu, auto-size, move, group, choose and reset columns); rows get theirs with `row-menu` (copy, edit, delete). Before any menu opens, `u-grid-context-menu-opening` lets you change `detail.menuItems` in place — here it adds **Open order** and **Mark as priority** to rows, adds **Column statistics** to headers, removes **Clear sorting**, and lists the pin submenu (`fixColumn`, whose `items` are the three sides). The "⋯" button in each row calls `openContextMenu()`; its **Actions** column has `headerMenu: false`, so its header shows only the title.',
 };
 
 export default (host: HTMLElement) => {
   const grid = createGrid(host, 400);
   let orders = makeOrders(300);
 
+  // Header with only its title: no "⋮" and no header menu (fixed at the end, nothing to drag).
   const actions: GridColumnDef<Order> = {
+    name: 'actions',
     label: 'Actions',
     width: 90,
+    fixed: 'end',
     exportable: false,
     sortable: false,
+    groupable: false,
+    resizable: false,
+    headerMenu: false,
     renderer: (_item, ctx) => html`
       <button type="button" aria-label="Order actions" aria-haspopup="menu"
         @click=${(event: Event) => grid.openContextMenu({ rowKey: ctx.rowKey }, event.currentTarget as HTMLElement)}>⋯</button>`,

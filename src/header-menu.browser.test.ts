@@ -169,6 +169,107 @@ describe('botão "⋮" do cabeçalho', () => {
   });
 });
 
+// Pedido do click (0.6.0): coluna de ações com o cabeçalho só com o título (revisão de API e de a11y).
+describe('headerMenu: false numa coluna', () => {
+  const withActions = (): GridColumnDef[] => [
+    ...columns(),
+    { name: 'actions', label: 'Actions', fixed: 'end', sortable: false, groupable: false, resizable: false, headerMenu: false },
+  ];
+
+  it('coluna de ações: sem "⋮", sem Shift+F10/F2 anunciados, Shift+F10 e clique direito deixam o menu do navegador', async () => {
+    const grid = await create(g => g.columnResizing = true, withActions());
+    const actions = headerCell(grid, 'Actions');
+
+    expect(actions.querySelector('.column-header-menu-button')).toBeNull();
+    expect(actions.getAttribute('aria-keyshortcuts') ?? '').not.toMatch(/Shift\+F10|F2/);
+    expect(root(grid).querySelectorAll('.column-header-menu-button')).toHaveLength(3);
+
+    const cell = await focusHeader(grid, 'Actions');
+    const shiftF10 = await key(grid, cell, 'F10', { shiftKey: true });
+    expect(shiftF10.defaultPrevented).toBe(false);
+    expect(menu(grid)).toBeNull();
+    expect(focused(grid)).toBe(actions);
+
+    const right = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true });
+    actions.dispatchEvent(right);
+    await settle(grid);
+    expect(right.defaultPrevented).toBe(false);
+    expect(menu(grid)).toBeNull();
+
+    // As outras colunas mantêm os itens do grid inteiro.
+    menuButton(grid, 'City').click();
+    await settle(grid);
+    expect(menuTexts(grid)).toEqual(expect.arrayContaining(['Auto-size all columns', 'Reset columns']));
+    expect(await axeRun(grid)).toEqual([]);
+  });
+
+  it('coluna que ainda se arrasta: o menu fica só com as alternativas de ponteiro único (largura, mover, agrupar — WCAG 2.5.7)', async () => {
+    const cols = columns();
+    cols[1] = { ...cols[1], headerMenu: false };
+    const grid = await create(g => {
+      g.columnResizing = true;
+      g.columnChooser = true;
+    }, cols);
+
+    expect(menuButton(grid, 'City')).toBeTruthy();
+    expect(headerCell(grid, 'City').getAttribute('aria-keyshortcuts')).toContain('Shift+F10');
+    menuButton(grid, 'City').click();
+    await settle(grid);
+    expect(menuTexts(grid)).toEqual([
+      'Auto-size column',
+      'Increase width',
+      'Decrease width',
+      'Move left',
+      'Move right',
+      'Group by this column',
+    ]);
+  });
+
+  it('o hospedeiro ainda põe itens pelo u-grid-context-menu-opening (sem "⋮"); true segue o grid, que sempre vence', async () => {
+    const grid = await create(undefined, withActions());
+    const action = vi.fn();
+    grid.addEventListener('u-grid-context-menu-opening', ({ detail }) => {
+      if (detail.target === 'header' && detail.column?.name === 'actions') {
+        detail.menuItems.push({ id: 'host', text: 'Host action', action });
+      }
+    });
+
+    const cell = await focusHeader(grid, 'Actions');
+    await key(grid, cell, 'F10', { shiftKey: true });
+    expect(menuTexts(grid)).toEqual(['Host action']);
+    expect(focused(grid)).toBe(itemsOf(menu(grid))[0]);
+    await key(grid, focused(grid)!, 'Escape');
+    expect(menu(grid)).toBeNull();
+    expect(focused(grid)).toBe(headerCell(grid, 'Actions'));
+
+    const cols = columns();
+    cols[1] = { ...cols[1], headerMenu: true };
+    grid.columns = cols;
+    grid.columnHeaderMenu = false;
+    await settle(grid);
+    expect(root(grid).querySelectorAll('.column-header-menu-button')).toHaveLength(0);
+  });
+
+  it('header-menu="false" no <u-grid-column>; mudar com o foco no "⋮" devolve o foco à célula', async () => {
+    const element = document.createElement('u-grid-column');
+    element.setAttribute('header-menu', 'false');
+    expect((element as unknown as GridColumnDef).headerMenu).toBe(false);
+    element.setAttribute('header-menu', '');
+    expect((element as unknown as GridColumnDef).headerMenu).toBe(true);
+
+    const grid = await create();
+    const cell = await focusHeader(grid, 'Name');
+    await key(grid, cell, 'F2');
+    expect(focused(grid)).toBe(menuButton(grid, 'Name'));
+
+    // Única coluna sem arrasto possível: sem ordenação nem agrupamento, e sem vizinha (as outras escondidas).
+    grid.columns = [{ path: 'name', label: 'Name', name: 'name', sortable: false, groupable: false, headerMenu: false }];
+    await settle(grid);
+    expect(menuButton(grid, 'Name')).toBeNull();
+    expect(focused(grid)).toBe(headerCell(grid, 'Name'));
+  });
+});
+
 describe('layout do cabeçalho pelo alinhamento lógico', () => {
   const positions = (grid: DataGrid, label: string) => {
     const cell = headerCell(grid, label);

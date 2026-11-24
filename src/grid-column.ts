@@ -222,6 +222,9 @@ export class DataGridColumn extends LitElement implements GridColumnDef {
   /** `show-in-chooser="false"` removes the column from the chooser (the user cannot hide it). */
   @property({ converter: optionalBoolean, attribute: 'show-in-chooser' }) showInChooser: boolean | null = null;
 
+  /** `header-menu="false"` removes this column's header menu (see `GridColumnDef.headerMenu`). */
+  @property({ converter: optionalBoolean, attribute: 'header-menu' }) headerMenu: boolean | null = null;
+
   /** Allows sorting by this column. Default: `true` when it has a `path`, `valueGetter` or `comparator`. */
   @property({ converter: optionalBoolean }) sortable: boolean | null = null;
 
