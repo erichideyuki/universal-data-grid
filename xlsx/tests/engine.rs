@@ -174,12 +174,16 @@ fn strict(s: &str) -> Document {
 }
 
 fn run(b: &Begin<'_>, blocks: &[Vec<u8>]) -> BTreeMap<String, String> {
+    run_with(b, blocks, &[])
+}
+
+fn run_with(b: &Begin<'_>, blocks: &[Vec<u8>], tail: &[u8]) -> BTreeMap<String, String> {
     let mut e = Engine::new();
     assert_eq!(e.begin(&config(b)), code::OK, "{}", e.error);
     for bl in blocks {
         assert!(e.append(bl) >= 0, "{}", e.error);
     }
-    let n = e.finish();
+    let n = e.finish(tail);
     assert!(n > 0, "{}", e.error);
     assert_eq!(n as usize, e.out.len());
     let p = parts(&e.out);
@@ -371,6 +375,34 @@ fn formato_embutido_por_id_sai_como_id() {
 }
 
 #[test]
+fn autofilter_no_fim_com_ordenacao() {
+    // rótulos na linha 1, dados nas 2-3; ordenação descendente pela coluna B
+    let mut tail = Enc::default();
+    tail.u32(1).u16(1).u32(3).u16(2).u8(1).u16(2).u8(1);
+    let p = run_with(
+        &Begin::default(),
+        &[block(&[], &[(0, vec![C::Text("a", 0), C::Text("b", 0)]), (0, vec![C::Num(1.0, 0), C::Num(2.0, 0)]), (0, vec![C::Num(3.0, 0), C::Num(4.0, 0)])])],
+        &tail.0,
+    );
+    let s = sheet(&p);
+    assert!(s.contains(r#"<autoFilter ref="A1:B3"><sortState ref="A2:B3"><sortCondition descending="1" ref="B2:B3"/></sortState></autoFilter>"#), "{s}");
+    assert!(p["xl/workbook.xml"].contains("_xlnm._FilterDatabase"), "{}", p["xl/workbook.xml"]);
+
+    // range fora das colunas: erro do escritor, sem pânico
+    let mut e = Engine::new();
+    assert_eq!(e.begin(&config(&Begin::default())), code::OK);
+    let mut bad = Enc::default();
+    bad.u32(1).u16(1).u32(1).u16(2).u8(1).u16(9).u8(0);
+    assert!(e.finish(&bad.0) < 0);
+    // bytes a mais
+    let mut e = Engine::new();
+    assert_eq!(e.begin(&config(&Begin::default())), code::OK);
+    let mut extra = tail.0.clone();
+    extra.push(0);
+    assert_eq!(e.finish(&extra), code::INVALID);
+}
+
+#[test]
 fn bandas_mescladas_na_horizontal() {
     let header = style(1 | 8, 0, 0, 0xE6E6E6, 0, "");
     let p = run(
@@ -404,7 +436,7 @@ fn mescla_sobreposta_e_erro() {
 fn erros_de_protocolo_e_de_estado() {
     let mut e = Engine::new();
     assert_eq!(e.append(&block(&[], &[])), code::STATE);
-    assert_eq!(e.finish(), code::STATE);
+    assert_eq!(e.finish(&[]), code::STATE);
     assert_eq!(e.begin(&[1]), code::INVALID);
     assert_eq!(e.begin(&config(&Begin::default())), code::OK);
     assert_eq!(e.begin(&config(&Begin::default())), code::STATE);
@@ -419,7 +451,7 @@ fn erros_de_protocolo_e_de_estado() {
     assert_eq!(e.append(&block(&[], &[(1, vec![C::Text("a", 0)])])), code::LIMIT);
     // o escritor continua usável
     assert_eq!(e.append(&block(&[], &[(0, vec![C::Text("a", 0)])])), 1);
-    assert!(e.finish() > 0);
+    assert!(e.finish(&[]) > 0);
     assert_eq!(e.rows_written(), 1);
 }
 
@@ -429,7 +461,7 @@ fn contadores_de_links_e_textos_cortados() {
     assert_eq!(e.begin(&config(&Begin::default())), code::OK);
     let long = "x".repeat(40_000);
     assert_eq!(e.append(&block(&[], &[(0, vec![C::Text(&long, 0), C::Link("a", "file:///etc/passwd")])])), 1);
-    assert!(e.finish() > 0);
+    assert!(e.finish(&[]) > 0);
     assert_eq!(e.dropped_links(), 1);
     assert_eq!(e.cut_texts(), 1);
 }
@@ -448,7 +480,7 @@ fn dez_mil_por_quarenta() {
         first = false;
         assert_eq!(e.append(&b), 500, "{}", e.error);
     }
-    let n = e.finish();
+    let n = e.finish(&[]);
     assert!(n > 100_000, "{n}");
     assert_eq!(e.rows_written(), 10_000);
 }

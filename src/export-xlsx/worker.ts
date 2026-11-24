@@ -36,7 +36,7 @@ scope.onmessage = async (event: MessageEvent<XlsxWorkerRequest>) => {
 
       case 'finish': {
         const e = engine!;
-        const { file, stats } = e.finish();
+        const { file, stats } = e.finish(r.filter ? new Uint8Array(r.filter) : undefined);
         e.dispose();
         engine = null;
         reply({ id: r.id, ok: true, file: file.buffer as ArrayBuffer, stats }, [file.buffer]);

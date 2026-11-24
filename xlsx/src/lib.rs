@@ -20,13 +20,17 @@
 //! segundo `u8`, milissegundo `u16`) e o link (string). Por fim, as áreas mescladas do bloco: `u16`
 //! n e por área a 1ª linha `u32`, a 1ª coluna `u16`, a última linha `u32` e a última coluna `u16`
 //! (a partir de 1; as linhas são as da aba, não as do bloco).
+//!
+//! Fim (`finish`): vazio, ou o AutoFilter — 1ª linha `u32` (a dos rótulos), 1ª coluna `u16`, última
+//! linha `u32`, última coluna `u16` (a partir de 1), `u8` n chaves de ordenação e por chave a coluna
+//! `u16` (absoluta, a partir de 1) e descendente `u8`.
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
 use uo_xlsx::{
-    BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, Error, HAlign, Link, Rgb, RowOptions, SheetOptions,
-    Style, StyleId, WorkbookOptions, XlsxWriter,
+    AutoFilter, BorderEdge, BorderStyle, Borders, Cell, CellRange, CellValue, Column, DateTime, DefinedName, Error, HAlign, Link, Rgb, RowOptions,
+    SheetOptions, SortKey, Style, StyleId, WorkbookOptions, XlsxWriter,
 };
 
 /// Códigos devolvidos ao JS.
@@ -100,6 +104,25 @@ fn writer_error(e: &Error) -> (i32, String) {
 
 fn rgb(r: &mut Rd<'_>) -> Result<Rgb, String> {
     Ok(Rgb(r.u32()? & 0x00FF_FFFF))
+}
+
+/// AutoFilter do fim da exportação (protocolo no topo do módulo).
+fn read_filter(tail: &[u8]) -> Result<AutoFilter, String> {
+    let mut r = Rd::new(tail);
+    let first_row = r.u32()?;
+    let first_col = u32::from(r.u16()?);
+    let last_row = r.u32()?;
+    let last_col = u32::from(r.u16()?);
+    let n = r.u8()?;
+    let mut sort = Vec::with_capacity(usize::from(n));
+    for _ in 0..n {
+        let col = u32::from(r.u16()?);
+        sort.push(SortKey { col, descending: r.u8()? != 0 });
+    }
+    if !r.done() {
+        return Err("trailing bytes in filter".into());
+    }
+    Ok(AutoFilter { range: CellRange::new(first_row, first_col, last_row, last_col), sort })
 }
 
 fn read_style(r: &mut Rd<'_>) -> Result<Style, String> {
@@ -308,9 +331,19 @@ impl Engine {
         Ok(rows)
     }
 
-    /// Fecha a aba e o pacote; o arquivo fica em `out`. Devolve o tamanho.
-    pub fn finish(&mut self) -> i32 {
+    /// Fecha a aba (com o AutoFilter de `tail`, se houver) e o pacote; o arquivo fica em `out`.
+    /// Devolve o tamanho.
+    pub fn finish(&mut self, tail: &[u8]) -> i32 {
         let Some(mut w) = self.w.take() else { return self.fail((code::STATE, "finish before begin".into())) };
+        if !tail.is_empty() {
+            let filter = match read_filter(tail) {
+                Ok(f) => f,
+                Err(e) => return self.fail((code::INVALID, e)),
+            };
+            if let Err(e) = w.set_auto_filter(filter) {
+                return self.fail(writer_error(&e));
+            }
+        }
         self.dropped_links = w.dropped_links();
         self.cut_texts = w.cut_texts();
         match w.end_sheet().and_then(|()| w.finish()) {

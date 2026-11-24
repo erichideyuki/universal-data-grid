@@ -20,7 +20,7 @@ const MAX_OUTLINE = 7;
 const PX_PER_CHAR = 7;
 
 /** Opções só da forma nova: a obsoleta as ignora (com aviso uma vez por módulo). */
-const NEW_ONLY = ['title', 'includeBands', 'freezeHeader', 'direction', 'dateFormat', 'customizeCell', 'onProgress', 'worker', 'assetsUrl'] as const;
+const NEW_ONLY = ['title', 'includeBands', 'freezeHeader', 'autoFilter', 'direction', 'dateFormat', 'customizeCell', 'onProgress', 'worker', 'assetsUrl'] as const;
 let warnedIgnored = false;
 
 /** O arquivo pelo ExcelJS do hospedeiro (forma obsoleta de `exportXlsx`). */

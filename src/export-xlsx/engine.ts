@@ -10,7 +10,7 @@ export interface Exports {
   create(): void;
   begin(ptr: number, len: number): number;
   append(ptr: number, len: number): number;
-  finish(): number;
+  finish(ptr: number, len: number): number;
   rows_written(): number;
   dropped_links(): number;
   cut_texts(): number;
@@ -74,11 +74,11 @@ export class XlsxEngine {
     return check(this.#x, this.#x.append(put(this.#x, block), block.length));
   }
 
-  /** O arquivo (cópia: a memória do wasm não o guarda) e as contagens. */
-  finish(): { file: Uint8Array; stats: XlsxStats } {
+  /** O arquivo (cópia: a memória do wasm não o guarda) e as contagens; `filter` = o AutoFilter (protocolo do motor). */
+  finish(filter?: Uint8Array): { file: Uint8Array; stats: XlsxStats } {
     const x = this.#x;
     const stats = { droppedLinks: x.dropped_links(), cutTexts: x.cut_texts() };
-    const len = check(x, x.finish());
+    const len = check(x, filter?.length ? x.finish(put(x, filter), filter.length) : x.finish(0, 0));
     const file = new Uint8Array(x.memory.buffer, x.file_ptr(), len).slice();
     return { file, stats };
   }

@@ -10,7 +10,8 @@ export interface XlsxClient {
   begin(config: Uint8Array): Promise<void>;
   /** Entrega um bloco (passa a ser do cliente) e espera a escrita dele; devolve as linhas escritas. */
   append(block: Uint8Array): Promise<number>;
-  finish(): Promise<{ file: Uint8Array; stats: XlsxStats }>;
+  /** `filter`: o AutoFilter (protocolo do motor); sem ele, nenhum. */
+  finish(filter?: Uint8Array): Promise<{ file: Uint8Array; stats: XlsxStats }>;
   /** `true`: os blocos rodam na thread principal (o chamador os faz pequenos e cede a vez entre eles). */
   readonly local: boolean;
   dispose(): void;
@@ -21,7 +22,7 @@ export type XlsxWorkerRequest =
   | { id: number; op: 'init'; module: WebAssembly.Module }
   | { id: number; op: 'begin'; config: ArrayBuffer }
   | { id: number; op: 'append'; block: ArrayBuffer }
-  | { id: number; op: 'finish' };
+  | { id: number; op: 'finish'; filter?: ArrayBuffer };
 
 /** Pedido sem o `id` (cada variante). */
 type RequestBody = { [K in XlsxWorkerRequest['op']]: Omit<Extract<XlsxWorkerRequest, { op: K }>, 'id'> }[XlsxWorkerRequest['op']];
@@ -42,7 +43,7 @@ export const localClient = async (wasmUrl: string): Promise<XlsxClient> => {
     local: true,
     begin: config => run(() => engine.begin(config)),
     append: block => run(() => engine.append(block)),
-    finish: () => run(() => engine.finish()),
+    finish: filter => run(() => engine.finish(filter)),
     dispose: () => engine.dispose(),
   };
 };
@@ -108,8 +109,9 @@ export const workerClient = async (worker: Worker, wasmUrl: string): Promise<Xls
       const buffer = own(block);
       return (await call({ op: 'append', block: buffer }, [buffer])).value ?? 0;
     },
-    finish: async () => {
-      const r = await call({ op: 'finish' });
+    finish: async filter => {
+      const buffer = filter ? own(filter) : undefined;
+      const r = await call({ op: 'finish', filter: buffer }, buffer ? [buffer] : []);
       return { file: new Uint8Array(r.file!), stats: r.stats ?? { droppedLinks: 0, cutTexts: 0 } };
     },
     dispose: () => {

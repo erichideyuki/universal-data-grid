@@ -222,6 +222,26 @@ idioma como formato próprio, literal. Revisado pelo
 - Motor: flag 64 no estilo do protocolo (`u16` do id) e
   `uo_xlsx::Style::builtin_num_fmt` (commit `784b3031` do `rust-core`).
 
+## AutoFilter (2026-11-24, pedido do usuário)
+"O xlsx já sair com ordenação e filtro": os botões de filtro do Excel nos
+rótulos. Revisado pelo \`webcomponent-api-reviewer\` e aprovado pelo usuário:
+- \`autoFilter?: boolean\` em \`GridXlsxOptions\`, padrão \`true\` (mudança
+  visível, como \`freezeHeader\` na 0.4.0); \`false\` desliga. Só na forma nova
+  (\`NEW_ONLY\` do legacy).
+- Intervalo: da última linha de cabeçalho (os rótulos, abaixo das bandas) à
+  última linha de dado; o total fica fora; sem dado, só a linha dos rótulos.
+- Fora quando não há cabeçalho ou o arquivo tem outline (\`ctx.maxLevel > 0\`:
+  linhas de grupo ou árvore). Agrupado exportado plano (\`includeGroups:
+  false\`) tem filtro. Aviso só com \`true\` explícito.
+- Estado de ordenação (a seta) só quando é verdade no arquivo: todas as chaves
+  de \`getSorting()\` são colunas exportadas sem \`comparator\`, o grid não está
+  agrupado e não há linhas fixas (elas ficam no intervalo, como dado). Senão,
+  nenhum (nunca parcial).
+- Motor: \`finish\` recebe o AutoFilter (protocolo no topo de
+  \`xlsx/src/lib.rs\`) e chama \`XlsxWriter::set_auto_filter\` do \`uo-xlsx\`
+  (commit \`842f5b2d\` do \`rust-core\`), que grava \`<autoFilter>\`/\`<sortState>\` e
+  o nome oculto \`_xlnm._FilterDatabase\`. \`SortKey::col\` é a partir de 1.
+
 ## Decisões do usuário depois da entrega (2026-11-23)
 Aceitas as 8 recomendações da revisão na entrega (mudam a API aprovada
 acima; valem sobre ela):

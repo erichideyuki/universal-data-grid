@@ -543,6 +543,89 @@ describe('exportXlsx (motor uo-xlsx)', () => {
       && String(message).includes('14/22 for a date'))).toBe(true);
   });
 
+  // Pedido do usuário (0.7.0): o arquivo já sai com o filtro do Excel nos rótulos (spec 29, "AutoFilter").
+  describe('autoFilter', () => {
+    const autoFilterOf = (book: Book) => book.sheet.getElementsByTagName('autoFilter')[0] ?? null;
+    const sortConditions = (book: Book) =>
+      [...book.sheet.getElementsByTagName('sortCondition')].map(c => `${c.getAttribute('ref')}${c.getAttribute('descending') === '1' ? ' desc' : ''}`);
+
+    it('padrão: rótulos até a última linha de dado, nome _FilterDatabase oculto, sem estado de ordenação sem ordenar', async () => {
+      const book = await run(await create());
+
+      expect(autoFilterOf(book)?.getAttribute('ref')).toBe('A1:D4');
+      expect(sortConditions(book)).toEqual([]);
+      expect(definedName(book, '_xlnm._FilterDatabase')).toMatch(/!\$A\$1:\$D\$4$/);
+      const filterName = [...book.workbook.getElementsByTagName('definedName')].find(d => d.getAttribute('name') === '_xlnm._FilterDatabase')!;
+      expect(filterName.getAttribute('hidden')).toBe('1');
+    });
+
+    it('a ordenação do grid vira o estado de ordenação; o total fica fora do intervalo', async () => {
+      const grid = await create(g => {
+        g.summary = { total: [{ column: 'amount', type: 'sum' }] };
+      });
+      grid.sortColumn(grid.columns.find(c => c.path === 'amount')!, 'desc');
+      grid.sortColumn(grid.columns.find(c => c.path === 'name')!, 'asc', { append: true });
+      const book = await run(grid);
+
+      // 3 linhas de dado (2–4) e o total na 5
+      expect(autoFilterOf(book)?.getAttribute('ref')).toBe('A1:D4');
+      expect(sortConditions(book)).toEqual(['C2:C4 desc', 'A2:A4']);
+    });
+
+    it('sem estado de ordenação: coluna com comparador próprio ou ordenada fora da exportação; com bandas, os rótulos são a última linha', async () => {
+      const cols: GridColumnDef[] = [
+        { label: 'Who', columns: [{ path: 'name', label: 'Name', comparator: (a, b) => String(a).localeCompare(String(b)) }, { path: 'country', label: 'Country' }] },
+        { path: 'amount', label: 'Amount', dataType: 'number' },
+      ];
+      const grid = await create(undefined, cols);
+      grid.sortColumn(grid.columns[0].columns![0], 'asc');
+      const book = await run(grid);
+
+      expect(autoFilterOf(book)?.getAttribute('ref')).toBe('A2:C5');
+      expect(sortConditions(book)).toEqual([]);
+    });
+
+    it('linhas fixas ficam no intervalo, sem estado de ordenação', async () => {
+      const grid = await create(g => {
+        g.keyExpr = 'name';
+      });
+      grid.fixedTopItems = [grid.items[2]];
+      grid.sortColumn(grid.columns.find(c => c.path === 'amount')!, 'asc');
+      const book = await run(grid);
+
+      // a linha fixa (2) e as 3 do corpo (a fixa também fica no corpo): 3–5
+      expect(autoFilterOf(book)?.getAttribute('ref')).toBe('A1:D5');
+      expect(sortConditions(book)).toEqual([]);
+    });
+
+    it('fora: autoFilter false, sem cabeçalho e com linhas de grupo (aviso só com true explícito)', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      warn.mockClear();
+      const filterWarnings = () => warn.mock.calls.filter(([message]) => String(message).includes('autoFilter'));
+      const grid = await create();
+
+      expect(autoFilterOf(await run(grid, { autoFilter: false }))).toBeNull();
+      expect(autoFilterOf(await run(grid, { includeHeaders: false }))).toBeNull();
+      expect(filterWarnings()).toEqual([]);
+
+      grid.groupColumn(grid.columns.find(c => c.path === 'country')!);
+      await settle(grid);
+      const grouped = await run(grid);
+      expect(autoFilterOf(grouped)).toBeNull();
+      expect(definedName(grouped, '_xlnm._FilterDatabase')).toBeNull();
+      expect(filterWarnings()).toEqual([]);
+
+      await run(grid, { autoFilter: true });
+      expect(filterWarnings()).toHaveLength(1);
+
+      // agrupado exportado plano: o filtro volta, sem a seta (a ordem dos grupos vem antes)
+      grid.sortColumn(grid.columns.find(c => c.path === 'amount')!, 'desc');
+      const flat = await run(grid, { includeGroups: false });
+      expect(autoFilterOf(flat)?.getAttribute('ref')).toBe('A1:D4');
+      expect(sortConditions(flat)).toEqual([]);
+    });
+  });
+
   it('language: dc:language e os formatos de número e data; o padrão é o do grid', async () => {
     const cols: GridColumnDef[] = [
       { path: 'name', label: 'Name' },

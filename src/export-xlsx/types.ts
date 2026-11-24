@@ -190,6 +190,18 @@ export interface GridXlsxOptions<TWorkbook = ExcelJSWorkbook, TWorksheet = Excel
    * fixed at the start (`fixed: 'start'`) are always frozen too.
    */
   freezeHeader?: boolean;
+  /**
+   * Excel filter buttons on the column labels (the last header row), over
+   * the data rows (totals are left out), so whoever opens the file can sort
+   * and filter it. The current grid sort is shown as the sort state (the
+   * arrow) when every sort key is an exported column without its own
+   * `comparator`, the grid is not grouped and there are no fixed rows (they
+   * are inside the range, as data). Default `true`; left out without
+   * headers or when the export has group rows or tree levels (sorting in
+   * Excel would scramble them), with a warning only when set to `true`.
+   * New form only (ignored by the deprecated ExcelJS forms).
+   */
+  autoFilter?: boolean;
   /** Default: the direction of the grid. `rtl` writes a right-to-left sheet; `start`/`end` follow it. */
   direction?: 'ltr' | 'rtl';
   /**

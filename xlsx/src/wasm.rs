@@ -49,10 +49,12 @@ pub extern "C" fn append(ptr: *mut u8, len: usize) -> i32 {
     with(|e| e.append(&bytes), code::STATE)
 }
 
-/// Fecha o arquivo; devolve o tamanho (lido em `out_ptr`) ou um código negativo.
+/// Fecha o arquivo (com o AutoFilter em `ptr`/`len`; `len` 0 = sem); devolve o tamanho (lido em
+/// `out_ptr`) ou um código negativo.
 #[unsafe(no_mangle)]
-pub extern "C" fn finish() -> i32 {
-    with(Engine::finish, code::STATE)
+pub extern "C" fn finish(ptr: *mut u8, len: usize) -> i32 {
+    let bytes = take(ptr, len);
+    with(|e| e.finish(&bytes), code::STATE)
 }
 
 #[unsafe(no_mangle)]

@@ -1760,6 +1760,7 @@ templates (`renderer`) are not drawn — the sheet holds the values; restyle cel
 | `includeHeaders` | `true` | The header rows (bands and column labels). |
 | `includeBands` | `true` | Band rows above the column labels (the label in the first column of the band, aligned by the band `alignment`). |
 | `freezeHeader` | `true` | Freezes every header row (the `fixed: 'start'` columns are always frozen). |
+| `autoFilter` | `true` (off with group rows or without headers) | Excel's filter buttons on the column labels, over the data rows (totals left out), so whoever opens the file can sort and filter it. The grid sort shows as the arrow when every sort key is an exported column without its own `comparator`, the grid is not grouped and there are no fixed rows (they are in the range, as data). With group rows or tree levels it is left out (sorting in Excel would scramble them), with a warning only when set to `true`. New form only. |
 | `direction` | direction of the grid | `'rtl'` writes a right-to-left sheet; `start`/`end` alignments follow it. |
 | `customizeCell` | — | `(cell) => void`, see below. |
 | `onProgress` | — | `({ rowCount, totalCount, pageCount }) => void` (`pageCount` is 0), about every 250 ms and once at the end. |
@@ -3544,7 +3545,7 @@ import {
   exportXlsx,              // (grid, GridXlsxOptions?) => Promise<Blob>; deprecated: (grid, ExcelJS, GridXlsxExcelJSOptions?)
   downloadXlsx,            // (grid, GridXlsxDownloadOptions?) => Promise<void>; deprecated: (grid, ExcelJS, options?)
   createXlsxExporter,      // (GridXlsxExporterOptions?) => GridExporter — for grid.xlsxExporter; deprecated: (ExcelJS, options?)
-  type GridXlsxOptions,    // GridExportOptions + { sheetName?, title?, language?, includeHeaders?, includeBands?, freezeHeader?, direction?, customizeCell?, onProgress?, worker?, assetsUrl? }
+  type GridXlsxOptions,    // GridExportOptions + { sheetName?, title?, language?, dateFormat?, includeHeaders?, includeBands?, freezeHeader?, autoFilter?, direction?, customizeCell?, onProgress?, worker?, assetsUrl? }
   type GridXlsxDownloadOptions, // + { fileName? }
   type GridXlsxExporterOptions, // GridXlsxDownloadOptions without selectedOnly and signal
   type GridXlsxCell,       // customizeCell argument: readonly rowType, row, column, band, columnIndex, columnSpan, headerRow, value; cellValue, text, numFmt, style, link
@@ -3587,6 +3588,10 @@ import {
 ```
 
 ### Next release (unreleased)
+
+Visible change: Excel exports without group rows now have Excel's filter buttons on the column
+labels, with the grid sort shown as the arrow (`autoFilter`, default `true`; `autoFilter: false`
+turns it off), including the toolbar's Export to Excel.
 
 New: `headerMenu: false` on a column (`header-menu="false"`) removes its header menu — see "Header
 menu of one column". The items that are the single-pointer alternative to a drag the column still

@@ -6,7 +6,7 @@ import { makeOrders } from '../shared/data.js';
 
 export const meta = {
   title: 'Excel and the Export button',
-  description: '`export-formats="csv xlsx"` adds an **Export** button to the toolbar (with "Export selected rows" entries when rows can be selected). Excel goes through the optional `export-xlsx` entry point: a WebAssembly engine writes the file in a Web Worker, with no dependency of yours. Bands become header rows above the column labels (each label merged across its columns), the header is frozen and repeats on printed pages, groups become the row outline of Excel, and numbers and dates are typed cells. `createXlsxExporter` gives the toolbar its **Export to Excel** entry (it becomes **Cancel export** while running); `downloadXlsx` takes the sheet name, `dateFormat`, `customizeCell` and `onProgress`; `dateFormat: "reader"` writes dates with the Excel built-in formats, shown in the regional settings of whoever opens the file.',
+  description: '`export-formats="csv xlsx"` adds an **Export** button to the toolbar (with "Export selected rows" entries when rows can be selected). Excel goes through the optional `export-xlsx` entry point: a WebAssembly engine writes the file in a Web Worker, with no dependency of yours. Bands become header rows above the column labels (each label merged across its columns), the header is frozen and repeats on printed pages, groups become the row outline of Excel, and numbers and dates are typed cells. `createXlsxExporter` gives the toolbar its **Export to Excel** entry (it becomes **Cancel export** while running); `downloadXlsx` takes the sheet name, `dateFormat`, `customizeCell` and `onProgress`; `dateFormat: "reader"` writes dates with the Excel built-in formats, shown in the regional settings of whoever opens the file. Without group rows (**Download flat**) the file has the Excel filter buttons on the column labels (`autoFilter`, on by default), with the grid sort shown as the arrow.',
 };
 
 export default (host: HTMLElement) => {
@@ -79,7 +79,17 @@ export default (host: HTMLElement) => {
     }
   });
 
-  controls(host, download, progress);
+  // Without group rows the file gets Excel's filter buttons (autoFilter), with the grid sort as the arrow.
+  const flat = button('Download flat .xlsx (filter buttons)', async () => {
+    try {
+      await downloadXlsx(grid, { fileName: 'orders-flat.xlsx', includeGroups: false, signal: controller.signal });
+      log.write('downloadXlsx() flat done');
+    } catch (error) {
+      log.write(`downloadXlsx() failed: ${String(error)}`);
+    }
+  });
+
+  controls(host, download, flat, progress);
 
   // leaving the page cancels a running export
   return () => controller.abort();
