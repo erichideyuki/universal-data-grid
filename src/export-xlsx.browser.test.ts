@@ -539,7 +539,8 @@ describe('exportXlsx (motor uo-xlsx)', () => {
     expect(book.styleOf('D2').numFmt).toBe('builtin:22');
     expect(book.styleOf('C3').numFmt).toBeNull();
     expect(book.styleOf('C2').numFmt).toMatch(/^#,##0.00/);
-    expect(warn.mock.calls.some(([message]) => String(message).includes('99 is not a supported built-in number format'))).toBe(true);
+    expect(warn.mock.calls.some(([message]) => String(message).includes('99 is not a supported built-in number format')
+      && String(message).includes('14/22 for a date'))).toBe(true);
   });
 
   it('language: dc:language e os formatos de número e data; o padrão é o do grid', async () => {

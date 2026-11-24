@@ -1775,7 +1775,7 @@ of the band; `null` in the label of a group row), `band` (the band of a band cel
 is always text; or a number, boolean, `Date` or `null`), `text` (sets `cellValue` to the text and
 `numFmt` to `null`), `numFmt` (an Excel format code written as is, or the id of a built-in date/time
 format — `14` short date, `22` date and time, 15–21, 45–47 — shown in the reader's regional settings;
-other ids fall back to General with a warning; a `Date` with no format gets `14` or `22`), `style` and `link` (a `GridExportLink` `{ url,
+other ids are ignored with a warning; a `Date` with no format, or an ignored one, gets `14` or `22`), `style` and `link` (a `GridExportLink` `{ url,
 description? }`: `http:`, `https:` or `mailto:`; without a color of yours, or when yours fails the
 contrast check, the cell gets the link color — `#0563c1`, or `#9dc3e6` on a dark background; no underline
 yet — and `description` is ignored for now: the writer has no link tooltip yet). The last write wins.

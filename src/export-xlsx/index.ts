@@ -387,11 +387,11 @@ const specOf = (style: GridXlsxCellStyle | null | undefined, numFmt: string | nu
 
   if (typeof code === 'number') {
     if (!BUILTIN_NUMFMTS.has(code)) {
-      warnOnce(`numfmt-id:${code}`, `${code} is not a supported built-in number format (14-22, 45-47); General was used.`);
+      warnOnce(`numfmt-id:${code}`, `${code} is not a supported built-in number format (14-22, 45-47); it was ignored (General, or 14/22 for a date).`);
       code = null;
     }
   } else if (code !== null && (typeof code !== 'string' || code.length === 0 || code.length > MAX_NUMFMT)) {
-    warnOnce('numfmt', 'a number format must be a string of 1 to 255 characters or a built-in id; General was used.');
+    warnOnce('numfmt', 'a number format must be a string of 1 to 255 characters or a built-in id; it was ignored (General, or 14/22 for a date).');
     code = null;
   }
 

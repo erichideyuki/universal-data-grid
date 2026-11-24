@@ -131,7 +131,8 @@ export interface GridXlsxCell<TItem = any> {
    * Excel number format: a code (`'#,##0.00'`, `'dd/mm/yyyy'`, written as
    * is) or the id of a built-in date/time format (`14` short date, `22` date
    * and time, 15-21, 45-47), which Excel shows in the regional settings of
-   * whoever opens the file. Other ids fall back to General (with a warning).
+   * whoever opens the file. Other ids are ignored (with a warning): General,
+   * or `14`/`22` for a `Date`.
    * `null` = General; a `Date` without a format gets `14` (midnight) or `22`.
    * With `dateFormat: 'reader'`, date columns read `14` or `22` here.
    */
