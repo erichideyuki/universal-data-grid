@@ -18,6 +18,16 @@ export const styles = css`
     height: 100%;
     /* Cor do texto própria (spec 17, A4): numa página escura sem tema, não herda texto claro sobre o fundo claro do grid. */
     color: var(--u-grid-color, var(--u-color-on-surface, rgb(29, 27, 32)));
+    /*
+     * Base das cores de texto atenuadas (color-mix): o \`currentColor\`. O
+     * Chromium antes do 120 resolve \`currentColor\` dentro de color-mix() na
+     * propriedade \`color\` como transparente (texto do cabeçalho e das linhas
+     * de grupo sumia no Chrome/Edge 114, medido no BrowserStack); lá a base é
+     * a cor de texto do grid. O teste de \`mask-image\` sem prefixo (Chromium
+     * 120, Firefox, Safari 15.4) separa os dois (@supports logo depois do
+     * :host; \`mask\` não serve: o Chromium antigo o aceita como propriedade SVG).
+     */
+    --_mix-base: var(--u-grid-color, var(--u-color-on-surface, rgb(29, 27, 32)));
     --_background-color: var(--u-grid-background-color, var(--u-color-surface-container-lowest, rgb(255, 255, 255)));
     /* Nomes antigos (antes da spec 15) seguem como fallback dos novos. */
     --_striped-background-color: var(--u-grid-striped-background-color, var(--u-grid-stripped-background-color, color-mix(in srgb, var(--u-color-surface-container, rgb(243, 237, 247)) 80%, transparent)));
@@ -44,7 +54,7 @@ export const styles = css`
     --_row-lines-height: var(--u-grid-row-line-width, var(--u-grid-row-lines-height, var(--_borders-width)));
     --_header-height: var(--u-grid-toolbar-height, var(--u-grid-header-height, 56px));
     /* Ícones, bordas de caixas e placeholder: sem o tema, derivam da cor do texto (página escura; spec 17). */
-    --_variant-color: var(--u-color-on-surface-variant, color-mix(in srgb, currentColor 80%, transparent));
+    --_variant-color: var(--u-color-on-surface-variant, color-mix(in srgb, var(--_mix-base) 80%, transparent));
     --_toggle-color: var(--u-grid-group-toggle-color, var(--u-grid-toggle-color, var(--_variant-color)));
     --_row-hover-opacity: var(--u-grid-row-hover-opacity, var(--u-table-hover-opacity, var(--u-state-layer-hover-opacity, 8%)));
     --_group-column-width: 32px;
@@ -56,6 +66,13 @@ export const styles = css`
     --_detail-toggle-width: 40px;
     --_command-column-width: 176px;
     --_selected-row-color: var(--u-grid-selected-row-background-color, color-mix(in srgb, var(--u-color-primary, rgb(103, 80, 164)) 12%, transparent));
+  }
+
+  /* Engines em que currentColor em color-mix() funciona na propriedade \`color\` (ver --_mix-base). */
+  @supports (mask-image: none) {
+    :host {
+      --_mix-base: currentColor;
+    }
   }
 
   :host(:dir(rtl)) {
@@ -475,7 +492,7 @@ export const styles = css`
     padding: var(--u-grid-header-cell-padding, var(--_cell-padding));
     font-size: var(--u-grid-header-cell-font-size, var(--u-th-font-size, 0.8125rem));
     font-weight: var(--u-grid-header-cell-font-weight, var(--u-th-font-weight));
-    color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent);
+    color: color-mix(in srgb, var(--_mix-base) var(--u-low-emphasis-opacity, 75%), transparent);
     text-align: start;
   }
 
@@ -494,7 +511,7 @@ export const styles = css`
   }
 
   .boolean-icon.false {
-    color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 60%), transparent);
+    color: color-mix(in srgb, var(--_mix-base) var(--u-low-emphasis-opacity, 60%), transparent);
   }
 
   td:where(.grid-table > * > * > *).wrap {
@@ -1176,6 +1193,7 @@ export const styles = css`
     width: 1em;
     height: 1em;
     background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='5.5' r='2'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3Ccircle cx='12' cy='18.5' r='2'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='5.5' r='2'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3Ccircle cx='12' cy='18.5' r='2'/%3E%3C/svg%3E") center / contain no-repeat;
   }
 
@@ -1283,7 +1301,7 @@ export const styles = css`
   }
 
   .grouping-cell {
-    color: color-mix(in srgb, currentColor var(--u-grid-group-row-emphasis, var(--u-grid-grouping-cell-emphasis, 80%)), transparent);
+    color: color-mix(in srgb, var(--_mix-base) var(--u-grid-group-row-emphasis, var(--u-grid-grouping-cell-emphasis, 80%)), transparent);
     /* clip (não hidden): não vira contêiner de rolagem e o rótulo fica sticky. */
     overflow: clip;
   }
@@ -1323,7 +1341,7 @@ export const styles = css`
     align-items: center;
     min-height: 32px;
     flex: 1;
-    color: color-mix(in srgb, currentColor var(--u-low-emphasis-opacity, 75%), transparent);
+    color: color-mix(in srgb, var(--_mix-base) var(--u-low-emphasis-opacity, 75%), transparent);
   }
 
   .group-end-dropzone {
@@ -1444,6 +1462,7 @@ export const styles = css`
     width: 24px;
     height: 24px;
     background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
 
@@ -1766,7 +1785,7 @@ export const styles = css`
   /* Item que não se aplica agora (limite do bloco): focável pelas setas, sem efeito. */
   .group-panel-menu-item[aria-disabled="true"] {
     cursor: default;
-    color: color-mix(in srgb, currentColor 50%, transparent);
+    color: color-mix(in srgb, var(--_mix-base) 50%, transparent);
   }
 
   .group-panel-menu-item[aria-disabled="true"]:hover {
@@ -2012,6 +2031,7 @@ export const styles = css`
     width: 10px;
     height: 10px;
     background-color: var(--_toggle-color);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1 3h8L5 8z'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1 3h8L5 8z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
 
@@ -2822,7 +2842,7 @@ export const styles = css`
 
   .edit-bar-button[aria-disabled="true"] {
     cursor: default;
-    color: color-mix(in srgb, currentColor 60%, transparent);
+    color: color-mix(in srgb, var(--_mix-base) 60%, transparent);
   }
 
   /* Na barra o desabilitado é pela opacidade (acima): a cor fica a do botão. */
