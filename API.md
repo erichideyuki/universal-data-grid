@@ -3550,7 +3550,7 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### Next release (unreleased)
+### 0.6.1
 
 Fixed on Chrome and Edge 114 to 119: the header labels, the group rows and the muted texts were
 invisible (`currentColor` inside `color-mix()` in a text color is transparent before Chromium 120),
