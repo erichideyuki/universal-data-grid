@@ -9,6 +9,7 @@ For live examples of every feature, see the [documentation site](https://univers
 
 - [Features](#features)
 - [Installation](#installation)
+- [Browser support](#browser-support)
 - [Quick start](#quick-start)
 - [Use in the browser (no build step)](#use-in-the-browser-no-build-step)
 - [Defining columns](#defining-columns)
@@ -117,6 +118,22 @@ a side effect. To write templates for renderers, add `lit` (any 3.x) to your own
 
 > Prefer no build step? See [Use in the browser (no build step)](#use-in-the-browser-no-build-step)
 > to drop the grid into a plain HTML page with a `<script>` and an import map.
+
+## Browser support
+
+| Browser | Minimum version | Tested on real browsers (BrowserStack) |
+| ------- | --------------- | -------------------------------------- |
+| Chrome | 114 | 114 and 158 on Windows |
+| Edge | 114 | 114 and 157 on Windows |
+| Firefox | 125 | 125 and 160 on Windows |
+| Safari (macOS) | 17 | 17.3 and 27 |
+| Safari (iOS and iPadOS) | 17 | iOS 26 on an iPhone 17 |
+| Chrome (Android) | 114 | Android 15 on a Galaxy S25 |
+
+Each test renders the grid, exports to Excel and PDF, and groups and sorts a million rows, with no
+console errors. Chrome and Edge 114 to 119 need 0.7.0 or later (before it, the header and group
+labels were invisible there). The grid relies on ES2022, the Popover API and modern CSS
+(`color-mix()`, `:has()`). Internet Explorer and legacy Edge are not supported.
 
 ---
 
