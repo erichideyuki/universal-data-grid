@@ -102,7 +102,21 @@ it('escala 110%, grid num x fracionário: a linha da coluna fixa cai no mesmo pi
     expect(body.value).toBeLessThan(60);
   };
 
+  // a origem das faixas num pixel físico inteiro (camadas arredondadas juntas)
+  const onDevicePixel = () => {
+    const rect = root.querySelector('.grid-bands')!.getBoundingClientRect();
+    return [rect.left, rect.top].map(v => Math.abs(v * devicePixelRatio - Math.round(v * devicePixelRatio)) < 0.02);
+  };
+
+  expect(onDevicePixel()).toEqual([true, true]);
   await check();
+
+  // o grid se move no contêiner (outra largura do layout do hospedeiro): realinha
+  box.style.paddingLeft = '7.13px';
+  box.style.paddingTop = '1.71px';
+  await settle(grid);
+  await settle(grid);
+  expect(onDevicePixel()).toEqual([true, true]);
 
   // rolar o contêiner para baixo (o cabeçalho gruda) e voltar ao zero (relato do usuário)
   for (const y of [40, 120, 200, 90, 0]) {

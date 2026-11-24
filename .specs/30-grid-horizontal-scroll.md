@@ -361,6 +361,18 @@ faixas ao pixel físico e `will-change: scroll-position` NÃO resolveram;
   CDP, comandos `emulateScale`/`captureDevicePixels` no
   `vitest.config.ts`; falhava antes) e "cada faixa é um rowgroup fora do
   Tab" em `src/horizontal-scroll.browser.test.ts`.
+- Segunda volta (o defeito seguia no app real, com GPU, depois de rolar
+  na vertical e voltar; o Chromium headless compõe por software e não o
+  mostra): a camada da célula fixa (sticky dentro da faixa rolável) e a
+  do conteúdo da faixa são arredondadas cada uma por conta própria. A
+  origem da `div` das faixas passa a cair num pixel físico inteiro
+  (`#snapBands`: `left`/`top` relativos de menos de meio pixel físico, sem
+  `transform`), recalculada depois de cada render e quando o grid se move
+  ou a porta muda de tamanho; os `top`/`bottom` onde as faixas grudam
+  (`scroll-padding` do contêiner) também são arredondados para o pixel
+  físico. É a correção que o próprio relato provou (empurrar o grid para
+  um pixel inteiro resolvia). O teste confere a origem no pixel físico,
+  inclusive depois de o grid se mover no contêiner.
 
 ## Critério de pronto
 Global da spec 00 + os testes acima + conferência manual no demo e no

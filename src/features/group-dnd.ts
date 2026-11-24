@@ -2,6 +2,7 @@ import type { DropEvent } from '@interactjs/actions/drop/DropEvent';
 import type { InteractEvent } from '@interactjs/core/InteractEvent';
 import interact from 'interactjs';
 
+import { isColumnGroupable } from '../grid-column-def.js';
 import type { DataGrid } from '../grid.js';
 import { GridDragHelper, InteractRegistry, trackDragThreshold } from './drag-helper.js';
 import { calcCursorRelativePosition, RelativePosition } from './drop-position.js';
@@ -22,6 +23,16 @@ export class GroupDragAndDropAdapter {
     this.#elements.prune();
   }
 
+  /**
+   * A coluna arrastada pode entrar no painel de grupos: agrupável, ou já
+   * agrupada (reordenar). Sem isso, nem o indicador de soltar aparece (a
+   * soltura seria recusada por \`_userGroupColumn\`).
+   */
+  #accepts(event: DropEvent): boolean {
+    const column = this.#grid._nativeColumnMap.get(event.draggable.target as HTMLElement);
+    return !!column && (this.#grid._groupColumns.includes(column) || isColumnGroupable(column));
+  }
+
   attachToGroupDropTarget(dropTarget: HTMLElement, indicatorOrder: number): void {
     if (!dropTarget || !this.#elements.add(dropTarget)) {
       return;
@@ -30,7 +41,11 @@ export class GroupDragAndDropAdapter {
     interact(dropTarget).dropzone({
       accept: '.move-container',
 
-      ondragenter: () => {
+      ondragenter: (event: DropEvent) => {
+        if (!this.#accepts(event)) {
+          return;
+        }
+
         const container = this.#grid._groupContainerRef.value!;
         container.classList.add('drop-target');
         container.style.setProperty('--_drop-indicator-order', `${indicatorOrder}`);
@@ -100,7 +115,7 @@ export class GroupDragAndDropAdapter {
       accept: '.move-container',
 
       ondragenter: (event: DropEvent) => {
-        if (event.target === event.draggable.target) {
+        if (event.target === event.draggable.target || !this.#accepts(event)) {
           return;
         }
 
@@ -116,7 +131,7 @@ export class GroupDragAndDropAdapter {
       },
 
       ondropmove: (event: DropEvent) => {
-        if (event.target === event.draggable.target) {
+        if (event.target === event.draggable.target || !this.#accepts(event)) {
           return;
         }
 

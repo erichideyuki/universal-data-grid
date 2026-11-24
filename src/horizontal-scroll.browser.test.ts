@@ -404,9 +404,7 @@ describe('rolagem horizontal no grid (spec 30, eixo block)', () => {
     const root = sh(grid);
     const bands = [...root.querySelectorAll<HTMLElement>('.band')];
 
-    expect(bands.map(element => element.className)).toEqual([
-      'band band-head-rows', 'band band-fixed-top', 'band band-body', 'band band-fixed-bottom', 'band band-foot-rows',
-    ]);
+    expect(bands.map(element => element.className)).toEqual(['band band-head-rows', 'band band-fixed-top', 'band band-body', 'band band-fixed-bottom', 'band band-foot-rows']);
     expect(bands.every(element => element.getAttribute('role') === 'rowgroup' && element.tabIndex === -1)).toBe(true);
     expect(root.querySelector('.band-fixed-top')!.getAttribute('aria-label')).toBe('Pinned rows at top');
     expect(root.querySelector('.band-fixed-bottom')!.getAttribute('aria-label')).toBe('Pinned rows at bottom');

@@ -204,6 +204,40 @@ describe('revisão do site de documentação', () => {
     expect(root(grid).activeElement).toBe(th);
   });
 
+  it('arrastar coluna não agrupável até a área de agrupamento não acende o indicador de soltar; agrupável acende', async () => {
+    const grid = await createGrid({
+      columns: [{ path: 'name', label: 'Name', groupable: false }, { path: 'city', label: 'City' }],
+      items: [{ name: 'Ana', city: 'Rio' }],
+    });
+    const panel = root(grid).querySelector<HTMLElement>('.group-container')!;
+    const target = panel.getBoundingClientRect();
+
+    const dragOver = async (label: string) => {
+      const th = headerCell(grid, label);
+      const rect = th.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      pointer('pointerdown', th, x, y);
+      pointer('pointermove', th, x + 5, y);
+      await nextFrame();
+
+      for (let step = 1; step <= 5; step++) {
+        pointer('pointermove', document, x + (target.left + 20 - x) * step / 5, y + (target.top + target.height / 2 - y) * step / 5);
+        await nextFrame();
+      }
+
+      const lit = panel.classList.contains('drop-target');
+      pointer('pointerup', document, target.left + 20, target.top + target.height / 2);
+      await settle(grid);
+      return lit;
+    };
+
+    expect(await dragOver('Name')).toBe(false);
+    expect(grid._groupColumns).toHaveLength(0);
+    expect(await dragOver('City')).toBe(true);
+    expect(grid._groupColumns.map(column => column.path)).toEqual(['city']);
+  });
+
   it('arrasto do cabeçalho: o clone tem a largura e a altura da célula (com rowspan)', async () => {
     const grid = await createGrid({ columns: bandColumns(), items: orders(5) });
     const th = headerCell(grid, 'Name');

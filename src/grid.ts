@@ -1372,6 +1372,12 @@ interface GridTableParts {
   hasTotals: boolean;
 }
 
+/** \`value\` (px CSS) arredondado para o pixel físico mais próximo, na escala atual da tela. */
+const toDevicePixel = (value: number): number => {
+  const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  return Math.round(value * ratio) / ratio;
+};
+
 /** Antes de medir (SSR, 1º render): largura suposta da área visível. */
 const DEFAULT_VIEWPORT_WIDTH = 1920;
 /** Largura (px, em `font-size` 16px) de coluna sem largura na conta do `autoHideColumns` (spec 21). */
@@ -14495,6 +14501,42 @@ export class DataGrid extends LitElement {
       && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'instant';
   }
 
+  /** Deslocamento aplicado à \`div\` das faixas para a origem dela cair num pixel físico inteiro. */
+  #bandsSnap = { x: 0, y: 0 };
+
+  /**
+   * Eixo \`block\` (spec 30): a origem das faixas num pixel físico inteiro.
+   * Com escala fracionária (110%) e o grid num x/y fracionário, o Chromium
+   * arredonda por conta própria a camada da célula fixa (sticky dentro da
+   * faixa rolável) e a do conteúdo da faixa, e a coluna fixa do cabeçalho
+   * saía 1 pixel físico fora das bandas (relato do ClickCompliance: empurrar
+   * o grid para um pixel inteiro resolvia). Deslocamento de menos de meio
+   * pixel físico, por \`left\`/\`top\` relativos (sem \`transform\`, que viraria
+   * bloco de contenção dos menus \`fixed\`). Rolagem da página anda em
+   * pixels físicos inteiros e não desalinha; o grid se mover ou a escala
+   * mudar chega aqui por \`#onExternalMoved\`/render.
+   */
+  #snapBands(): void {
+    const element = this.#gridRef.value;
+
+    if (!element?.classList.contains('grid-bands')) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const x = rect.left - this.#bandsSnap.x;
+    const y = rect.top - this.#bandsSnap.y;
+    const snap = { x: toDevicePixel(x) - x, y: toDevicePixel(y) - y };
+
+    if (Math.abs(snap.x - this.#bandsSnap.x) < 0.001 && Math.abs(snap.y - this.#bandsSnap.y) < 0.001) {
+      return;
+    }
+
+    this.#bandsSnap = snap;
+    element.style.left = snap.x ? `${snap.x}px` : '';
+    element.style.top = snap.y ? `${snap.y}px` : '';
+  }
+
   /**
    * Margens de rolagem (spec 27) das células e dos focáveis delas (CSS) e
    * deslocamentos do que o hospedeiro gruda no contêiner (`scroll-padding`
@@ -14507,8 +14549,15 @@ export class DataGrid extends LitElement {
       return;
     }
 
-    const inset = this.#scrollPort.padding();
     const bands = this.#bands;
+
+    if (bands) {
+      this.#snapBands();
+    }
+
+    const padding = this.#scrollPort.padding();
+    // Eixo `block`: onde as faixas grudam também cai num pixel físico inteiro (ver `#snapBands`).
+    const inset = bands ? { top: toDevicePixel(padding.top), bottom: toDevicePixel(padding.bottom) } : padding;
     // Recuos horizontais (scroll-padding-inline e a folga do layout): o que o grid gruda na horizontal fica neles.
     // Eixo `block` (spec 30): nenhum — o contêiner não rola na horizontal e o `scroll-padding-inline` das faixas cobre as fixas.
     const inline = this.#portInline = bands ? { start: 0, end: 0, maskStart: 0, maskEnd: 0 } : this.#scrollPort.inlineInsets(this.#tableRef.value);

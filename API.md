@@ -3560,7 +3560,8 @@ in its own `rowgroup` (`role="grid"` moves from the `<table>` to the element tha
 that targeted the shadow `<table>`, `<thead>` or `<tbody>` is not supported, the `::part`s are
 unchanged). To keep the 0.4.x behavior,
 set `scroll-container-axis="both"`. Also: in RTL the grid's live region no longer pokes 1px past
-the grid's edge (the page could scroll sideways by 1px).
+the grid's edge (the page could scroll sideways by 1px); dragging a column that cannot be grouped
+(`groupable: false`) over the group panel no longer shows the drop indicator.
 
 ### Deprecated names
 
