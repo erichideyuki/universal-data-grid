@@ -3587,7 +3587,7 @@ import {
 } from '@universal-material/data-grid/export-pdf';
 ```
 
-### Next release (unreleased)
+### 0.7.0
 
 Visible change: Excel exports without group rows or tree levels now have Excel's filter buttons on
 the column labels, with the grid sort shown as the arrow (`autoFilter`, default `true`;

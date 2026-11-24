@@ -170,7 +170,7 @@ React 19+, and `:columns.prop` in Vue. Import the package before the first rende
 | Chrome (Android) | 114 | Android 15 on a Galaxy S25 |
 
 Each test renders the grid, exports to Excel and PDF, and groups and sorts a million rows, with no
-console errors. Chrome and Edge 114 to 119 need 0.6.1 or later (before it, the header and group
+console errors. Chrome and Edge 114 to 119 need 0.7.0 or later (before it, the header and group
 labels were invisible there). The grid relies on ES2022, the Popover API and modern CSS
 (`color-mix()`, `:has()`). Internet Explorer and legacy Edge are not supported.
 
